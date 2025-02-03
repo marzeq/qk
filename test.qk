@@ -1,0 +1,10 @@
+let f(x: i32): i32 =
+  if x == 0 { 1 } else { x }
+
+let print(x: i32): void = {}
+
+let main(): void = {
+  for var i = 0; i < f(20); i += 1 {
+    print(i)
+  }
+}

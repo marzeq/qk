@@ -1,0 +1,56 @@
+/* SYNTAX EXPLANATION */
+[name] -> ... - rule definition
+'...' - string literal
+() - grouping
+| - or
+* - 0 or more
++ - 1 or more
+*(...) - 0 or more where each term is separated by a ... (if 0 terms, there is no ...)
++(...) - 1 or more where each term is separated by a ...
+? - 0 or 1 (optional)
+. - any char
+$ - end of line
+foo - rule reference
+
+comment @ignore       -> '--' .*$
+
+/* EXPRESSIONS */
+fn_call               -> ident '(' (expression),* ')'
+block_expr            -> '{' expression '}'
+if_expr               -> 'if' expression block_expr ('else' 'if' expression block_expr)* 'else' expression block_expr
+
+/* Expression hierarchy */
+expression            -> logical_or
+logical_or            -> logical_and ('or' logical_and)*
+logical_and           -> logical_not ('and' logical_not)*
+logical_not           -> 'not'? (logical_not | comparison)
+comparison            -> additive (('==' | '!=' | '<' | '>' | '<=' | '>=') additive)*
+additive              -> multiplicative (('+' | '-') multiplicative)*
+multiplicative        -> unary (('*' | '/') unary)*
+unary                 -> '-' unary | term
+term                  -> number | fn_call | ident | if_expr | '(' expression ')'
+
+/* STATEMENTS */
+stmt_end              -> '\n' | ';'
+
+block                 -> '{' stmt*(stmt_end+) '}'
+let_decl              -> 'let' ident (':' ident(type))? '=' expression
+var_decl              -> 'var' ident (':' ident(type))? '=' expression
+reassign              -> ident '=' expression
+reassign_plus         -> ident '+=' expression
+reassign_minus        -> ident '-=' expression
+reassign_mul          -> ident '*=' expression
+reassign_div          -> ident '/=' expression
+if_statement          -> 'if' expression block ('else' 'if' expression block)* ('else' expression block)?
+control_keyword       -> 'break' | 'continue' | 'return' expression | 'return'
+for                   -> 'for' (let_decl | var_decl | reassign | expression)*; block
+
+stmt                  -> let_decl | var_decl | fn_decl | reassign | fn_call | control_keyword | block | for | if_statement
+
+/* FUNCTIONS */
+arg                   -> ident ':' ident(type)
+fn_decl               -> 'let' ident '(' (arg)*, ')' ':' ident(retType) '=' (expression | block)
+
+/* TOP LEVEL */
+import                -> 'import' ident
+file                  -> ((fn_decl | import) (stmt_end | <eof>))*
