@@ -31,16 +31,48 @@ type (
 type TypeChecker struct {
 	VarTable  VarTable
 	FuncTable FuncTable
+	imported  map[string]struct{}
 }
 
 func NewTypeChecker() *TypeChecker {
 	return &TypeChecker{
 		VarTable:  shared.NewSymbolTable[*VarSig](),
 		FuncTable: shared.NewSymbolTable[*FunctionSig](),
+		imported:  make(map[string]struct{}),
 	}
 }
 
 func (tc *TypeChecker) TypeCheck(root *Node) error {
+	for _, node := range root.Children {
+		if node.Type != parser.NODE_TYPE_IMPORT {
+			continue
+		}
+
+		path := node.Right.Value.(string)
+		if _, ok := tc.imported[path]; ok {
+			continue
+		}
+		tc.imported[path] = struct{}{}
+
+		t, err := tokeniser.NewTokeniserFromFile(path)
+		if err != nil {
+			return err
+		}
+		toks, err := t.Tokenise()
+		if err != nil {
+			return err
+		}
+		p := parser.NewParser(toks)
+		ast, err := p.Parse()
+		if err != nil {
+			return err
+		}
+
+		if err := tc.TypeCheck(ast); err != nil {
+			return err
+		}
+	}
+
 	// fill tc.FuncTable without checking so that recursion works
 	for _, node := range root.Children {
 		if node.Type != parser.NODE_TYPE_FUNCTION_DEF {
@@ -405,7 +437,7 @@ func (tc *TypeChecker) typeCheckFunctionCall(funccallNode *Node) (Type, error) {
 
 	fsig, ok := tc.FuncTable.Lookup(fname)
 	if !ok {
-		return shared.BUILTIN_VOID, shared.NewError(nameNode.Loc, "undefined function '%s'", fname)
+		return shared.BUILTIN_VOID, shared.NewError(funccallNode.Loc, "undefined function '%s'", fname)
 	}
 
 	for i, arg := range funccallNode.Children {

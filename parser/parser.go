@@ -97,6 +97,9 @@ func (p *Parser) Match(ttypes ...tokeniser.TokenType) bool {
 func (p *Parser) Parse() (*Node, error) {
 	rootNode := &Node{Type: NODE_TYPE_ROOT}
 	for !p.Match(tokeniser.TOKEN_TYPE_EOF) {
+		for p.Match(tokeniser.TOKEN_TYPE_NEWLINE, tokeniser.TOKEN_TYPE_SEMICOLON) {
+			p.Inc()
+		}
 		e := shared.NewError(p.CurrLoc(), "expected function definition or import statement")
 		if !p.Match(tokeniser.TOKEN_TYPE_KEYWORD) {
 			return nil, e
