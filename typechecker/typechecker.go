@@ -327,7 +327,7 @@ func (tc *TypeChecker) typeCheckExpression(exprNode *Node, expectedType Type) (T
 			return shared.BUILTIN_BOOL, nil
 
 		case "==", "!=", "<", ">", "<=", ">=":
-			compatible, _ := shared.AreCompatibleTypes(leftType, rightType)
+			compatible, _ := shared.AreCompatibleNumericTypes(leftType, rightType)
 			if !compatible {
 				return shared.BUILTIN_VOID, fmt.Errorf("operator '%s' cannot be applied to operands of type '%s' and '%s'", op, leftType, rightType)
 			}

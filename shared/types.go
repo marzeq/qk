@@ -62,21 +62,69 @@ func AreCompatibleTypes(a, b Type) (bool, Type) {
 	if a == b {
 		return true, a
 	}
-	if a == BUILTIN_UNTYPED_INT && IsNumericType(b) {
+
+	if IsNumericType(a) && IsNumericType(b) {
+		return AreCompatibleNumericTypes(a, b)
+	}
+
+	if IsUntypedNumeric(a) && IsNumericType(b) {
 		return true, b
 	}
-	if b == BUILTIN_UNTYPED_INT && IsNumericType(a) {
+	if IsUntypedNumeric(b) && IsNumericType(a) {
 		return true, a
 	}
+
 	return false, BUILTIN_VOID
 }
 
 func AreCompatibleNumericTypes(a, b Type) (bool, Type) {
-	compatible, t := AreCompatibleTypes(a, b)
-	if !compatible || !IsNumericType(t) {
+	if !IsNumericType(a) || !IsNumericType(b) {
 		return false, BUILTIN_VOID
 	}
-	return true, t
+
+	if a == b {
+		return true, a
+	}
+
+	if IsUnsignedType(a) && IsSignedType(b) || IsSignedType(a) && IsUnsignedType(b) {
+		larger := LargerNumericType(a, b)
+		return true, larger
+	}
+
+	return true, LargerNumericType(a, b)
+}
+
+func IsSignedType(t Type) bool {
+	return t == BUILTIN_I8 || t == BUILTIN_I16 || t == BUILTIN_I32 || t == BUILTIN_I64
+}
+
+func IsUnsignedType(t Type) bool {
+	return t == BUILTIN_U8 || t == BUILTIN_U16 || t == BUILTIN_U32 || t == BUILTIN_U64
+}
+
+func LargerNumericType(a, b Type) Type {
+	precedence := []Type{
+		BUILTIN_U8, BUILTIN_I8,
+		BUILTIN_U16, BUILTIN_I16,
+		BUILTIN_U32, BUILTIN_I32,
+		BUILTIN_U64, BUILTIN_I64,
+	}
+
+	aIndex := -1
+	bIndex := -1
+	for i, t := range precedence {
+		if t == a {
+			aIndex = i
+		}
+		if t == b {
+			bIndex = i
+		}
+	}
+
+	if aIndex > bIndex {
+		return a
+	}
+	return b
 }
 
 func IsUntypedNumeric(t Type) bool {

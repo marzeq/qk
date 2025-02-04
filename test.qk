@@ -1,10 +1,6 @@
-let f(x: i32): i32 =
-  if x == 0 { 1 } else { x }
+let f(): i32 = {
+  let a: u32 = 2
+  let b: i32 = -2
 
-let print(x: i32): void = {}
-
-let main(): void = {
-  for var i = 0; i < f(20); i += 1 {
-    print(i)
-  }
+  return a + b
 }
