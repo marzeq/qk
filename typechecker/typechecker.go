@@ -1,8 +1,6 @@
 package typechecker
 
 import (
-	"fmt"
-
 	"github.com/marzeq/quokka/parser"
 	"github.com/marzeq/quokka/shared"
 	"github.com/marzeq/quokka/tokeniser"
@@ -55,7 +53,7 @@ func (tc *TypeChecker) TypeCheck(root *Node) error {
 		}
 
 		if ok := tc.FuncTable.Define(fname, funcSig); !ok {
-			return fmt.Errorf("function '%s' is already defined", fname)
+			return shared.NewError(node.Loc, "function '%s' is already defined", fname)
 		}
 	}
 
@@ -88,6 +86,7 @@ func (tc *TypeChecker) exitScope() {
 }
 
 func (tc *TypeChecker) typeCheckFunction(funcNode *Node, sig *FunctionSig) error {
+	val := funcNode.Value.(*parser.FunctionValue)
 	body := funcNode.Children[0]
 	name := identToStr(funcNode.Value.(*parser.FunctionValue).Name)
 
@@ -108,7 +107,7 @@ func (tc *TypeChecker) typeCheckFunction(funcNode *Node, sig *FunctionSig) error
 	}
 
 	if !shared.CanCoerceTo(exprType, sig.RetType) {
-		return fmt.Errorf("function '%s' expects return type '%s' but returns '%s'",
+		return shared.NewError(val.RetType.Loc, "function '%s' expects return type '%s' but returns '%s'",
 			name, sig.RetType, exprType)
 	}
 
@@ -129,7 +128,7 @@ func (tc *TypeChecker) typeCheckBlock(blockNode *Node, sig *FunctionSig, isLoop 
 				return err
 			}
 			if ok := tc.VarTable.Define(varName, varSig); !ok {
-				return fmt.Errorf("variable '%s' is already declared in this scope", varName)
+				return shared.NewError(node.Left.Loc, "variable '%s' is already declared in this scope", varName)
 			}
 
 		case parser.NODE_TYPE_FUNCTION_DEF:
@@ -138,7 +137,7 @@ func (tc *TypeChecker) typeCheckBlock(blockNode *Node, sig *FunctionSig, isLoop 
 				return err
 			}
 			if ok := tc.FuncTable.Define(fname, fsig); !ok {
-				return fmt.Errorf("function '%s' is already defined", fname)
+				return shared.NewError(node.Loc, "function '%s' is already defined", fname)
 			}
 
 			tc.enterScope()
@@ -170,7 +169,7 @@ func (tc *TypeChecker) typeCheckBlock(blockNode *Node, sig *FunctionSig, isLoop 
 					}
 
 					if !shared.CanCoerceTo(retType, sig.RetType) {
-						return fmt.Errorf("wrong return type for function, expected '%s' got '%s'", sig.RetType, retType)
+						return shared.NewError(node.Loc, "wrong return type for function, expected '%s' got '%s'", sig.RetType, retType)
 					}
 					if retType == shared.BUILTIN_UNTYPED_INT {
 						node.Right.ExprType = sig.RetType
@@ -180,7 +179,7 @@ func (tc *TypeChecker) typeCheckBlock(blockNode *Node, sig *FunctionSig, isLoop 
 
 			case "break", "continue":
 				if !isLoop {
-					return fmt.Errorf("'%s' statement outside a loop", kw)
+					return shared.NewError(node.Loc, "'%s' statement outside a loop", kw)
 				}
 			}
 
@@ -207,7 +206,7 @@ func (tc *TypeChecker) typeCheckBlock(blockNode *Node, sig *FunctionSig, isLoop 
 	}
 
 	if !foundReturn && sig.RetType != shared.BUILTIN_VOID {
-		return fmt.Errorf("function with return type '%s' is missing a return statement", sig.RetType)
+		return shared.NewError(blockNode.Loc, "function with return type '%s' is missing a return statement", sig.RetType)
 	}
 
 	return nil
@@ -219,7 +218,7 @@ func (tc *TypeChecker) typeCheckExpression(exprNode *Node, expectedType Type) (T
 		varName := exprNode.Value.(string)
 		varSig, ok := tc.VarTable.Lookup(varName)
 		if !ok {
-			return shared.BUILTIN_VOID, fmt.Errorf("undefined variable '%s'", varName)
+			return shared.BUILTIN_VOID, shared.NewError(exprNode.Loc, "undefined variable '%s'", varName)
 		}
 		exprNode.ExprType = varSig.Type
 		return varSig.Type, nil
@@ -244,17 +243,17 @@ func (tc *TypeChecker) typeCheckExpression(exprNode *Node, expectedType Type) (T
 		switch v := exprNode.Value.(type) {
 		case string:
 			if v != "not" {
-				return shared.BUILTIN_VOID, fmt.Errorf("invalid unary operator '%s'", v)
+				return shared.BUILTIN_VOID, shared.NewError(exprNode.Loc, "invalid unary operator '%s'", v)
 			}
 			op = v
 		case tokeniser.TokenType:
 			if v == tokeniser.TOKEN_TYPE_MINUS {
 				op = "-"
 			} else {
-				return shared.BUILTIN_VOID, fmt.Errorf("invalid unary operator token '%v'", v)
+				return shared.BUILTIN_VOID, shared.NewError(exprNode.Loc, "invalid unary operator token '%v'", v)
 			}
 		default:
-			return shared.BUILTIN_VOID, fmt.Errorf("invalid unary operator type '%T'", exprNode.Value)
+			return shared.BUILTIN_VOID, shared.NewError(exprNode.Loc, "invalid unary operator type '%T'", exprNode.Value)
 		}
 
 		operandType, err := tc.typeCheckExpression(exprNode.Right, shared.BUILTIN_VOID)
@@ -270,16 +269,16 @@ func (tc *TypeChecker) typeCheckExpression(exprNode *Node, expectedType Type) (T
 		switch op {
 		case "not":
 			if operandType != shared.BUILTIN_BOOL {
-				return shared.BUILTIN_VOID, fmt.Errorf("unary operator 'not' expects a boolean operand, found '%s'", operandType)
+				return shared.BUILTIN_VOID, shared.NewError(exprNode.Right.Loc, "unary operator 'not' expects a boolean operand, found '%s'", operandType)
 			}
 			return shared.BUILTIN_BOOL, nil
 		case "-":
 			if !shared.IsNumericType(operandType) {
-				return shared.BUILTIN_VOID, fmt.Errorf("unary operator '-' requires numeric operand, found '%s'", operandType)
+				return shared.BUILTIN_VOID, shared.NewError(exprNode.Right.Loc, "unary operator '-' requires numeric operand, found '%s'", operandType)
 			}
 			return operandType, nil
 		default:
-			return shared.BUILTIN_VOID, fmt.Errorf("unknown unary operator '%s'", op)
+			return shared.BUILTIN_VOID, shared.NewError(exprNode.Loc, "unknown unary operator '%s'", op)
 		}
 
 	case parser.NODE_TYPE_BINARY_OP:
@@ -287,16 +286,16 @@ func (tc *TypeChecker) typeCheckExpression(exprNode *Node, expectedType Type) (T
 		switch v := exprNode.Value.(type) {
 		case string:
 			if v != "and" && v != "or" {
-				return shared.BUILTIN_VOID, fmt.Errorf("invalid binary operator '%s'", v)
+				return shared.BUILTIN_VOID, shared.NewError(exprNode.Loc, "invalid binary operator '%s'", v)
 			}
 			op = v
 		case tokeniser.TokenType:
 			op = tokenTypeToOperator(v)
 			if op == "" {
-				return shared.BUILTIN_VOID, fmt.Errorf("unsupported binary operator token '%v'", v)
+				return shared.BUILTIN_VOID, shared.NewError(exprNode.Loc, "unsupported binary operator token '%v'", v)
 			}
 		default:
-			return shared.BUILTIN_VOID, fmt.Errorf("invalid binary operator type '%T'", exprNode.Value)
+			return shared.BUILTIN_VOID, shared.NewError(exprNode.Loc, "invalid binary operator type '%T'", exprNode.Value)
 		}
 
 		leftType, err := tc.typeCheckExpression(exprNode.Left, shared.BUILTIN_VOID)
@@ -322,32 +321,32 @@ func (tc *TypeChecker) typeCheckExpression(exprNode *Node, expectedType Type) (T
 		switch op {
 		case "and", "or":
 			if leftType != shared.BUILTIN_BOOL || rightType != shared.BUILTIN_BOOL {
-				return shared.BUILTIN_VOID, fmt.Errorf("operator '%s' expects boolean operands, found '%s' and '%s'", op, leftType, rightType)
+				return shared.BUILTIN_VOID, shared.NewError(exprNode.Loc, "operator '%s' expects boolean operands, found '%s' and '%s'", op, leftType, rightType)
 			}
 			return shared.BUILTIN_BOOL, nil
 
 		case "==", "!=", "<", ">", "<=", ">=":
 			compatible, _ := shared.AreCompatibleNumericTypes(leftType, rightType)
 			if !compatible {
-				return shared.BUILTIN_VOID, fmt.Errorf("operator '%s' cannot be applied to operands of type '%s' and '%s'", op, leftType, rightType)
+				return shared.BUILTIN_VOID, shared.NewError(exprNode.Loc, "operator '%s' cannot be applied to operands of type '%s' and '%s'", op, leftType, rightType)
 			}
 			return shared.BUILTIN_BOOL, nil
 
 		case "+", "-", "*", "/":
 			compatible, commonType := shared.AreCompatibleNumericTypes(leftType, rightType)
 			if !compatible {
-				return shared.BUILTIN_VOID, fmt.Errorf("operator '%s' requires numeric operands, found '%s' and '%s'", op, leftType, rightType)
+				return shared.BUILTIN_VOID, shared.NewError(exprNode.Loc, "operator '%s' requires numeric operands, found '%s' and '%s'", op, leftType, rightType)
 			}
 			return commonType, nil
 
 		default:
-			return shared.BUILTIN_VOID, fmt.Errorf("unknown binary operator '%s'", op)
+			return shared.BUILTIN_VOID, shared.NewError(exprNode.Loc, "unknown binary operator '%s'", op)
 		}
 
 	case parser.NODE_TYPE_IF_EXPR:
 		ifExpr := exprNode.Value.(*parser.IfNodeValue)
 		if ifExpr.IfBranch == nil {
-			return shared.BUILTIN_VOID, fmt.Errorf("if expression missing if branch")
+			return shared.BUILTIN_VOID, shared.NewError(exprNode.Loc, "if expression missing if branch")
 		}
 
 		condType, err := tc.typeCheckExpression(ifExpr.IfBranch.Condition, shared.BUILTIN_VOID)
@@ -355,7 +354,7 @@ func (tc *TypeChecker) typeCheckExpression(exprNode *Node, expectedType Type) (T
 			return shared.BUILTIN_VOID, err
 		}
 		if condType != shared.BUILTIN_BOOL {
-			return shared.BUILTIN_VOID, fmt.Errorf("if condition must be boolean, found '%s'", condType)
+			return shared.BUILTIN_VOID, shared.NewError(ifExpr.IfBranch.Condition.Loc, "if condition must be boolean, found '%s'", condType)
 		}
 
 		ifType, err := tc.typeCheckExpression(ifExpr.IfBranch.Node, expectedType)
@@ -370,7 +369,7 @@ func (tc *TypeChecker) typeCheckExpression(exprNode *Node, expectedType Type) (T
 				return shared.BUILTIN_VOID, err
 			}
 			if elseIfCondType != shared.BUILTIN_BOOL {
-				return shared.BUILTIN_VOID, fmt.Errorf("else-if condition must be boolean, found '%s'", elseIfCondType)
+				return shared.BUILTIN_VOID, shared.NewError(elseIf.Condition.Loc, "else-if condition must be boolean, found '%s'", elseIfCondType)
 			}
 
 			elseIfType, err := tc.typeCheckExpression(elseIf.Node, expectedType)
@@ -378,34 +377,35 @@ func (tc *TypeChecker) typeCheckExpression(exprNode *Node, expectedType Type) (T
 				return shared.BUILTIN_VOID, err
 			}
 			if elseIfType != commonType {
-				return shared.BUILTIN_VOID, fmt.Errorf("all branches must return same type, expected '%s' but found '%s'", commonType, elseIfType)
+				return shared.BUILTIN_VOID, shared.NewError(exprNode.Loc, "all branches must return same type, expected '%s' but found '%s'", commonType, elseIfType)
 			}
 		}
 
 		if ifExpr.ElseBranch == nil {
-			return shared.BUILTIN_VOID, fmt.Errorf("if expression requires else branch")
+			return shared.BUILTIN_VOID, shared.NewError(exprNode.Loc, "if expression requires else branch")
 		}
 		elseType, err := tc.typeCheckExpression(ifExpr.ElseBranch.Node, expectedType)
 		if err != nil {
 			return shared.BUILTIN_VOID, err
 		}
 		if elseType != commonType {
-			return shared.BUILTIN_VOID, fmt.Errorf("else branch must match type '%s', found '%s'", commonType, elseType)
+			return shared.BUILTIN_VOID, shared.NewError(ifExpr.ElseBranch.Node.Loc, "else branch must match type '%s', found '%s'", commonType, elseType)
 		}
 
 		return commonType, nil
 
 	default:
-		return shared.BUILTIN_VOID, fmt.Errorf("unsupported expression type: '%s'", exprNode.Type)
+		return shared.BUILTIN_VOID, shared.NewError(exprNode.Loc, "unsupported expression type: '%s'", exprNode.Type)
 	}
 }
 
 func (tc *TypeChecker) typeCheckFunctionCall(funccallNode *Node) (Type, error) {
-	fname := identToStr(funccallNode.Value.(*Node))
+	nameNode := funccallNode.Value.(*Node)
+	fname := identToStr(nameNode)
 
 	fsig, ok := tc.FuncTable.Lookup(fname)
 	if !ok {
-		return shared.BUILTIN_VOID, fmt.Errorf("undefined function '%s'", fname)
+		return shared.BUILTIN_VOID, shared.NewError(nameNode.Loc, "undefined function '%s'", fname)
 	}
 
 	for i, arg := range funccallNode.Children {
@@ -415,7 +415,7 @@ func (tc *TypeChecker) typeCheckFunctionCall(funccallNode *Node) (Type, error) {
 			return shared.BUILTIN_VOID, err
 		}
 		if fsigArgType != argType {
-			return shared.BUILTIN_VOID, fmt.Errorf(
+			return shared.BUILTIN_VOID, shared.NewError(arg.Loc,
 				"argument %d of function '%s' has type '%s' but expected '%s'",
 				i+1, fname, argType, fsig.ArgTypes[i].R,
 			)
@@ -436,7 +436,7 @@ func (tc *TypeChecker) typeCheckDeclaration(declNode *Node) (string, *VarSig, er
 		varTypeStr := identToStr(info.Type)
 		vt, ok := shared.ResolveType(varTypeStr)
 		if !ok {
-			return "", nil, fmt.Errorf("variable '%s' has undefined type '%s'", varName, varTypeStr)
+			return "", nil, shared.NewError(info.Type.Loc, "variable '%s' has undefined type '%s'", varName, varTypeStr)
 		}
 		varType = vt
 	}
@@ -449,7 +449,7 @@ func (tc *TypeChecker) typeCheckDeclaration(declNode *Node) (string, *VarSig, er
 	if varType == shared.BUILTIN_VOID {
 		varType = exprType
 	} else if !shared.CanCoerceTo(exprType, varType) {
-		return "", nil, fmt.Errorf(
+		return "", nil, shared.NewError(declNode.Loc,
 			"cannot assign value of type '%s' to variable '%s' of type '%s'",
 			exprType, varName, varType,
 		)
@@ -473,11 +473,11 @@ func (tc *TypeChecker) typeCheckAssignment(asNode *Node) error {
 	varName := identToStr(asNode.Left)
 	varSig, ok := tc.VarTable.Lookup(varName)
 	if !ok {
-		return fmt.Errorf("undefined variable '%s'", varName)
+		return shared.NewError(asNode.Left.Loc, "undefined variable '%s'", varName)
 	}
 
 	if !varSig.Mutable {
-		return fmt.Errorf("cannot assign to immutable variable '%s'", varName)
+		return shared.NewError(asNode.Loc, "cannot assign to immutable variable '%s'", varName)
 	}
 
 	exprType, err := tc.typeCheckExpression(asNode.Right, varSig.Type)
@@ -486,7 +486,7 @@ func (tc *TypeChecker) typeCheckAssignment(asNode *Node) error {
 	}
 
 	if exprType != varSig.Type {
-		return fmt.Errorf(
+		return shared.NewError(asNode.Loc,
 			"cannot assign value of type '%s' to variable '%s' of type '%s'",
 			exprType, varName, varSig.Type,
 		)
@@ -514,7 +514,7 @@ func (tc *TypeChecker) typeCheckForLoop(loopNode *Node, sig *FunctionSig) error 
 					return err
 				}
 			} else {
-				return fmt.Errorf("for loop initializer must be a declaration or assignment statement")
+				return shared.NewError(exOrSt.Loc, "for loop initializer must be a declaration or assignment statement")
 			}
 		} else {
 			exprType, err := tc.typeCheckExpression(exOrSt, shared.BUILTIN_BOOL)
@@ -523,7 +523,7 @@ func (tc *TypeChecker) typeCheckForLoop(loopNode *Node, sig *FunctionSig) error 
 			}
 
 			if exprType != shared.BUILTIN_BOOL {
-				return fmt.Errorf("for loop condition must be a boolean expression, found '%s'", exprType)
+				return shared.NewError(exOrSt.Loc, "for loop condition must be a boolean expression, found '%s'", exprType)
 			}
 		}
 	}
@@ -544,7 +544,7 @@ func (tc *TypeChecker) typeCheckIfStatement(ifNode *Node, sig *FunctionSig) erro
 		return err
 	}
 	if ifCondType != shared.BUILTIN_BOOL {
-		return fmt.Errorf("if condition must be boolean, found '%s'", ifCondType)
+		return shared.NewError(value.ElseBranch.Condition.Loc, "if condition must be boolean, found '%s'", ifCondType)
 	}
 
 	if err := tc.typeCheckBlock(value.IfBranch.Node, sig, false); err != nil {
@@ -557,7 +557,7 @@ func (tc *TypeChecker) typeCheckIfStatement(ifNode *Node, sig *FunctionSig) erro
 			return err
 		}
 		if elseIfCondType != shared.BUILTIN_BOOL {
-			return fmt.Errorf("else-if condition must be boolean, found '%s'", elseIfCondType)
+			return shared.NewError(elseIfBranch.Condition.Loc, "else-if condition must be boolean, found '%s'", elseIfCondType)
 		}
 
 		if err := tc.typeCheckBlock(elseIfBranch.Node, sig, false); err != nil {
@@ -581,7 +581,7 @@ func extractFunctionSig(functionNode *Node) (string, *FunctionSig, error) {
 
 	retType, ok := shared.ResolveType(retTypeStr)
 	if !ok {
-		return "", nil, fmt.Errorf("function '%s' has undefined return type '%s'", name, retTypeStr)
+		return "", nil, shared.NewError(functionVal.RetType.Loc, "function '%s' has undefined return type '%s'", name, retTypeStr)
 	}
 
 	argTypes := make([]shared.Pair[string, Type], len(functionVal.Args))
@@ -589,7 +589,7 @@ func extractFunctionSig(functionNode *Node) (string, *FunctionSig, error) {
 		tpe := identToStr(arg.R)
 		resolved, ok := shared.ResolveType(tpe)
 		if !ok {
-			return "", nil, fmt.Errorf("parameter '%s' has undefined type '%s'", identToStr(arg.L), tpe)
+			return "", nil, shared.NewError(arg.R.Loc, "parameter '%s' has undefined type '%s'", identToStr(arg.L), tpe)
 		}
 		argTypes[i] = shared.Pair[string, Type]{L: identToStr(arg.L), R: resolved}
 	}

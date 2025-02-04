@@ -14,6 +14,7 @@ const (
 	NODE_TYPE_IDENTIFIER
 	NODE_TYPE_BOOL_LITERAL
 	NODE_TYPE_NUMBER_LITERAL
+	NODE_TYPE_STRING_LITERAL
 
 	NODE_TYPE_FUNCTION_CALL
 
@@ -40,6 +41,7 @@ func (nt NodeType) IsExpression() bool {
 	return nt == NODE_TYPE_IDENTIFIER ||
 		nt == NODE_TYPE_BOOL_LITERAL ||
 		nt == NODE_TYPE_NUMBER_LITERAL ||
+		nt == NODE_TYPE_STRING_LITERAL ||
 		nt == NODE_TYPE_FUNCTION_CALL ||
 		nt == NODE_TYPE_IF_EXPR ||
 		nt == NODE_TYPE_UNARY_OP ||
@@ -60,6 +62,8 @@ func (nt NodeType) String() string {
 		return "CONTROL_KEYWORD"
 	case NODE_TYPE_NUMBER_LITERAL:
 		return "NUMBER_LITERAL"
+	case NODE_TYPE_STRING_LITERAL:
+		return "STRING_LITERAL"
 	case NODE_TYPE_BOOL_LITERAL:
 		return "BOOL_LITERAL"
 	case NODE_TYPE_FUNCTION_CALL:
@@ -96,6 +100,7 @@ type Node struct {
 	Left     *Node
 	Right    *Node
 	Children []*Node
+	Loc      shared.Location
 }
 
 type IfNodeValue struct {

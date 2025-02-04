@@ -1,6 +1,8 @@
-let f(): i32 = {
+import "a"
+
+let f(): u32 = {
   let a: u32 = 2
   let b: i32 = -2
 
-  return a + b
+  return a - b
 }

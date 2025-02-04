@@ -20,6 +20,8 @@ func (t Token) String() string {
 		return "ident(" + t.Value + ")"
 	case TOKEN_TYPE_NUMBER:
 		return "num(" + t.Value + ")"
+	case TOKEN_TYPE_STRING:
+		return "str(" + t.Value + ")"
 	case TOKEN_TYPE_OPEN_PAREN:
 		return "("
 	case TOKEN_TYPE_CLOSE_PAREN:
@@ -80,6 +82,7 @@ const (
 	TOKEN_TYPE_KEYWORD
 	TOKEN_TYPE_IDENT
 	TOKEN_TYPE_NUMBER
+	TOKEN_TYPE_STRING
 
 	TOKEN_TYPE_OPEN_PAREN
 	TOKEN_TYPE_CLOSE_PAREN

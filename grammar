@@ -52,5 +52,5 @@ arg                   -> ident ':' ident(type)
 fn_decl               -> 'let' ident '(' (arg)*, ')' ':' ident(retType) '=' (expression | block)
 
 /* TOP LEVEL */
-import                -> 'import' ident
+import                -> 'import' string_lit
 file                  -> ((fn_decl | import) (stmt_end | <eof>))*

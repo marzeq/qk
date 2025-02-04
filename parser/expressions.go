@@ -10,6 +10,7 @@ func (p *Parser) ParseExpression() (*Node, error) {
 }
 
 func (p *Parser) ParseLogicalOr() (*Node, error) {
+	beginLoc := p.CurrLoc()
 	left, err := p.ParseLogicalAnd()
 	if err != nil {
 		return nil, err
@@ -31,6 +32,7 @@ func (p *Parser) ParseLogicalOr() (*Node, error) {
 			Value: op.Value,
 			Left:  left,
 			Right: right,
+			Loc:   beginLoc,
 		}
 	}
 
@@ -38,6 +40,7 @@ func (p *Parser) ParseLogicalOr() (*Node, error) {
 }
 
 func (p *Parser) ParseLogicalAnd() (*Node, error) {
+	beginLoc := p.CurrLoc()
 	left, err := p.ParseLogicalNot()
 	if err != nil {
 		return nil, err
@@ -59,6 +62,7 @@ func (p *Parser) ParseLogicalAnd() (*Node, error) {
 			Value: op.Value,
 			Left:  left,
 			Right: right,
+			Loc:   beginLoc,
 		}
 	}
 
@@ -66,6 +70,7 @@ func (p *Parser) ParseLogicalAnd() (*Node, error) {
 }
 
 func (p *Parser) ParseLogicalNot() (*Node, error) {
+	beginLoc := p.CurrLoc()
 	if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == "not" {
 		op := p.Consume()
 
@@ -82,6 +87,7 @@ func (p *Parser) ParseLogicalNot() (*Node, error) {
 			Type:  NODE_TYPE_UNARY_OP,
 			Value: op.Value,
 			Right: expr,
+			Loc:   beginLoc,
 		}, nil
 	}
 
@@ -89,6 +95,7 @@ func (p *Parser) ParseLogicalNot() (*Node, error) {
 }
 
 func (p *Parser) ParseUnary() (*Node, error) {
+	beginLoc := p.CurrLoc()
 	if p.Match(tokeniser.TOKEN_TYPE_MINUS) {
 		op := p.Consume()
 
@@ -105,6 +112,7 @@ func (p *Parser) ParseUnary() (*Node, error) {
 			Type:  NODE_TYPE_UNARY_OP,
 			Value: op.Type,
 			Right: expr,
+			Loc:   beginLoc,
 		}, nil
 	}
 
@@ -112,6 +120,7 @@ func (p *Parser) ParseUnary() (*Node, error) {
 }
 
 func (p *Parser) ParseComparison() (*Node, error) {
+	beginLoc := p.CurrLoc()
 	left, err := p.ParseAddSub()
 	if err != nil {
 		return nil, err
@@ -133,6 +142,7 @@ func (p *Parser) ParseComparison() (*Node, error) {
 			Value: op.Type,
 			Left:  left,
 			Right: right,
+			Loc:   beginLoc,
 		}
 	}
 
@@ -140,6 +150,7 @@ func (p *Parser) ParseComparison() (*Node, error) {
 }
 
 func (p *Parser) ParseAddSub() (*Node, error) {
+	beginLoc := p.CurrLoc()
 	left, err := p.ParseMulDiv()
 	if err != nil {
 		return nil, err
@@ -161,6 +172,7 @@ func (p *Parser) ParseAddSub() (*Node, error) {
 			Value: op.Type,
 			Left:  left,
 			Right: right,
+			Loc:   beginLoc,
 		}
 	}
 
@@ -168,6 +180,7 @@ func (p *Parser) ParseAddSub() (*Node, error) {
 }
 
 func (p *Parser) ParseMulDiv() (*Node, error) {
+	beginLoc := p.CurrLoc()
 	left, err := p.ParseUnary()
 	if err != nil {
 		return nil, err
@@ -189,6 +202,7 @@ func (p *Parser) ParseMulDiv() (*Node, error) {
 			Value: op.Type,
 			Left:  left,
 			Right: right,
+			Loc:   beginLoc,
 		}
 	}
 
@@ -196,6 +210,7 @@ func (p *Parser) ParseMulDiv() (*Node, error) {
 }
 
 func (p *Parser) ParseTerm() (*Node, error) {
+	beginLoc := p.CurrLoc()
 	if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == "if" {
 		expr, err := p.ParseIfExpression()
 		if err != nil {
@@ -237,6 +252,7 @@ func (p *Parser) ParseTerm() (*Node, error) {
 		return &Node{
 			Type:  NODE_TYPE_IDENTIFIER,
 			Value: id.Value,
+			Loc:   beginLoc,
 		}, nil
 	}
 
@@ -245,6 +261,7 @@ func (p *Parser) ParseTerm() (*Node, error) {
 		return &Node{
 			Type:  NODE_TYPE_BOOL_LITERAL,
 			Value: bLit.Value,
+			Loc:   beginLoc,
 		}, nil
 	}
 
@@ -253,6 +270,7 @@ func (p *Parser) ParseTerm() (*Node, error) {
 		return &Node{
 			Type:  NODE_TYPE_NUMBER_LITERAL,
 			Value: nLit.Value,
+			Loc:   beginLoc,
 		}, nil
 	}
 
@@ -260,6 +278,7 @@ func (p *Parser) ParseTerm() (*Node, error) {
 }
 
 func (p *Parser) ParseFunctionCall(name tokeniser.Token) (*Node, error) {
+	beginLoc := p.CurrLoc()
 	var args []*Node
 
 	p.Consume()
@@ -291,10 +310,12 @@ func (p *Parser) ParseFunctionCall(name tokeniser.Token) (*Node, error) {
 		Type:     NODE_TYPE_FUNCTION_CALL,
 		Value:    &Node{Type: NODE_TYPE_IDENTIFIER, Value: name.Value},
 		Children: args,
+		Loc:      beginLoc,
 	}, nil
 }
 
 func (p *Parser) ParseIfExpression() (*Node, error) {
+	beginLoc := p.CurrLoc()
 	if !p.Expect(tokeniser.TOKEN_TYPE_KEYWORD) {
 		return nil, shared.NewError(p.PrevLoc(), "expected 'if' keyword")
 	}
@@ -381,6 +402,7 @@ func (p *Parser) ParseIfExpression() (*Node, error) {
 	return &Node{
 		Type:  NODE_TYPE_IF_EXPR,
 		Value: ifNodeValue,
+		Loc:   beginLoc,
 	}, nil
 }
 

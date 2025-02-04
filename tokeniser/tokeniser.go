@@ -120,6 +120,54 @@ func (t *Tokeniser) ReadNumber() (string, error) {
 	return s, nil
 }
 
+func (t *Tokeniser) ReadString() (string, error) {
+	s := ""
+
+	if t.Peek() != '"' {
+		return "", shared.NewError(t.GetLoc(), "expected '\"' to start a string")
+	}
+	t.Inc()
+
+	for t.Peek() != '"' && t.Peek() != '\n' {
+		if t.Peek() == '\\' {
+			switch t.Consume() {
+			case '\\':
+				s += "\\"
+			case '"':
+				s += "\""
+			case 'n':
+				s += "\n"
+			case 'r':
+				s += "\r"
+			case 't':
+				s += "\t"
+			case 'b':
+				s += "\b"
+			case 'f':
+				s += "\f"
+			case 'v':
+				s += "\v"
+			case 'a':
+				s += "\a"
+			case '0':
+				s += string(rune(0))
+			default:
+				return "", shared.NewError(t.GetLoc(), "invalid escape sequence")
+			}
+			t.Inc()
+		} else {
+			s += string(t.Consume())
+		}
+	}
+
+	if t.Peek() != '"' {
+		return "", shared.NewError(t.GetLoc(), "expected '\"' to end a string")
+	}
+	t.Inc()
+
+	return s, nil
+}
+
 func (t *Tokeniser) IgnoreComment() {
 	t.Inc().Inc() // skip over the "--"
 
@@ -194,6 +242,15 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 		}
 
 		switch c {
+		case '"':
+			pos := t.GetLoc()
+			s, err := t.ReadString()
+			if err != nil {
+				return nil, err
+			}
+
+			t.AddToken(TOKEN_TYPE_STRING, pos, s)
+			continue
 		case '\\':
 			if t.Next() == '\n' {
 				t.Inc().Inc()
