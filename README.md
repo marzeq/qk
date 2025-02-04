@@ -35,15 +35,17 @@ you can find the language specification in [the `grammar` file](./grammar) or lo
     - [x] +, - operators
     - [x] *, / operators
     - [x] negation operator
-    - [x] all elsewhere supported type literals
+    - [x] number literals
+    - [ ] char literals
+    - [ ] string literals
+    - [x] boolean literals
+    - [ ] struct literals
     - [x] identifiers
     - [x] function calls 
     - [x] if expressions
 - [ ] import/module system:
-  - [x] imports by simple inclusion by filepath during parse time
-  - [ ] rewrite solution to use a module system:
-    - [ ] resolve imports after parsing
-    - [ ] flatten symbols
+  - [x] dumb ignore (merge ast-s without any way to avoid redefiniton)
+  - [ ] actual module system
 - [ ] type system:
   - [x] signed and unsigned integers
   - [x] booleans
@@ -60,13 +62,18 @@ you can find the language specification in [the `grammar` file](./grammar) or lo
     - [x] for loops
     - [x] break, continue keywords
     - [x] return keyword
+    - [ ] struct definitions
   - [x] expressions:
     - [x] logical operators ('not', 'and', 'or')
     - [x] comparison operators
     - [x] +, - operators
     - [x] *, / operators
     - [x] negation operator
-    - [x] all elsewhere supported type literals
+    - [x] number literals
+    - [ ] char literals
+    - [ ] string literals
+    - [x] boolean literals
+    - [ ] struct literals
     - [x] identifiers
     - [x] function calls 
     - [x] if expressions

@@ -1,5 +1,4 @@
-import "test2.qk"
-
 let f(): void = {
+  let a = "a"
   return y()
 }
