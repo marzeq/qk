@@ -71,4 +71,42 @@ you can find the language specification in [the `grammar` file](./grammar) or lo
     - [x] function calls 
     - [x] if expressions
 - [ ] QBE IR generation:
-  - ... roadmap not defined yet
+  - [ ] primitives and literals:
+    - [ ] map integer types to QBE types
+    - [ ] boolean literals
+    - [ ] char literals
+  - [ ] variable management:
+    - [ ] local variable allocation (registers/stack)
+    - [ ] global variable initialization
+    - [ ] handle SSA form for mutable variables
+    - [ ] assignment operations with type-appropriate stores
+  - [ ] expression translation:
+    - [ ] arithmetic operators
+    - [ ] comparison operators
+    - [ ] logical operators via branching
+    - [ ] if-expression codegen (via phi nodes)
+    - [ ] function call argument handling
+  - [ ] control flow:
+    - [ ] basic block management for control structures
+    - [ ] if statements
+    - [ ] for loops with break/continue support
+    - [ ] return statement implementation
+  - [ ] functions:  
+    - [ ] basic function scaffolding (prologue/epilogue)
+    - [ ] parameter passing (register/stack ABI compliance)
+    - [ ] return value management
+    - [ ] external function declarations
+    - [ ] stack frame management
+  - [ ] composite types:
+    - [ ] struct field access (offset calculations)
+    - [ ] nested struct support
+  - [ ] strings:
+    - [ ] string literals in data section
+    - [ ] c-string null termination
+    - [ ] pointer arithmetic for array/string access
+  - [ ] optimizations:
+    - [ ] dce 
+    - [ ] constant propagation
+    - [ ] loop invariant code motion
+  - [ ] debug
+    - [ ] line number annotations for debugging
