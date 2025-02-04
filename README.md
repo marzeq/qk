@@ -17,7 +17,7 @@ you can find the language specification in [the `grammar` file](./grammar) or lo
   - [x] number literals
   - [ ] char literals
   - [ ] string literals
-  - [ ] boolean literals (true, false)
+  - [x] boolean literals (true, false)
 - [ ] parser:
   - [ ] statements:
     - [x] import statements

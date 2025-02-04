@@ -152,7 +152,8 @@ func IsKeyword(w string) bool {
 		w == "if" || w == "else" ||
 		w == "for" || w == "break" || w == "continue" ||
 		w == "return" || w == "import" ||
-		w == "and" || w == "or" || w == "not"
+		w == "and" || w == "or" || w == "not" ||
+		w == "true" || w == "false"
 }
 
 func (t *Tokeniser) Tokenise() ([]Token, error) {

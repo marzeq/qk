@@ -228,23 +228,32 @@ func (p *Parser) ParseTerm() (*Node, error) {
 		return expr, nil
 	}
 
-	if p.Match(tokeniser.TOKEN_TYPE_IDENT, tokeniser.TOKEN_TYPE_NUMBER) {
+	if p.Match(tokeniser.TOKEN_TYPE_IDENT) {
 		id := p.Consume()
 		if p.Match(tokeniser.TOKEN_TYPE_OPEN_PAREN) {
 			return p.ParseFunctionCall(id)
 		}
 
-		if id.Type == tokeniser.TOKEN_TYPE_IDENT {
-			return &Node{
-				Type:  NODE_TYPE_IDENTIFIER,
-				Value: id.Value,
-			}, nil
-		} else {
-			return &Node{
-				Type:  NODE_TYPE_NUMBER_LITERAL,
-				Value: id.Value,
-			}, nil
-		}
+		return &Node{
+			Type:  NODE_TYPE_IDENTIFIER,
+			Value: id.Value,
+		}, nil
+	}
+
+	if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == "true" || p.Peek().Value == "false" {
+		bLit := p.Consume()
+		return &Node{
+			Type:  NODE_TYPE_BOOL_LITERAL,
+			Value: bLit.Value,
+		}, nil
+	}
+
+	if p.Match(tokeniser.TOKEN_TYPE_NUMBER) {
+		nLit := p.Consume()
+		return &Node{
+			Type:  NODE_TYPE_NUMBER_LITERAL,
+			Value: nLit.Value,
+		}, nil
 	}
 
 	return nil, shared.NewError(p.CurrLoc(), "unexpected token %s", p.Peek())

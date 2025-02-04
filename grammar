@@ -28,7 +28,7 @@ comparison            -> additive (('==' | '!=' | '<' | '>' | '<=' | '>=') addit
 additive              -> multiplicative (('+' | '-') multiplicative)*
 multiplicative        -> unary (('*' | '/') unary)*
 unary                 -> '-' unary | term
-term                  -> number | fn_call | ident | if_expr | '(' expression ')'
+term                  -> number_lit | boolean_lit | fn_call | ident | if_expr | '(' expression ')'
 
 /* STATEMENTS */
 stmt_end              -> '\n' | ';'
