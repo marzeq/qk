@@ -40,7 +40,7 @@ you can find the language specification in [the `grammar` file](./grammar) or lo
     - [x] function calls 
     - [x] if expressions
 - [ ] import/module system:
-  - [ ] imports by simple inclusion by filepath during parse time
+  - [x] imports by simple inclusion by filepath during parse time
   - [ ] rewrite solution to use a module system:
     - [ ] resolve imports after parsing
     - [ ] flatten symbols

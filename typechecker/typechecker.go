@@ -1,12 +1,12 @@
 package typechecker
 
 import (
+	"path/filepath"
+
 	"github.com/marzeq/quokka/parser"
 	"github.com/marzeq/quokka/shared"
 	"github.com/marzeq/quokka/tokeniser"
 )
-
-// shorthands
 
 type (
 	Node = parser.Node
@@ -31,49 +31,24 @@ type (
 type TypeChecker struct {
 	VarTable  VarTable
 	FuncTable FuncTable
-	imported  map[string]struct{}
 }
 
 func NewTypeChecker() *TypeChecker {
 	return &TypeChecker{
 		VarTable:  shared.NewSymbolTable[*VarSig](),
 		FuncTable: shared.NewSymbolTable[*FunctionSig](),
-		imported:  make(map[string]struct{}),
 	}
 }
 
 func (tc *TypeChecker) TypeCheck(root *Node) error {
-	for _, node := range root.Children {
-		if node.Type != parser.NODE_TYPE_IMPORT {
-			continue
-		}
-
-		path := node.Right.Value.(string)
-		if _, ok := tc.imported[path]; ok {
-			continue
-		}
-		tc.imported[path] = struct{}{}
-
-		t, err := tokeniser.NewTokeniserFromFile(path)
-		if err != nil {
-			return err
-		}
-		toks, err := t.Tokenise()
-		if err != nil {
-			return err
-		}
-		p := parser.NewParser(toks)
-		ast, err := p.Parse()
-		if err != nil {
-			return err
-		}
-
-		if err := tc.TypeCheck(ast); err != nil {
-			return err
-		}
+	loaded := make(map[string]*Node)
+	recStack := make(map[string]bool)
+	mergedRoot, err := tc.processImports(root, loaded, recStack)
+	if err != nil {
+		return err
 	}
+	root = mergedRoot
 
-	// fill tc.FuncTable without checking so that recursion works
 	for _, node := range root.Children {
 		if node.Type != parser.NODE_TYPE_FUNCTION_DEF {
 			continue
@@ -105,6 +80,67 @@ func (tc *TypeChecker) TypeCheck(root *Node) error {
 	}
 
 	return nil
+}
+
+func (tc *TypeChecker) processImports(root *Node, loaded map[string]*Node, recStack map[string]bool) (*Node, error) {
+	filePath := root.Loc.FilePath
+
+	if recStack[filePath] {
+		return nil, shared.NewError(root.Loc, "import cycle detected for file '%s'", filePath)
+	}
+
+	if merged, ok := loaded[filePath]; ok {
+		return merged, nil
+	}
+
+	recStack[filePath] = true
+
+	merged := &Node{
+		Type:     root.Type,
+		Loc:      root.Loc,
+		Children: []*Node{},
+	}
+
+	for _, node := range root.Children {
+		if node.Type != parser.NODE_TYPE_IMPORT {
+			continue
+		}
+
+		importPath := node.Right.Value.(string)
+
+		resolvedPath := filepath.Join(filepath.Dir(filePath), importPath)
+
+		t, err := tokeniser.NewTokeniserFromFile(resolvedPath)
+		if err != nil {
+			return nil, err
+		}
+		toks, err := t.Tokenise()
+		if err != nil {
+			return nil, err
+		}
+		p := parser.NewParser(toks)
+		ast, err := p.Parse()
+		if err != nil {
+			return nil, err
+		}
+
+		importedMerged, err := tc.processImports(ast, loaded, recStack)
+		if err != nil {
+			return nil, err
+		}
+
+		merged.Children = append(merged.Children, importedMerged.Children...)
+	}
+
+	for _, node := range root.Children {
+		if node.Type != parser.NODE_TYPE_IMPORT {
+			merged.Children = append(merged.Children, node)
+		}
+	}
+
+	loaded[filePath] = merged
+	delete(recStack, filePath)
+	return merged, nil
 }
 
 func (tc *TypeChecker) enterScope() {
@@ -437,7 +473,7 @@ func (tc *TypeChecker) typeCheckFunctionCall(funccallNode *Node) (Type, error) {
 
 	fsig, ok := tc.FuncTable.Lookup(fname)
 	if !ok {
-		return shared.BUILTIN_VOID, shared.NewError(funccallNode.Loc, "undefined function '%s'", fname)
+		return shared.BUILTIN_VOID, shared.NewError(nameNode.Loc, "undefined function '%s'", fname)
 	}
 
 	for i, arg := range funccallNode.Children {

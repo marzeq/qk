@@ -95,7 +95,17 @@ func (p *Parser) Match(ttypes ...tokeniser.TokenType) bool {
 }
 
 func (p *Parser) Parse() (*Node, error) {
-	rootNode := &Node{Type: NODE_TYPE_ROOT}
+	eofTok := p.tokens[len(p.tokens)-1]
+	rootNode := &Node{
+		Type: NODE_TYPE_ROOT,
+		Loc: shared.Location{
+			LC: shared.LineCol{
+				Line: 1,
+				Col:  1,
+			},
+			FilePath: eofTok.Loc.FilePath,
+		},
+	}
 	for !p.Match(tokeniser.TOKEN_TYPE_EOF) {
 		for p.Match(tokeniser.TOKEN_TYPE_NEWLINE, tokeniser.TOKEN_TYPE_SEMICOLON) {
 			p.Inc()
