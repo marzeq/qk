@@ -29,6 +29,6 @@ func main() {
 	_check(err)
 
 	tc := typechecker.NewTypeChecker()
-	err = tc.TypeCheck(ast)
+	ast, err = tc.TypeCheck(ast)
 	_check(err)
 }

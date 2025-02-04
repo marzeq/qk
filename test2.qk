@@ -1,3 +1,0 @@
-import "test.qk"
-
-let y(): void = {}

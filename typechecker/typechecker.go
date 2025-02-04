@@ -40,12 +40,12 @@ func NewTypeChecker() *TypeChecker {
 	}
 }
 
-func (tc *TypeChecker) TypeCheck(root *Node) error {
+func (tc *TypeChecker) TypeCheck(root *Node) (*Node, error) {
 	loaded := make(map[string]*Node)
 	recStack := make(map[string]bool)
 	mergedRoot, err := tc.processImports(root, loaded, recStack)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	root = mergedRoot
 
@@ -56,11 +56,11 @@ func (tc *TypeChecker) TypeCheck(root *Node) error {
 
 		fname, funcSig, err := extractFunctionSig(node)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		if ok := tc.FuncTable.Define(fname, funcSig); !ok {
-			return shared.NewError(node.Loc, "function '%s' is already defined", fname)
+			return nil, shared.NewError(node.Loc, "function '%s' is already defined", fname)
 		}
 	}
 
@@ -74,12 +74,12 @@ func (tc *TypeChecker) TypeCheck(root *Node) error {
 
 		tc.enterScope()
 		if err := tc.typeCheckFunction(node, sig); err != nil {
-			return err
+			return nil, err
 		}
 		tc.exitScope()
 	}
 
-	return nil
+	return mergedRoot, nil
 }
 
 func (tc *TypeChecker) processImports(root *Node, loaded map[string]*Node, recStack map[string]bool) (*Node, error) {
@@ -112,7 +112,12 @@ func (tc *TypeChecker) processImports(root *Node, loaded map[string]*Node, recSt
 
 		t, err := tokeniser.NewTokeniserFromFile(resolvedPath)
 		if err != nil {
-			return nil, err
+			switch err.(type) {
+			case shared.Error:
+				return nil, err
+			default:
+				return nil, shared.NewError(node.Loc, "import failed: %v", err)
+			}
 		}
 		toks, err := t.Tokenise()
 		if err != nil {

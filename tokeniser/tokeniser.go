@@ -1,6 +1,7 @@
 package tokeniser
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/marzeq/quokka/shared"
@@ -18,7 +19,7 @@ type Tokeniser struct {
 func NewTokeniserFromFile(path string) (*Tokeniser, error) {
 	text, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to open file '%s'", path)
 	}
 
 	return &Tokeniser{
