@@ -508,6 +508,18 @@ func (tc *TypeChecker) typeCheckFunctionCall(funccallNode *Node) (Type, error) {
 	nameNode := funccallNode.Value.(*Node)
 	fname := IdentToStr(nameNode)
 
+	// TODO: REMOVE THIS
+	if fname == "_print" {
+		if len(funccallNode.Children) != 1 {
+			return shared.BUILTIN_VOID, shared.NewError(funccallNode.Loc, "temporary '_print' function expects exactly one argument")
+		}
+		_, err := tc.typeCheckExpression(funccallNode.Children[0], shared.BUILTIN_VOID)
+		if err != nil {
+			return shared.BUILTIN_VOID, err
+		}
+		return shared.BUILTIN_VOID, nil
+	}
+
 	fsig, ok := tc.FuncTable.Lookup(fname)
 	if !ok {
 		return shared.BUILTIN_VOID, shared.NewError(nameNode.Loc, "undefined function '%s'", fname)

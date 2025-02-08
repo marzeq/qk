@@ -58,6 +58,9 @@ func (cg *CodeGen) EmitIR() (string, error) {
 		ir += funcIr
 	}
 
+	// TODO: REMOVE THIS
+	ir += "\ndata $printfmt = { b \"%d\\n\", b 0 }"
+
 	return ir, nil
 }
 
@@ -189,19 +192,36 @@ func (cg *CodeGen) GenerateStmtIR(stmtNode *Node, last bool, loopBegin, loopEnd 
 	case parser.NODE_TYPE_FUNCTION_CALL:
 		fname := typechecker.IdentToStr(stmtNode.Value.(*Node))
 		fsig := cg.funcSigs[fname]
-		line = fmt.Sprintf("call $%s(", fsig.Name)
-		for i, arg := range stmtNode.Children {
-			argType := mapTypeToIRType(fsig.ArgTypes[i].R)
+		// TODO: REMOVE THIS
+		if fname == "_print" {
+			line = "call $printf(l $printfmt, ..., "
+			if len(stmtNode.Children) != 1 {
+				return "", nil, shared.NewError(stmtNode.Loc, "temporary '_print' function expects exactly one argument")
+			}
+			arg := stmtNode.Children[0]
+			line += mapTypeToIRType(arg.ExprType) + " "
 			val, stps, err := cg.GenerateExprIR(arg)
 			if err != nil {
 				return "", nil, err
 			}
-			line += fmt.Sprintf("%s %s", argType, val)
-			if i != len(stmtNode.Children)-1 {
-				line += ", "
-			}
+			line += val
 
 			setups = append(setups, stps...)
+		} else {
+			line = fmt.Sprintf("call $%s(", fsig.Name)
+			for i, arg := range stmtNode.Children {
+				argType := mapTypeToIRType(fsig.ArgTypes[i].R)
+				val, stps, err := cg.GenerateExprIR(arg)
+				if err != nil {
+					return "", nil, err
+				}
+				line += fmt.Sprintf("%s %s", argType, val)
+				if i != len(stmtNode.Children)-1 {
+					line += ", "
+				}
+
+				setups = append(setups, stps...)
+			}
 		}
 		line += ")"
 

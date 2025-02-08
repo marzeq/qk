@@ -3,6 +3,7 @@ let gcd(a: u32, b: u32): u32 =
   else { gcd(b, a % b) }
 
 let main(): i32 = {
-  return cast(i32, gcd(48, 18)) -- Should return 6
+  _print(gcd(48, 18))
+  return 0
 }
 
