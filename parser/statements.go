@@ -98,22 +98,24 @@ func (p *Parser) ParseAssignmentBy() (*Node, error) {
 		return nil, shared.NewError(p.PrevLoc(), "expected name")
 	}
 
-	if !p.Match(tokeniser.TOKEN_TYPE_INC_BY, tokeniser.TOKEN_TYPE_DEC_BY, tokeniser.TOKEN_TYPE_MUL_BY, tokeniser.TOKEN_TYPE_DIV_BY) {
-		return nil, shared.NewError(p.PrevLoc(), "expected '+=', '-=', '*=' or '/='")
+	if !p.Match(tokeniser.TOKEN_TYPE_INC_BY, tokeniser.TOKEN_TYPE_DEC_BY, tokeniser.TOKEN_TYPE_MUL_BY, tokeniser.TOKEN_TYPE_DIV_BY, tokeniser.TOKEN_TYPE_MOD_BY) {
+		return nil, shared.NewError(p.PrevLoc(), "expected '+=', '-=', '*=', '/=' or '%%='")
 	}
 
 	opType := p.Consume()
-	var op tokeniser.TokenType
+	op := ""
 
 	switch opType.Type {
 	case tokeniser.TOKEN_TYPE_INC_BY:
-		op = tokeniser.TOKEN_TYPE_PLUS
+		op = "+"
 	case tokeniser.TOKEN_TYPE_DEC_BY:
-		op = tokeniser.TOKEN_TYPE_MINUS
+		op = "-"
 	case tokeniser.TOKEN_TYPE_MUL_BY:
-		op = tokeniser.TOKEN_TYPE_ASTERISK
+		op = "*"
 	case tokeniser.TOKEN_TYPE_DIV_BY:
-		op = tokeniser.TOKEN_TYPE_SLASH
+		op = "/"
+	case tokeniser.TOKEN_TYPE_MOD_BY:
+		op = "%"
 	}
 
 	for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
@@ -156,7 +158,7 @@ func (p *Parser) ParseBlock() (*Node, error) {
 
 	var children []*Node
 	for !p.Match(tokeniser.TOKEN_TYPE_CLOSE_CURLY, tokeniser.TOKEN_TYPE_EOF) {
-		stmt, err := p.ParseStatement()
+		stmt, semiNeeded, err := p.ParseStatement()
 		if err != nil {
 			return nil, err
 		}
@@ -166,7 +168,7 @@ func (p *Parser) ParseBlock() (*Node, error) {
 			break
 		}
 
-		if !p.Match(tokeniser.TOKEN_TYPE_SEMICOLON, tokeniser.TOKEN_TYPE_NEWLINE) {
+		if semiNeeded && !p.Match(tokeniser.TOKEN_TYPE_SEMICOLON, tokeniser.TOKEN_TYPE_NEWLINE) {
 			return nil, shared.NewError(p.CurrLoc(), "expected ';' or '\\n' to end statement")
 		}
 
@@ -300,32 +302,38 @@ func (p *Parser) ParseImport() (*Node, error) {
 	}, nil
 }
 
-func (p *Parser) ParseStatement() (*Node, error) {
+func (p *Parser) ParseStatement() (*Node, bool, error) { // bool is whether semicolon is required after
 	if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) {
 		kw := p.Peek().Value
 		switch kw {
 		case "let":
 			p.Inc()
 			if !p.Expect(tokeniser.TOKEN_TYPE_IDENT) {
-				return nil, shared.NewError(p.PrevLoc(), "expected name")
+				return nil, false, shared.NewError(p.PrevLoc(), "expected name")
 			}
 			p.Dec()
 			isParen := p.Next().Type == tokeniser.TOKEN_TYPE_OPEN_PAREN
 			p.Dec()
 			if isParen {
-				return p.ParseFunctionDefinition()
+				node, err := p.ParseFunctionDefinition()
+				return node, true, err
 			}
-			return p.ParseDeclaration()
+			node, err := p.ParseDeclaration()
+			return node, true, err
 		case "var":
-			return p.ParseDeclaration()
+			node, err := p.ParseDeclaration()
+			return node, true, err
 		case "return", "naked_return", "break", "continue":
-			return p.ParseControlKeyword()
+			node, err := p.ParseControlKeyword()
+			return node, true, err
 		case "if":
-			return p.ParseIfStatement()
+			node, err := p.ParseIfStatement()
+			return node, false, err
 		case "for":
-			return p.ParseForLoop()
+			node, err := p.ParseForLoop()
+			return node, false, err
 		default:
-			return nil, shared.NewError(p.CurrLoc(), "unexpected keyword: %s", kw)
+			return nil, false, shared.NewError(p.CurrLoc(), "unexpected keyword: %s", kw)
 		}
 	}
 
@@ -334,22 +342,26 @@ func (p *Parser) ParseStatement() (*Node, error) {
 
 		if p.Match(tokeniser.TOKEN_TYPE_EQUALS) {
 			p.Dec()
-			return p.ParseAssignment()
+			node, err := p.ParseAssignment()
+			return node, true, err
 		} else if p.Match(tokeniser.TOKEN_TYPE_INC_BY, tokeniser.TOKEN_TYPE_DEC_BY, tokeniser.TOKEN_TYPE_MUL_BY, tokeniser.TOKEN_TYPE_DIV_BY) {
 			p.Dec()
-			return p.ParseAssignmentBy()
+			node, err := p.ParseAssignmentBy()
+			return node, true, err
 		} else if p.Match(tokeniser.TOKEN_TYPE_OPEN_PAREN) {
-			return p.ParseFunctionCall(ident)
+			node, err := p.ParseFunctionCall(ident)
+			return node, true, err
 		}
 
-		return nil, shared.NewError(p.CurrLoc(), "unexpected token after identifier %s", p.Peek())
+		return nil, false, shared.NewError(p.CurrLoc(), "unexpected token after identifier %s", p.Peek())
 	}
 
 	if p.Match(tokeniser.TOKEN_TYPE_OPEN_CURLY) {
-		return p.ParseBlock()
+		node, err := p.ParseBlock()
+		return node, true, err
 	}
 
-	return nil, shared.NewError(p.CurrLoc(), "unexpected token %s", p.Peek())
+	return nil, false, shared.NewError(p.CurrLoc(), "unexpected token %s", p.Peek())
 }
 
 func (p *Parser) ParseIfStatement() (*Node, error) {
@@ -485,7 +497,7 @@ func (p *Parser) ParseForLoop() (*Node, error) {
 	for !p.Match(tokeniser.TOKEN_TYPE_OPEN_CURLY) {
 		ogLoc := p.CurrLoc()
 		ogPos := p.pos
-		exOrSt, err := p.ParseStatement()
+		exOrSt, _, err := p.ParseStatement()
 		if err != nil {
 			p.pos = ogPos
 			exOrSt, err = p.ParseExpression()

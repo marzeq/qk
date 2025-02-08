@@ -82,8 +82,14 @@ Node types:
 
 {
   Type:  BINARY_OP
-  Value: "==" | "!=" | ">" | ">=" | "<" | "<=" | "+" | "-" | "*" | "/" | "and" | "or"
+  Value: "==" | "!=" | ">" | ">=" | "<" | "<=" | "+" | "-" | "*" | "/" | "%" | "and" | "or"
   Left:  expression
+  Right: expression
+}
+
+{
+  Type: CAST
+  Left: IDENTIFIER Node
   Right: expression
 }
 
@@ -106,11 +112,18 @@ Node types:
 {
   Type: IF_EXPRESSION
   Value: {
-    IfBranch: expression 
+    IfBranch: {
+      Condition: expression
+      Node: expression
+    }
     ElseIfBranches: {
-      Condition: expression | nil
+      Condition: expression
       Node: expression
     }[]
+    ElseBranch: {
+      Condition: nil
+      Node: expression
+    }
   }
 }
 ```

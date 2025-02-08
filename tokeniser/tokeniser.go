@@ -50,7 +50,7 @@ func (t *Tokeniser) Next() rune {
 }
 
 func (t *Tokeniser) Inc() *Tokeniser {
-	if t.Peek() == '\n' {
+	if t.Next() == '\n' {
 		t.line++
 		t.col = 1
 	} else if t.Peek() != '\r' {
@@ -202,7 +202,8 @@ func IsKeyword(w string) bool {
 		w == "for" || w == "break" || w == "continue" ||
 		w == "return" || w == "import" ||
 		w == "and" || w == "or" || w == "not" ||
-		w == "true" || w == "false"
+		w == "true" || w == "false" ||
+		w == "cast"
 }
 
 func (t *Tokeniser) Tokenise() ([]Token, error) {
@@ -356,6 +357,15 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 				t.Inc().Inc()
 			} else {
 				t.AddToken(TOKEN_TYPE_SLASH, t.GetLoc())
+				t.Inc()
+			}
+			continue
+		case '%':
+			if t.Next() == '=' {
+				t.AddToken(TOKEN_TYPE_MOD_BY, t.GetLoc())
+				t.Inc().Inc()
+			} else {
+				t.AddToken(TOKEN_TYPE_PERCENT, t.GetLoc())
 				t.Inc()
 			}
 			continue

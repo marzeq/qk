@@ -23,6 +23,8 @@ const (
 	NODE_TYPE_UNARY_OP
 	NODE_TYPE_BINARY_OP
 
+	NODE_TYPE_CAST
+
 	// STATEMENTS
 
 	NODE_TYPE_IMPORT
@@ -45,7 +47,8 @@ func (nt NodeType) IsExpression() bool {
 		nt == NODE_TYPE_FUNCTION_CALL ||
 		nt == NODE_TYPE_IF_EXPR ||
 		nt == NODE_TYPE_UNARY_OP ||
-		nt == NODE_TYPE_BINARY_OP
+		nt == NODE_TYPE_BINARY_OP ||
+		nt == NODE_TYPE_CAST
 }
 
 func (nt NodeType) IsStatement() bool {
@@ -72,6 +75,8 @@ func (nt NodeType) String() string {
 		return "UNARY_OP"
 	case NODE_TYPE_BINARY_OP:
 		return "BINARY_OP"
+	case NODE_TYPE_CAST:
+		return "CAST"
 	case NODE_TYPE_IF:
 		return "IF"
 	case NODE_TYPE_IF_EXPR:

@@ -18,6 +18,7 @@ comment @ignore       -> '--' .*$
 fn_call               -> ident '(' (expression),* ')'
 block_expr            -> '{' expression '}'
 if_expr               -> 'if' expression block_expr ('else' 'if' expression block_expr)* 'else' expression block_expr
+cast                  -> 'cast' '(' ident(type) ',' expression ')' 
 
 /* Expression hierarchy */
 expression            -> logical_or
@@ -26,9 +27,9 @@ logical_and           -> logical_not ('and' logical_not)*
 logical_not           -> 'not'? (logical_not | comparison)
 comparison            -> additive (('==' | '!=' | '<' | '>' | '<=' | '>=') additive)*
 additive              -> multiplicative (('+' | '-') multiplicative)*
-multiplicative        -> unary (('*' | '/') unary)*
+multiplicative        -> unary (('*' | '/' | '%') unary)*
 unary                 -> '-' unary | term
-term                  -> number_lit | boolean_lit | fn_call | ident | if_expr | '(' expression ')'
+term                  -> number_lit | boolean_lit | fn_call | ident | if_expr | cast | '(' expression ')'
 
 /* STATEMENTS */
 stmt_end              -> '\n' | ';'
@@ -41,11 +42,13 @@ reassign_plus         -> ident '+=' expression
 reassign_minus        -> ident '-=' expression
 reassign_mul          -> ident '*=' expression
 reassign_div          -> ident '/=' expression
+reassign_mod          -> ident '%=' expression
+reassign_by           -> reassign_plus | reassign_minus | reassign_mul | reassign_div | reassign_mod
 if_statement          -> 'if' expression block ('else' 'if' expression block)* ('else' expression block)?
 control_keyword       -> 'break' | 'continue' | 'return' expression | 'return'
-for                   -> 'for' (let_decl | var_decl | reassign | expression)*; block
+for                   -> 'for' (let_decl | var_decl | reassign | reassign_by | expression)*; block
 
-stmt                  -> let_decl | var_decl | fn_decl | reassign | fn_call | control_keyword | block | for | if_statement
+stmt                  -> let_decl | var_decl | fn_decl | reassign | reassign_by | fn_call | control_keyword | block | for | if_statement
 
 /* FUNCTIONS */
 arg                   -> ident ':' ident(type)

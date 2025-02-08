@@ -52,6 +52,8 @@ func (t Token) String() string {
 		return "*"
 	case TOKEN_TYPE_SLASH:
 		return "/"
+	case TOKEN_TYPE_PERCENT:
+		return "%"
 	case TOKEN_TYPE_INC_BY:
 		return "+="
 	case TOKEN_TYPE_DEC_BY:
@@ -60,6 +62,8 @@ func (t Token) String() string {
 		return "*="
 	case TOKEN_TYPE_DIV_BY:
 		return "/="
+	case TOKEN_TYPE_MOD_BY:
+		return "%="
 	case TOKEN_TYPE_SEMICOLON:
 		return ";"
 	case TOKEN_TYPE_COMMA:
@@ -101,11 +105,13 @@ const (
 	TOKEN_TYPE_MINUS
 	TOKEN_TYPE_ASTERISK
 	TOKEN_TYPE_SLASH
+	TOKEN_TYPE_PERCENT
 
 	TOKEN_TYPE_INC_BY
 	TOKEN_TYPE_DEC_BY
 	TOKEN_TYPE_MUL_BY
 	TOKEN_TYPE_DIV_BY
+	TOKEN_TYPE_MOD_BY
 
 	TOKEN_TYPE_SEMICOLON
 	TOKEN_TYPE_COMMA

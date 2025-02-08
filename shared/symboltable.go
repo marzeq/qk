@@ -24,6 +24,10 @@ func (st *SymbolTable[T]) ExitScope() {
 	}
 }
 
+func (st *SymbolTable[T]) GetScope() map[string]T {
+	return st.scopes[len(st.scopes)-1]
+}
+
 func (st *SymbolTable[T]) Define(name string, value T) bool {
 	currentScope := st.scopes[len(st.scopes)-1]
 	if _, ok := st.Lookup(name); ok {

@@ -17,7 +17,7 @@ func (p *Parser) ParseLogicalOr() (*Node, error) {
 	}
 
 	for p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == "or" {
-		op := p.Consume()
+		p.Inc()
 
 		for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
 			p.Inc()
@@ -29,7 +29,7 @@ func (p *Parser) ParseLogicalOr() (*Node, error) {
 		}
 		left = &Node{
 			Type:  NODE_TYPE_BINARY_OP,
-			Value: op.Value,
+			Value: "or",
 			Left:  left,
 			Right: right,
 			Loc:   beginLoc,
@@ -47,7 +47,7 @@ func (p *Parser) ParseLogicalAnd() (*Node, error) {
 	}
 
 	for p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == "and" {
-		op := p.Consume()
+		p.Inc()
 
 		for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
 			p.Inc()
@@ -59,7 +59,7 @@ func (p *Parser) ParseLogicalAnd() (*Node, error) {
 		}
 		left = &Node{
 			Type:  NODE_TYPE_BINARY_OP,
-			Value: op.Value,
+			Value: "and",
 			Left:  left,
 			Right: right,
 			Loc:   beginLoc,
@@ -72,7 +72,7 @@ func (p *Parser) ParseLogicalAnd() (*Node, error) {
 func (p *Parser) ParseLogicalNot() (*Node, error) {
 	beginLoc := p.CurrLoc()
 	if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == "not" {
-		op := p.Consume()
+		p.Inc()
 
 		for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
 			p.Inc()
@@ -85,7 +85,7 @@ func (p *Parser) ParseLogicalNot() (*Node, error) {
 
 		return &Node{
 			Type:  NODE_TYPE_UNARY_OP,
-			Value: op.Value,
+			Value: "not",
 			Right: expr,
 			Loc:   beginLoc,
 		}, nil
@@ -97,7 +97,7 @@ func (p *Parser) ParseLogicalNot() (*Node, error) {
 func (p *Parser) ParseUnary() (*Node, error) {
 	beginLoc := p.CurrLoc()
 	if p.Match(tokeniser.TOKEN_TYPE_MINUS) {
-		op := p.Consume()
+		p.Inc()
 
 		for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
 			p.Inc()
@@ -110,7 +110,7 @@ func (p *Parser) ParseUnary() (*Node, error) {
 
 		return &Node{
 			Type:  NODE_TYPE_UNARY_OP,
-			Value: op.Type,
+			Value: "-",
 			Right: expr,
 			Loc:   beginLoc,
 		}, nil
@@ -128,7 +128,20 @@ func (p *Parser) ParseComparison() (*Node, error) {
 
 	for p.Match(tokeniser.TOKEN_TYPE_EQUALS_EQUALS, tokeniser.TOKEN_TYPE_NOT_EQUALS, tokeniser.TOKEN_TYPE_LESS, tokeniser.TOKEN_TYPE_GREATER, tokeniser.TOKEN_TYPE_LESS_EQUALS, tokeniser.TOKEN_TYPE_GREATER_EQUALS) {
 		op := p.Consume()
-
+		val := ""
+		if op.Type == tokeniser.TOKEN_TYPE_EQUALS_EQUALS {
+			val = "=="
+		} else if op.Type == tokeniser.TOKEN_TYPE_NOT_EQUALS {
+			val = "!="
+		} else if op.Type == tokeniser.TOKEN_TYPE_LESS {
+			val = "<"
+		} else if op.Type == tokeniser.TOKEN_TYPE_GREATER {
+			val = ">"
+		} else if op.Type == tokeniser.TOKEN_TYPE_LESS_EQUALS {
+			val = "<="
+		} else if op.Type == tokeniser.TOKEN_TYPE_GREATER_EQUALS {
+			val = ">="
+		}
 		for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
 			p.Inc()
 		}
@@ -139,7 +152,7 @@ func (p *Parser) ParseComparison() (*Node, error) {
 		}
 		left = &Node{
 			Type:  NODE_TYPE_BINARY_OP,
-			Value: op.Type,
+			Value: val,
 			Left:  left,
 			Right: right,
 			Loc:   beginLoc,
@@ -158,6 +171,12 @@ func (p *Parser) ParseAddSub() (*Node, error) {
 
 	for p.Match(tokeniser.TOKEN_TYPE_PLUS, tokeniser.TOKEN_TYPE_MINUS) {
 		op := p.Consume()
+		val := ""
+		if op.Type == tokeniser.TOKEN_TYPE_PLUS {
+			val = "+"
+		} else {
+			val = "-"
+		}
 
 		for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
 			p.Inc()
@@ -169,7 +188,7 @@ func (p *Parser) ParseAddSub() (*Node, error) {
 		}
 		left = &Node{
 			Type:  NODE_TYPE_BINARY_OP,
-			Value: op.Type,
+			Value: val,
 			Left:  left,
 			Right: right,
 			Loc:   beginLoc,
@@ -186,9 +205,16 @@ func (p *Parser) ParseMulDiv() (*Node, error) {
 		return nil, err
 	}
 
-	for p.Match(tokeniser.TOKEN_TYPE_ASTERISK, tokeniser.TOKEN_TYPE_SLASH) {
+	for p.Match(tokeniser.TOKEN_TYPE_ASTERISK, tokeniser.TOKEN_TYPE_SLASH, tokeniser.TOKEN_TYPE_PERCENT) {
 		op := p.Consume()
-
+		val := ""
+		if op.Type == tokeniser.TOKEN_TYPE_ASTERISK {
+			val = "*"
+		} else if op.Type == tokeniser.TOKEN_TYPE_SLASH {
+			val = "/"
+		} else {
+			val = "%"
+		}
 		for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
 			p.Inc()
 		}
@@ -199,7 +225,7 @@ func (p *Parser) ParseMulDiv() (*Node, error) {
 		}
 		left = &Node{
 			Type:  NODE_TYPE_BINARY_OP,
-			Value: op.Type,
+			Value: val,
 			Left:  left,
 			Right: right,
 			Loc:   beginLoc,
@@ -213,6 +239,15 @@ func (p *Parser) ParseTerm() (*Node, error) {
 	beginLoc := p.CurrLoc()
 	if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == "if" {
 		expr, err := p.ParseIfExpression()
+		if err != nil {
+			return nil, err
+		}
+
+		return expr, nil
+	}
+
+	if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == "cast" {
+		expr, err := p.ParseCast()
 		if err != nil {
 			return nil, err
 		}
@@ -275,6 +310,52 @@ func (p *Parser) ParseTerm() (*Node, error) {
 	}
 
 	return nil, shared.NewError(p.CurrLoc(), "unexpected token %s", p.Peek())
+}
+
+func (p *Parser) ParseCast() (*Node, error) {
+	beginLoc := p.CurrLoc()
+
+	if t, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_KEYWORD); !ok || t.Value != "cast" {
+		return nil, shared.NewError(beginLoc, "expected 'cast' keyword")
+	}
+
+	if !p.Expect(tokeniser.TOKEN_TYPE_OPEN_PAREN) {
+		return nil, shared.NewError(p.PrevLoc(), "expected '(")
+	}
+	for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
+		p.Inc()
+	}
+
+	tpe, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_IDENT)
+	if !ok {
+		return nil, shared.NewError(p.PrevLoc(), "expected type name")
+	}
+
+	if !p.Expect(tokeniser.TOKEN_TYPE_COMMA) {
+		return nil, shared.NewError(p.PrevLoc(), "expected ','")
+	}
+	for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
+		p.Inc()
+	}
+
+	expr, err := p.ParseExpression()
+	if err != nil {
+		return nil, err
+	}
+
+	for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
+		p.Inc()
+	}
+	if !p.Expect(tokeniser.TOKEN_TYPE_CLOSE_PAREN) {
+		return nil, shared.NewError(p.PrevLoc(), "expected ')")
+	}
+
+	return &Node{
+		Type:  NODE_TYPE_CAST,
+		Left:  &Node{Type: NODE_TYPE_IDENTIFIER, Value: tpe.Value},
+		Right: expr,
+		Loc:   beginLoc,
+	}, nil
 }
 
 func (p *Parser) ParseFunctionCall(name tokeniser.Token) (*Node, error) {

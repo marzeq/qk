@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/marzeq/quokka/codegen"
 	"github.com/marzeq/quokka/parser"
 	"github.com/marzeq/quokka/tokeniser"
 	"github.com/marzeq/quokka/typechecker"
@@ -29,6 +30,13 @@ func main() {
 	_check(err)
 
 	tc := typechecker.NewTypeChecker()
-	ast, err = tc.TypeCheck(ast)
+	ast, funcTable, err := tc.TypeCheck(ast)
 	_check(err)
+
+	cg := codegen.NewCodeGen(ast, funcTable)
+	ir, err := cg.EmitIR()
+	_check(err)
+
+	os.Mkdir("build", 0755)
+	os.WriteFile("build/test.ir", []byte(ir), 0644)
 }

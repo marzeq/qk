@@ -77,33 +77,28 @@ you can find the language specification in [the `grammar` file](./grammar) or lo
     - [x] identifiers
     - [x] function calls 
     - [x] if expressions
-- [ ] QBE IR generation:
-  - [ ] primitives and literals:
-    - [ ] map integer types to QBE types
-    - [ ] boolean literals
+- [x] QBE IR generation:
+  - [x] primitives and literals:
+    - [x] map integer types to QBE types
+    - [x] boolean literals
     - [ ] char literals
-  - [ ] variable management:
-    - [ ] local variable allocation (registers/stack)
-    - [ ] global variable initialization
-    - [ ] handle SSA form for mutable variables
-    - [ ] assignment operations with type-appropriate stores
-  - [ ] expression translation:
-    - [ ] arithmetic operators
-    - [ ] comparison operators
-    - [ ] logical operators via branching
-    - [ ] if-expression codegen (via phi nodes)
-    - [ ] function call argument handling
-  - [ ] control flow:
-    - [ ] basic block management for control structures
-    - [ ] if statements
-    - [ ] for loops with break/continue support
-    - [ ] return statement implementation
-  - [ ] functions:  
-    - [ ] basic function scaffolding (prologue/epilogue)
-    - [ ] parameter passing (register/stack ABI compliance)
-    - [ ] return value management
+  - [x] variable management
+  - [x] expression translation:
+    - [x] arithmetic operators
+    - [x] comparison operators
+    - [x] logical operator
+    - [x] if-expression codegen
+    - [x] function call argument handling
+  - [x] control flow:
+    - [x] basic block management for control structures
+    - [x] if statements
+    - [x] for loops with break/continue support
+    - [x] return statement implementation
+  - [x] functions:  
+    - [x] basic function scaffolding (prologue/epilogue)
+    - [x] parameter passing
+    - [x] return value management
     - [ ] external function declarations
-    - [ ] stack frame management
   - [ ] composite types:
     - [ ] struct field access (offset calculations)
     - [ ] nested struct support
@@ -111,9 +106,5 @@ you can find the language specification in [the `grammar` file](./grammar) or lo
     - [ ] string literals in data section
     - [ ] c-string null termination
     - [ ] pointer arithmetic for array/string access
-  - [ ] optimizations:
-    - [ ] dce 
-    - [ ] constant propagation
-    - [ ] loop invariant code motion
   - [ ] debug
     - [ ] line number annotations for debugging
