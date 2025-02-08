@@ -178,7 +178,7 @@ func (tc *TypeChecker) typeCheckFunction(funcNode *Node, sig *FunctionSig) error
 	}
 
 	if body.Type == parser.NODE_TYPE_BLOCK {
-		_, err := tc.typeCheckBlock(body, sig, false, false)
+		_, err := tc.typeCheckBlock(body, sig, false, true)
 		return err
 	}
 
@@ -701,7 +701,7 @@ func (tc *TypeChecker) typeCheckIfStatement(ifNode *Node, sig *FunctionSig, isLo
 	if err != nil {
 		return false, err
 	}
-	alwaysReturns := ifReturns
+	alwaysReturns := ifReturns && value.ElseBranch != nil
 
 	for _, elseIfBranch := range value.ElseIfBranches {
 		elseIfCondType, err := tc.typeCheckExpression(elseIfBranch.Condition, shared.BUILTIN_BOOL)

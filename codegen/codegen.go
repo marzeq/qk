@@ -102,6 +102,12 @@ func (cg *CodeGen) GenerateFuncIR(funcNode *Node) (string, error) {
 			return "", err
 		}
 		body = b
+
+		if len(child.Children) > 1 &&
+			child.Children[len(child.Children)-1].Type == parser.NODE_TYPE_IF &&
+			fsig.RetType != shared.BUILTIN_VOID { // case when every if body returns
+			epilogue = "ret 0" + epilogue
+		}
 	} else {
 		val, setups, err := cg.GenerateExprIR(child)
 		if err != nil {

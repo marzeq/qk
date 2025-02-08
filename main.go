@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
+	"path"
 
 	"github.com/marzeq/quokka/codegen"
 	"github.com/marzeq/quokka/parser"
@@ -17,8 +19,28 @@ func _check(err error) {
 	}
 }
 
+func runCmd(args ...string) error {
+	if len(args) == 0 {
+		return nil
+	}
+	cmd := exec.Command(args[0], args[1:]...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err := cmd.Run()
+	return err
+}
+
 func main() {
-	t, err := tokeniser.NewTokeniserFromFile("test.qk")
+	if len(os.Args) != 3 {
+		fmt.Println("Usage: quokka [src file] [output binary]")
+		return
+	}
+
+	srcfile := os.Args[1]
+	binfile := os.Args[2]
+	binname := path.Base(binfile)
+
+	t, err := tokeniser.NewTokeniserFromFile(srcfile)
 	_check(err)
 
 	toks, err := t.Tokenise()
@@ -38,5 +60,8 @@ func main() {
 	_check(err)
 
 	os.Mkdir("build", 0755)
-	os.WriteFile("build/test.ir", []byte(ir), 0644)
+	os.WriteFile(fmt.Sprintf("build/%s.ssa", binname), []byte(ir), 0644)
+
+	_check(runCmd("qbe", "-o", "build/"+binname+".s", "build/"+binname+".ssa"))
+	_check(runCmd("cc", "-o", binfile, "build/"+binname+".s"))
 }

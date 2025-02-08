@@ -98,7 +98,6 @@ you can find the language specification in [the `grammar` file](./grammar) or lo
     - [x] basic function scaffolding (prologue/epilogue)
     - [x] parameter passing
     - [x] return value management
-    - [ ] external function declarations
   - [ ] composite types:
     - [ ] struct field access (offset calculations)
     - [ ] nested struct support
