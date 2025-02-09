@@ -121,6 +121,38 @@ func (t *Tokeniser) ReadNumber() (string, error) {
 	return s, nil
 }
 
+func (t *Tokeniser) HanldeEscape() (string, error) {
+	c := t.Consume()
+	if c != '\\' {
+		return string(c), nil
+	} else {
+		switch t.Consume() {
+		case '\\':
+			return "\\", nil
+		case '"':
+			return "\"", nil
+		case 'n':
+			return "\n", nil
+		case 'r':
+			return "\r", nil
+		case 't':
+			return "\t", nil
+		case 'b':
+			return "\b", nil
+		case 'f':
+			return "\f", nil
+		case 'v':
+			return "\v", nil
+		case 'a':
+			return "\a", nil
+		case '0':
+			return string(rune(0)), nil
+		default:
+			return "", shared.NewError(t.GetLoc(), "invalid escape sequence")
+		}
+	}
+}
+
 func (t *Tokeniser) ReadString() (string, error) {
 	s := ""
 
@@ -130,35 +162,11 @@ func (t *Tokeniser) ReadString() (string, error) {
 	t.Inc()
 
 	for t.Peek() != '"' && t.Peek() != '\n' {
-		if t.Peek() == '\\' {
-			switch t.Consume() {
-			case '\\':
-				s += "\\"
-			case '"':
-				s += "\""
-			case 'n':
-				s += "\n"
-			case 'r':
-				s += "\r"
-			case 't':
-				s += "\t"
-			case 'b':
-				s += "\b"
-			case 'f':
-				s += "\f"
-			case 'v':
-				s += "\v"
-			case 'a':
-				s += "\a"
-			case '0':
-				s += string(rune(0))
-			default:
-				return "", shared.NewError(t.GetLoc(), "invalid escape sequence")
-			}
-			t.Inc()
-		} else {
-			s += string(t.Consume())
+		ch, err := t.HanldeEscape()
+		if err != nil {
+			return "", err
 		}
+		s += ch
 	}
 
 	if t.Peek() != '"' {
@@ -380,6 +388,21 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 		case ':':
 			t.AddToken(TOKEN_TYPE_COLON, t.GetLoc())
 			t.Inc()
+			continue
+		case '\'':
+			loc := t.GetLoc()
+			t.Inc()
+			ch, err := t.HanldeEscape()
+			if err != nil {
+				return nil, err
+			}
+			if ch == "\n" {
+				return nil, shared.NewError(loc, "Unexpected newline in char literal")
+			}
+			if t.Consume() != '\'' {
+				return nil, shared.NewError(loc, "Expected ' to end char literal")
+			}
+			t.AddToken(TOKEN_TYPE_CHAR, loc, ch)
 			continue
 		}
 

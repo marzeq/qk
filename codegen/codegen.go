@@ -2,6 +2,7 @@ package codegen
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/marzeq/quokka/parser"
@@ -380,6 +381,9 @@ func (cg *CodeGen) GenerateExprIR(exprNode *Node) (string, []string, error) {
 	case parser.NODE_TYPE_NUMBER_LITERAL:
 		val = exprNode.Value.(string)
 
+	case parser.NODE_TYPE_CHAR_LITERAL:
+		val = strconv.Itoa(int(exprNode.Value.(byte)))
+
 	case parser.NODE_TYPE_BOOL_LITERAL:
 		if exprNode.Value.(string) == "true" {
 			val = "1"
@@ -649,6 +653,8 @@ func mapTypeToIRType(t Type) string {
 	case shared.BUILTIN_VOID:
 		return ""
 	case shared.BUILTIN_BOOL:
+		return "w"
+	case shared.BUILTIN_CHAR:
 		return "w"
 	case shared.BUILTIN_I8, shared.BUILTIN_U8:
 		return "w"

@@ -11,11 +11,11 @@ you can find the language specification in [the `grammar` file](./grammar) or lo
 
 ## roadmap
 
-- [ ] tokeniser:
+- [x] tokeniser:
   - [x] various punctuation tokens
   - [x] keyword/identifier tokens
   - [x] number literals
-  - [ ] char literals
+  - [x] char literals
   - [x] string literals
   - [x] boolean literals (true, false)
 - [ ] parser:
@@ -36,7 +36,7 @@ you can find the language specification in [the `grammar` file](./grammar) or lo
     - [x] *, / operators
     - [x] negation operator
     - [x] number literals
-    - [ ] char literals
+    - [x] char literals
     - [ ] string literals
     - [x] boolean literals
     - [ ] struct literals
@@ -49,7 +49,7 @@ you can find the language specification in [the `grammar` file](./grammar) or lo
 - [ ] type system:
   - [x] signed and unsigned integers
   - [x] booleans
-  - [ ] chars
+  - [x] chars
   - [ ] strings and cstrings
   - [x] void for function return types
   - [ ] structs
@@ -70,18 +70,18 @@ you can find the language specification in [the `grammar` file](./grammar) or lo
     - [x] *, / operators
     - [x] negation operator
     - [x] number literals
-    - [ ] char literals
+    - [x] char literals
     - [ ] string literals
     - [x] boolean literals
     - [ ] struct literals
     - [x] identifiers
     - [x] function calls 
     - [x] if expressions
-- [x] QBE IR generation:
+- [ ] QBE IR generation:
   - [x] primitives and literals:
     - [x] map integer types to QBE types
     - [x] boolean literals
-    - [ ] char literals
+    - [x] char literals
   - [x] variable management
   - [x] expression translation:
     - [x] arithmetic operators

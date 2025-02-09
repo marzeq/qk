@@ -23,6 +23,11 @@ Node types:
 }
 
 {
+  Type: CHAR_LITERAL 
+  Value: byte
+}
+
+{
   Type: BLOCK
   Children: STATEMENT Node[]
 }

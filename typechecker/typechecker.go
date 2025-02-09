@@ -336,6 +336,9 @@ func (tc *TypeChecker) typeCheckExpression(exprNode *Node, expectedType Type) (T
 		exprNode.ExprType = exprType
 		return exprType, nil
 
+	case parser.NODE_TYPE_CHAR_LITERAL:
+		return shared.BUILTIN_CHAR, nil
+
 	case parser.NODE_TYPE_BOOL_LITERAL:
 		exprNode.ExprType = shared.BUILTIN_BOOL
 		return shared.BUILTIN_BOOL, nil

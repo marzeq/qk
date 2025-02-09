@@ -1,4 +1,5 @@
 let main(): i32 = {
+  let b = 'a'
   let a: i32 = 0
 
   if a == 0 {

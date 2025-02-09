@@ -18,29 +18,33 @@ const (
 	BUILTIN_I64 Type = "i64"
 
 	BUILTIN_BOOL Type = "bool"
+
+	BUILTIN_CHAR Type = "char"
 )
 
 func ResolveType(name string) (Type, bool) {
-	if name == "void" {
+	if name == string(BUILTIN_VOID) {
 		return BUILTIN_VOID, true
-	} else if name == "u8" {
+	} else if name == string(BUILTIN_U8) {
 		return BUILTIN_U8, true
-	} else if name == "u16" {
+	} else if name == string(BUILTIN_U16) {
 		return BUILTIN_U16, true
-	} else if name == "u32" {
+	} else if name == string(BUILTIN_U32) {
 		return BUILTIN_U32, true
-	} else if name == "u64" {
+	} else if name == string(BUILTIN_U64) {
 		return BUILTIN_U64, true
-	} else if name == "i8" {
+	} else if name == string(BUILTIN_I8) {
 		return BUILTIN_I8, true
-	} else if name == "i16" {
+	} else if name == string(BUILTIN_I16) {
 		return BUILTIN_I16, true
-	} else if name == "i32" {
+	} else if name == string(BUILTIN_I32) {
 		return BUILTIN_I32, true
-	} else if name == "i64" {
+	} else if name == string(BUILTIN_I64) {
 		return BUILTIN_I64, true
-	} else if name == "bool" {
+	} else if name == string(BUILTIN_BOOL) {
 		return BUILTIN_BOOL, true
+	} else if name == string(BUILTIN_CHAR) {
+		return BUILTIN_CHAR, true
 	}
 
 	return BUILTIN_VOID, false
@@ -65,6 +69,13 @@ func AreCompatibleTypes(a, b Type) (bool, Type) {
 
 	if IsNumericType(a) && IsNumericType(b) {
 		return AreCompatibleNumericTypes(a, b)
+	}
+
+	if (a == BUILTIN_BOOL || a == BUILTIN_CHAR) && IsNumericType(b) {
+		return true, b
+	}
+	if (b == BUILTIN_BOOL || b == BUILTIN_CHAR) && IsNumericType(a) {
+		return true, a
 	}
 
 	if IsUntypedNumeric(a) && IsNumericType(b) {
