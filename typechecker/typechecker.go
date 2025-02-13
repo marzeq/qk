@@ -79,11 +79,13 @@ func (tc *TypeChecker) TypeCheck(root *Node) (*Node, map[string]*FunctionSig, er
 		name := IdentToStr(node.Value.(*parser.FunctionValue).Name)
 		sig, _ := tc.FuncTable.Lookup(name)
 
-		tc.enterScope()
-		if err := tc.typeCheckFunction(node, sig); err != nil {
-			return nil, nil, err
+		if len(node.Children) != 0 {
+			tc.enterScope()
+			if err := tc.typeCheckFunction(node, sig); err != nil {
+				return nil, nil, err
+			}
+			tc.exitScope()
 		}
-		tc.exitScope()
 	}
 
 	return mergedRoot, tc.FuncTable.GetScope(), nil
@@ -339,6 +341,9 @@ func (tc *TypeChecker) typeCheckExpression(exprNode *Node, expectedType Type) (T
 	case parser.NODE_TYPE_CHAR_LITERAL:
 		return shared.BUILTIN_CHAR, nil
 
+	case parser.NODE_TYPE_STRING_LITERAL:
+		return shared.BUILTIN_STRING, nil
+
 	case parser.NODE_TYPE_BOOL_LITERAL:
 		exprNode.ExprType = shared.BUILTIN_BOOL
 		return shared.BUILTIN_BOOL, nil
@@ -510,18 +515,6 @@ func (tc *TypeChecker) typeCheckExpression(exprNode *Node, expectedType Type) (T
 func (tc *TypeChecker) typeCheckFunctionCall(funccallNode *Node) (Type, error) {
 	nameNode := funccallNode.Value.(*Node)
 	fname := IdentToStr(nameNode)
-
-	// TODO: REMOVE THIS
-	if fname == "_print" {
-		if len(funccallNode.Children) != 1 {
-			return shared.BUILTIN_VOID, shared.NewError(funccallNode.Loc, "temporary '_print' function expects exactly one argument")
-		}
-		_, err := tc.typeCheckExpression(funccallNode.Children[0], shared.BUILTIN_VOID)
-		if err != nil {
-			return shared.BUILTIN_VOID, err
-		}
-		return shared.BUILTIN_VOID, nil
-	}
 
 	fsig, ok := tc.FuncTable.Lookup(fname)
 	if !ok {

@@ -27,9 +27,9 @@ func (err Error) Error() string {
 	line := strings.Split(string(f), "\n")[err.loc.LC.Line-1]
 	pointer := ""
 	if err.loc.LC.Col == 1 {
-		pointer = "^" + strings.Repeat("~", len(line)-1)
+		pointer = "^"
 	} else {
-		pointer = strings.Repeat("~", max(0, err.loc.LC.Col-2)) + "^" + strings.Repeat("~", len(line)-err.loc.LC.Col+1)
+		pointer = strings.Repeat(" ", max(0, err.loc.LC.Col-2)) + "^" + strings.Repeat(" ", len(line)-err.loc.LC.Col+1)
 	}
 
 	return fmt.Sprintf("%s:%d:%d\n%s\n%s\n\n%s", err.loc.FilePath, err.loc.LC.Line, err.loc.LC.Col, line, pointer, err.message)

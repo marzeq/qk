@@ -122,6 +122,12 @@ func (p *Parser) Parse() (*Node, error) {
 				return nil, err
 			}
 			rootNode.Children = append(rootNode.Children, fnDef)
+		case "declare":
+			fnDef, err := p.ParseExternalFunctionDefinition()
+			if err != nil {
+				return nil, err
+			}
+			rootNode.Children = append(rootNode.Children, fnDef)
 		case "import":
 			imp, err := p.ParseImport()
 			if err != nil {

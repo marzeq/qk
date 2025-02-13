@@ -283,6 +283,76 @@ func (p *Parser) ParseFunctionDefinition() (*Node, error) {
 	}, nil
 }
 
+func (p *Parser) ParseExternalFunctionDefinition() (*Node, error) {
+	beginLoc := p.CurrLoc()
+	if !p.Expect(tokeniser.TOKEN_TYPE_KEYWORD) {
+		return nil, shared.NewError(p.PrevLoc(), "expected 'let' keyword")
+	}
+
+	nameLoc := p.CurrLoc()
+	name, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_IDENT)
+	if !ok {
+		return nil, shared.NewError(p.PrevLoc(), "expected function name")
+	}
+
+	if !p.Expect(tokeniser.TOKEN_TYPE_OPEN_PAREN) {
+		return nil, shared.NewError(p.PrevLoc(), "expected '('")
+	}
+
+	var args []shared.Pair[*Node, *Node]
+	for !p.Match(tokeniser.TOKEN_TYPE_CLOSE_PAREN) {
+		argNameLoc := p.CurrLoc()
+		argName, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_IDENT)
+		if !ok {
+			return nil, shared.NewError(p.PrevLoc(), "expected argument name")
+		}
+
+		if !p.Expect(tokeniser.TOKEN_TYPE_COLON) {
+			return nil, shared.NewError(p.PrevLoc(), "expected ':'")
+		}
+
+		argTypeLoc := p.CurrLoc()
+		argType, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_IDENT)
+		if !ok {
+			return nil, shared.NewError(p.PrevLoc(), "expected argument type")
+		}
+
+		args = append(args, shared.Pair[*Node, *Node]{
+			L: &Node{Type: NODE_TYPE_IDENTIFIER, Value: argName.Value, Loc: argNameLoc},
+			R: &Node{Type: NODE_TYPE_IDENTIFIER, Value: argType.Value, Loc: argTypeLoc},
+		})
+
+		if !p.Match(tokeniser.TOKEN_TYPE_COMMA) {
+			break
+		}
+		p.Consume()
+	}
+
+	if !p.Expect(tokeniser.TOKEN_TYPE_CLOSE_PAREN) {
+		return nil, shared.NewError(p.PrevLoc(), "expected ')'")
+	}
+
+	if !p.Expect(tokeniser.TOKEN_TYPE_COLON) {
+		return nil, shared.NewError(p.PrevLoc(), "expected ':'")
+	}
+
+	retTypeLoc := p.CurrLoc()
+	returnType, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_IDENT)
+	if !ok {
+		return nil, shared.NewError(p.PrevLoc(), "expected return type")
+	}
+
+	return &Node{
+		Type: NODE_TYPE_FUNCTION_DEF,
+		Value: &FunctionValue{
+			Name:    &Node{Type: NODE_TYPE_IDENTIFIER, Value: name.Value, Loc: nameLoc},
+			Args:    args,
+			RetType: &Node{Type: NODE_TYPE_IDENTIFIER, Value: returnType.Value, Loc: retTypeLoc},
+		},
+		Loc: beginLoc,
+	}, nil
+}
+
 func (p *Parser) ParseImport() (*Node, error) {
 	beginLoc := p.CurrLoc()
 	if kw, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_KEYWORD); !ok || kw.Value != "import" {
@@ -292,7 +362,7 @@ func (p *Parser) ParseImport() (*Node, error) {
 	strLoc := p.CurrLoc()
 	path, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_STRING)
 	if !ok {
-		return nil, shared.NewError(p.PrevLoc(), "expected pat")
+		return nil, shared.NewError(p.PrevLoc(), "expected path")
 	}
 
 	return &Node{
@@ -319,6 +389,9 @@ func (p *Parser) ParseStatement() (*Node, bool, error) { // bool is whether semi
 				return node, true, err
 			}
 			node, err := p.ParseDeclaration()
+			return node, true, err
+		case "declare":
+			node, err := p.ParseExternalFunctionDefinition()
 			return node, true, err
 		case "var":
 			node, err := p.ParseDeclaration()

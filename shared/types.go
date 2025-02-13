@@ -19,7 +19,8 @@ const (
 
 	BUILTIN_BOOL Type = "bool"
 
-	BUILTIN_CHAR Type = "char"
+	BUILTIN_CHAR   Type = "char"
+	BUILTIN_STRING Type = "string"
 )
 
 func ResolveType(name string) (Type, bool) {
@@ -45,6 +46,8 @@ func ResolveType(name string) (Type, bool) {
 		return BUILTIN_BOOL, true
 	} else if name == string(BUILTIN_CHAR) {
 		return BUILTIN_CHAR, true
+	} else if name == string(BUILTIN_STRING) {
+		return BUILTIN_STRING, true
 	}
 
 	return BUILTIN_VOID, false

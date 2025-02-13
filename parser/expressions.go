@@ -318,6 +318,15 @@ func (p *Parser) ParseTerm() (*Node, error) {
 		}, nil
 	}
 
+	if p.Match(tokeniser.TOKEN_TYPE_STRING) {
+		sLit := p.Consume()
+		return &Node{
+			Type:  NODE_TYPE_STRING_LITERAL,
+			Value: sLit.Value,
+			Loc:   beginLoc,
+		}, nil
+	}
+
 	return nil, shared.NewError(p.CurrLoc(), "unexpected token %s", p.Peek())
 }
 
