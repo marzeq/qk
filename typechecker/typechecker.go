@@ -521,6 +521,10 @@ func (tc *TypeChecker) typeCheckFunctionCall(funccallNode *Node) (Type, error) {
 		return shared.BUILTIN_VOID, shared.NewError(nameNode.Loc, "undefined function '%s'", fname)
 	}
 
+	if len(funccallNode.Children) != len(fsig.ArgTypes) {
+		return shared.BUILTIN_VOID, shared.NewError(nameNode.Loc, "argument count mismatch, expected %d, got %d", len(fsig.ArgTypes), len(funccallNode.Children))
+	}
+
 	for i, arg := range funccallNode.Children {
 		fsigArgType := fsig.ArgTypes[i].R
 		argType, err := tc.typeCheckExpression(arg, fsigArgType)
