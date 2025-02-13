@@ -31,13 +31,14 @@ func runCmd(args ...string) error {
 }
 
 func main() {
-	if len(os.Args) != 3 {
+	if len(os.Args) < 3 {
 		fmt.Println("Usage: quokka [src file] [output binary]")
 		return
 	}
 
 	srcfile := os.Args[1]
 	binfile := os.Args[2]
+	rest := os.Args[3:]
 	binname := path.Base(binfile)
 
 	t, err := tokeniser.NewTokeniserFromFile(srcfile)
@@ -63,5 +64,6 @@ func main() {
 	os.WriteFile(fmt.Sprintf("build/%s.ssa", binname), []byte(ir), 0644)
 
 	_check(runCmd("qbe", "-o", "build/"+binname+".s", "build/"+binname+".ssa"))
-	_check(runCmd("cc", "-o", binfile, "build/"+binname+".s"))
+	args := append([]string{"cc", "-o", binfile, "build/" + binname + ".s"}, rest...)
+	_check(runCmd(args...))
 }

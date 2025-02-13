@@ -129,9 +129,10 @@ type ForLoopValue struct {
 }
 
 type FunctionValue struct {
-	Name    *Node
-	Args    []shared.Pair[*Node, *Node]
-	RetType *Node
+	Name        *Node
+	Args        []shared.Pair[*Node, *Node]
+	RetType     *Node
+	HasVariadic bool
 }
 
 type DeclarationValue struct {

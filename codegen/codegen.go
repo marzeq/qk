@@ -128,7 +128,7 @@ func (cg *CodeGen) GenerateFuncIR(funcNode *Node) (string, []string, error) {
 		}
 		gsetups = append(gsetups, gstps...)
 	} else {
-		val, setups, gstps, err := cg.GenerateExprIR(child)
+		val, setups, gstps, _, err := cg.GenerateExprIR(child)
 		if err != nil {
 			return "", nil, err
 		}
@@ -187,7 +187,7 @@ func (cg *CodeGen) GenerateStmtIR(stmtNode *Node, last bool, loopBegin, loopEnd 
 			line = "ret"
 			if stmtNode.Right != nil {
 				line += " "
-				val, setps, gsetps, err := cg.GenerateExprIR(stmtNode.Right)
+				val, setps, gsetps, _, err := cg.GenerateExprIR(stmtNode.Right)
 				if err != nil {
 					return "", nil, nil, err
 				}
@@ -212,7 +212,7 @@ func (cg *CodeGen) GenerateStmtIR(stmtNode *Node, last bool, loopBegin, loopEnd 
 	case parser.NODE_TYPE_ASSIGNMENT:
 		line = fmt.Sprintf("%%%s =%s ", typechecker.IdentToStr(stmtNode.Left), mapTypeToIRType(stmtNode.ExprType))
 
-		val, setps, gsetps, err := cg.GenerateExprIR(stmtNode.Right)
+		val, setps, gsetps, _, err := cg.GenerateExprIR(stmtNode.Right)
 		val = "copy " + val
 		if err != nil {
 			return "", nil, nil, err
@@ -228,10 +228,20 @@ func (cg *CodeGen) GenerateStmtIR(stmtNode *Node, last bool, loopBegin, loopEnd 
 
 		line = fmt.Sprintf("call $%s(", fsig.Name)
 		for i, arg := range stmtNode.Children {
-			argType := mapTypeToIRType(fsig.ArgTypes[i].R)
-			val, setps, gsetps, err := cg.GenerateExprIR(arg)
+			if i == len(fsig.ArgTypes) {
+				line += "..., "
+			}
+
+			argType := ""
+
+			val, setps, gsetps, exprTpe, err := cg.GenerateExprIR(arg)
 			if err != nil {
 				return "", nil, nil, err
+			}
+			if i < len(fsig.ArgTypes) {
+				argType = mapTypeToIRType(fsig.ArgTypes[i].R)
+			} else {
+				argType = exprTpe
 			}
 			line += fmt.Sprintf("%s %s", argType, val)
 			if i != len(stmtNode.Children)-1 {
@@ -248,7 +258,7 @@ func (cg *CodeGen) GenerateStmtIR(stmtNode *Node, last bool, loopBegin, loopEnd 
 		ifVal := stmtNode.Value.(*parser.IfNodeValue)
 		endLabel := cg.GetTmpLbl()
 
-		condVal, condSetups, condGSetups, err := cg.GenerateExprIR(ifVal.IfBranch.Condition)
+		condVal, condSetups, condGSetups, _, err := cg.GenerateExprIR(ifVal.IfBranch.Condition)
 		if err != nil {
 			return "", nil, nil, err
 		}
@@ -273,7 +283,7 @@ func (cg *CodeGen) GenerateStmtIR(stmtNode *Node, last bool, loopBegin, loopEnd 
 		currentCheckLabel := elseCheckLabel
 
 		for _, elseIf := range ifVal.ElseIfBranches {
-			elseIfCondVal, elseIfCondSetups, elseIfCondGSetups, err := cg.GenerateExprIR(elseIf.Condition)
+			elseIfCondVal, elseIfCondSetups, elseIfCondGSetups, _, err := cg.GenerateExprIR(elseIf.Condition)
 			if err != nil {
 				return "", nil, nil, err
 			}
@@ -334,7 +344,7 @@ func (cg *CodeGen) GenerateStmtIR(stmtNode *Node, last bool, loopBegin, loopEnd 
 		}
 
 		if len(value.ExprsOrStmts) == 1 {
-			cond, setps, gsetps, err := cg.GenerateExprIR(value.ExprsOrStmts[0])
+			cond, setps, gsetps, _, err := cg.GenerateExprIR(value.ExprsOrStmts[0])
 			if err != nil {
 				return "", nil, nil, err
 			}
@@ -356,7 +366,7 @@ func (cg *CodeGen) GenerateStmtIR(stmtNode *Node, last bool, loopBegin, loopEnd 
 			setups = append(setups, setps...)
 			gsetups = append(gsetups, gsetps...)
 
-			cond, setps, gsetps, err := cg.GenerateExprIR(value.ExprsOrStmts[1])
+			cond, setps, gsetps, _, err := cg.GenerateExprIR(value.ExprsOrStmts[1])
 			if err != nil {
 				return "", nil, nil, err
 			}
@@ -392,12 +402,12 @@ func (cg *CodeGen) GenerateStmtIR(stmtNode *Node, last bool, loopBegin, loopEnd 
 }
 
 // returns value string, local setups []string, global setups []string, error
-func (cg *CodeGen) GenerateExprIR(exprNode *Node) (string, []string, []string, error) {
+func (cg *CodeGen) GenerateExprIR(exprNode *Node) (string, []string, []string, string, error) {
 	val := ""
 	setups := []string{}
 	gsetups := []string{}
+	tpe := mapTypeToIRType(exprNode.ExprType)
 	switch exprNode.Type {
-
 	case parser.NODE_TYPE_IDENTIFIER:
 		val = fmt.Sprintf("%%%s", exprNode.Value.(string))
 
@@ -434,14 +444,24 @@ func (cg *CodeGen) GenerateExprIR(exprNode *Node) (string, []string, []string, e
 		fsig := cg.funcSigs[fname]
 		nm := cg.GetTmpVar()
 		val = fmt.Sprintf("%s", nm)
-		setup := fmt.Sprintf("%s =%s call $%s(", val, mapTypeToIRType(fsig.RetType), fname)
+		tpe = mapTypeToIRType(fsig.RetType)
+		setup := fmt.Sprintf("%s =%s call $%s(", val, tpe, fname)
 		for i, arg := range exprNode.Children {
-			argType := mapTypeToIRType(fsig.ArgTypes[i].R)
-			v, st, gst, err := cg.GenerateExprIR(arg)
-			if err != nil {
-				return "", nil, nil, err
+			if i == len(fsig.ArgTypes) {
+				setup += "..., "
 			}
 
+			argType := ""
+
+			v, st, gst, exprTpe, err := cg.GenerateExprIR(arg)
+			if err != nil {
+				return "", nil, nil, "", err
+			}
+			if i < len(fsig.ArgTypes) {
+				argType = mapTypeToIRType(fsig.ArgTypes[i].R)
+			} else {
+				argType = exprTpe
+			}
 			setup += fmt.Sprintf("%s %s", argType, v)
 			if i != len(exprNode.Children)-1 {
 				setup += ", "
@@ -454,7 +474,7 @@ func (cg *CodeGen) GenerateExprIR(exprNode *Node) (string, []string, []string, e
 		setups = append(setups, setup)
 
 	case parser.NODE_TYPE_BINARY_OP:
-		exprType := mapTypeToIRType(exprNode.Left.ExprType)
+		tpe = mapTypeToIRType(exprNode.Left.ExprType)
 
 		op := ""
 		switch exprNode.Value.(string) {
@@ -477,46 +497,46 @@ func (cg *CodeGen) GenerateExprIR(exprNode *Node) (string, []string, []string, e
 				op = "rem"
 			}
 		case "==":
-			op = "ceq" + exprType
+			op = "ceq" + tpe
 		case "!=":
-			op = "cne" + exprType
+			op = "cne" + tpe
 		case "<":
 			if shared.IsUnsignedType(exprNode.Left.ExprType) {
-				op = "cult" + exprType
+				op = "cult" + tpe
 			} else {
-				op = "cslt" + exprType
+				op = "cslt" + tpe
 			}
 		case ">":
 			if shared.IsUnsignedType(exprNode.Left.ExprType) {
-				op = "cugt" + exprType
+				op = "cugt" + tpe
 			} else {
-				op = "csgt" + exprType
+				op = "csgt" + tpe
 			}
 		case "<=":
 			if shared.IsUnsignedType(exprNode.Left.ExprType) {
-				op = "cule" + exprType
+				op = "cule" + tpe
 			} else {
-				op = "csle" + exprType
+				op = "csle" + tpe
 			}
 		case ">=":
 			if shared.IsUnsignedType(exprNode.Left.ExprType) {
-				op = "cuge" + exprType
+				op = "cuge" + tpe
 			} else {
-				op = "csge" + exprType
+				op = "csge" + tpe
 			}
 		}
 
 		nm := cg.GetTmpVar()
 		val = fmt.Sprintf("%s", nm)
-		v1, st1, gst1, err := cg.GenerateExprIR(exprNode.Left)
+		v1, st1, gst1, _, err := cg.GenerateExprIR(exprNode.Left)
 		if err != nil {
-			return "", nil, nil, err
+			return "", nil, nil, "", err
 		}
-		v2, st2, gst2, err := cg.GenerateExprIR(exprNode.Right)
+		v2, st2, gst2, _, err := cg.GenerateExprIR(exprNode.Right)
 		if err != nil {
-			return "", nil, nil, err
+			return "", nil, nil, "", err
 		}
-		setup := fmt.Sprintf("%s =%s %s %s, %s", val, exprType, op, v1, v2)
+		setup := fmt.Sprintf("%s =%s %s %s, %s", val, tpe, op, v1, v2)
 		setups = append(setups, st1...)
 		setups = append(setups, st2...)
 		gsetups = append(gsetups, gst1...)
@@ -527,16 +547,16 @@ func (cg *CodeGen) GenerateExprIR(exprNode *Node) (string, []string, []string, e
 		nm := cg.GetTmpVar()
 		val = fmt.Sprintf("%s", nm)
 		setup := ""
-		v, st, gst, err := cg.GenerateExprIR(exprNode.Right)
+		v, st, gst, _, err := cg.GenerateExprIR(exprNode.Right)
 		if err != nil {
-			return "", nil, nil, err
+			return "", nil, nil, "", err
 		}
 		switch exprNode.Value.(string) {
 		case "-":
 			setup = fmt.Sprintf("%s =%s neg %s", val, mapTypeToIRType(exprNode.Right.ExprType), v)
 		case "not":
-			exprType := mapTypeToIRType(exprNode.Right.ExprType)
-			setup = fmt.Sprintf("%s =%s cne%s %s, 1", val, exprType, exprType, v)
+			tpe := mapTypeToIRType(exprNode.Right.ExprType)
+			setup = fmt.Sprintf("%s =%s cne%s %s, 1", val, tpe, tpe, v)
 
 		}
 
@@ -549,11 +569,11 @@ func (cg *CodeGen) GenerateExprIR(exprNode *Node) (string, []string, []string, e
 		endLabel := cg.GetTmpLbl()
 		nm := cg.GetTmpVar()
 		val = fmt.Sprintf("%s", nm)
-		exprType := mapTypeToIRType(exprNode.ExprType)
+		tpe := mapTypeToIRType(exprNode.ExprType)
 
-		condVal, condSetups, condGSetups, err := cg.GenerateExprIR(ifEVal.IfBranch.Condition)
+		condVal, condSetups, condGSetups, _, err := cg.GenerateExprIR(ifEVal.IfBranch.Condition)
 		if err != nil {
-			return "", nil, nil, err
+			return "", nil, nil, "", err
 		}
 
 		ifLabel := cg.GetTmpLbl()
@@ -563,25 +583,25 @@ func (cg *CodeGen) GenerateExprIR(exprNode *Node) (string, []string, []string, e
 		gsetups = append(gsetups, condGSetups...)
 		setups = append(setups, fmt.Sprintf("jnz %s, %s, %s", condVal, ifLabel, elseCheckLabel))
 
-		ifVal, ifSetups, ifGSetups, err := cg.GenerateExprIR(ifEVal.IfBranch.Node)
+		ifVal, ifSetups, ifGSetups, _, err := cg.GenerateExprIR(ifEVal.IfBranch.Node)
 		if err != nil {
-			return "", nil, nil, err
+			return "", nil, nil, "", err
 		}
 		ifBlockCode := fmt.Sprintf("%s", ifLabel)
 		for _, s := range ifSetups {
 			ifBlockCode += "\n" + s
 		}
 		gsetups = append(gsetups, ifGSetups...)
-		ifBlockCode += fmt.Sprintf("\n%s =%s copy %s", nm, exprType, ifVal)
+		ifBlockCode += fmt.Sprintf("\n%s =%s copy %s", nm, tpe, ifVal)
 		ifBlockCode += fmt.Sprintf("\njmp %s", endLabel)
 		setups = append(setups, ifBlockCode)
 
 		currentCheckLabel := elseCheckLabel
 
 		for _, elseIf := range ifEVal.ElseIfBranches {
-			elseIfCondVal, elseIfCondSetups, elseIfCondGSetups, err := cg.GenerateExprIR(elseIf.Condition)
+			elseIfCondVal, elseIfCondSetups, elseIfCondGSetups, _, err := cg.GenerateExprIR(elseIf.Condition)
 			if err != nil {
-				return "", nil, nil, err
+				return "", nil, nil, "", err
 			}
 
 			elseIfLabel := cg.GetTmpLbl()
@@ -592,9 +612,9 @@ func (cg *CodeGen) GenerateExprIR(exprNode *Node) (string, []string, []string, e
 			gsetups = append(gsetups, elseIfCondGSetups...)
 			setups = append(setups, fmt.Sprintf("jnz %s, %s, %s", elseIfCondVal, elseIfLabel, nextCheckLabel))
 
-			elseIfVal, elseIfSetups, elseIfGSetups, err := cg.GenerateExprIR(elseIf.Node)
+			elseIfVal, elseIfSetups, elseIfGSetups, _, err := cg.GenerateExprIR(elseIf.Node)
 			if err != nil {
-				return "", nil, nil, err
+				return "", nil, nil, "", err
 			}
 
 			elseIfBlockCode := fmt.Sprintf("%s", elseIfLabel)
@@ -602,7 +622,7 @@ func (cg *CodeGen) GenerateExprIR(exprNode *Node) (string, []string, []string, e
 				elseIfBlockCode += "\n" + s
 			}
 			gsetups = append(gsetups, elseIfGSetups...)
-			elseIfBlockCode += fmt.Sprintf("\n%s =%s copy %s", nm, exprType, elseIfVal)
+			elseIfBlockCode += fmt.Sprintf("\n%s =%s copy %s", nm, tpe, elseIfVal)
 			elseIfBlockCode += fmt.Sprintf("\njmp %s", endLabel)
 			setups = append(setups, elseIfBlockCode)
 
@@ -613,16 +633,16 @@ func (cg *CodeGen) GenerateExprIR(exprNode *Node) (string, []string, []string, e
 		setups = append(setups, fmt.Sprintf("%s", currentCheckLabel))
 		setups = append(setups, fmt.Sprintf("jmp %s", elseLabel))
 
-		elseVal, elseSetups, elseGSetups, err := cg.GenerateExprIR(ifEVal.ElseBranch.Node)
+		elseVal, elseSetups, elseGSetups, _, err := cg.GenerateExprIR(ifEVal.ElseBranch.Node)
 		if err != nil {
-			return "", nil, nil, err
+			return "", nil, nil, "", err
 		}
 		elseBlockCode := fmt.Sprintf("%s", elseLabel)
 		for _, s := range elseSetups {
 			elseBlockCode += "\n" + s
 		}
 		gsetups = append(gsetups, elseGSetups...)
-		elseBlockCode += fmt.Sprintf("\n%s =%s copy %s", nm, exprType, elseVal)
+		elseBlockCode += fmt.Sprintf("\n%s =%s copy %s", nm, tpe, elseVal)
 		elseBlockCode += fmt.Sprintf("\njmp %s", endLabel)
 		setups = append(setups, elseBlockCode)
 
@@ -635,9 +655,9 @@ func (cg *CodeGen) GenerateExprIR(exprNode *Node) (string, []string, []string, e
 		sourceType := exprNode.Right.ExprType
 		sourceIRType := mapTypeToIRType(sourceType)
 
-		sourceVal, sourceSetups, sourceGSetups, err := cg.GenerateExprIR(exprNode.Right)
+		sourceVal, sourceSetups, sourceGSetups, _, err := cg.GenerateExprIR(exprNode.Right)
 		if err != nil {
-			return "", nil, nil, err
+			return "", nil, nil, "", err
 		}
 		setups = append(setups, sourceSetups...)
 		gsetups = append(setups, sourceGSetups...)
@@ -658,7 +678,7 @@ func (cg *CodeGen) GenerateExprIR(exprNode *Node) (string, []string, []string, e
 				setups = append(setups, fmt.Sprintf("%s =w copy %s", tmpVar, currentVal))
 				currentVal = tmpVar
 			} else {
-				return "", nil, nil, shared.NewError(exprNode.Loc, "unsupported cast from %s to %s", sourceIRType, targetIRType)
+				return "", nil, nil, "", shared.NewError(exprNode.Loc, "unsupported cast from %s to %s", sourceIRType, targetIRType)
 			}
 		}
 
@@ -678,7 +698,7 @@ func (cg *CodeGen) GenerateExprIR(exprNode *Node) (string, []string, []string, e
 		val = currentVal
 
 	default:
-		return "", nil, nil, shared.NewError(exprNode.Loc, "unsupported expression %s", exprNode.Type)
+		return "", nil, nil, "", shared.NewError(exprNode.Loc, "unsupported expression %s", exprNode.Type)
 	}
 
 	mask, ext := getTruncateMaskAndExt(exprNode.ExprType)
@@ -693,7 +713,7 @@ func (cg *CodeGen) GenerateExprIR(exprNode *Node) (string, []string, []string, e
 		}
 	}
 
-	return val, setups, gsetups, nil
+	return val, setups, gsetups, tpe, nil
 }
 
 func mapTypeToIRType(t Type) string {

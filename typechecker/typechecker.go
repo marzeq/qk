@@ -22,6 +22,7 @@ type VarSig struct {
 type FunctionSig struct {
 	Name           string
 	ArgTypes       []shared.Pair[string, Type]
+	HasVariadic    bool
 	RetType        Type
 	ImplicitReturn bool
 }
@@ -339,9 +340,11 @@ func (tc *TypeChecker) typeCheckExpression(exprNode *Node, expectedType Type) (T
 		return exprType, nil
 
 	case parser.NODE_TYPE_CHAR_LITERAL:
+		exprNode.ExprType = shared.BUILTIN_CHAR
 		return shared.BUILTIN_CHAR, nil
 
 	case parser.NODE_TYPE_STRING_LITERAL:
+		exprNode.ExprType = shared.BUILTIN_STRING
 		return shared.BUILTIN_STRING, nil
 
 	case parser.NODE_TYPE_BOOL_LITERAL:
@@ -521,20 +524,23 @@ func (tc *TypeChecker) typeCheckFunctionCall(funccallNode *Node) (Type, error) {
 		return shared.BUILTIN_VOID, shared.NewError(nameNode.Loc, "undefined function '%s'", fname)
 	}
 
-	if len(funccallNode.Children) != len(fsig.ArgTypes) {
-		return shared.BUILTIN_VOID, shared.NewError(nameNode.Loc, "argument count mismatch, expected %d, got %d", len(fsig.ArgTypes), len(funccallNode.Children))
+	if (len(funccallNode.Children) > len(fsig.ArgTypes) && !fsig.HasVariadic) || len(funccallNode.Children) < len(fsig.ArgTypes) {
+		return shared.BUILTIN_VOID, shared.NewError(nameNode.Loc, "argument count mismatch, expected at least %d, got %d", len(fsig.ArgTypes), len(funccallNode.Children))
 	}
 
 	for i, arg := range funccallNode.Children {
-		fsigArgType := fsig.ArgTypes[i].R
+		fsigArgType := shared.BUILTIN_VOID
+		if i < len(fsig.ArgTypes) {
+			fsigArgType = fsig.ArgTypes[i].R
+		}
 		argType, err := tc.typeCheckExpression(arg, fsigArgType)
 		if err != nil {
 			return shared.BUILTIN_VOID, err
 		}
-		if fsigArgType != argType {
+		if fsigArgType != argType && fsigArgType != shared.BUILTIN_VOID {
 			return shared.BUILTIN_VOID, shared.NewError(arg.Loc,
 				"argument %d of function '%s' has type '%s' but expected '%s'",
-				i+1, fname, argType, fsig.ArgTypes[i].R,
+				i+1, fname, argType, fsigArgType,
 			)
 		}
 	}
@@ -755,9 +761,10 @@ func ExtractFunctionSig(functionNode *Node) (*FunctionSig, error) {
 	}
 
 	return &FunctionSig{
-		ArgTypes: argTypes,
-		RetType:  retType,
-		Name:     name,
+		ArgTypes:    argTypes,
+		RetType:     retType,
+		Name:        name,
+		HasVariadic: functionVal.HasVariadic,
 	}, nil
 }
 

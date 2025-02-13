@@ -48,6 +48,8 @@ const (
 	TOKEN_TYPE_COMMA
 	TOKEN_TYPE_EXCLAM
 	TOKEN_TYPE_COLON
+	TOKEN_TYPE_DOT
+	TOKEN_TYPE_3DOTS
 )
 
 func (t Token) String() string {
@@ -116,6 +118,10 @@ func (t Token) String() string {
 		return "!"
 	case TOKEN_TYPE_COLON:
 		return ":"
+	case TOKEN_TYPE_DOT:
+		return "."
+	case TOKEN_TYPE_3DOTS:
+		return "..."
 	default:
 		return "{UNKNOWN}"
 	}

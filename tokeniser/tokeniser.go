@@ -389,6 +389,24 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 			t.AddToken(TOKEN_TYPE_COLON, t.GetLoc())
 			t.Inc()
 			continue
+		case '.':
+			loc := t.GetLoc()
+			if t.Next() == '.' {
+				t.Inc()
+				nextloc := t.GetLoc()
+				if t.Next() == '.' {
+					t.Inc().Inc()
+					t.AddToken(TOKEN_TYPE_3DOTS, loc)
+					continue
+				}
+				t.AddToken(TOKEN_TYPE_DOT, loc)
+				t.AddToken(TOKEN_TYPE_DOT, nextloc)
+				continue
+			}
+
+			t.AddToken(TOKEN_TYPE_DOT, t.GetLoc())
+			t.Inc()
+			continue
 		case '\'':
 			loc := t.GetLoc()
 			t.Inc()

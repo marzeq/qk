@@ -274,9 +274,10 @@ func (p *Parser) ParseFunctionDefinition() (*Node, error) {
 	return &Node{
 		Type: NODE_TYPE_FUNCTION_DEF,
 		Value: &FunctionValue{
-			Name:    &Node{Type: NODE_TYPE_IDENTIFIER, Value: name.Value, Loc: nameLoc},
-			Args:    args,
-			RetType: &Node{Type: NODE_TYPE_IDENTIFIER, Value: returnType.Value, Loc: retTypeLoc},
+			Name:        &Node{Type: NODE_TYPE_IDENTIFIER, Value: name.Value, Loc: nameLoc},
+			Args:        args,
+			RetType:     &Node{Type: NODE_TYPE_IDENTIFIER, Value: returnType.Value, Loc: retTypeLoc},
+			HasVariadic: false,
 		},
 		Children: []*Node{body},
 		Loc:      beginLoc,
@@ -300,7 +301,14 @@ func (p *Parser) ParseExternalFunctionDefinition() (*Node, error) {
 	}
 
 	var args []shared.Pair[*Node, *Node]
+	variadic := false
 	for !p.Match(tokeniser.TOKEN_TYPE_CLOSE_PAREN) {
+		if p.Match(tokeniser.TOKEN_TYPE_3DOTS) {
+			p.Inc()
+			variadic = true
+			break
+		}
+
 		argNameLoc := p.CurrLoc()
 		argName, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_IDENT)
 		if !ok {
@@ -345,9 +353,10 @@ func (p *Parser) ParseExternalFunctionDefinition() (*Node, error) {
 	return &Node{
 		Type: NODE_TYPE_FUNCTION_DEF,
 		Value: &FunctionValue{
-			Name:    &Node{Type: NODE_TYPE_IDENTIFIER, Value: name.Value, Loc: nameLoc},
-			Args:    args,
-			RetType: &Node{Type: NODE_TYPE_IDENTIFIER, Value: returnType.Value, Loc: retTypeLoc},
+			Name:        &Node{Type: NODE_TYPE_IDENTIFIER, Value: name.Value, Loc: nameLoc},
+			Args:        args,
+			RetType:     &Node{Type: NODE_TYPE_IDENTIFIER, Value: returnType.Value, Loc: retTypeLoc},
+			HasVariadic: variadic,
 		},
 		Loc: beginLoc,
 	}, nil
