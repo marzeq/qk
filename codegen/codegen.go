@@ -16,20 +16,22 @@ type (
 )
 
 type CodeGen struct {
-	tmpVarId uint
-	tmpLblId uint
-	cnstId   uint
-	rootNode *Node
-	funcSigs map[string]*typechecker.FunctionSig
+	tmpVarId  uint
+	tmpLblId  uint
+	cnstId    uint
+	rootNode  *Node
+	funcSigs  map[string]*typechecker.FunctionSig
+	typeTable shared.TypeTable
 }
 
-func NewCodeGen(rootNode *Node, funcSigs map[string]*typechecker.FunctionSig) *CodeGen {
+func NewCodeGen(rootNode *Node, funcSigs map[string]*typechecker.FunctionSig, typeTable shared.TypeTable) *CodeGen {
 	return &CodeGen{
-		tmpVarId: 0,
-		tmpLblId: 0,
-		cnstId:   0,
-		rootNode: rootNode,
-		funcSigs: funcSigs,
+		tmpVarId:  0,
+		tmpLblId:  0,
+		cnstId:    0,
+		rootNode:  rootNode,
+		funcSigs:  funcSigs,
+		typeTable: typeTable,
 	}
 }
 
@@ -56,8 +58,12 @@ func (cg *CodeGen) EmitIR() (string, error) {
 	gsetups := []string{}
 
 	for _, node := range cg.rootNode.Children {
+		if node.Type == parser.NODE_TYPE_STRUCT_DEF {
+			continue
+		}
+
 		if node.Type != parser.NODE_TYPE_FUNCTION_DEF {
-			return "", shared.NewError(node.Loc, "unexpected token")
+			return "", shared.NewError(node.Loc, "unexpected node type %s", node.Type)
 		}
 
 		if len(node.Children) == 0 {
@@ -73,6 +79,18 @@ func (cg *CodeGen) EmitIR() (string, error) {
 		gsetups = append(gsetups, gstps...)
 	}
 
+	for name, tpe := range cg.typeTable {
+		if !tpe.IsStruct() {
+			continue
+		}
+
+		ir += fmt.Sprintf("type :%s = {", name)
+		for _, field := range tpe.(shared.Struct).Fields {
+			ir += fmt.Sprintf(" %s,", mapTypeToIRType(field.R))
+		}
+		ir += "}\n"
+	}
+
 	for _, gsetup := range gsetups {
 		ir = gsetup + "\n" + ir
 	}
@@ -80,7 +98,6 @@ func (cg *CodeGen) EmitIR() (string, error) {
 	return ir, nil
 }
 
-// returns value string, global setups []string, error
 func (cg *CodeGen) GenerateFuncIR(funcNode *Node) (string, []string, error) {
 	cg.tmpVarId = 0
 	cg.tmpLblId = 0
@@ -123,7 +140,7 @@ func (cg *CodeGen) GenerateFuncIR(funcNode *Node) (string, []string, error) {
 
 		if len(child.Children) > 1 &&
 			child.Children[len(child.Children)-1].Type == parser.NODE_TYPE_IF &&
-			fsig.RetType != shared.BUILTIN_VOID { // case when every if body returns
+			fsig.RetType != shared.PRIMITIVE_VOID {
 			epilogue = "ret 0" + epilogue
 		}
 		gsetups = append(gsetups, gstps...)
@@ -142,7 +159,6 @@ func (cg *CodeGen) GenerateFuncIR(funcNode *Node) (string, []string, error) {
 	return prologue + body + epilogue, gsetups, nil
 }
 
-// returns body value string, global setups []string, endsWithTerminator bool, error
 func (cg *CodeGen) GenerateBlockIR(blockNode *Node, loopBegin, loopEnd string) (string, []string, bool, error) {
 	body := ""
 	endsWithTerminator := false
@@ -175,7 +191,6 @@ func IsTerminatorInstruction(ir string) bool {
 		strings.HasPrefix(ir, "jnz")
 }
 
-// returns value string, local setups []string, global setups []string, error
 func (cg *CodeGen) GenerateStmtIR(stmtNode *Node, last bool, loopBegin, loopEnd string) (string, []string, []string, error) {
 	line := ""
 	setups := []string{}
@@ -401,7 +416,6 @@ func (cg *CodeGen) GenerateStmtIR(stmtNode *Node, last bool, loopBegin, loopEnd 
 	return line, setups, gsetups, nil
 }
 
-// returns value string, local setups []string, global setups []string, error
 func (cg *CodeGen) GenerateExprIR(exprNode *Node) (string, []string, []string, string, error) {
 	val := ""
 	setups := []string{}
@@ -442,8 +456,7 @@ func (cg *CodeGen) GenerateExprIR(exprNode *Node) (string, []string, []string, s
 	case parser.NODE_TYPE_FUNCTION_CALL:
 		fname := typechecker.IdentToStr(exprNode.Value.(*Node))
 		fsig := cg.funcSigs[fname]
-		nm := cg.GetTmpVar()
-		val = fmt.Sprintf("%s", nm)
+		val = cg.GetTmpVar()
 		tpe = mapTypeToIRType(fsig.RetType)
 		setup := fmt.Sprintf("%s =%s call $%s(", val, tpe, fname)
 		for i, arg := range exprNode.Children {
@@ -650,7 +663,7 @@ func (cg *CodeGen) GenerateExprIR(exprNode *Node) (string, []string, []string, s
 
 	case parser.NODE_TYPE_CAST:
 		targetTypeIdent := exprNode.Left.Value.(string)
-		targetType, _ := shared.ResolveType(targetTypeIdent)
+		targetType, _ := cg.typeTable.Lookup(targetTypeIdent)
 		targetIRType := mapTypeToIRType(targetType)
 		sourceType := exprNode.Right.ExprType
 		sourceIRType := mapTypeToIRType(sourceType)
@@ -660,7 +673,7 @@ func (cg *CodeGen) GenerateExprIR(exprNode *Node) (string, []string, []string, s
 			return "", nil, nil, "", err
 		}
 		setups = append(setups, sourceSetups...)
-		gsetups = append(setups, sourceGSetups...)
+		gsetups = append(gsetups, sourceGSetups...)
 
 		currentVal := sourceVal
 
@@ -718,38 +731,44 @@ func (cg *CodeGen) GenerateExprIR(exprNode *Node) (string, []string, []string, s
 
 func mapTypeToIRType(t Type) string {
 	switch t {
-	case shared.BUILTIN_VOID:
+	case shared.PRIMITIVE_VOID:
 		return ""
-	case shared.BUILTIN_BOOL:
+	case shared.PRIMITIVE_BOOL:
 		return "w"
-	case shared.BUILTIN_CHAR:
+	case shared.PRIMITIVE_CHAR:
 		return "w"
-	case shared.BUILTIN_STRING:
+	case shared.PRIMITIVE_CSTRING:
 		return "l"
-	case shared.BUILTIN_I8, shared.BUILTIN_U8:
+	case shared.PRIMITIVE_I8, shared.PRIMITIVE_U8:
 		return "w"
-	case shared.BUILTIN_I16, shared.BUILTIN_U16:
+	case shared.PRIMITIVE_I16, shared.PRIMITIVE_U16:
 		return "w"
-	case shared.BUILTIN_I32, shared.BUILTIN_U32:
+	case shared.PRIMITIVE_I32, shared.PRIMITIVE_U32:
 		return "w"
-	case shared.BUILTIN_I64, shared.BUILTIN_U64:
+	case shared.PRIMITIVE_I64, shared.PRIMITIVE_U64:
 		return "l"
-	case shared.BUILTIN_UNTYPED_INT:
-		return "l" // just in case
+	case shared.PRIMITIVE_UNTYPED_INT:
+		return "l"
 	default:
+		if t.IsStruct() {
+			return "l"
+		}
+		if t.IsPointer() {
+			return "l"
+		}
 		panic("unknown type")
 	}
 }
 
 func getTruncateMaskAndExt(t Type) (mask int, extOp string) {
 	switch t {
-	case shared.BUILTIN_U8:
+	case shared.PRIMITIVE_U8:
 		return 0xFF, ""
-	case shared.BUILTIN_I8:
+	case shared.PRIMITIVE_I8:
 		return 0xFF, "extsb"
-	case shared.BUILTIN_U16:
+	case shared.PRIMITIVE_U16:
 		return 0xFFFF, ""
-	case shared.BUILTIN_I16:
+	case shared.PRIMITIVE_I16:
 		return 0xFFFF, "extsh"
 	default:
 		return 0, ""

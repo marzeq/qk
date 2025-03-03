@@ -9,13 +9,12 @@ type NodeType uint
 const (
 	NODE_TYPE_ROOT NodeType = iota
 
-	// EXPRESSIONS
-
 	NODE_TYPE_IDENTIFIER
 	NODE_TYPE_BOOL_LITERAL
 	NODE_TYPE_NUMBER_LITERAL
 	NODE_TYPE_STRING_LITERAL
 	NODE_TYPE_CHAR_LITERAL
+	NODE_TYPE_STRUCT_LITERAL
 
 	NODE_TYPE_FUNCTION_CALL
 
@@ -26,10 +25,9 @@ const (
 
 	NODE_TYPE_CAST
 
-	// STATEMENTS
-
 	NODE_TYPE_IMPORT
 	NODE_TYPE_FUNCTION_DEF
+	NODE_TYPE_STRUCT_DEF
 	NODE_TYPE_IF
 	NODE_TYPE_FOR
 	NODE_TYPE_CONTROL_KEYWORD
@@ -46,6 +44,7 @@ func (nt NodeType) IsExpression() bool {
 		nt == NODE_TYPE_NUMBER_LITERAL ||
 		nt == NODE_TYPE_STRING_LITERAL ||
 		nt == NODE_TYPE_CHAR_LITERAL ||
+		nt == NODE_TYPE_STRUCT_LITERAL ||
 		nt == NODE_TYPE_FUNCTION_CALL ||
 		nt == NODE_TYPE_IF_EXPR ||
 		nt == NODE_TYPE_UNARY_OP ||
@@ -73,6 +72,8 @@ func (nt NodeType) String() string {
 		return "CHAR_LITERAL"
 	case NODE_TYPE_BOOL_LITERAL:
 		return "BOOL_LITERAL"
+	case NODE_TYPE_STRUCT_LITERAL:
+		return "STRUCT_LITERAL"
 	case NODE_TYPE_FUNCTION_CALL:
 		return "FUNCTION_CALL"
 	case NODE_TYPE_UNARY_OP:
@@ -93,6 +94,8 @@ func (nt NodeType) String() string {
 		return "BLOCK"
 	case NODE_TYPE_FUNCTION_DEF:
 		return "FUNCTION_DEF"
+	case NODE_TYPE_STRUCT_DEF:
+		return "STRUCT_DEF"
 	case NODE_TYPE_IMPORT:
 		return "IMPORT"
 	case NODE_TYPE_FOR:
@@ -104,7 +107,7 @@ func (nt NodeType) String() string {
 
 type Node struct {
 	Type     NodeType
-	ExprType shared.Type // set and used in the typechecker, do not use in parser
+	ExprType shared.Type
 	Value    any
 	Left     *Node
 	Right    *Node
@@ -135,7 +138,16 @@ type FunctionValue struct {
 	HasVariadic bool
 }
 
+type StructValue struct {
+	Fields []shared.Pair[*Node, *Node]
+}
+
 type DeclarationValue struct {
 	Mutable bool
 	Type    *Node
+}
+
+type StructLiteralValue struct {
+	StructType *Node
+	Fields     []shared.Pair[*Node, *Node]
 }

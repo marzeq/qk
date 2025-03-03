@@ -43,6 +43,22 @@ Node types:
 }
 
 {
+  Type: STRUCT
+  Left: IDENTIFIER Node
+  Value: {
+    Fields: {L: IDENTIFIER Node (fieldname), R: IDENTIFIER Node (fieldtype)}[]
+  }
+}
+
+{
+  Type: STRUCT_LITERAL
+  Left: IDENTIFIER Node
+  Value: {
+    Fields: {L: IDENTIFIER Node (fieldname), R: expression}[]
+  }
+}
+
+{
   Type: IMPORT
   Right: IDENTIFIER Node
 }
@@ -100,6 +116,7 @@ Node types:
 
 {
   Type:  IDENTIFIER
+  Right: IDENTIFIER Node | nil # linked list of . accessors, nil means it's the end or there is no . chain
   Value: string
 }
 

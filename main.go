@@ -53,10 +53,10 @@ func main() {
 	_check(err)
 
 	tc := typechecker.NewTypeChecker()
-	ast, funcTable, err := tc.TypeCheck(ast)
+	ast, funcTable, typeTable, err := tc.TypeCheck(ast)
 	_check(err)
 
-	cg := codegen.NewCodeGen(ast, funcTable)
+	cg := codegen.NewCodeGen(ast, funcTable, typeTable)
 	ir, err := cg.EmitIR()
 	_check(err)
 

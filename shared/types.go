@@ -1,156 +1,221 @@
 package shared
 
-type Type string
+type Type interface {
+	IsPrimitive() bool
+	IsStruct() bool
+	IsPointer() bool
+}
 
-const (
-	BUILTIN_VOID Type = "void"
-
-	BUILTIN_UNTYPED_INT Type = "_untyped_int" // reserved for number literals that we dont yet know the type of
-
-	BUILTIN_U8  Type = "u8"
-	BUILTIN_U16 Type = "u16"
-	BUILTIN_U32 Type = "u32"
-	BUILTIN_U64 Type = "u64"
-
-	BUILTIN_I8  Type = "i8"
-	BUILTIN_I16 Type = "i16"
-	BUILTIN_I32 Type = "i32"
-	BUILTIN_I64 Type = "i64"
-
-	BUILTIN_BOOL Type = "bool"
-
-	BUILTIN_CHAR   Type = "char"
-	BUILTIN_STRING Type = "string"
-)
-
-func ResolveType(name string) (Type, bool) {
-	if name == string(BUILTIN_VOID) {
-		return BUILTIN_VOID, true
-	} else if name == string(BUILTIN_U8) {
-		return BUILTIN_U8, true
-	} else if name == string(BUILTIN_U16) {
-		return BUILTIN_U16, true
-	} else if name == string(BUILTIN_U32) {
-		return BUILTIN_U32, true
-	} else if name == string(BUILTIN_U64) {
-		return BUILTIN_U64, true
-	} else if name == string(BUILTIN_I8) {
-		return BUILTIN_I8, true
-	} else if name == string(BUILTIN_I16) {
-		return BUILTIN_I16, true
-	} else if name == string(BUILTIN_I32) {
-		return BUILTIN_I32, true
-	} else if name == string(BUILTIN_I64) {
-		return BUILTIN_I64, true
-	} else if name == string(BUILTIN_BOOL) {
-		return BUILTIN_BOOL, true
-	} else if name == string(BUILTIN_CHAR) {
-		return BUILTIN_CHAR, true
-	} else if name == string(BUILTIN_STRING) {
-		return BUILTIN_STRING, true
+func GetSizeOfType(t Type) int {
+	if t == PRIMITIVE_U8 || t == PRIMITIVE_I8 {
+		return 4
 	}
-
-	return BUILTIN_VOID, false
+	if t == PRIMITIVE_U16 || t == PRIMITIVE_I16 {
+		return 4
+	}
+	if t == PRIMITIVE_U32 || t == PRIMITIVE_I32 {
+		return 4
+	}
+	if t == PRIMITIVE_U64 || t == PRIMITIVE_I64 {
+		return 8
+	}
+	if t == PRIMITIVE_CHAR {
+		return 4
+	}
+	if t == PRIMITIVE_BOOL {
+		return 4
+	}
+	if t == PRIMITIVE_CSTRING {
+		return 8
+	}
+	if st, ok := t.(Struct); ok {
+		maxSize := 0
+		for _, field := range st.Fields {
+			size := GetSizeOfType(field.R)
+			if size > maxSize {
+				maxSize = size
+			}
+		}
+		return maxSize * len(st.Fields)
+	}
+	return 0
 }
 
 func IsNumericType(t Type) bool {
-	return t == BUILTIN_UNTYPED_INT ||
-		t == BUILTIN_U8 ||
-		t == BUILTIN_U16 ||
-		t == BUILTIN_U32 ||
-		t == BUILTIN_U64 ||
-		t == BUILTIN_I8 ||
-		t == BUILTIN_I16 ||
-		t == BUILTIN_I32 ||
-		t == BUILTIN_I64
+	return t == PRIMITIVE_U8 ||
+		t == PRIMITIVE_I8 ||
+		t == PRIMITIVE_U16 ||
+		t == PRIMITIVE_I16 ||
+		t == PRIMITIVE_U32 ||
+		t == PRIMITIVE_I32 ||
+		t == PRIMITIVE_U64 ||
+		t == PRIMITIVE_I64 ||
+		t == PRIMITIVE_UNTYPED_INT
 }
 
-func AreCompatibleTypes(a, b Type) (bool, Type) {
-	if a == b {
-		return true, a
-	}
-
-	if IsNumericType(a) && IsNumericType(b) {
-		return AreCompatibleNumericTypes(a, b)
-	}
-
-	if (a == BUILTIN_BOOL || a == BUILTIN_CHAR) && IsNumericType(b) {
-		return true, b
-	}
-	if (b == BUILTIN_BOOL || b == BUILTIN_CHAR) && IsNumericType(a) {
-		return true, a
-	}
-
-	if IsUntypedNumeric(a) && IsNumericType(b) {
-		return true, b
-	}
-	if IsUntypedNumeric(b) && IsNumericType(a) {
-		return true, a
-	}
-
-	return false, BUILTIN_VOID
-}
-
-func AreCompatibleNumericTypes(a, b Type) (bool, Type) {
-	if !IsNumericType(a) || !IsNumericType(b) {
-		return false, BUILTIN_VOID
-	}
-
-	if a == b {
-		return true, a
-	}
-
-	if IsUnsignedType(a) && IsSignedType(b) || IsSignedType(a) && IsUnsignedType(b) {
-		larger := LargerNumericType(a, b)
-		return true, larger
-	}
-
-	return true, LargerNumericType(a, b)
-}
-
-func IsSignedType(t Type) bool {
-	return t == BUILTIN_I8 || t == BUILTIN_I16 || t == BUILTIN_I32 || t == BUILTIN_I64
-}
-
-func IsUnsignedType(t Type) bool {
-	return t == BUILTIN_U8 || t == BUILTIN_U16 || t == BUILTIN_U32 || t == BUILTIN_U64
-}
-
-func LargerNumericType(a, b Type) Type {
-	precedence := []Type{
-		BUILTIN_U8, BUILTIN_I8,
-		BUILTIN_U16, BUILTIN_I16,
-		BUILTIN_U32, BUILTIN_I32,
-		BUILTIN_U64, BUILTIN_I64,
-	}
-
-	aIndex := -1
-	bIndex := -1
-	for i, t := range precedence {
-		if t == a {
-			aIndex = i
-		}
-		if t == b {
-			bIndex = i
+func IsUnsignedType(ts ...Type) bool {
+	for _, t := range ts {
+		if !(t == PRIMITIVE_U8 ||
+			t == PRIMITIVE_U16 ||
+			t == PRIMITIVE_U32 ||
+			t == PRIMITIVE_U64) {
+			return false
 		}
 	}
-
-	if aIndex > bIndex {
-		return a
-	}
-	return b
+	return true
 }
 
-func IsUntypedNumeric(t Type) bool {
-	return t == BUILTIN_UNTYPED_INT
+func IsSignedType(ts ...Type) bool {
+	for _, t := range ts {
+		if !(t == PRIMITIVE_I8 ||
+			t == PRIMITIVE_I16 ||
+			t == PRIMITIVE_I32 ||
+			t == PRIMITIVE_I64) {
+			return false
+		}
+	}
+	return true
 }
 
-func CanCoerceTo(src, dest Type) bool {
-	if src == dest {
+func BiggerNumericType(t1, t2 Type) Type {
+	if t1 == PRIMITIVE_U64 || t2 == PRIMITIVE_U64 {
+		return PRIMITIVE_U64
+	}
+	if t1 == PRIMITIVE_I64 || t2 == PRIMITIVE_I64 {
+		return PRIMITIVE_I64
+	}
+	if t1 == PRIMITIVE_U32 || t2 == PRIMITIVE_U32 {
+		return PRIMITIVE_U32
+	}
+	if t1 == PRIMITIVE_I32 || t2 == PRIMITIVE_I32 {
+		return PRIMITIVE_I32
+	}
+	if t1 == PRIMITIVE_U16 || t2 == PRIMITIVE_U16 {
+		return PRIMITIVE_U16
+	}
+	if t1 == PRIMITIVE_I16 || t2 == PRIMITIVE_I16 {
+		return PRIMITIVE_I16
+	}
+	if t1 == PRIMITIVE_U8 || t2 == PRIMITIVE_U8 {
+		return PRIMITIVE_U8
+	}
+	if t1 == PRIMITIVE_I8 || t2 == PRIMITIVE_I8 {
+		return PRIMITIVE_I8
+	}
+	return PRIMITIVE_UNTYPED_INT
+}
+
+func CanCoerceTo(t1, t2 Type) bool {
+	if t1 == PRIMITIVE_UNTYPED_INT && IsNumericType(t2) {
 		return true
 	}
-	if IsUntypedNumeric(src) && IsNumericType(dest) {
+
+	if t1 == t2 {
 		return true
 	}
+
+	if (IsSignedType(t1, t2) || IsUnsignedType(t1, t2)) && BiggerNumericType(t1, t2) == t2 {
+		return true
+	}
+
 	return false
+}
+
+func CanCastTo(t1, t2 Type) bool {
+	if t1 == t2 {
+		return true
+	}
+
+	if t1 == PRIMITIVE_CHAR && t2 == PRIMITIVE_U8 || t1 == PRIMITIVE_U8 && t2 == PRIMITIVE_CHAR {
+		return true
+	}
+
+	if IsNumericType(t1) && IsNumericType(t2) {
+		return true
+	}
+
+	return false
+}
+
+type Primitive string
+
+const (
+	PRIMITIVE_VOID Primitive = "void"
+
+	PRIMITIVE_UNTYPED_INT Primitive = "_untyped_int"
+
+	PRIMITIVE_U8  Primitive = "u8"
+	PRIMITIVE_U16 Primitive = "u16"
+	PRIMITIVE_U32 Primitive = "u32"
+	PRIMITIVE_U64 Primitive = "u64"
+
+	PRIMITIVE_I8  Primitive = "i8"
+	PRIMITIVE_I16 Primitive = "i16"
+	PRIMITIVE_I32 Primitive = "i32"
+	PRIMITIVE_I64 Primitive = "i64"
+
+	PRIMITIVE_BOOL Primitive = "bool"
+
+	PRIMITIVE_CHAR    Primitive = "char"
+	PRIMITIVE_CSTRING Primitive = "cstring"
+)
+
+func (pt Primitive) IsPrimitive() bool { return true }
+func (pt Primitive) IsStruct() bool    { return false }
+func (pt Primitive) IsPointer() bool   { return false }
+
+type Struct struct {
+	Fields []Pair[string, Type]
+}
+
+func (st Struct) IsPrimitive() bool { return false }
+func (st Struct) IsStruct() bool    { return true }
+func (st Struct) IsPointer() bool   { return false }
+
+type Pointer struct {
+	To Type
+}
+
+func (pt Pointer) IsPrimitive() bool { return false }
+func (pt Pointer) IsStruct() bool    { return false }
+func (pt Pointer) IsPointer() bool   { return true }
+
+type TypeTable map[string]Type
+
+func NewTypeTable() TypeTable {
+	tt := TypeTable{}
+
+	tt.Define(string(PRIMITIVE_VOID), PRIMITIVE_VOID)
+	tt.Define(string(PRIMITIVE_UNTYPED_INT), PRIMITIVE_UNTYPED_INT)
+
+	tt.Define(string(PRIMITIVE_U8), PRIMITIVE_U8)
+	tt.Define(string(PRIMITIVE_U16), PRIMITIVE_U16)
+	tt.Define(string(PRIMITIVE_U32), PRIMITIVE_U32)
+	tt.Define(string(PRIMITIVE_U64), PRIMITIVE_U64)
+
+	tt.Define(string(PRIMITIVE_I8), PRIMITIVE_I8)
+	tt.Define(string(PRIMITIVE_I16), PRIMITIVE_I16)
+	tt.Define(string(PRIMITIVE_I32), PRIMITIVE_I32)
+	tt.Define(string(PRIMITIVE_I64), PRIMITIVE_I64)
+
+	tt.Define(string(PRIMITIVE_BOOL), PRIMITIVE_BOOL)
+
+	tt.Define(string(PRIMITIVE_CHAR), PRIMITIVE_CHAR)
+	tt.Define(string(PRIMITIVE_CSTRING), PRIMITIVE_CSTRING)
+
+	tt.Define("string", Struct{Fields: []Pair[string, Type]{
+		{"data", PRIMITIVE_CSTRING},
+		{"len", PRIMITIVE_U64},
+	}})
+
+	return tt
+}
+
+func (tt TypeTable) Define(name string, t Type) {
+	tt[name] = t
+}
+
+func (tt TypeTable) Lookup(name string) (Type, bool) {
+	t, ok := tt[name]
+	return t, ok
 }

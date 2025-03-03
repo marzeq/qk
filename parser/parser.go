@@ -128,6 +128,12 @@ func (p *Parser) Parse() (*Node, error) {
 				return nil, err
 			}
 			rootNode.Children = append(rootNode.Children, fnDef)
+		case "struct":
+			str, err := p.ParseStructDefinition()
+			if err != nil {
+				return nil, err
+			}
+			rootNode.Children = append(rootNode.Children, str)
 		case "import":
 			imp, err := p.ParseImport()
 			if err != nil {

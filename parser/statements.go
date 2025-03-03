@@ -23,11 +23,11 @@ func (p *Parser) ParseDeclaration() (*Node, error) {
 	if p.Match(tokeniser.TOKEN_TYPE_COLON) {
 		p.Inc()
 
-		ident, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_IDENT)
-		if !ok {
-			return nil, shared.NewError(p.PrevLoc(), "expected type name")
+		ident, err := p.ParseIdent()
+		if err != nil {
+			return nil, err
 		}
-		tpe = &Node{Type: NODE_TYPE_IDENTIFIER, Value: ident.Value}
+		tpe = ident
 	}
 
 	if !p.Expect(tokeniser.TOKEN_TYPE_EQUALS) {
@@ -216,15 +216,14 @@ func (p *Parser) ParseFunctionDefinition() (*Node, error) {
 			return nil, shared.NewError(p.PrevLoc(), "expected ':'")
 		}
 
-		argTypeLoc := p.CurrLoc()
-		argType, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_IDENT)
-		if !ok {
-			return nil, shared.NewError(p.PrevLoc(), "expected argument type")
+		arg, err := p.ParseIdent()
+		if err != nil {
+			return nil, err
 		}
 
 		args = append(args, shared.Pair[*Node, *Node]{
 			L: &Node{Type: NODE_TYPE_IDENTIFIER, Value: argName.Value, Loc: argNameLoc},
-			R: &Node{Type: NODE_TYPE_IDENTIFIER, Value: argType.Value, Loc: argTypeLoc},
+			R: arg,
 		})
 
 		if !p.Match(tokeniser.TOKEN_TYPE_COMMA) {
@@ -241,10 +240,9 @@ func (p *Parser) ParseFunctionDefinition() (*Node, error) {
 		return nil, shared.NewError(p.PrevLoc(), "expected ':'")
 	}
 
-	retTypeLoc := p.CurrLoc()
-	returnType, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_IDENT)
-	if !ok {
-		return nil, shared.NewError(p.PrevLoc(), "expected return type")
+	retType, err := p.ParseIdent()
+	if err != nil {
+		return nil, err
 	}
 
 	if !p.Expect(tokeniser.TOKEN_TYPE_EQUALS) {
@@ -276,7 +274,7 @@ func (p *Parser) ParseFunctionDefinition() (*Node, error) {
 		Value: &FunctionValue{
 			Name:        &Node{Type: NODE_TYPE_IDENTIFIER, Value: name.Value, Loc: nameLoc},
 			Args:        args,
-			RetType:     &Node{Type: NODE_TYPE_IDENTIFIER, Value: returnType.Value, Loc: retTypeLoc},
+			RetType:     retType,
 			HasVariadic: false,
 		},
 		Children: []*Node{body},
@@ -362,6 +360,73 @@ func (p *Parser) ParseExternalFunctionDefinition() (*Node, error) {
 	}, nil
 }
 
+func (p *Parser) ParseStructDefinition() (*Node, error) {
+	beginLoc := p.CurrLoc()
+	if !p.Expect(tokeniser.TOKEN_TYPE_KEYWORD) {
+		return nil, shared.NewError(p.PrevLoc(), "expected 'struct' keyword")
+	}
+
+	nameLoc := p.CurrLoc()
+	name, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_IDENT)
+	if !ok {
+		return nil, shared.NewError(p.PrevLoc(), "expected struct name")
+	}
+
+	if !p.Expect(tokeniser.TOKEN_TYPE_OPEN_CURLY) {
+		return nil, shared.NewError(p.PrevLoc(), "expected '{'")
+	}
+
+	for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
+		p.Inc()
+	}
+
+	var props []shared.Pair[*Node, *Node]
+	for !p.Match(tokeniser.TOKEN_TYPE_CLOSE_CURLY) {
+		propNameLoc := p.CurrLoc()
+		propName, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_IDENT)
+		if !ok {
+			return nil, shared.NewError(p.PrevLoc(), "expected property name")
+		}
+
+		if !p.Expect(tokeniser.TOKEN_TYPE_COLON) {
+			return nil, shared.NewError(p.PrevLoc(), "expected ':'")
+		}
+
+		propTypeLoc := p.CurrLoc()
+		propType, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_IDENT)
+		if !ok {
+			return nil, shared.NewError(p.PrevLoc(), "expected property type")
+		}
+
+		props = append(props, shared.Pair[*Node, *Node]{
+			L: &Node{Type: NODE_TYPE_IDENTIFIER, Value: propName.Value, Loc: propNameLoc},
+			R: &Node{Type: NODE_TYPE_IDENTIFIER, Value: propType.Value, Loc: propTypeLoc},
+		})
+
+		if !p.Match(tokeniser.TOKEN_TYPE_COMMA, tokeniser.TOKEN_TYPE_NEWLINE) {
+			break
+		}
+		p.Inc()
+
+		for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
+			p.Inc()
+		}
+	}
+
+	if !p.Expect(tokeniser.TOKEN_TYPE_CLOSE_CURLY) {
+		return nil, shared.NewError(p.PrevLoc(), "expected '}'")
+	}
+
+	return &Node{
+		Type: NODE_TYPE_STRUCT_DEF,
+		Left: &Node{Type: NODE_TYPE_IDENTIFIER, Value: name.Value, Loc: nameLoc},
+		Value: &StructValue{
+			Fields: props,
+		},
+		Loc: beginLoc,
+	}, nil
+}
+
 func (p *Parser) ParseImport() (*Node, error) {
 	beginLoc := p.CurrLoc()
 	if kw, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_KEYWORD); !ok || kw.Value != "import" {
@@ -381,7 +446,7 @@ func (p *Parser) ParseImport() (*Node, error) {
 	}, nil
 }
 
-func (p *Parser) ParseStatement() (*Node, bool, error) { // bool is whether semicolon is required after
+func (p *Parser) ParseStatement() (*Node, bool, error) {
 	if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) {
 		kw := p.Peek().Value
 		switch kw {
@@ -420,8 +485,7 @@ func (p *Parser) ParseStatement() (*Node, bool, error) { // bool is whether semi
 	}
 
 	if p.Match(tokeniser.TOKEN_TYPE_IDENT) {
-		ident := p.Consume()
-
+		p.Inc()
 		if p.Match(tokeniser.TOKEN_TYPE_EQUALS) {
 			p.Dec()
 			node, err := p.ParseAssignment()
@@ -431,7 +495,8 @@ func (p *Parser) ParseStatement() (*Node, bool, error) { // bool is whether semi
 			node, err := p.ParseAssignmentBy()
 			return node, true, err
 		} else if p.Match(tokeniser.TOKEN_TYPE_OPEN_PAREN) {
-			node, err := p.ParseFunctionCall(ident)
+			p.Dec()
+			node, err := p.ParseFunctionCall()
 			return node, true, err
 		}
 
