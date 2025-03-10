@@ -113,14 +113,22 @@ func (cg *CodeGen) GenerateFuncIR(funcNode *Node) (string, []string, error) {
 		prologue += "export function w $main() {\n@start"
 	} else {
 		prologue += fmt.Sprintf("function %s $%s(", mapTypeToIRType(fsig.RetType), fsig.Name)
+		after := ""
 		for i, arg := range fsig.ArgTypes {
-			prologue += fmt.Sprintf("%s %%%s", mapTypeToIRType(arg.R), arg.L)
+			tnm := cg.GetTmpVar()
+			tpe := mapTypeToIRType(arg.R)
+			tsz := shared.GetSizeOfType(arg.R)
+			prologue += fmt.Sprintf("%s %s", tpe, tnm)
 			if i != len(fsig.ArgTypes)-1 {
 				prologue += ", "
 			}
+
+			after += fmt.Sprintf("%%%s =l alloc%d %d\n", arg.L, tsz, tsz)
+			after += fmt.Sprintf("store%s %s, %%%s", tpe, tnm, arg.L)
 		}
 
-		prologue += ") {\n@start"
+		prologue += ") {\n@start\n"
+		prologue += after
 
 		if fsig.ImplicitReturn {
 			epilogue = "\nret"
@@ -223,20 +231,28 @@ func (cg *CodeGen) GenerateStmtIR(stmtNode *Node, last bool, loopBegin, loopEnd 
 		}
 
 	case parser.NODE_TYPE_DECLARATION:
-		fallthrough
-	case parser.NODE_TYPE_ASSIGNMENT:
-		line = fmt.Sprintf("%%%s =%s ", typechecker.IdentToStr(stmtNode.Left), mapTypeToIRType(stmtNode.ExprType))
+		sz := shared.GetSizeOfType(stmtNode.Right.ExprType)
+		nme := typechecker.IdentToStr(stmtNode.Left)
+		setups = append(setups, fmt.Sprintf("%%%s =l alloc%d %d", nme, sz, sz))
 
 		val, setps, gsetps, _, err := cg.GenerateExprIR(stmtNode.Right)
-		val = "copy " + val
 		if err != nil {
 			return "", nil, nil, err
 		}
 
-		line += val
+		line += fmt.Sprintf("store%s %s, %%%s", mapTypeToIRType(stmtNode.Right.ExprType), val, nme)
 		setups = append(setups, setps...)
 		gsetups = append(gsetups, gsetps...)
+	case parser.NODE_TYPE_ASSIGNMENT:
+		nme := typechecker.IdentToStr(stmtNode.Left)
+		val, setps, gsetps, _, err := cg.GenerateExprIR(stmtNode.Right)
+		if err != nil {
+			return "", nil, nil, err
+		}
 
+		line = fmt.Sprintf("store%s %s, %%%s", mapTypeToIRType(stmtNode.Right.ExprType), val, nme)
+		setups = append(setups, setps...)
+		gsetups = append(gsetups, gsetps...)
 	case parser.NODE_TYPE_FUNCTION_CALL:
 		fname := typechecker.IdentToStr(stmtNode.Value.(*Node))
 		fsig := cg.funcSigs[fname]
@@ -423,7 +439,10 @@ func (cg *CodeGen) GenerateExprIR(exprNode *Node) (string, []string, []string, s
 	tpe := mapTypeToIRType(exprNode.ExprType)
 	switch exprNode.Type {
 	case parser.NODE_TYPE_IDENTIFIER:
-		val = fmt.Sprintf("%%%s", exprNode.Value.(string))
+		irt := mapTypeToIRType(exprNode.ExprType)
+		tnme := cg.GetTmpVar()
+		setups = append(setups, fmt.Sprintf("%s =%s load%s %%%s", tnme, irt, irt, typechecker.IdentToStr(exprNode)))
+		val = tnme
 
 	case parser.NODE_TYPE_NUMBER_LITERAL:
 		val = exprNode.Value.(string)

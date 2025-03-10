@@ -1,10 +1,13 @@
-struct A {
-  a: i32,
-  b: i32
-}
+let fib(n: i32): i32 =
+  if n <= 1 { n }
+  else { fib(n - 1) + fib(n - 2) }
+
+declare printf(s: cstring, ...): void
+declare scanf(format: cstring, ...): i32
 
 let main(): i32 = {
-  let a: A = A{ a = 1, b = 2 }
-
+  let f9 = fib(9)
+  
+  printf("%d\n", f9)
   return 0
 }

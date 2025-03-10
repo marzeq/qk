@@ -38,6 +38,9 @@ func GetSizeOfType(t Type) int {
 		}
 		return maxSize * len(st.Fields)
 	}
+	if _, ok := t.(Pointer); ok {
+		return 8
+	}
 	return 0
 }
 
