@@ -7,6 +7,7 @@ import (
 	"path"
 
 	"github.com/marzeq/quokka/codegen"
+	"github.com/marzeq/quokka/import_resolve"
 	"github.com/marzeq/quokka/parser"
 	"github.com/marzeq/quokka/tokeniser"
 	"github.com/marzeq/quokka/typechecker"
@@ -52,8 +53,10 @@ func main() {
 	ast, err := p.Parse()
 	_check(err)
 
+	merged, err := import_resolve.ProcessImports(ast, map[string]*parser.Node{}, map[string]bool{})
+
 	tc := typechecker.NewTypeChecker()
-	ast, funcTable, typeTable, err := tc.TypeCheck(ast)
+	ast, funcTable, typeTable, err := tc.TypeCheck(merged)
 	_check(err)
 
 	cg := codegen.NewCodeGen(ast, funcTable, typeTable)
