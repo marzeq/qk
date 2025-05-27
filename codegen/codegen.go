@@ -392,9 +392,9 @@ func (cg *CodeGen) GenerateStmtIR(stmtNode *Node, last bool, loopBegin, loopEnd 
 			if err != nil {
 				return "", nil, nil, err
 			}
-			setups = append(setups, l)
 
 			setups = append(setups, setps...)
+			setups = append(setups, l)
 			gsetups = append(gsetups, gsetps...)
 
 			cond, setps, gsetps, _, err := cg.GenerateExprIR(value.ExprsOrStmts[1])
