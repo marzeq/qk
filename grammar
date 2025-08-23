@@ -61,7 +61,7 @@ logical_not     = ["not"] (logical_not | comparison) ;
 comparison      = additive {("==" | "!=" | "<" | ">" | "<=" | ">=") additive} ;
 additive        = multiplicative {('+' | '-') multiplicative} ;
 multiplicative  = unary {('*' | '/' | '%') unary} ;
-unary           = '-' unary | term ;
+unary           = ('-' | '&' | '*') unary | term ;
 term            = NUMBER
                 | BOOLEAN
                 | fn_call
