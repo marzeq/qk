@@ -176,7 +176,8 @@ func (st Struct) IsStruct() bool    { return true }
 func (st Struct) IsPointer() bool   { return false }
 
 type Pointer struct {
-  To Type
+  To    Type
+	Const bool
 }
 
 func (pt Pointer) IsPrimitive() bool { return false }

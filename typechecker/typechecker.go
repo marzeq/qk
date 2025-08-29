@@ -322,19 +322,36 @@ func (tc *TypeChecker) typeCheckExpression(exprNode *Node, expectedType Type) (T
       if operandType != shared.PRIMITIVE_BOOL {
         return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Right.Loc, "unary operator 'not' expects a boolean operand, found '%s'", operandType)
       }
+			exprNode.ExprType = shared.PRIMITIVE_BOOL
       return shared.PRIMITIVE_BOOL, nil
     case "-":
       if !shared.IsNumericType(operandType) {
         return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Right.Loc, "unary operator '-' requires numeric operand, found '%s'", operandType)
       }
+			exprNode.ExprType = operandType
       return operandType, nil
     case "*":
       if !operandType.IsPointer() {
         return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Right.Loc, "unary operator '*' requires a pointer operand, found '%s'", operandType)
       }
-      return operandType.(shared.Pointer).To, nil
+			t := operandType.(shared.Pointer).To
+			exprNode.ExprType = t
+      return t, nil
     case "&":
-      return shared.Pointer{To: operandType}, nil
+			if exprNode.Right.Type != parser.NODE_TYPE_IDENTIFIER {
+				return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Right.Loc, "unary operator '&' requires an identifier operand, found '%s'", exprNode.Right.Type)
+			}
+			varName := IdentToStr(exprNode.Right)
+			varSig, ok := tc.VarTable.Lookup(varName)
+			if !ok {
+				return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Right.Loc, "undefined variable '%s'", varName)
+			}
+			t := shared.Pointer{
+				To: operandType,
+				Const: !varSig.Mutable,
+			}
+			exprNode.ExprType = t
+      return t, nil
     default:
       return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "unknown unary operator '%s'", op)
     }
@@ -536,13 +553,15 @@ func (tc *TypeChecker) typeCheckDeclaration(declNode *Node) (string, *VarSig, er
   }
 
   if varType == shared.PRIMITIVE_UNTYPED_INT {
-    return "", nil, shared.NewError(declNode.Loc, "ambiguous number type, specify type explicitly")
+		varType = shared.PRIMITIVE_I32
+		exprType = shared.PRIMITIVE_I32
   }
   if varType == shared.PRIMITIVE_VOID {
     return "", nil, shared.NewError(declNode.Loc, "a variable cannot be of type void")
   }
 
-  declNode.ExprType = exprType
+  declNode.ExprType = varType
+	declNode.Right.ExprType = exprType
 
   return varName, &VarSig{
     Type:    varType,
