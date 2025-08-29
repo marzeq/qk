@@ -244,15 +244,31 @@ func (cg *CodeGen) GenerateStmtIR(stmtNode *Node, last bool, loopBegin, loopEnd 
     setups = append(setups, setps...)
     gsetups = append(gsetups, gsetps...)
   case parser.NODE_TYPE_ASSIGNMENT:
-    nme := typechecker.IdentToStr(stmtNode.Left)
-    val, setps, gsetps, _, err := cg.GenerateExprIR(stmtNode.Right)
-    if err != nil {
-      return "", nil, nil, err
-    }
+		if stmtNode.Left.Type == parser.NODE_TYPE_IDENTIFIER {
+			nme := typechecker.IdentToStr(stmtNode.Left)
+			val, setps, gsetps, _, err := cg.GenerateExprIR(stmtNode.Right)
+			if err != nil {
+				return "", nil, nil, err
+			}
 
-    line = fmt.Sprintf("store%s %s, %%%s", mapTypeToIRType(stmtNode.Right.ExprType), val, nme)
-    setups = append(setups, setps...)
-    gsetups = append(gsetups, gsetps...)
+			line = fmt.Sprintf("store%s %s, %%%s", mapTypeToIRType(stmtNode.Right.ExprType), val, nme)
+			setups = append(setups, setps...)
+			gsetups = append(gsetups, gsetps...)
+		} else if stmtNode.Left.Type == parser.NODE_TYPE_UNARY_OP && stmtNode.Left.Value.(string) == "*" {
+			val, setps, gsetps, _, err := cg.GenerateExprIR(stmtNode.Right)
+			if err != nil {
+				return "", nil, nil, err
+			}
+			ptrVal, ptrSetps, ptrGSetps, _, err := cg.GenerateExprIR(stmtNode.Left.Right)
+			if err != nil {
+				return "", nil, nil, err
+			}
+			line = fmt.Sprintf("store%s %s, %s", mapTypeToIRType(stmtNode.Right.ExprType), val, ptrVal)
+			setups = append(setups, ptrSetps...)
+			setups = append(setups, setps...)
+			gsetups = append(gsetups, ptrGSetps...)
+			gsetups = append(gsetups, gsetps...)
+		}
   case parser.NODE_TYPE_FUNCTION_CALL:
     fname := typechecker.IdentToStr(stmtNode.Value.(*Node))
     fsig := cg.funcSigs[fname]
@@ -578,36 +594,41 @@ func (cg *CodeGen) GenerateExprIR(exprNode *Node) (string, []string, []string, s
   case parser.NODE_TYPE_UNARY_OP:
     nm := cg.GetTmpVar()
     val = fmt.Sprintf("%s", nm)
-    setup := ""
-    v, st, gst, _, err := cg.GenerateExprIR(exprNode.Right)
-    if err != nil {
-      return "", nil, nil, "", err
-    }
-    switch exprNode.Value.(string) {
-    case "-":
-      setup = fmt.Sprintf("%s =%s neg %s", val, mapTypeToIRType(exprNode.Right.ExprType), v)
-    case "not":
-      tpe := mapTypeToIRType(exprNode.Right.ExprType)
-      setup = fmt.Sprintf("%s =%s cne%s %s, 1", val, tpe, tpe, v)
-    case "&":
-      tpe := mapTypeToIRType(exprNode.Right.ExprType)
-      if exprNode.Right.Type == parser.NODE_TYPE_IDENTIFIER {
-        setup = fmt.Sprintf("%s =%s load%s %%%s", val, tpe, tpe, typechecker.IdentToStr(exprNode.Right))
-      } else {
-        return "", nil, nil, "", shared.NewError(exprNode.Loc, "cannot take address of non-variable expression")
-      }
-    case "*":
-      tpe := mapTypeToIRType(exprNode.Right.ExprType)
-      if exprNode.Right.Type == parser.NODE_TYPE_IDENTIFIER {
-        setup = fmt.Sprintf("%s =%s load%s %%%s", val, tpe, tpe, typechecker.IdentToStr(exprNode.Right))
-      } else {
-        return "", nil, nil, "", shared.NewError(exprNode.Loc, "cannot dereference non-variable expression")
-      }
-    }
 
-    setups = append(setups, st...)
-    gsetups = append(gsetups, gst...)
-    setups = append(setups, setup)
+		switch exprNode.Value.(string) {
+		case "&":
+			if exprNode.Right.Type == parser.NODE_TYPE_IDENTIFIER {
+				setups = append(setups, fmt.Sprintf("%s =l copy %%%s", val, typechecker.IdentToStr(exprNode.Right)))
+			} else {
+				return "", nil, nil, "", shared.NewError(exprNode.Loc, "cannot take address of non-variable expression")
+			}
+		case "*":
+			if exprNode.Right.Type == parser.NODE_TYPE_IDENTIFIER {
+				nm2 := cg.GetTmpVar()
+				val2 := fmt.Sprintf("%s", nm2)
+				setups = append(setups, fmt.Sprintf("%s =l loadl %%%s", val2, typechecker.IdentToStr(exprNode.Right)))
+				setups = append(setups, fmt.Sprintf("%s =%s load%s %s", val, mapTypeToIRType(exprNode.ExprType), mapTypeToIRType(exprNode.ExprType), val2))
+			} else {
+				return "", nil, nil, "", shared.NewError(exprNode.Loc, "cannot dereference non-variable expression")
+			}
+		default:
+			setup := ""
+			v, st, gst, _, err := cg.GenerateExprIR(exprNode.Right)
+			if err != nil {
+				return "", nil, nil, "", err
+			}
+			switch exprNode.Value.(string) {
+			case "-":
+				setup = fmt.Sprintf("%s =%s neg %s", val, mapTypeToIRType(exprNode.Right.ExprType), v)
+			case "not":
+				tpe := mapTypeToIRType(exprNode.Right.ExprType)
+				setup = fmt.Sprintf("%s =%s cne%s %s, 1", val, tpe, tpe, v)
+			}
+
+			setups = append(setups, st...)
+			gsetups = append(gsetups, gst...)
+			setups = append(setups, setup)
+		}
 
   case parser.NODE_TYPE_IF_EXPR:
     ifEVal := exprNode.Value.(*parser.IfNodeValue)

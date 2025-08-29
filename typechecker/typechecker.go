@@ -570,31 +570,71 @@ func (tc *TypeChecker) typeCheckDeclaration(declNode *Node) (string, *VarSig, er
 }
 
 func (tc *TypeChecker) typeCheckAssignment(asNode *Node) error {
-  varName := IdentToStr(asNode.Left)
-  varSig, ok := tc.VarTable.Lookup(varName)
-  if !ok {
-    return shared.NewError(asNode.Left.Loc, "undefined variable '%s'", varName)
-  }
+	if asNode.Left.Type != parser.NODE_TYPE_IDENTIFIER && !(asNode.Left.Type == parser.NODE_TYPE_UNARY_OP && asNode.Left.Value.(string) == "*") {
+		return shared.NewError(asNode.Left.Loc, "left side of assignment must be a variable or dereferenced pointer")
+	}
 
-  if !varSig.Mutable {
-    return shared.NewError(asNode.Loc, "cannot assign to immutable variable '%s'", varName)
-  }
+	if asNode.Left.Type == parser.NODE_TYPE_IDENTIFIER {
+		return tc.typeCheckIdentifierAssignment(asNode)
+	}
+	
+	return tc.typeCheckPointerAssignment(asNode)
+}
 
-  exprType, err := tc.typeCheckExpression(asNode.Right, varSig.Type)
-  if err != nil {
-    return err
-  }
+func (tc *TypeChecker) typeCheckIdentifierAssignment(asNode *Node) error {
+	varName := IdentToStr(asNode.Left)
+	varSig, ok := tc.VarTable.Lookup(varName)
+	if !ok {
+		return shared.NewError(asNode.Left.Loc, "undefined variable '%s'", varName)
+	}
 
-  if exprType != varSig.Type {
-    return shared.NewError(asNode.Loc,
-      "cannot assign value of type '%s' to variable '%s' of type '%s'",
-      exprType, varName, varSig.Type,
-    )
-  }
+	if !varSig.Mutable {
+		return shared.NewError(asNode.Loc, "cannot assign to immutable variable '%s'", varName)
+	}
 
-  asNode.ExprType = varSig.Type
+	exprType, err := tc.typeCheckExpression(asNode.Right, varSig.Type)
+	if err != nil {
+		return err
+	}
 
-  return nil
+	if exprType != varSig.Type {
+		return shared.NewError(asNode.Loc,
+			"cannot assign value of type '%s' to variable '%s' of type '%s'",
+			exprType, varName, varSig.Type,
+			)
+	}
+
+	asNode.ExprType = varSig.Type
+
+	return nil
+}
+
+func (tc *TypeChecker) typeCheckPointerAssignment(asNode *Node) error {
+	ptrNode := asNode.Left
+	ptrType, err := tc.typeCheckExpression(ptrNode.Right, shared.PRIMITIVE_VOID)
+	if err != nil {
+		return err
+	}
+	if !ptrType.IsPointer() {
+		return shared.NewError(ptrNode.Loc, "left side of assignment must be a pointer, found '%s'", ptrType)
+	}
+	ptr := ptrType.(shared.Pointer)
+	if ptr.Const {
+		return shared.NewError(ptrNode.Loc, "cannot perform pointer assignment if the pointee is immutable")
+	}
+	exprType, err := tc.typeCheckExpression(asNode.Right, ptr.To)
+	if err != nil {
+		return err
+	}
+	if exprType != ptr.To {
+		return shared.NewError(asNode.Loc,
+			"cannot assign value of type '%s' to pointer to '%s'",
+			exprType, ptr.To,
+		)
+	}
+	
+	asNode.ExprType = ptr.To
+	return nil
 }
 
 func (tc *TypeChecker) typeCheckForLoop(loopNode *Node, sig *FunctionSig) error {

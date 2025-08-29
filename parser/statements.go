@@ -91,6 +91,46 @@ func (p *Parser) ParseAssignment() (*Node, error) {
   }, err
 }
 
+func (p *Parser) ParsePointerAssignment() (*Node, error) {
+	identLoc := p.CurrLoc()
+	if (!p.Expect(tokeniser.TOKEN_TYPE_ASTERISK)) {
+		return nil, shared.NewError(p.PrevLoc(), "expected '*'")
+	}
+	ident, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_IDENT)
+	if !ok {
+		return nil, shared.NewError(p.PrevLoc(), "expected name")
+	}
+
+  if !p.Expect(tokeniser.TOKEN_TYPE_EQUALS) {
+    return nil, shared.NewError(p.PrevLoc(), "expected '='")
+  }
+
+  for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
+    p.Inc()
+  }
+
+  expr, err := p.ParseExpression()
+  if err != nil {
+    return nil, err
+  }
+
+  return &Node{
+    Type: NODE_TYPE_ASSIGNMENT,
+    Left: &Node{
+      Type:  NODE_TYPE_UNARY_OP,
+			Value: "*",
+			Right: &Node{
+				Type:  NODE_TYPE_IDENTIFIER,
+				Value: ident.Value,
+				Loc:   identLoc,
+			},
+			Loc: identLoc,
+    },
+		Right: expr,
+    Loc: 	 identLoc,
+  }, err
+}
+
 func (p *Parser) ParseAssignmentBy() (*Node, error) {
   identLoc := p.CurrLoc()
   ident, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_IDENT)
@@ -508,6 +548,11 @@ func (p *Parser) ParseStatement() (*Node, bool, error) {
     node, err := p.ParseBlock()
     return node, true, err
   }
+
+	if p.Match(tokeniser.TOKEN_TYPE_ASTERISK) {
+		node, err := p.ParsePointerAssignment()
+		return node, true, err
+	}
 
   return nil, false, shared.NewError(p.CurrLoc(), "unexpected token %s", p.Peek())
 }

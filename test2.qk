@@ -1,6 +1,13 @@
+declare printf(s: cstring, ...): void
+
 let main() = {
   let a = 5
+  printf("a = %d\n", a)
+
   let b = &a
 
-  return 0
+  var c = *b
+  c = 2  
+  printf("a after = %d\n", a)
+  return c
 }
