@@ -236,13 +236,14 @@ func (p *Parser) ParseFunctionDefinition() (*Node, error) {
     return nil, shared.NewError(p.PrevLoc(), "expected ')'")
   }
 
-  if !p.Expect(tokeniser.TOKEN_TYPE_COLON) {
-    return nil, shared.NewError(p.PrevLoc(), "expected ':'")
-  }
-
-  retType, err := p.ParseIdent()
-  if err != nil {
-    return nil, err
+	var retType *Node
+  if p.Match(tokeniser.TOKEN_TYPE_COLON) {
+		p.Inc()
+		r, err := p.ParseIdent()
+		if err != nil {
+			return nil, err
+		}
+		retType = r
   }
 
   if !p.Expect(tokeniser.TOKEN_TYPE_EQUALS) {

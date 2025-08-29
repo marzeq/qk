@@ -698,12 +698,22 @@ func (tc *TypeChecker) typeCheckIfStatement(ifNode *Node, sig *FunctionSig, isLo
 func (tc *TypeChecker) ExtractFunctionSig(functionNode *Node) (*FunctionSig, error) {
   functionVal := functionNode.Value.(*parser.FunctionValue)
   name := IdentToStr(functionVal.Name)
-  retTypeStr := IdentToStr(functionVal.RetType)
+	var retType Type
+	if (functionVal.RetType != nil) {
+		retTypeStr := IdentToStr(functionVal.RetType)
 
-  retType, ok := tc.TypeTable.Lookup(retTypeStr)
-  if !ok {
-    return nil, shared.NewError(functionVal.RetType.Loc, "function '%s' has undefined return type '%s'", name, retTypeStr)
-  }
+		r, ok := tc.TypeTable.Lookup(retTypeStr)
+		if !ok {
+			return nil, shared.NewError(functionVal.RetType.Loc, "function '%s' has undefined return type '%s'", name, retTypeStr)
+		}
+		retType = r
+	} else {
+		if name == "main" {
+			retType = shared.PRIMITIVE_I32
+		} else {
+			retType = shared.PRIMITIVE_VOID
+		}
+	}
 
   argTypes := make([]shared.Pair[string, Type], len(functionVal.Args))
   for i, arg := range functionVal.Args {
