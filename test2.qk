@@ -1,13 +1,17 @@
 declare printf(s: cstring, ...): void
 
+let fib(n: i32): i32 = 
+  if n <= 1 { n }
+  else { fib(n - 1) + fib(n - 2) }
+
 let main() = {
-  let a = 5
+  let a = fib(5)
   printf("a = %d\n", a)
 
   let b = &a
 
   var c = *b
-  c = 2  
+  c = 0
   printf("a after = %d\n", a)
   return c
 }

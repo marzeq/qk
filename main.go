@@ -53,7 +53,7 @@ func main() {
   ast, err := p.Parse()
   _check(err)
 
-  merged, err := import_resolve.ProcessImports(ast, map[string]*parser.Node{}, map[string]bool{})
+  merged, err := import_resolve.ProcessImports(ast, map[string]*parser.RootNode{}, map[string]bool{})
 
   tc := typechecker.NewTypeChecker()
   ast, funcTable, typeTable, err := tc.TypeCheck(merged)

@@ -8,11 +8,7 @@ import (
   "github.com/marzeq/quokka/tokeniser"
 )
 
-type (
-  Node = parser.Node
-)
-
-func ProcessImports(root *Node, loaded map[string]*Node, recStack map[string]bool) (*Node, error) {
+func ProcessImports(root *parser.RootNode, loaded map[string]*parser.RootNode, recStack map[string]bool) (*parser.RootNode, error) {
   filePath := root.Loc.FilePath
 
   if recStack[filePath] {
@@ -25,20 +21,15 @@ func ProcessImports(root *Node, loaded map[string]*Node, recStack map[string]boo
 
   recStack[filePath] = true
 
-  merged := &Node{
-    Type:     root.Type,
-    Loc:      root.Loc,
-    Children: []*Node{},
+  merged := &parser.RootNode{
+    Loc: root.Loc,
+    Body: []parser.Node{},
   }
 
-  for _, node := range root.Children {
-    if node.Type != parser.NODE_TYPE_IMPORT {
-      continue
-    }
-
-    importPath := node.Right.Value.(string)
-
-    resolvedPath := filepath.Join(filepath.Dir(filePath), importPath)
+  for _, n := range root.Body{
+    switch node := n.(type) {
+    case *parser.ImportNode:
+    resolvedPath := filepath.Join(filepath.Dir(filePath), node.Module)
 
     t, err := tokeniser.NewTokeniserFromFile(resolvedPath)
     if err != nil {
@@ -64,12 +55,15 @@ func ProcessImports(root *Node, loaded map[string]*Node, recStack map[string]boo
       return nil, err
     }
 
-    merged.Children = append(merged.Children, importedMerged.Children...)
+    merged.Body= append(merged.Body, importedMerged.Body...)
+    }
   }
 
-  for _, node := range root.Children {
-    if node.Type != parser.NODE_TYPE_IMPORT {
-      merged.Children = append(merged.Children, node)
+  for _, node := range root.Body{
+    switch node.(type) {
+    case *parser.ImportNode: continue
+    default:
+    merged.Body = append(merged.Body, node)
     }
   }
 

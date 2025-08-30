@@ -12,7 +12,7 @@ type Parser struct {
 
 func NewParser(tokens []tokeniser.Token) *Parser {
   return &Parser{
-    pos:    0,
+    pos: 0,
     tokens: tokens,
   }
 }
@@ -94,14 +94,13 @@ func (p *Parser) Match(ttypes ...tokeniser.TokenType) bool {
   return false
 }
 
-func (p *Parser) Parse() (*Node, error) {
+func (p *Parser) Parse() (*RootNode, error) {
   eofTok := p.tokens[len(p.tokens)-1]
-  rootNode := &Node{
-    Type: NODE_TYPE_ROOT,
+  rootNode := &RootNode{
     Loc: shared.Location{
       LC: shared.LineCol{
         Line: 1,
-        Col:  1,
+        Col: 1,
       },
       FilePath: eofTok.Loc.FilePath,
     },
@@ -121,25 +120,25 @@ func (p *Parser) Parse() (*Node, error) {
       if err != nil {
         return nil, err
       }
-      rootNode.Children = append(rootNode.Children, fnDef)
+      rootNode.Body = append(rootNode.Body, fnDef)
     case "declare":
       fnDef, err := p.ParseExternalFunctionDefinition()
       if err != nil {
         return nil, err
       }
-      rootNode.Children = append(rootNode.Children, fnDef)
+      rootNode.Body = append(rootNode.Body, fnDef)
     case "struct":
       str, err := p.ParseStructDefinition()
       if err != nil {
         return nil, err
       }
-      rootNode.Children = append(rootNode.Children, str)
+      rootNode.Body = append(rootNode.Body, str)
     case "import":
       imp, err := p.ParseImport()
       if err != nil {
         return nil, err
       }
-      rootNode.Children = append(rootNode.Children, imp)
+      rootNode.Body = append(rootNode.Body, imp)
     default:
       return nil, e
     }

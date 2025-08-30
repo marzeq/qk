@@ -5,11 +5,11 @@ import (
   "github.com/marzeq/quokka/tokeniser"
 )
 
-func (p *Parser) ParseExpression() (*Node, error) {
+func (p *Parser) ParseExpression() (ExpressionNode, error) {
   return p.ParseLogicalOr()
 }
 
-func (p *Parser) ParseLogicalOr() (*Node, error) {
+func (p *Parser) ParseLogicalOr() (ExpressionNode, error) {
   beginLoc := p.CurrLoc()
   left, err := p.ParseLogicalAnd()
   if err != nil {
@@ -27,19 +27,18 @@ func (p *Parser) ParseLogicalOr() (*Node, error) {
     if err != nil {
       return nil, err
     }
-    left = &Node{
-      Type:  NODE_TYPE_BINARY_OP,
-      Value: "or",
-      Left:  left,
-      Right: right,
-      Loc:   beginLoc,
+    left = &BinaryOpNode{
+      Op: BINARY_OP_LOGICAL_OR,
+      Operand1: left,
+      Operand2: right,
+      Loc: beginLoc,
     }
   }
 
   return left, nil
 }
 
-func (p *Parser) ParseLogicalAnd() (*Node, error) {
+func (p *Parser) ParseLogicalAnd() (ExpressionNode, error) {
   beginLoc := p.CurrLoc()
   left, err := p.ParseLogicalNot()
   if err != nil {
@@ -57,19 +56,18 @@ func (p *Parser) ParseLogicalAnd() (*Node, error) {
     if err != nil {
       return nil, err
     }
-    left = &Node{
-      Type:  NODE_TYPE_BINARY_OP,
-      Value: "and",
-      Left:  left,
-      Right: right,
-      Loc:   beginLoc,
+    left = &BinaryOpNode{
+      Op: BINARY_OP_LOGICAL_AND,
+      Operand1: left,
+      Operand2: right,
+      Loc: beginLoc,
     }
   }
 
   return left, nil
 }
 
-func (p *Parser) ParseLogicalNot() (*Node, error) {
+func (p *Parser) ParseLogicalNot() (ExpressionNode, error) {
   beginLoc := p.CurrLoc()
   if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == "not" {
     p.Inc()
@@ -83,29 +81,28 @@ func (p *Parser) ParseLogicalNot() (*Node, error) {
       return nil, err
     }
 
-    return &Node{
-      Type:  NODE_TYPE_UNARY_OP,
-      Value: "not",
-      Right: expr,
-      Loc:   beginLoc,
+    return &UnaryOpNode{
+      Op: UNARY_OP_LOGICAL_NOT,
+      Operand: expr,
+      Loc: beginLoc,
     }, nil
   }
 
   return p.ParseComparison()
 }
 
-func (p *Parser) ParseUnary() (*Node, error) {
+func (p *Parser) ParseUnary() (ExpressionNode, error) {
   beginLoc := p.CurrLoc()
   if p.Match(tokeniser.TOKEN_TYPE_MINUS, tokeniser.TOKEN_TYPE_ASTERISK, tokeniser.TOKEN_TYPE_AMPERSAND) {
     op := p.Consume()
-    val := ""
+    var val UnaryOpType
     switch op.Type {
     case tokeniser.TOKEN_TYPE_MINUS:
-      val = "-"
+      val = UNARY_OP_NEGATE
     case tokeniser.TOKEN_TYPE_ASTERISK:
-      val = "*"
+      val = UNARY_OP_DEREFERENCE
     case tokeniser.TOKEN_TYPE_AMPERSAND:
-      val = "&"
+      val = UNARY_OP_REFERENCE
     }
     for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
       p.Inc()
@@ -114,18 +111,17 @@ func (p *Parser) ParseUnary() (*Node, error) {
     if err != nil {
       return nil, err
     }
-    return &Node{
-      Type:  NODE_TYPE_UNARY_OP,
-      Value: val,
-      Right: expr,
-      Loc:   beginLoc,
+    return &UnaryOpNode{
+      Op: val,
+      Operand: expr,
+      Loc: beginLoc,
     }, nil
   }
 
   return p.ParseTerm()
 }
 
-func (p *Parser) ParseComparison() (*Node, error) {
+func (p *Parser) ParseComparison() (ExpressionNode, error) {
   beginLoc := p.CurrLoc()
   left, err := p.ParseAddSub()
   if err != nil {
@@ -134,20 +130,20 @@ func (p *Parser) ParseComparison() (*Node, error) {
 
   for p.Match(tokeniser.TOKEN_TYPE_EQUALS_EQUALS, tokeniser.TOKEN_TYPE_NOT_EQUALS, tokeniser.TOKEN_TYPE_LESS, tokeniser.TOKEN_TYPE_GREATER, tokeniser.TOKEN_TYPE_LESS_EQUALS, tokeniser.TOKEN_TYPE_GREATER_EQUALS) {
     op := p.Consume()
-    val := ""
+    var val BinaryOpType
     switch op.Type {
     case tokeniser.TOKEN_TYPE_EQUALS_EQUALS:
-      val = "=="
+      val = BINARY_OP_EQUAL
     case tokeniser.TOKEN_TYPE_NOT_EQUALS:
-      val = "!="
+      val = BINARY_OP_NOT_EQUAL
     case tokeniser.TOKEN_TYPE_LESS:
-      val = "<"
+      val = BINARY_OP_LESS
     case tokeniser.TOKEN_TYPE_GREATER:
-      val = ">"
+      val = BINARY_OP_GREATER
     case tokeniser.TOKEN_TYPE_LESS_EQUALS:
-      val = "<="
+      val = BINARY_OP_LESS_EQUAL
     case tokeniser.TOKEN_TYPE_GREATER_EQUALS:
-      val = ">="
+      val = BINARY_OP_GREATER_EQUAL
     }
     for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
       p.Inc()
@@ -157,19 +153,18 @@ func (p *Parser) ParseComparison() (*Node, error) {
     if err != nil {
       return nil, err
     }
-    left = &Node{
-      Type:  NODE_TYPE_BINARY_OP,
-      Value: val,
-      Left:  left,
-      Right: right,
-      Loc:   beginLoc,
+    left = &BinaryOpNode{
+      Op: val,
+      Operand1: left,
+      Operand2: right,
+      Loc: beginLoc,
     }
   }
 
   return left, nil
 }
 
-func (p *Parser) ParseAddSub() (*Node, error) {
+func (p *Parser) ParseAddSub() (ExpressionNode, error) {
   beginLoc := p.CurrLoc()
   left, err := p.ParseMulDiv()
   if err != nil {
@@ -178,11 +173,11 @@ func (p *Parser) ParseAddSub() (*Node, error) {
 
   for p.Match(tokeniser.TOKEN_TYPE_PLUS, tokeniser.TOKEN_TYPE_MINUS) {
     op := p.Consume()
-    val := ""
+    var val BinaryOpType
     if op.Type == tokeniser.TOKEN_TYPE_PLUS {
-      val = "+"
+      val = BINARY_OP_ADD
     } else {
-      val = "-"
+      val = BINARY_OP_SUBTRACT
     }
 
     for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
@@ -193,19 +188,18 @@ func (p *Parser) ParseAddSub() (*Node, error) {
     if err != nil {
       return nil, err
     }
-    left = &Node{
-      Type:  NODE_TYPE_BINARY_OP,
-      Value: val,
-      Left:  left,
-      Right: right,
-      Loc:   beginLoc,
+    left = &BinaryOpNode{
+      Op: val,
+      Operand1: left,
+      Operand2: right,
+      Loc: beginLoc,
     }
   }
 
   return left, nil
 }
 
-func (p *Parser) ParseMulDiv() (*Node, error) {
+func (p *Parser) ParseMulDiv() (ExpressionNode, error) {
   beginLoc := p.CurrLoc()
   left, err := p.ParseUnary()
   if err != nil {
@@ -214,14 +208,16 @@ func (p *Parser) ParseMulDiv() (*Node, error) {
 
   for p.Match(tokeniser.TOKEN_TYPE_ASTERISK, tokeniser.TOKEN_TYPE_SLASH, tokeniser.TOKEN_TYPE_PERCENT) {
     op := p.Consume()
-    val := ""
+    var val BinaryOpType
     switch op.Type {
     case tokeniser.TOKEN_TYPE_ASTERISK:
-      val = "*"
+      val = BINARY_OP_MULTIPLY
     case tokeniser.TOKEN_TYPE_SLASH:
-      val = "/"
+      val = BINARY_OP_DIVIDE
+    case tokeniser.TOKEN_TYPE_PERCENT:
+      val = BINARY_OP_MODULO
     default:
-      val = "%"
+      return nil, shared.NewError(p.PrevLoc(), "unexpected operator %s", op)
     }
     for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
       p.Inc()
@@ -231,19 +227,18 @@ func (p *Parser) ParseMulDiv() (*Node, error) {
     if err != nil {
       return nil, err
     }
-    left = &Node{
-      Type:  NODE_TYPE_BINARY_OP,
-      Value: val,
-      Left:  left,
-      Right: right,
-      Loc:   beginLoc,
+    left = &BinaryOpNode{
+      Op: val,
+      Operand1: left,
+      Operand2: right,
+      Loc: beginLoc,
     }
   }
 
   return left, nil
 }
 
-func (p *Parser) ParseTerm() (*Node, error) {
+func (p *Parser) ParseTerm() (ExpressionNode, error) {
   beginLoc := p.CurrLoc()
   if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == "if" {
     expr, err := p.ParseIfExpression()
@@ -304,44 +299,40 @@ func (p *Parser) ParseTerm() (*Node, error) {
 
   if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == "true" || p.Peek().Value == "false" {
     bLit := p.Consume()
-    return &Node{
-      Type:  NODE_TYPE_BOOL_LITERAL,
+    return &BoolLiteralNode{
       Value: bLit.Value,
-      Loc:   beginLoc,
+      Loc: beginLoc,
     }, nil
   }
 
   if p.Match(tokeniser.TOKEN_TYPE_NUMBER) {
     nLit := p.Consume()
-    return &Node{
-      Type:  NODE_TYPE_NUMBER_LITERAL,
+    return &NumberLiteralNode{
       Value: nLit.Value,
-      Loc:   beginLoc,
+      Loc: beginLoc,
     }, nil
   }
 
   if p.Match(tokeniser.TOKEN_TYPE_CHAR) {
     cLit := p.Consume()
-    return &Node{
-      Type:  NODE_TYPE_CHAR_LITERAL,
+    return &CharLiteralNode{
       Value: []byte(cLit.Value)[0],
-      Loc:   beginLoc,
+      Loc: beginLoc,
     }, nil
   }
 
   if p.Match(tokeniser.TOKEN_TYPE_STRING) {
     sLit := p.Consume()
-    return &Node{
-      Type:  NODE_TYPE_STRING_LITERAL,
+    return &StringLiteralNode{
       Value: sLit.Value,
-      Loc:   beginLoc,
+      Loc: beginLoc,
     }, nil
   }
 
   return nil, shared.NewError(p.CurrLoc(), "unexpected token %s", p.Peek())
 }
 
-func (p *Parser) ParseCast() (*Node, error) {
+func (p *Parser) ParseCast() (*CastNode, error) {
   beginLoc := p.CurrLoc()
 
   if t, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_KEYWORD); !ok || t.Value != "cast" {
@@ -379,21 +370,20 @@ func (p *Parser) ParseCast() (*Node, error) {
     return nil, shared.NewError(p.PrevLoc(), "expected ')")
   }
 
-  return &Node{
-    Type:  NODE_TYPE_CAST,
-    Left:  &Node{Type: NODE_TYPE_IDENTIFIER, Value: tpe.Value},
-    Right: expr,
-    Loc:   beginLoc,
+  return &CastNode{
+    ToType: tpe,
+    Operand: expr,
+    Loc: beginLoc,
   }, nil
 }
 
-func (p *Parser) ParseFunctionCall() (*Node, error) {
+func (p *Parser) ParseFunctionCall() (*FunctionCallNode, error) {
   beginLoc := p.CurrLoc()
   name, err := p.ParseIdent()
   if err != nil {
     return nil, err
   }
-  var args []*Node
+  var args []ExpressionNode
 
   p.Consume()
 
@@ -420,15 +410,14 @@ func (p *Parser) ParseFunctionCall() (*Node, error) {
     return nil, shared.NewError(p.PrevLoc(), "expected '('")
   }
 
-  return &Node{
-    Type:     NODE_TYPE_FUNCTION_CALL,
-    Value:    &Node{Type: NODE_TYPE_IDENTIFIER, Value: name.Value},
-    Children: args,
-    Loc:      beginLoc,
+  return &FunctionCallNode{
+    Name: name,
+    Args: args,
+    Loc: beginLoc,
   }, nil
 }
 
-func (p *Parser) ParseIfExpression() (*Node, error) {
+func (p *Parser) ParseIfExpression() (*IfExprNode, error) {
   beginLoc := p.CurrLoc()
   if !p.Expect(tokeniser.TOKEN_TYPE_KEYWORD) {
     return nil, shared.NewError(p.PrevLoc(), "expected 'if' keyword")
@@ -456,14 +445,12 @@ func (p *Parser) ParseIfExpression() (*Node, error) {
     p.Inc()
   }
 
-  ifBranch := &IfBranch{
-    Condition: condition,
-    Node:      thenBlock,
-  }
-
-  ifNodeValue := &IfNodeValue{
-    IfBranch:       ifBranch,
-    ElseIfBranches: []*IfBranch{},
+  node := &IfExprNode{
+    Loc: beginLoc,
+    IfBranch: IfExprBranch{
+      Condition: condition,
+      Node: thenBlock,
+    },
   }
 
   for p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == "else" {
@@ -494,33 +481,26 @@ func (p *Parser) ParseIfExpression() (*Node, error) {
         return nil, err
       }
 
-      elseIfBranch := &IfBranch{
+      elseIfBranch := IfExprBranch{
         Condition: elseifCondition,
-        Node:      elseifBlock,
+        Node: elseifBlock,
       }
-      ifNodeValue.ElseIfBranches = append(ifNodeValue.ElseIfBranches, elseIfBranch)
+      node.ElseIfBranches = append(node.ElseIfBranches, elseIfBranch)
     } else {
       elseBlock, err := p.ParseBlockExpression()
       if err != nil {
         return nil, err
       }
 
-      ifNodeValue.ElseBranch = &IfBranch{
-        Condition: nil,
-        Node:      elseBlock,
-      }
+      node.ElseBranch = elseBlock
       break
     }
   }
 
-  return &Node{
-    Type:  NODE_TYPE_IF_EXPR,
-    Value: ifNodeValue,
-    Loc:   beginLoc,
-  }, nil
+  return node, nil
 }
 
-func (p *Parser) ParseBlockExpression() (*Node, error) {
+func (p *Parser) ParseBlockExpression() (ExpressionNode, error) {
   if !p.Expect(tokeniser.TOKEN_TYPE_OPEN_CURLY) {
     return nil, shared.NewError(p.PrevLoc(), "expected '{' to start block")
   }
@@ -545,11 +525,11 @@ func (p *Parser) ParseBlockExpression() (*Node, error) {
   return blockExpression, err
 }
 
-func (p *Parser) ParseStructLiteral() (*Node, error) {
+func (p *Parser) ParseStructLiteral() (*StructLiteralNode, error) {
   beginLoc := p.CurrLoc()
-  name, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_IDENT)
-  if !ok {
-    return nil, shared.NewError(p.PrevLoc(), "expected struct name")
+  name, err := p.ParseIdent()
+  if err != nil {
+    return nil, err
   }
 
   if !p.Expect(tokeniser.TOKEN_TYPE_OPEN_CURLY) {
@@ -560,7 +540,10 @@ func (p *Parser) ParseStructLiteral() (*Node, error) {
     p.Inc()
   }
 
-  value := &StructLiteralValue{}
+  node := &StructLiteralNode{
+    Name: name,
+    Loc: beginLoc,
+  }
   for {
     if p.Match(tokeniser.TOKEN_TYPE_CLOSE_CURLY) {
       p.Inc()
@@ -585,7 +568,7 @@ func (p *Parser) ParseStructLiteral() (*Node, error) {
       return nil, err
     }
 
-    value.Fields = append(value.Fields, shared.Pair[*Node, *Node]{L: &Node{Type: NODE_TYPE_IDENTIFIER, Value: fieldName.Value}, R: fieldValue})
+    node.Fields = append(node.Fields, shared.Pair[string, Node]{L: fieldName.Value, R: fieldValue})
 
     if !p.Match(tokeniser.TOKEN_TYPE_COMMA, tokeniser.TOKEN_TYPE_NEWLINE) {
       break
@@ -601,24 +584,18 @@ func (p *Parser) ParseStructLiteral() (*Node, error) {
     return nil, shared.NewError(p.PrevLoc(), "expected '}' to end struct literal")
   }
 
-  return &Node{
-    Type:  NODE_TYPE_STRUCT_LITERAL,
-    Value: value,
-    Left:  &Node{Type: NODE_TYPE_IDENTIFIER, Value: name.Value},
-    Loc:   beginLoc,
-  }, nil
+  return node, nil
 }
 
-func (p *Parser) ParseIdent() (*Node, error) {
+func (p *Parser) ParseIdent() (*IdentifierNode, error) {
   beginLoc := p.CurrLoc()
   firstIdent, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_IDENT)
   if !ok {
     return nil, shared.NewError(p.PrevLoc(), "expected identifier")
   }
-  node := &Node{
-    Type:  NODE_TYPE_IDENTIFIER,
-    Value: firstIdent.Value,
-    Loc:   beginLoc,
+  node := &IdentifierNode{
+    Name: firstIdent.Value,
+    Loc: beginLoc,
   }
   currnode := node
 
@@ -634,12 +611,11 @@ func (p *Parser) ParseIdent() (*Node, error) {
     if !ok {
       return nil, shared.NewError(p.PrevLoc(), "expected identifier")
     }
-    currnode.Right = &Node{
-      Type:  NODE_TYPE_IDENTIFIER,
-      Value: nextIdent.Value,
-      Loc:   loc,
+    currnode.Next = &IdentifierNode{
+      Name: nextIdent.Value,
+      Loc: loc,
     }
-    currnode = currnode.Right
+    currnode = currnode.Next
   }
 
   return node, nil

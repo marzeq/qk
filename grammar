@@ -10,7 +10,6 @@ stmt            = let_decl
                 | var_decl
                 | fn_decl
                 | reassign
-                | reassign_by
                 | fn_call
                 | control_keyword
                 | block
@@ -23,17 +22,6 @@ let_decl        = "let" IDENT [':' IDENT] '=' expression ;
 var_decl        = "var" IDENT [':' IDENT] '=' expression ;
 
 reassign        = IDENT '=' expression ;
-reassign_by     = reassign_plus
-                | reassign_minus
-                | reassign_mul
-                | reassign_div
-                | reassign_mod ;
-
-reassign_plus   = IDENT '+=' expression ;
-reassign_minus  = IDENT '-=' expression ;
-reassign_mul    = IDENT '*=' expression ;
-reassign_div    = IDENT '/=' expression ;
-reassign_mod    = IDENT '%=' expression ;
 
 if_statement    = "if" expression block {'else' 'if' expression block} ['else' block ] ;
 
@@ -41,7 +29,6 @@ for_loop        = "for" [loop_init {',' loop_init}] ';' block ;
 loop_init       = let_decl
                 | var_decl
                 | reassign
-                | reassign_by
                 | expression ;
 
 control_keyword = "break"
