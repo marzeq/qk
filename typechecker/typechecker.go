@@ -653,7 +653,7 @@ func (tc *TypeChecker) typeCheckForLoop(loopNode *parser.ForNode, sig *FunctionS
       return shared.NewError(init.GetLoc(), "for loop initialiser must be a declaration or assignment statement")
     }
 
-    condMb := loopNode.ExprsOrStmts[0]
+    condMb := loopNode.ExprsOrStmts[1]
     if _, ok := condMb.(parser.ExpressionNode); !ok {
       return shared.NewError(condMb.GetLoc(), "for loop condition must be a boolean expression")
     }
