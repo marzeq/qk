@@ -470,6 +470,41 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
     exprNode.ExprType = commonType
     return commonType, nil
 
+  case *parser.StructLiteralNode:
+    name := IdentToStr(exprNode.Name)
+    structType, ok := tc.TypeTable.Lookup(name)
+    if !ok {
+      return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "no such struct type '%s'", name)
+    }
+    st, ok := structType.(shared.Struct)
+    if !ok {
+      return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "'%s' is not a struct type", name)
+    }
+    if len(st.Fields) != len(exprNode.Fields) {
+      return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "struct '%s' expects %d fields, got %d (zero values are not allowed)", name, len(st.Fields), len(exprNode.Fields))
+    }
+    for _, field := range exprNode.Fields {
+      var fieldType Type = nil
+      for _, f := range st.Fields {
+        if f.L == field.L {
+          fieldType = f.R
+        }
+      }
+      if fieldType == nil {
+        return shared.PRIMITIVE_VOID, shared.NewError(field.R.GetLoc(), "struct '%s' has no field named '%s'", name, field.L)
+      }
+      exprType, err := tc.typeCheckExpression(field.R, fieldType)
+      if err != nil {
+        return shared.PRIMITIVE_VOID, err
+      }
+      if exprType != fieldType {
+        return shared.PRIMITIVE_VOID, shared.NewError(field.R.GetLoc(), "field '%s' of struct '%s' expects type '%s', got '%s'", field.L, name, fieldType, exprType)
+      }
+      field.R.SetType(fieldType)
+    }
+    exprNode.ExprType = structType
+    return structType, nil
+
   default:
     return shared.PRIMITIVE_VOID, shared.NewError(exprNode.GetLoc(), "unsupported expression type")
   }

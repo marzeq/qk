@@ -567,7 +567,7 @@ func (p *Parser) ParseStructLiteral() (*StructLiteralNode, error) {
       return nil, err
     }
 
-    node.Fields = append(node.Fields, shared.Pair[string, Node]{L: fieldName.Value, R: fieldValue})
+    node.Fields = append(node.Fields, shared.Pair[string, ExpressionNode]{L: fieldName.Value, R: fieldValue})
 
     if !p.Match(tokeniser.TOKEN_TYPE_COMMA, tokeniser.TOKEN_TYPE_NEWLINE) {
       break

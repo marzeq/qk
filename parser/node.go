@@ -63,7 +63,7 @@ func (n CharLiteralNode) SetType(t shared.Type) { n.ExprType = t }
 
 type StructLiteralNode struct {
   Name *IdentifierNode
-  Fields []shared.Pair[string, Node] // field name, value
+  Fields []shared.Pair[string, ExpressionNode] // field name, value
   Loc shared.Location
   ExprType shared.Type
 }
