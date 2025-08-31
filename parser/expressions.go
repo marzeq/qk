@@ -546,7 +546,6 @@ func (p *Parser) ParseStructLiteral() (*StructLiteralNode, error) {
   }
   for {
     if p.Match(tokeniser.TOKEN_TYPE_CLOSE_CURLY) {
-      p.Inc()
       break
     }
 

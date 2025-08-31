@@ -1,17 +1,12 @@
 declare printf(s: cstring, ...): void
 
-let fib(n: i32): i32 = 
-  if n <= 1 { n }
-  else { fib(n - 1) + fib(n - 2) }
+struct A {
+  a: i32
+  b: i32
+  c: i32
+  d: i32
+}
 
 let main() = {
-  let a = fib(5)
-  printf("a = %d\n", a)
-
-  let b = &a
-
-  var c = *b
-  c = 0
-  printf("a after = %d\n", a)
-  return c
+  let a = A{}
 }
