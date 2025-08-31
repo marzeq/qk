@@ -428,6 +428,6 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
       continue
     }
 
-    panic("Unexpected char " + string(c))
+    return nil, shared.NewError(t.GetLoc(), "unexpected char: %c", c)
   }
 }

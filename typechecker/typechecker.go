@@ -144,7 +144,7 @@ func (tc *TypeChecker) typeCheckFunction(funcNode *parser.FunctionDefNode, sig *
       }
       return nil
     }
-    panic("unexpected function body type")
+    return shared.NewError(body.GetLoc(), "function body must be a block or an expression")
   }
 }
 
@@ -249,7 +249,7 @@ func (tc *TypeChecker) typeCheckBlock(blockNode *parser.BlockNode, sig *Function
       }
 
     default:
-      panic("unexpected node in block")
+      return false, shared.NewError(node.GetLoc(), "unexpected node in block when type checking"
     }
   }
 
