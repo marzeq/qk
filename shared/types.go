@@ -201,42 +201,73 @@ const (
 
   PRIMITIVE_UNTYPED_INT Primitive = "_untyped_int"
 
-  PRIMITIVE_U8  Primitive = "u8"
+  PRIMITIVE_U8 Primitive = "u8"
   PRIMITIVE_U16 Primitive = "u16"
   PRIMITIVE_U32 Primitive = "u32"
   PRIMITIVE_U64 Primitive = "u64"
 
-  PRIMITIVE_I8  Primitive = "i8"
+  PRIMITIVE_I8 Primitive = "i8"
   PRIMITIVE_I16 Primitive = "i16"
   PRIMITIVE_I32 Primitive = "i32"
   PRIMITIVE_I64 Primitive = "i64"
 
   PRIMITIVE_BOOL Primitive = "bool"
 
-  PRIMITIVE_CHAR    Primitive = "char"
+  PRIMITIVE_CHAR Primitive = "char"
   PRIMITIVE_CSTRING Primitive = "cstring"
 )
 
 func (pt Primitive) IsPrimitive() bool { return true }
-func (pt Primitive) IsStruct() bool    { return false }
-func (pt Primitive) IsPointer() bool   { return false }
+func (pt Primitive) IsStruct() bool { return false }
+func (pt Primitive) IsPointer() bool { return false }
+
+type StructLayout struct {
+  Size int
+  Align int
+  Offsets []int
+}
 
 type Struct struct {
   Fields []Pair[string, Type]
+  Layout StructLayout
+}
+
+func (st *Struct) GetLayout() StructLayout {
+  if st.Layout.Size != 0 {
+    return st.Layout
+  }
+
+  offsets := make([]int, len(st.Fields))
+  offset := 0
+  maxAlign := 1
+
+  for i, f := range st.Fields {
+    a := GetAlignOfType(f.R)
+    if a > maxAlign {
+      maxAlign = a
+    }
+    offset = alignUp(offset, a)
+    offsets[i] = offset
+    offset += GetSizeOfType(f.R)
+  }
+
+  size := alignUp(offset, maxAlign)
+  st.Layout = StructLayout{Size: size, Align: maxAlign, Offsets: offsets}
+  return st.Layout
 }
 
 func (st Struct) IsPrimitive() bool { return false }
-func (st Struct) IsStruct() bool    { return true }
-func (st Struct) IsPointer() bool   { return false }
+func (st Struct) IsStruct() bool { return true }
+func (st Struct) IsPointer() bool { return false }
 
 type Pointer struct {
-  To    Type
+  To Type
   Const bool
 }
 
 func (pt Pointer) IsPrimitive() bool { return false }
-func (pt Pointer) IsStruct() bool    { return false }
-func (pt Pointer) IsPointer() bool   { return true }
+func (pt Pointer) IsStruct() bool { return false }
+func (pt Pointer) IsPointer() bool { return true }
 
 type TypeTable map[string]Type
 

@@ -7,31 +7,27 @@ import (
 	"github.com/marzeq/quokka/shared"
 )
 
-type (
-  Type = shared.Type
-)
-
 type VarSig struct {
-  Type    Type
+  Type shared.Type
   Mutable bool
 }
 
 type FunctionSig struct {
-  Name           string
-  ArgTypes       []shared.Pair[string, Type]
-  HasVariadic    bool
-  RetType        Type
+  Name string
+  ArgTypes []shared.Pair[string, shared.Type]
+  HasVariadic bool
+  RetType shared.Type
   ImplicitReturn bool
 }
 
 type (
-  VarTable  = *shared.SymbolTable[*VarSig]
+  VarTable = *shared.SymbolTable[*VarSig]
   FuncTable = *shared.SymbolTable[*FunctionSig]
   TypeTable = shared.TypeTable
 )
 
 type TypeChecker struct {
-  VarTable  VarTable
+  VarTable VarTable
   FuncTable FuncTable
   TypeTable TypeTable
 }
@@ -65,7 +61,7 @@ func (tc *TypeChecker) TypeCheck(root *parser.RootNode) (*parser.RootNode, map[s
         return nil, nil, nil, shared.NewError(node.Loc, "struct '%s' is already defined", node.Name)
       }
 
-      fields := make([]shared.Pair[string, Type], len(node.Fields))
+      fields := make([]shared.Pair[string, shared.Type], len(node.Fields))
 
       for i, field := range node.Fields {
         tpe := field.R.Name
@@ -73,7 +69,7 @@ func (tc *TypeChecker) TypeCheck(root *parser.RootNode) (*parser.RootNode, map[s
         if !ok {
           return nil, nil, nil, shared.NewError(field.R.Loc, "field '%s' has undefined type '%s'", field.L, tpe)
         }
-        fields[i] = shared.Pair[string, Type]{L: field.L, R: resolved}
+        fields[i] = shared.Pair[string, shared.Type]{L: field.L, R: resolved}
       }
 
       tc.TypeTable.Define(node.Name, shared.Struct{
@@ -190,7 +186,7 @@ func (tc *TypeChecker) typeCheckBlock(blockNode *parser.BlockNode, sig *Function
     case *parser.ControlKeywordNode:
       switch node.Keyword {
       case parser.KEYWORD_TYPE_RETURN:
-        var retType Type = shared.PRIMITIVE_VOID
+        var retType shared.Type = shared.PRIMITIVE_VOID
         if node.ReturnValue != nil {
           var err error
           retType, err = tc.typeCheckExpression(node.ReturnValue, sig.RetType)
@@ -264,15 +260,19 @@ func (tc *TypeChecker) typeCheckBlock(blockNode *parser.BlockNode, sig *Function
   return foundReturn, nil
 }
 
-func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedType Type) (Type, error) {
+func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedType shared.Type) (shared.Type, error) {
   switch exprNode := en.(type) {
   case *parser.IdentifierNode:
     varSig, ok := tc.VarTable.Lookup(exprNode.Name)
     if !ok {
       return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "undefined variable '%s'", exprNode.Name)
     }
-    exprNode.ExprType = varSig.Type
-    return varSig.Type, nil
+    gotType, err := ResolveFieldChain(exprNode, varSig.Type)
+    if err != nil {
+      return shared.PRIMITIVE_VOID, err
+    }
+    exprNode.ExprType = gotType
+    return gotType, nil
 
   case *parser.NumberLiteralNode:
     exprType := shared.PRIMITIVE_UNTYPED_INT
@@ -484,7 +484,7 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
       return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "struct '%s' expects %d fields, got %d (zero values are not allowed)", name, len(st.Fields), len(exprNode.Fields))
     }
     for _, field := range exprNode.Fields {
-      var fieldType Type = nil
+      var fieldType shared.Type = nil
       for _, f := range st.Fields {
         if f.L == field.L {
           fieldType = f.R
@@ -510,7 +510,7 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
   }
 }
 
-func (tc *TypeChecker) typeCheckFunctionCall(funccallNode *parser.FunctionCallNode) (Type, error) {
+func (tc *TypeChecker) typeCheckFunctionCall(funccallNode *parser.FunctionCallNode) (shared.Type, error) {
   fname := funccallNode.Name.Name
 
   fsig, ok := tc.FuncTable.Lookup(fname)
@@ -523,7 +523,7 @@ func (tc *TypeChecker) typeCheckFunctionCall(funccallNode *parser.FunctionCallNo
   }
 
   for i, arg := range funccallNode.Args {
-    var fsigArgType Type = shared.PRIMITIVE_VOID
+    var fsigArgType shared.Type = shared.PRIMITIVE_VOID
     if i < len(fsig.ArgTypes) {
       fsigArgType = fsig.ArgTypes[i].R
     }
@@ -548,7 +548,7 @@ func (tc *TypeChecker) typeCheckDeclaration(declNode *parser.DeclarationNode) (s
     return "", nil, shared.NewError(declNode.Loc, "variables starting with '___' are reserved for the compiler")
   }
   mutable := declNode.Mutable
-  var varType Type = shared.PRIMITIVE_VOID
+  var varType shared.Type = shared.PRIMITIVE_VOID
 
   if declNode.Type != nil {
     varTypeStr := declNode.Type.Name
@@ -613,44 +613,59 @@ func (tc *TypeChecker) typeCheckIdentifierAssignment(asNode *parser.AssignmentNo
     return shared.NewError(asNode.Loc, "cannot assign to immutable variable '%s'", varName)
   }
 
-  exprType, err := tc.typeCheckExpression(asNode.Value, varSig.Type)
+  currType, err := ResolveFieldChain(assignee, varSig.Type)
   if err != nil {
     return err
   }
 
-  if exprType != varSig.Type {
+  exprType, err := tc.typeCheckExpression(asNode.Value, currType)
+  if err != nil {
+    return err
+  }
+
+  if exprType != currType {
     return shared.NewError(asNode.Loc,
       "cannot assign value of type '%s' to variable '%s' of type '%s'",
       exprType, varName, varSig.Type,
       )
   }
-
   return nil
 }
 
 func (tc *TypeChecker) typeCheckPointerAssignment(asNode *parser.AssignmentNode, assignee *parser.UnaryOpNode) error {
-  ptrType, err := tc.typeCheckExpression(assignee.Operand, shared.PRIMITIVE_VOID)
-  if err != nil {
-    return err
-  }
-  if !ptrType.IsPointer() {
-    return shared.NewError(assignee.Loc, "left side of assignment must be a pointer, found '%s'", ptrType)
-  }
-  ptr := ptrType.(shared.Pointer)
-  if ptr.Const {
-    return shared.NewError(assignee.Loc, "cannot perform pointer assignment if the pointee is immutable")
-  }
-  exprType, err := tc.typeCheckExpression(asNode.Value, ptr.To)
-  if err != nil {
-    return err
-  }
-  if exprType != ptr.To {
-    return shared.NewError(asNode.Loc,
-      "cannot assign value of type '%s' to pointer to '%s'",
-      exprType, ptr.To,
-      )
-  }
+  switch ident := assignee.Operand.(type) {
+  case *parser.IdentifierNode:
+    ptrType, err := tc.typeCheckExpression(assignee.Operand, shared.PRIMITIVE_VOID)
+    if err != nil {
+      return err
+    }
+    if !ptrType.IsPointer() {
+      return shared.NewError(assignee.Loc, "left side of assignment must be a pointer, found '%s'", ptrType)
+    }
+    ptr := ptrType.(shared.Pointer)
+    if ptr.Const {
+      return shared.NewError(assignee.Loc, "cannot perform pointer assignment if the pointee is immutable")
+    }
 
+    
+    currType, err := ResolveFieldChain(ident, ptr.To)
+    if err != nil {
+      return err
+    }
+
+    exprType, err := tc.typeCheckExpression(asNode.Value, currType)
+    if err != nil {
+      return err
+    }
+    if exprType != currType {
+      return shared.NewError(asNode.Loc,
+        "cannot assign value of type '%s' to variable of type '%s'",
+        exprType, currType,
+      )
+    }
+  default:
+    return shared.NewError(assignee.Operand.GetLoc(), "left side of assignment must be a pointer to a variable")
+  }
   return nil
 }
 
@@ -768,8 +783,30 @@ func (tc *TypeChecker) typeCheckIfStatement(ifNode *parser.IfNode, sig *Function
   return alwaysReturns, nil
 }
 
+
+func ResolveFieldChain(field *parser.IdentifierNode, tpe shared.Type) (shared.Type, error) {
+  if field.Next == nil {
+    return tpe, nil
+  }
+
+  var strct shared.Struct
+  if tpe.IsStruct() {
+    strct = tpe.(shared.Struct)
+  } else if tpe.IsPointer() && tpe.(shared.Pointer).To.IsStruct() {
+    strct = tpe.(shared.Pointer).To.(shared.Struct)
+  }
+
+  for _, f := range strct.Fields {
+    if f.L == field.Next.Name {
+      return ResolveFieldChain(field.Next, f.R)
+    }
+  }
+
+  return nil, shared.NewError(field.Next.Loc, "type has no field named '%s'", field.Next.Name)
+}
+
 func (tc *TypeChecker) ExtractFunctionSig(functionNode *parser.FunctionDefNode) (*FunctionSig, error) {
-  var retType Type
+  var retType shared.Type
   if (functionNode.RetType != nil) {
     retTypeStr := functionNode.RetType.Name
 
@@ -786,14 +823,14 @@ func (tc *TypeChecker) ExtractFunctionSig(functionNode *parser.FunctionDefNode) 
     }
   }
 
-  argTypes := make([]shared.Pair[string, Type], len(functionNode.Args))
+  argTypes := make([]shared.Pair[string, shared.Type], len(functionNode.Args))
   for i, arg := range functionNode.Args {
     tpe := arg.R.Name
     resolved, ok := tc.TypeTable.Lookup(tpe)
     if !ok {
       return nil, shared.NewError(arg.R.Loc, "parameter '%s' has undefined type '%s'", arg.L, tpe)
     }
-    argTypes[i] = shared.Pair[string, Type]{L: arg.L, R: resolved}
+    argTypes[i] = shared.Pair[string, shared.Type]{L: arg.L, R: resolved}
   }
 
   return &FunctionSig{

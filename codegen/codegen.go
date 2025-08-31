@@ -110,13 +110,12 @@ func (cg *CodeGen) GenerateFuncIR(funcNode *parser.FunctionDefNode) (string, []s
     for i, arg := range fsig.ArgTypes {
       tnm := cg.GetTmpVar()
       tpe := mapTypeToIRType(arg.R)
-      tsz := shared.GetSizeOfType(arg.R)
       prologue += fmt.Sprintf("%s %s", tpe, tnm)
       if i != len(fsig.ArgTypes)-1 {
         prologue += ", "
       }
 
-      after += fmt.Sprintf("%%%s =l alloc%d %d\n", arg.L, tsz, tsz)
+      after += fmt.Sprintf("%%%s =l %s\n", arg.L, emitAllocForType(arg.R, 1))
       after += fmt.Sprintf("store%s %s, %%%s", tpe, tnm, arg.L)
     }
 
@@ -229,9 +228,8 @@ func (cg *CodeGen) GenerateStmtIR(stmtNd parser.Node, last bool, loopBegin, loop
     }
 
   case *parser.DeclarationNode:
-    sz := shared.GetSizeOfType(stmtNode.Value.GetType())
     nme := stmtNode.Name
-    setups = append(setups, fmt.Sprintf("%%%s =l alloc%d %d", nme, sz, sz))
+    setups = append(setups, fmt.Sprintf("%%%s =l %s", nme, emitAllocForType(stmtNode.Value.GetType(), 1)))
 
     val, setps, gsetps, _, err := cg.GenerateExprIR(stmtNode.Value)
     if err != nil {
@@ -766,6 +764,11 @@ func (cg *CodeGen) GenerateExprIR(eNode parser.ExpressionNode) (string, []string
 
     val = currentVal
 
+  case *parser.StructLiteralNode:
+    nm := cg.GetTmpVar()
+    val = fmt.Sprintf("%s", nm)
+    setups = append(setups, fmt.Sprintf("%s =l %s", val, emitAllocForType(eNode.GetType(), 1)))
+
   default:
     return "", nil, nil, "", shared.NewError(exprNode.GetLoc(), "unexpected expression")
   }
@@ -813,6 +816,22 @@ func mapTypeToIRType(t shared.Type) string {
       return "l"
     }
     panic("unknown type")
+  }
+}
+
+func emitAllocForType(t shared.Type, count int) string {
+  align := shared.GetAlignOfType(t)
+  size := shared.GetSizeOfType(t) * count
+
+  switch {
+  case align <= 4:
+    return fmt.Sprintf("alloc4 %d", size)
+  case align <= 8:
+    return fmt.Sprintf("alloc8 %d", size)
+  case align <= 16:
+    return fmt.Sprintf("alloc16 %d", size)
+  default:
+    panic(fmt.Sprintf("unsupported alignment %d", align))
   }
 }
 

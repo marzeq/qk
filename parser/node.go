@@ -24,6 +24,12 @@ type IdentifierNode struct {
 func (n IdentifierNode) GetLoc() shared.Location { return n.Loc }
 func (n IdentifierNode) GetType() shared.Type { return n.ExprType }
 func (n IdentifierNode) SetType(t shared.Type) { n.ExprType = t }
+func (n IdentifierNode) String() string {
+  if n.Next != nil {
+    return n.Name + "." + n.Next.String()
+  }
+  return n.Name
+}
 
 type BoolLiteralNode struct {
   Value string

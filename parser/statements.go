@@ -1,8 +1,8 @@
 package parser
 
 import (
-  "github.com/marzeq/quokka/shared"
-  "github.com/marzeq/quokka/tokeniser"
+	"github.com/marzeq/quokka/shared"
+	"github.com/marzeq/quokka/tokeniser"
 )
 
 func (p *Parser) ParseDeclaration() (*DeclarationNode, error) {
@@ -51,13 +51,7 @@ func (p *Parser) ParseDeclaration() (*DeclarationNode, error) {
   }, nil
 }
 
-func (p *Parser) ParseAssignment() (*AssignmentNode, error) {
-  identLoc := p.CurrLoc()
-  ident, err := p.ParseIdent()
-  if err != nil {
-    return nil, err
-  }
-
+func (p *Parser) ParseAssignment(ident *IdentifierNode) (*AssignmentNode, error) {
   if !p.Expect(tokeniser.TOKEN_TYPE_EQUALS) {
     return nil, shared.NewError(p.PrevLoc(), "expected '='")
   }
@@ -74,7 +68,7 @@ func (p *Parser) ParseAssignment() (*AssignmentNode, error) {
   return &AssignmentNode{
     Assignee: ident,
     Value: expr,
-    Loc: identLoc,
+    Loc: ident.Loc,
   }, err
 }
 
@@ -439,14 +433,16 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
   }
 
   if p.Match(tokeniser.TOKEN_TYPE_IDENT) {
-    p.Inc()
+    ident, err := p.ParseIdent()
+    if err != nil {
+      return nil, false, err
+    }
+
     if p.Match(tokeniser.TOKEN_TYPE_EQUALS) {
-      p.Dec()
-      node, err := p.ParseAssignment()
+      node, err := p.ParseAssignment(ident)
       return node, true, err
     } else if p.Match(tokeniser.TOKEN_TYPE_OPEN_PAREN) {
-      p.Dec()
-      node, err := p.ParseFunctionCall()
+      node, err := p.ParseFunctionCall(ident)
       return node, true, err
     }
 

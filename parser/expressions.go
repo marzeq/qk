@@ -282,10 +282,13 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
   }
 
   if p.Match(tokeniser.TOKEN_TYPE_IDENT) {
-    p.Inc()
+    ident, err := p.ParseIdent()
+    if err != nil {
+      return nil, err
+    }
     if p.Match(tokeniser.TOKEN_TYPE_OPEN_PAREN) {
       p.Dec()
-      return p.ParseFunctionCall()
+      return p.ParseFunctionCall(ident)
     }
 
     if p.Match(tokeniser.TOKEN_TYPE_OPEN_CURLY) {
@@ -293,8 +296,7 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
       return p.ParseStructLiteral()
     }
 
-    p.Dec()
-    return p.ParseIdent()
+    return ident, nil
   }
 
   if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == "true" || p.Peek().Value == "false" {
@@ -377,12 +379,7 @@ func (p *Parser) ParseCast() (*CastNode, error) {
   }, nil
 }
 
-func (p *Parser) ParseFunctionCall() (*FunctionCallNode, error) {
-  beginLoc := p.CurrLoc()
-  name, err := p.ParseIdent()
-  if err != nil {
-    return nil, err
-  }
+func (p *Parser) ParseFunctionCall(name *IdentifierNode) (*FunctionCallNode, error) {
   var args []ExpressionNode
 
   p.Consume()
@@ -413,7 +410,7 @@ func (p *Parser) ParseFunctionCall() (*FunctionCallNode, error) {
   return &FunctionCallNode{
     Name: name,
     Args: args,
-    Loc: beginLoc,
+    Loc: name.Loc,
   }, nil
 }
 

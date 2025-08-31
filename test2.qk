@@ -4,10 +4,10 @@ struct A {
   a: i32
   b: i32
   c: i32
-  d: i32
+  d: i64
 }
 
 let main() = {
-  let a = A{ a = 1, b = 2, c = 3, d = 4 }
-  return 0
+  var a = A{ a = 1, b = 2, c = 3, d = 4 }
+  return a.a
 }
