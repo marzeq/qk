@@ -23,11 +23,11 @@ func NewTokeniserFromFile(path string) (*Tokeniser, error) {
   }
 
   return &Tokeniser{
-    pos:        0,
-    line:       1,
-    col:        1,
+    pos: 0,
+    line: 1,
+    col: 1,
     fileOrigin: path,
-    text:       []rune(string(text)),
+    text: []rune(string(text)),
   }, nil
 }
 
@@ -190,7 +190,7 @@ func (t *Tokeniser) GetLoc() shared.Location {
     FilePath: t.fileOrigin,
     LC: shared.LineCol{
       Line: t.line,
-      Col:  t.col,
+      Col: t.col,
     },
   }
 }

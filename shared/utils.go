@@ -14,7 +14,7 @@ type Error struct {
 func NewError(loc Location, message string, a ...any) Error {
   return Error{
     message: fmt.Sprintf(message, a...),
-    loc:     loc,
+    loc: loc,
   }
 }
 
