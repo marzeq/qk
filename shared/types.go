@@ -6,6 +6,56 @@ type Type interface {
   IsPointer() bool
 }
 
+func alignUp(x, a int) int {
+  m := x % a
+  if m == 0 {
+    return x
+  }
+  return x + (a - m)
+}
+
+func GetAlignOfType(t Type) int {
+  if t == PRIMITIVE_U8 || t == PRIMITIVE_I8 {
+    return 4
+  }
+  if t == PRIMITIVE_U16 || t == PRIMITIVE_I16 {
+    return 4
+  }
+  if t == PRIMITIVE_U32 || t == PRIMITIVE_I32 {
+    return 4
+  }
+  if t == PRIMITIVE_U64 || t == PRIMITIVE_I64 {
+    return 8
+  }
+  if t == PRIMITIVE_CHAR {
+    return 4
+  }
+  if t == PRIMITIVE_BOOL {
+    return 4
+  }
+  if t == PRIMITIVE_CSTRING {
+    return 8
+  }
+  if _, ok := t.(Pointer); ok {
+    return 8
+  }
+  if st, ok := t.(Struct); ok {
+    maxAlign := 1
+    for _, field := range st.Fields {
+      a := GetAlignOfType(field.R)
+      if a > maxAlign {
+        maxAlign = a
+      }
+    }
+    if maxAlign == 0 {
+      maxAlign = 1
+    }
+    return maxAlign
+  }
+  // default conservative minimum
+  return 8
+}
+
 func GetSizeOfType(t Type) int {
   if t == PRIMITIVE_U8 || t == PRIMITIVE_I8 {
     return 4
@@ -29,20 +79,24 @@ func GetSizeOfType(t Type) int {
     return 8
   }
   if st, ok := t.(Struct); ok {
-    maxSize := 0
+    offset := 0
+    maxAlign := 1
     for _, field := range st.Fields {
-      size := GetSizeOfType(field.R)
-      if size > maxSize {
-        maxSize = size
+      a := GetAlignOfType(field.R)
+      if a > maxAlign {
+        maxAlign = a
       }
+      offset = alignUp(offset, a) // pad before the field if needed
+      offset += GetSizeOfType(field.R)
     }
-    return maxSize * len(st.Fields)
+    return alignUp(offset, maxAlign)
   }
   if _, ok := t.(Pointer); ok {
     return 8
   }
   return 0
 }
+
 
 func IsNumericType(t Type) bool {
   return t == PRIMITIVE_U8 ||

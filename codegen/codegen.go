@@ -244,13 +244,12 @@ func (cg *CodeGen) GenerateStmtIR(stmtNd parser.Node, last bool, loopBegin, loop
   case *parser.AssignmentNode:
     switch assignee := stmtNode.Assignee.(type) {
     case *parser.IdentifierNode:
-      nme := typechecker.IdentToStr(assignee)
       val, setps, gsetps, _, err := cg.GenerateExprIR(stmtNode.Value)
       if err != nil {
         return "", nil, nil, err
       }
 
-      line = fmt.Sprintf("store%s %s, %%%s", mapTypeToIRType(stmtNode.Value.GetType()), val, nme)
+      line = fmt.Sprintf("store%s %s, %%%s", mapTypeToIRType(stmtNode.Value.GetType()), val, assignee.Name)
       setups = append(setups, setps...)
       gsetups = append(gsetups, gsetps...)
     case *parser.UnaryOpNode:
@@ -269,8 +268,7 @@ func (cg *CodeGen) GenerateStmtIR(stmtNd parser.Node, last bool, loopBegin, loop
       gsetups = append(gsetups, gsetps...)
     }
   case *parser.FunctionCallNode:
-    fname := typechecker.IdentToStr(stmtNode.Name)
-    fsig := cg.funcSigs[fname]
+    fsig := cg.funcSigs[stmtNode.Name.Name]
 
     line = fmt.Sprintf("call $%s(", fsig.Name)
     for i, arg := range stmtNode.Args {
@@ -463,7 +461,7 @@ func (cg *CodeGen) GenerateExprIR(eNode parser.ExpressionNode) (string, []string
   case *parser.IdentifierNode:
     irt := mapTypeToIRType(exprNode.ExprType)
     tnme := cg.GetTmpVar()
-    setups = append(setups, fmt.Sprintf("%s =%s load%s %%%s", tnme, irt, irt, typechecker.IdentToStr(exprNode)))
+    setups = append(setups, fmt.Sprintf("%s =%s load%s %%%s", tnme, irt, irt, exprNode.Name))
     val = tnme
 
   case *parser.NumberLiteralNode:
@@ -495,11 +493,10 @@ func (cg *CodeGen) GenerateExprIR(eNode parser.ExpressionNode) (string, []string
     }
 
   case *parser.FunctionCallNode:
-    fname := typechecker.IdentToStr(exprNode.Name)
-    fsig := cg.funcSigs[fname]
+    fsig := cg.funcSigs[exprNode.Name.Name]
     val = cg.GetTmpVar()
     tpe = mapTypeToIRType(fsig.RetType)
-    setup := fmt.Sprintf("%s =%s call $%s(", val, tpe, fname)
+    setup := fmt.Sprintf("%s =%s call $%s(", val, tpe, exprNode.Name.Name)
     for i, arg := range exprNode.Args {
       if i == len(fsig.ArgTypes) {
         setup += "..., "
@@ -605,7 +602,7 @@ func (cg *CodeGen) GenerateExprIR(eNode parser.ExpressionNode) (string, []string
     case parser.UNARY_OP_REFERENCE:
       switch identNode := exprNode.Operand.(type) {
       case *parser.IdentifierNode:
-        setups = append(setups, fmt.Sprintf("%s =l copy %%%s", val, typechecker.IdentToStr(identNode)))
+        setups = append(setups, fmt.Sprintf("%s =l copy %%%s", val, identNode.Name))
       default:
         return "", nil, nil, "", shared.NewError(exprNode.Loc, "cannot take address of non-variable expression")
       }
@@ -614,7 +611,7 @@ func (cg *CodeGen) GenerateExprIR(eNode parser.ExpressionNode) (string, []string
       case *parser.IdentifierNode:
         nm2 := cg.GetTmpVar()
         val2 := fmt.Sprintf("%s", nm2)
-        setups = append(setups, fmt.Sprintf("%s =l loadl %%%s", val2, typechecker.IdentToStr(operand)))
+        setups = append(setups, fmt.Sprintf("%s =l loadl %%%s", val2, operand.Name))
         setups = append(setups, fmt.Sprintf("%s =%s load%s %s", val, mapTypeToIRType(exprNode.ExprType), mapTypeToIRType(exprNode.ExprType), val2))
       default:
         return "", nil, nil, "", shared.NewError(exprNode.Loc, "cannot dereference non-variable expression")
@@ -722,8 +719,7 @@ func (cg *CodeGen) GenerateExprIR(eNode parser.ExpressionNode) (string, []string
     setups = append(setups, fmt.Sprintf("%s", endLabel))
 
   case *parser.CastNode:
-    targetTypeS := typechecker.IdentToStr(exprNode.ToType)
-    targetType, _ := cg.typeTable.Lookup(targetTypeS)
+    targetType, _ := cg.typeTable.Lookup(exprNode.ToType.Name)
     targetIRType := mapTypeToIRType(targetType)
     sourceType := exprNode.Operand.GetType()
     sourceIRType := mapTypeToIRType(sourceType)

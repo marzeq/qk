@@ -68,7 +68,7 @@ func (tc *TypeChecker) TypeCheck(root *parser.RootNode) (*parser.RootNode, map[s
       fields := make([]shared.Pair[string, Type], len(node.Fields))
 
       for i, field := range node.Fields {
-        tpe := IdentToStr(field.R)
+        tpe := field.R.Name
         resolved, ok := tc.TypeTable.Lookup(tpe)
         if !ok {
           return nil, nil, nil, shared.NewError(field.R.Loc, "field '%s' has undefined type '%s'", field.L, tpe)
@@ -249,7 +249,7 @@ func (tc *TypeChecker) typeCheckBlock(blockNode *parser.BlockNode, sig *Function
       }
 
     default:
-      return false, shared.NewError(node.GetLoc(), "unexpected node in block when type checking"
+      return false, shared.NewError(node.GetLoc(), "unexpected node in block when type checking")
     }
   }
 
@@ -335,7 +335,7 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
       if !ok {
         return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Operand.GetLoc(), "unary operator '&' requires an identifier operand")
       }
-      varName := IdentToStr(identifier)
+      varName := identifier.Name
       varSig, ok := tc.VarTable.Lookup(varName)
       if !ok {
         return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Operand.GetLoc(), "undefined variable '%s'", varName)
@@ -405,7 +405,7 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
     }
 
   case *parser.CastNode:
-    tpeName := IdentToStr(exprNode.ToType)
+    tpeName := exprNode.ToType.Name
     tpe, ok := tc.TypeTable.Lookup(tpeName)
     if !ok {
       return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "no such type '%s'", tpeName)
@@ -471,7 +471,7 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
     return commonType, nil
 
   case *parser.StructLiteralNode:
-    name := IdentToStr(exprNode.Name)
+    name := exprNode.Name.Name
     structType, ok := tc.TypeTable.Lookup(name)
     if !ok {
       return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "no such struct type '%s'", name)
@@ -511,7 +511,7 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
 }
 
 func (tc *TypeChecker) typeCheckFunctionCall(funccallNode *parser.FunctionCallNode) (Type, error) {
-  fname := IdentToStr(funccallNode.Name)
+  fname := funccallNode.Name.Name
 
   fsig, ok := tc.FuncTable.Lookup(fname)
   if !ok {
@@ -551,7 +551,7 @@ func (tc *TypeChecker) typeCheckDeclaration(declNode *parser.DeclarationNode) (s
   var varType Type = shared.PRIMITIVE_VOID
 
   if declNode.Type != nil {
-    varTypeStr := IdentToStr(declNode.Type)
+    varTypeStr := declNode.Type.Name
     vt, ok := tc.TypeTable.Lookup(varTypeStr)
     if !ok {
       return "", nil, shared.NewError(declNode.Type.Loc, "variable '%s' has undefined type '%s'", declNode.Name, varTypeStr)
@@ -603,7 +603,7 @@ func (tc *TypeChecker) typeCheckAssignment(asNode *parser.AssignmentNode) error 
 }
 
 func (tc *TypeChecker) typeCheckIdentifierAssignment(asNode *parser.AssignmentNode, assignee *parser.IdentifierNode) error {
-  varName := IdentToStr(assignee)
+  varName := assignee.Name
   varSig, ok := tc.VarTable.Lookup(varName)
   if !ok {
     return shared.NewError(assignee.Loc, "undefined variable '%s'", varName)
@@ -771,7 +771,7 @@ func (tc *TypeChecker) typeCheckIfStatement(ifNode *parser.IfNode, sig *Function
 func (tc *TypeChecker) ExtractFunctionSig(functionNode *parser.FunctionDefNode) (*FunctionSig, error) {
   var retType Type
   if (functionNode.RetType != nil) {
-    retTypeStr := IdentToStr(functionNode.RetType)
+    retTypeStr := functionNode.RetType.Name
 
     r, ok := tc.TypeTable.Lookup(retTypeStr)
     if !ok {
@@ -788,7 +788,7 @@ func (tc *TypeChecker) ExtractFunctionSig(functionNode *parser.FunctionDefNode) 
 
   argTypes := make([]shared.Pair[string, Type], len(functionNode.Args))
   for i, arg := range functionNode.Args {
-    tpe := IdentToStr(arg.R)
+    tpe := arg.R.Name
     resolved, ok := tc.TypeTable.Lookup(tpe)
     if !ok {
       return nil, shared.NewError(arg.R.Loc, "parameter '%s' has undefined type '%s'", arg.L, tpe)
@@ -802,8 +802,4 @@ func (tc *TypeChecker) ExtractFunctionSig(functionNode *parser.FunctionDefNode) 
     Name: functionNode.Name,
     HasVariadic: functionNode.HasVariadic,
   }, nil
-}
-
-func IdentToStr(identNode *parser.IdentifierNode) string {
-  return identNode.Name
 }
