@@ -5,6 +5,7 @@ type Type interface {
   IsStruct() bool
   IsPointer() bool
   Compare(t2 Type) bool
+  String() string
 }
 
 func alignUp(x, a int) int {
@@ -227,6 +228,7 @@ func (pt Primitive) Compare(t2 Type) bool {
   }
   return pt == t2.(Primitive)
 }
+func (pt Primitive) String() string { return string(pt) }
 
 type StructLayout struct {
   Size int
@@ -288,6 +290,17 @@ func (st1 Struct) Compare(t2 Type) bool {
   }
   return true
 }
+func (st Struct) String() string {
+  s := "struct { "
+  for i, f := range st.Fields {
+    if i > 0 {
+      s += ", "
+    }
+    s += f.L + ": " + f.R.String()
+  }
+  s += " }"
+  return s
+}
 
 type Pointer struct {
   To Type
@@ -302,6 +315,12 @@ func (pt Pointer) Compare(t2 Type) bool {
     return false
   }
   return pt.To.Compare(t2.(Pointer).To)
+}
+func (pt Pointer) String() string {
+  if pt.Const {
+    return "*" + pt.To.String() + "(const)"
+  }
+  return "*" + pt.To.String()
 }
 
 type TypeTable map[string]Type

@@ -1,6 +1,7 @@
 package typechecker
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/marzeq/quokka/parser"
@@ -646,36 +647,40 @@ func (tc *TypeChecker) typeCheckIdentifierAssignment(asNode *parser.AssignmentNo
 }
 
 func (tc *TypeChecker) typeCheckPointerAssignment(asNode *parser.AssignmentNode, assignee *parser.UnaryOpNode) error {
+  fmt.Print()
   switch ident := assignee.Operand.(type) {
   case *parser.IdentifierNode:
-    ptrType, err := tc.typeCheckExpression(assignee.Operand, shared.PRIMITIVE_VOID)
+    typeWereDereferencing, err := tc.typeCheckExpression(assignee.Operand, shared.PRIMITIVE_VOID)
     if err != nil {
       return err
-    }
-    if !ptrType.IsPointer() {
-      return shared.NewError(assignee.Loc, "left side of assignment must be a pointer, found '%s'", ptrType)
-    }
-    ptr := ptrType.(shared.Pointer)
-    if ptr.Const {
-      return shared.NewError(assignee.Loc, "cannot perform pointer assignment if the pointee is immutable")
     }
 
-    
-    currType, err := ResolveFieldChain(ident, ptr.To)
+    currType, err := ResolveFieldChain(ident, typeWereDereferencing)
     if err != nil {
       return err
+    }
+
+    ptrType, ok := currType.(shared.Pointer)
+    if !ok {
+      panic("expected pointer type after dereference")
     }
 
     exprType, err := tc.typeCheckExpression(asNode.Value, currType)
     if err != nil {
       return err
     }
-    if exprType != currType {
-      return shared.NewError(asNode.Loc,
-        "cannot assign value of type '%s' to variable of type '%s'",
-        exprType, currType,
-      )
+
+    if !exprType.Compare(ptrType.To) {
+      if exprType == shared.PRIMITIVE_UNTYPED_INT && shared.IsNumericType(ptrType.To) {
+        SetNodeType(asNode.Value, ptrType.To)
+      } else {
+        return shared.NewError(asNode.Loc,
+          "cannot assign value of type '%s' to variable of type '%s'",
+          exprType, ptrType.To,
+          )
+      }
     }
+    assignee.ExprType = currType
   default:
     return shared.NewError(assignee.Operand.GetLoc(), "left side of assignment must be a pointer to a variable")
   }
@@ -828,7 +833,17 @@ func (tc *TypeChecker) ExtractFunctionSig(functionNode *parser.FunctionDefNode) 
     if !ok {
       return nil, shared.NewError(functionNode.RetType.Type.Loc, "function '%s' has undefined return type '%s'", functionNode.Name, retTypeStr)
     }
-    retType = r
+    if functionNode.RetType.PointerLevel == 0 {
+      retType = r
+    } else {
+      ptr := r
+      for i := functionNode.RetType.PointerLevel; i > 0; i-- {
+        ptr = shared.Pointer{
+          To: ptr,
+        }
+      }
+      retType = ptr
+    }
   } else {
     if functionNode.Name == "main" {
       retType = shared.PRIMITIVE_I32
