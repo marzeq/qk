@@ -162,7 +162,7 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
     return nil, shared.NewError(p.PrevLoc(), "expected '('")
   }
 
-  var args []shared.Pair[string, *IdentifierNode]
+  var args []FunctionDefArg
   for !p.Match(tokeniser.TOKEN_TYPE_CLOSE_PAREN) {
     arg, err := p.ParseIdent()
     if err != nil {
@@ -176,14 +176,15 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
       return nil, shared.NewError(p.PrevLoc(), "expected ':'")
     }
 
-    argType, err := p.ParseIdent()
+    pointerLevel, argType, err := p.ParseType()
     if err != nil {
       return nil, err
     }
 
-    args = append(args, shared.Pair[string, *IdentifierNode]{
-      L: arg.Name,
-      R: argType,
+    args = append(args, FunctionDefArg{
+      Name: arg.Name,
+      Type: argType,
+      PointerLevel: pointerLevel,
     })
 
     if !p.Match(tokeniser.TOKEN_TYPE_COMMA) {
@@ -254,7 +255,7 @@ func (p *Parser) ParseExternalFunctionDefinition() (*FunctionDefNode, error) {
     return nil, shared.NewError(p.PrevLoc(), "expected '('")
   }
 
-  var args []shared.Pair[string, *IdentifierNode]
+  var args []FunctionDefArg
   variadic := false
   for !p.Match(tokeniser.TOKEN_TYPE_CLOSE_PAREN) {
     if p.Match(tokeniser.TOKEN_TYPE_3DOTS) {
@@ -275,14 +276,15 @@ func (p *Parser) ParseExternalFunctionDefinition() (*FunctionDefNode, error) {
       return nil, shared.NewError(p.PrevLoc(), "expected ':'")
     }
 
-    argType, err := p.ParseIdent()
+    pointerLevel, argType, err := p.ParseType()
     if err != nil {
       return nil, err
     }
 
-    args = append(args, shared.Pair[string, *IdentifierNode]{
-      L: arg.Name,
-      R: argType,
+    args = append(args, FunctionDefArg{
+      Name: arg.Name,
+      Type: argType,
+      PointerLevel: pointerLevel,
     })
 
     if !p.Match(tokeniser.TOKEN_TYPE_COMMA) {

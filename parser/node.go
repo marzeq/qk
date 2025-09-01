@@ -165,9 +165,14 @@ type ImportNode struct {
 }
 func (n ImportNode) GetLoc() shared.Location { return n.Loc }
 
+type FunctionDefArg struct {
+  Name string
+  Type *IdentifierNode
+  PointerLevel int
+}
 type FunctionDefNode struct {
   Name string
-  Args []shared.Pair[string, *IdentifierNode] // arg name, arg type
+  Args []FunctionDefArg
   RetType *IdentifierNode
   Body Node
   HasVariadic bool

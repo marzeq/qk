@@ -1,0 +1,15 @@
+struct Point {
+  x: i32
+  y: i32
+}
+
+let setNewPos(p: *Point, nx: i32, ny: i32) = {
+  p.x = nx
+  p.y = ny
+}
+
+let main() = {
+  let p = Point{ x=10, y=20 }
+  setNewPos(&p, 30, 40)
+  return 0
+}

@@ -108,7 +108,7 @@ func (tc *TypeChecker) typeCheckFunction(funcNode *parser.FunctionDefNode, sig *
   for _, arg := range sig.ArgTypes {
     tc.VarTable.Define(arg.L, &VarSig{
       Type: arg.R,
-      Mutable: false,
+      Mutable: true,
     })
   }
 
@@ -824,12 +824,20 @@ func (tc *TypeChecker) ExtractFunctionSig(functionNode *parser.FunctionDefNode) 
 
   argTypes := make([]shared.Pair[string, shared.Type], len(functionNode.Args))
   for i, arg := range functionNode.Args {
-    tpe := arg.R.Name
+    tpe := arg.Type.Name
     resolved, ok := tc.TypeTable.Lookup(tpe)
     if !ok {
-      return nil, shared.NewError(arg.R.Loc, "parameter '%s' has undefined type '%s'", arg.L, tpe)
+      return nil, shared.NewError(arg.Type.Loc, "parameter '%s' has undefined type '%s'", arg.Name, tpe)
     }
-    argTypes[i] = shared.Pair[string, shared.Type]{L: arg.L, R: resolved}
+    for i := arg.PointerLevel; i > 0; i-- {
+      resolved = shared.Pointer{
+        To: resolved,
+      }
+    }
+    argTypes[i] = shared.Pair[string, shared.Type]{
+      L: arg.Name,
+      R: resolved,
+    }
   }
 
   return &FunctionSig{

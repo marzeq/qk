@@ -616,3 +616,13 @@ func (p *Parser) ParseIdent() (*IdentifierNode, error) {
 
   return node, nil
 }
+
+func (p *Parser) ParseType() (int, *IdentifierNode, error) {
+  pointerLevel := 0
+  for p.Match(tokeniser.TOKEN_TYPE_ASTERISK) {
+    p.Inc()
+    pointerLevel++
+  }
+  ident, err := p.ParseIdent()
+  return pointerLevel, ident, err
+}

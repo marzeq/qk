@@ -131,9 +131,9 @@ func (cg *CodeGen) GenerateFuncIR(funcNode *parser.FunctionDefNode) (string, []s
       after += fmt.Sprintf("%%%s =l %s\n", arg.L, emitAllocForType(arg.R, 1))
       switch argR := arg.R.(type) {
       case shared.Struct:
-        after += fmt.Sprintf("blit %s, %%%s, %d", tnm, arg.L, argR.GetLayout().Size)
+        after += fmt.Sprintf("blit %s, %%%s, %d\n", tnm, arg.L, argR.GetLayout().Size)
       default:
-        after += fmt.Sprintf("store%s %s, %%%s", tpe, tnm, arg.L)
+        after += fmt.Sprintf("store%s %s, %%%s\n", tpe, tnm, arg.L)
       }
     }
 
