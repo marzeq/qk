@@ -365,11 +365,6 @@ func NewTypeTable() TypeTable {
   tt.Define(string(PRIMITIVE_CHAR), PRIMITIVE_CHAR)
   tt.Define(string(PRIMITIVE_CSTRING), PRIMITIVE_CSTRING)
 
-  tt.Define("string", Struct{Fields: []Pair[string, Type]{
-    {"data", PRIMITIVE_CSTRING},
-    {"len", PRIMITIVE_U64},
-  }})
-
   return tt
 }
 
