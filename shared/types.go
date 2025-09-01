@@ -4,6 +4,7 @@ type Type interface {
   IsPrimitive() bool
   IsStruct() bool
   IsPointer() bool
+  Compare(t2 Type) bool
 }
 
 func alignUp(x, a int) int {
@@ -220,6 +221,12 @@ const (
 func (pt Primitive) IsPrimitive() bool { return true }
 func (pt Primitive) IsStruct() bool { return false }
 func (pt Primitive) IsPointer() bool { return false }
+func (pt Primitive) Compare(t2 Type) bool {
+  if !t2.IsPrimitive() {
+    return false
+  }
+  return pt == t2.(Primitive)
+}
 
 type StructLayout struct {
   Size int
@@ -259,7 +266,6 @@ func (st *Struct) GetLayout() StructLayout {
 func (st Struct) IsPrimitive() bool { return false }
 func (st Struct) IsStruct() bool { return true }
 func (st Struct) IsPointer() bool { return false }
-
 func (st1 Struct) Compare(t2 Type) bool {
   if !t2.IsStruct() {
     return false
@@ -291,6 +297,12 @@ type Pointer struct {
 func (pt Pointer) IsPrimitive() bool { return false }
 func (pt Pointer) IsStruct() bool { return false }
 func (pt Pointer) IsPointer() bool { return true }
+func (pt Pointer) Compare(t2 Type) bool {
+  if !t2.IsPointer() {
+    return false
+  }
+  return pt.To.Compare(t2.(Pointer).To)
+}
 
 type TypeTable map[string]Type
 

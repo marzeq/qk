@@ -1,16 +1,15 @@
-struct B {
-  b: i32
-}
+declare printf(s: cstring, ...): void
 
 struct A {
-  a: B
+  a: i32
+}
+
+let test(s: A) = {
+  printf("%d\n", s.a)
 }
 
 let main() = {
-  -- var s = A{a=B{b = 2}}
-  -- s.a.b = 3
-  -- return s.a.b
-  var a = 2
-  a = 3
-  return a
+  var s = A{ a = 0 }
+  test(s)
+  return s.a
 }

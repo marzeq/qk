@@ -496,10 +496,8 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
       if err != nil {
         return shared.PRIMITIVE_VOID, err
       }
-      if exprType.IsStruct() {
-        if exprTypeStrct, ok := exprType.(shared.Struct); !ok && exprType != fieldType && !exprTypeStrct.Compare(fieldType) {
-          return shared.PRIMITIVE_VOID, shared.NewError(field.R.GetLoc(), "field '%s' of struct '%s' expects type '%s', got '%s'", field.L, name, fieldType, exprType)
-        }
+      if !exprType.Compare(fieldType) {
+        return shared.PRIMITIVE_VOID, shared.NewError(field.R.GetLoc(), "field '%s' of struct '%s' expects type '%s', got '%s'", field.L, name, fieldType, exprType)
       }
     }
     exprNode.ExprType = structType
@@ -531,7 +529,8 @@ func (tc *TypeChecker) typeCheckFunctionCall(funccallNode *parser.FunctionCallNo
     if err != nil {
       return shared.PRIMITIVE_VOID, err
     }
-    if fsigArgType != argType && fsigArgType != shared.PRIMITIVE_VOID {
+
+    if !fsigArgType.Compare(argType) && !fsigArgType.Compare(shared.PRIMITIVE_VOID) {
       return shared.PRIMITIVE_VOID, shared.NewError(arg.GetLoc(),
         "argument %d of function '%s' has type '%s' but expected '%s'",
         i+1, fname, argType, fsigArgType,
