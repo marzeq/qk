@@ -394,8 +394,19 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
     case parser.BINARY_OP_ADD, parser.BINARY_OP_SUBTRACT,
       parser.BINARY_OP_MULTIPLY, parser.BINARY_OP_DIVIDE,
       parser.BINARY_OP_MODULO:
+      if (leftType.IsPointer() && shared.IsNumericType(rightType)) || (rightType.IsPointer() && shared.IsNumericType(leftType)) {
+        if rightType.IsPointer() && leftType.Compare(shared.PRIMITIVE_UNTYPED_INT) {
+          SetNodeType(exprNode.Operand1, leftType)
+          exprNode.ExprType = rightType
+        }
+        if leftType.IsPointer() && rightType.Compare(shared.PRIMITIVE_UNTYPED_INT) {
+          SetNodeType(exprNode.Operand2, rightType)
+          exprNode.ExprType = leftType
+        }
+        return exprNode.ExprType, nil
+      }
       if !shared.IsNumericType(leftType) || !shared.IsNumericType(rightType) {
-        return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "operator requires numeric operands")
+        return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "operator requires numeric operands or a pointer and a numeric operand")
       }
       commonType := shared.BiggerNumericType(leftType, rightType)
       SetNodeType(exprNode.Operand1, commonType)

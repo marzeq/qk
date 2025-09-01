@@ -3,5 +3,7 @@ declare malloc(size: u64): *i32
 let main() = {
   let a = malloc(4)
   *a = 1
-  return *a
+  let a1 = a + 4
+  *a1 = 3
+  return *a1
 }
