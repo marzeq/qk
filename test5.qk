@@ -1,0 +1,6 @@
+declare malloc(size: u64): *i32
+
+let main() = {
+  let a = malloc(4)
+  return 0
+}

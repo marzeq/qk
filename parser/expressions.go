@@ -1,8 +1,8 @@
 package parser
 
 import (
-  "github.com/marzeq/quokka/shared"
-  "github.com/marzeq/quokka/tokeniser"
+	"github.com/marzeq/quokka/shared"
+	"github.com/marzeq/quokka/tokeniser"
 )
 
 func (p *Parser) ParseExpression() (ExpressionNode, error) {
@@ -391,7 +391,12 @@ func (p *Parser) ParseCast() (*CastNode, error) {
 func (p *Parser) ParseFunctionCall(name *IdentifierNode) (*FunctionCallNode, error) {
   var args []ExpressionNode
 
-  p.Consume()
+  if !p.Expect(tokeniser.TOKEN_TYPE_IDENT) {
+    return nil, shared.NewError(p.PrevLoc(), "expected function name")
+  }
+  if !p.Expect(tokeniser.TOKEN_TYPE_OPEN_PAREN) {
+    return nil, shared.NewError(p.PrevLoc(), "expected '('")
+  }
 
   if !p.Match(tokeniser.TOKEN_TYPE_CLOSE_PAREN) {
     for {
@@ -413,7 +418,7 @@ func (p *Parser) ParseFunctionCall(name *IdentifierNode) (*FunctionCallNode, err
   }
 
   if !p.Expect(tokeniser.TOKEN_TYPE_CLOSE_PAREN) {
-    return nil, shared.NewError(p.PrevLoc(), "expected '('")
+    return nil, shared.NewError(p.PrevLoc(), "expected ')'")
   }
 
   return &FunctionCallNode{

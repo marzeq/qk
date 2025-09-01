@@ -174,7 +174,7 @@ type ImportNode struct {
 }
 func (n ImportNode) GetLoc() shared.Location { return n.Loc }
 
-type FunctionDefArg struct {
+type FunctionNodeType struct {
   Name string
   Type *IdentifierNode
   PointerLevel int
@@ -182,8 +182,8 @@ type FunctionDefArg struct {
 }
 type FunctionDefNode struct {
   Name string
-  Args []FunctionDefArg
-  RetType *IdentifierNode
+  Args []FunctionNodeType
+  RetType FunctionNodeType
   Body Node
   HasVariadic bool
   Loc shared.Location

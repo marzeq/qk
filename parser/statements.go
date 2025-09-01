@@ -162,7 +162,7 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
     return nil, shared.NewError(p.PrevLoc(), "expected '('")
   }
 
-  var args []FunctionDefArg
+  var args []FunctionNodeType
   for !p.Match(tokeniser.TOKEN_TYPE_CLOSE_PAREN) {
     mutable := false
     if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) {
@@ -191,7 +191,7 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
       return nil, err
     }
 
-    args = append(args, FunctionDefArg{
+    args = append(args, FunctionNodeType{
       Name: arg.Name,
       Type: argType,
       PointerLevel: pointerLevel,
@@ -208,14 +208,19 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
     return nil, shared.NewError(p.PrevLoc(), "expected ')'")
   }
 
-  var retType *IdentifierNode
+  retType := FunctionNodeType{
+    Type: nil,
+  }
   if p.Match(tokeniser.TOKEN_TYPE_COLON) {
     p.Inc()
-    r, err := p.ParseIdent()
+    pointerLevel, argType, err := p.ParseType()
     if err != nil {
       return nil, err
     }
-    retType = r
+    retType = FunctionNodeType{
+      Type: argType,
+      PointerLevel: pointerLevel,
+    }
   }
 
   if !p.Expect(tokeniser.TOKEN_TYPE_EQUALS) {
@@ -266,7 +271,7 @@ func (p *Parser) ParseExternalFunctionDefinition() (*FunctionDefNode, error) {
     return nil, shared.NewError(p.PrevLoc(), "expected '('")
   }
 
-  var args []FunctionDefArg
+  var args []FunctionNodeType
   variadic := false
   for !p.Match(tokeniser.TOKEN_TYPE_CLOSE_PAREN) {
     if p.Match(tokeniser.TOKEN_TYPE_3DOTS) {
@@ -292,7 +297,7 @@ func (p *Parser) ParseExternalFunctionDefinition() (*FunctionDefNode, error) {
       return nil, err
     }
 
-    args = append(args, FunctionDefArg{
+    args = append(args, FunctionNodeType{
       Name: arg.Name,
       Type: argType,
       PointerLevel: pointerLevel,
@@ -312,7 +317,7 @@ func (p *Parser) ParseExternalFunctionDefinition() (*FunctionDefNode, error) {
     return nil, shared.NewError(p.PrevLoc(), "expected ':'")
   }
 
-  returnType, err := p.ParseIdent()
+  pointerLevel, returnType, err := p.ParseType()
   if err != nil {
     return nil, err
   }
@@ -320,7 +325,10 @@ func (p *Parser) ParseExternalFunctionDefinition() (*FunctionDefNode, error) {
   return &FunctionDefNode{
     Name: name.Value,
     Args: args,
-    RetType: returnType,
+    RetType: FunctionNodeType{
+      Type: returnType,
+      PointerLevel: pointerLevel,
+    },
     HasVariadic: variadic,
     Loc: beginLoc,
   }, nil

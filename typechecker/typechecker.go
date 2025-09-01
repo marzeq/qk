@@ -134,7 +134,7 @@ func (tc *TypeChecker) typeCheckFunction(funcNode *parser.FunctionDefNode, sig *
       }
 
       if !shared.CanCoerceTo(exprType, sig.RetType) {
-        return shared.NewError(funcNode.RetType.Loc, "function '%s' expects return type '%s' but returns '%s'",
+        return shared.NewError(funcNode.RetType.Type.Loc, "function '%s' expects return type '%s' but returns '%s'",
           funcNode.Name, sig.RetType, exprType)
       }
 
@@ -821,12 +821,12 @@ func ResolveFieldChain(field *parser.IdentifierNode, tpe shared.Type) (shared.Ty
 
 func (tc *TypeChecker) ExtractFunctionSig(functionNode *parser.FunctionDefNode) (*FunctionSig, error) {
   var retType shared.Type
-  if (functionNode.RetType != nil) {
-    retTypeStr := functionNode.RetType.Name
+  if (functionNode.RetType.Type != nil) {
+    retTypeStr := functionNode.RetType.Type.Name
 
     r, ok := tc.TypeTable.Lookup(retTypeStr)
     if !ok {
-      return nil, shared.NewError(functionNode.RetType.Loc, "function '%s' has undefined return type '%s'", functionNode.Name, retTypeStr)
+      return nil, shared.NewError(functionNode.RetType.Type.Loc, "function '%s' has undefined return type '%s'", functionNode.Name, retTypeStr)
     }
     retType = r
   } else {
