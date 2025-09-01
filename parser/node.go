@@ -6,7 +6,6 @@ type Node interface { GetLoc() shared.Location }
 type ExpressionNode interface {
   Node
   GetType() shared.Type
-  SetType(t shared.Type)
 }
 
 type RootNode struct {
@@ -23,7 +22,6 @@ type IdentifierNode struct {
 }
 func (n IdentifierNode) GetLoc() shared.Location { return n.Loc }
 func (n IdentifierNode) GetType() shared.Type { return n.ExprType }
-func (n IdentifierNode) SetType(t shared.Type) { n.ExprType = t }
 func (n IdentifierNode) String() string {
   if n.Next != nil {
     return n.Name + "." + n.Next.String()
@@ -38,7 +36,6 @@ type BoolLiteralNode struct {
 }
 func (n BoolLiteralNode) GetLoc() shared.Location { return n.Loc }
 func (n BoolLiteralNode) GetType() shared.Type { return n.ExprType }
-func (n BoolLiteralNode) SetType(t shared.Type) { n.ExprType = t }
 
 type NumberLiteralNode struct {
   Value string
@@ -47,7 +44,6 @@ type NumberLiteralNode struct {
 }
 func (n NumberLiteralNode) GetLoc() shared.Location { return n.Loc }
 func (n NumberLiteralNode) GetType() shared.Type { return n.ExprType }
-func (n NumberLiteralNode) SetType(t shared.Type) { n.ExprType = t }
 
 type StringLiteralNode struct {
   Value string
@@ -56,7 +52,6 @@ type StringLiteralNode struct {
 }
 func (n StringLiteralNode) GetLoc() shared.Location { return n.Loc }
 func (n StringLiteralNode) GetType() shared.Type { return n.ExprType }
-func (n StringLiteralNode) SetType(t shared.Type) { n.ExprType = t }
 
 type CharLiteralNode struct {
   Value byte
@@ -65,7 +60,6 @@ type CharLiteralNode struct {
 }
 func (n CharLiteralNode) GetLoc() shared.Location { return n.Loc }
 func (n CharLiteralNode) GetType() shared.Type { return n.ExprType }
-func (n CharLiteralNode) SetType(t shared.Type) { n.ExprType = t }
 
 type StructLiteralNode struct {
   Name *IdentifierNode
@@ -75,7 +69,6 @@ type StructLiteralNode struct {
 }
 func (n StructLiteralNode) GetLoc() shared.Location { return n.Loc }
 func (n StructLiteralNode) GetType() shared.Type { return n.ExprType }
-func (n StructLiteralNode) SetType(t shared.Type) { n.ExprType = t }
 
 type FunctionCallNode struct {
   Name *IdentifierNode
@@ -85,7 +78,6 @@ type FunctionCallNode struct {
 }
 func (n FunctionCallNode) GetLoc() shared.Location { return n.Loc }
 func (n FunctionCallNode) GetType() shared.Type { return n.ExprType }
-func (n FunctionCallNode) SetType(t shared.Type) { n.ExprType = t }
 
 type IfExprBranch struct {
   Condition ExpressionNode
@@ -101,7 +93,6 @@ type IfExprNode struct {
 }
 func (n IfExprNode) GetLoc() shared.Location { return n.Loc }
 func (n IfExprNode) GetType() shared.Type { return n.ExprType }
-func (n IfExprNode) SetType(t shared.Type) { n.ExprType = t }
 
 type UnaryOpType uint
 
@@ -130,7 +121,6 @@ type UnaryOpNode struct {
 }
 func (n UnaryOpNode) GetLoc() shared.Location { return n.Loc }
 func (n UnaryOpNode) GetType() shared.Type { return n.ExprType }
-func (n UnaryOpNode) SetType(t shared.Type) { n.ExprType = t }
 
 type BinaryOpType uint
 
@@ -159,7 +149,6 @@ type BinaryOpNode struct {
 }
 func (n BinaryOpNode) GetLoc() shared.Location { return n.Loc }
 func (n BinaryOpNode) GetType() shared.Type { return n.ExprType }
-func (n BinaryOpNode) SetType(t shared.Type) { n.ExprType = t }
 
 type CastNode struct {
   ToType *IdentifierNode
@@ -169,7 +158,6 @@ type CastNode struct {
 }
 func (n CastNode) GetLoc() shared.Location { return n.Loc }
 func (n CastNode) GetType() shared.Type { return n.ExprType }
-func (n CastNode) SetType(t shared.Type) { n.ExprType = t }
 
 type ImportNode struct {
   Module string

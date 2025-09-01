@@ -41,8 +41,8 @@ func NewTypeChecker() *TypeChecker {
 }
 
 func (tc *TypeChecker) TypeCheck(root *parser.RootNode) (*parser.RootNode, map[string]*FunctionSig, TypeTable, error) {
-  for _, n := range root.Body{
-    switch node := n.(type){
+  for _, n := range root.Body {
+    switch node := n.(type) {
     case *parser.FunctionDefNode:
       fsig, err := tc.ExtractFunctionSig(node)
       if err != nil {
@@ -271,7 +271,6 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
     if err != nil {
       return shared.PRIMITIVE_VOID, err
     }
-    exprNode.ExprType = gotType
     return gotType, nil
 
   case *parser.NumberLiteralNode:
@@ -362,11 +361,11 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
 
     if expectedType != shared.PRIMITIVE_VOID {
       if leftType == shared.PRIMITIVE_UNTYPED_INT && shared.IsNumericType(expectedType) {
-        exprNode.Operand1.SetType(expectedType)
+        exprNode.Operand1.(*parser.NumberLiteralNode).ExprType = expectedType
         leftType = expectedType
       }
       if rightType == shared.PRIMITIVE_UNTYPED_INT && shared.IsNumericType(expectedType) {
-        exprNode.Operand2.SetType(expectedType)
+        exprNode.Operand2.(*parser.NumberLiteralNode).ExprType = expectedType
         rightType = expectedType
       }
     }
@@ -395,8 +394,8 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
         return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "operator '%s' requires numeric operands, found '%s' and '%s'", exprNode.Op, leftType, rightType)
       }
       commonType := shared.BiggerNumericType(leftType, rightType)
-      exprNode.Operand1.SetType(commonType)
-      exprNode.Operand2.SetType(commonType)
+      exprNode.Operand1.(*parser.NumberLiteralNode).ExprType = commonType
+      exprNode.Operand2.(*parser.NumberLiteralNode).ExprType = commonType
       exprNode.ExprType = commonType
       return commonType, nil
 
@@ -416,7 +415,7 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
     }
 
     if exTpe == shared.PRIMITIVE_UNTYPED_INT {
-      exprNode.Operand.SetType(tpe)
+      exprNode.Operand.(*parser.NumberLiteralNode).ExprType = tpe
     }
 
     if shared.CanCastTo(exTpe, tpe) {
@@ -500,7 +499,6 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
       if exprType != fieldType {
         return shared.PRIMITIVE_VOID, shared.NewError(field.R.GetLoc(), "field '%s' of struct '%s' expects type '%s', got '%s'", field.L, name, fieldType, exprType)
       }
-      field.R.SetType(fieldType)
     }
     exprNode.ExprType = structType
     return structType, nil
@@ -580,8 +578,6 @@ func (tc *TypeChecker) typeCheckDeclaration(declNode *parser.DeclarationNode) (s
   if varType == shared.PRIMITIVE_VOID {
     return "", nil, shared.NewError(declNode.Loc, "a variable cannot be of type void")
   }
-
-  declNode.Value.SetType(varType)
 
   return declNode.Name, &VarSig{
     Type: varType,
@@ -785,6 +781,7 @@ func (tc *TypeChecker) typeCheckIfStatement(ifNode *parser.IfNode, sig *Function
 
 
 func ResolveFieldChain(field *parser.IdentifierNode, tpe shared.Type) (shared.Type, error) {
+  field.ExprType = tpe
   if field.Next == nil {
     return tpe, nil
   }

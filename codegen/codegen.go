@@ -229,29 +229,44 @@ func (cg *CodeGen) GenerateStmtIR(stmtNd parser.Node, last bool, loopBegin, loop
 
   case *parser.DeclarationNode:
     nme := stmtNode.Name
-    setups = append(setups, fmt.Sprintf("%%%s =l %s", nme, emitAllocForType(stmtNode.Value.GetType(), 1)))
-
-    val, setps, gsetps, _, err := cg.GenerateExprIR(stmtNode.Value)
-    if err != nil {
-      return "", nil, nil, err
-    }
-
-    line += fmt.Sprintf("store%s %s, %%%s", mapTypeToIRType(stmtNode.Value.GetType()), val, nme)
-    setups = append(setups, setps...)
-    gsetups = append(gsetups, gsetps...)
-  case *parser.AssignmentNode:
-    switch assignee := stmtNode.Assignee.(type) {
+    switch assignee :=stmtNode.Value.(type) {
     case *parser.IdentifierNode:
-      val, setps, gsetps, _, err := cg.GenerateExprIR(stmtNode.Value)
+      setups = append(setups, fmt.Sprintf("%%%s =l %s", nme, emitAllocForType(getLastIdentifierInChain(assignee).GetType(), 1)))
+
+      val, setps, gsetps, _, err := cg.GenerateExprIR(assignee)
       if err != nil {
         return "", nil, nil, err
       }
 
-      line = fmt.Sprintf("store%s %s, %%%s", mapTypeToIRType(stmtNode.Value.GetType()), val, assignee.Name)
+      line += fmt.Sprintf("store%s %s, %%%s", mapTypeToIRType(getLastIdentifierInChain(assignee).GetType()), val, nme)
+      setups = append(setups, setps...)
+      gsetups = append(gsetups, gsetps...)
+    default:
+      setups = append(setups, fmt.Sprintf("%%%s =l %s", nme, emitAllocForType(assignee.GetType(), 1)))
+
+      val, setps, gsetps, _, err := cg.GenerateExprIR(assignee)
+      if err != nil {
+        return "", nil, nil, err
+      }
+      line += fmt.Sprintf("store%s %s, %%%s", mapTypeToIRType(assignee.GetType()), val, nme)
+      setups = append(setups, setps...)
+      gsetups = append(gsetups, gsetps...)
+
+    }
+
+  case *parser.AssignmentNode:
+    switch assignee := stmtNode.Assignee.(type) {
+    case *parser.IdentifierNode:
+      val, setps, gsetps, _, err := cg.GenerateExprIR(assignee)
+      if err != nil {
+        return "", nil, nil, err
+      }
+
+      line = fmt.Sprintf("store%s %s, %%%s", mapTypeToIRType(getLastIdentifierInChain(assignee).GetType()), val, assignee.Name)
       setups = append(setups, setps...)
       gsetups = append(gsetups, gsetps...)
     case *parser.UnaryOpNode:
-      val, setps, gsetps, _, err := cg.GenerateExprIR(stmtNode.Value)
+      val, setps, gsetps, _, err := cg.GenerateExprIR(assignee)
       if err != nil {
         return "", nil, nil, err
       }
@@ -259,11 +274,13 @@ func (cg *CodeGen) GenerateStmtIR(stmtNd parser.Node, last bool, loopBegin, loop
       if err != nil {
         return "", nil, nil, err
       }
-      line = fmt.Sprintf("store%s %s, %s", mapTypeToIRType(stmtNode.Value.GetType()), val, ptrVal)
+      line = fmt.Sprintf("store%s %s, %s", mapTypeToIRType(assignee.GetType()), val, ptrVal)
       setups = append(setups, ptrSetps...)
       setups = append(setups, setps...)
       gsetups = append(gsetups, ptrGSetps...)
       gsetups = append(gsetups, gsetps...)
+    default:
+      return "", nil, nil, shared.NewError(stmtNode.GetLoc(), "invalid assignment target")
     }
   case *parser.FunctionCallNode:
     fsig := cg.funcSigs[stmtNode.Name.Name]
@@ -450,6 +467,60 @@ func (cg *CodeGen) GenerateStmtIR(stmtNd parser.Node, last bool, loopBegin, loop
   return line, setups, gsetups, nil
 }
 
+func (cg *CodeGen) EmitFieldAccess(baseVar string, field *parser.IdentifierNode, tpe shared.Type) (string, shared.Type, []string, error) {
+  var irs []string
+  if field.Next == nil {
+    irt := mapTypeToIRType(tpe)
+    tmp := cg.GetTmpVar()
+    irs = append(irs, fmt.Sprintf("%s =%s load%s %s", tmp, irt, irt, baseVar))
+    return tmp, tpe, irs, nil
+  }
+
+  var strct shared.Struct
+  if tpe.IsStruct() {
+    strct = tpe.(shared.Struct)
+  } else if tpe.IsPointer() && tpe.(shared.Pointer).To.IsStruct() {
+    strct = tpe.(shared.Pointer).To.(shared.Struct)
+  } else {
+    return "", nil, nil, shared.NewError(field.Loc, "cannot access field on non-struct type")
+  }
+
+  var f shared.Pair[string, shared.Type]
+  found := false
+  for _, fld := range strct.Fields {
+    if fld.L == field.Next.Name {
+      f = fld
+      found = true
+      break
+    }
+  }
+  if !found {
+    return "", nil, nil, shared.NewError(field.Next.Loc, "type has no field named '%s'", field.Next.Name)
+  }
+
+  layout := strct.GetLayout()
+  fieldIdx := -1
+  for i, fld := range strct.Fields {
+    if fld.L == f.L {
+      fieldIdx = i
+      break
+    }
+  }
+  offset := layout.Offsets[fieldIdx]
+
+  addrTmp := cg.GetTmpVar()
+  irs = append(irs, fmt.Sprintf("%s =l add %%%s, %d", addrTmp, baseVar, offset))
+  loadedTmp := cg.GetTmpVar()
+  irs = append(irs, fmt.Sprintf("%s =l loadl %s", loadedTmp, addrTmp))
+
+  tmp, ftype, nextIrs, err := cg.EmitFieldAccess(loadedTmp, field.Next, f.R)
+  if err != nil {
+    return "", nil, nil, err
+  }
+  irs = append(irs, nextIrs...)
+  return tmp, ftype, irs, nil
+}
+
 func (cg *CodeGen) GenerateExprIR(eNode parser.ExpressionNode) (string, []string, []string, string, error) {
   val := ""
   setups := []string{}
@@ -457,10 +528,24 @@ func (cg *CodeGen) GenerateExprIR(eNode parser.ExpressionNode) (string, []string
   tpe := mapTypeToIRType(eNode.GetType())
   switch exprNode := eNode.(type) {
   case *parser.IdentifierNode:
-    irt := mapTypeToIRType(exprNode.ExprType)
-    tnme := cg.GetTmpVar()
-    setups = append(setups, fmt.Sprintf("%s =%s load%s %%%s", tnme, irt, irt, exprNode.Name))
-    val = tnme
+    tnme := ""
+    tpe := exprNode.ExprType
+    irs := []string{}
+    var err error
+
+    if exprNode.Next != nil {
+      tnme, tpe, irs, err = cg.EmitFieldAccess(exprNode.Name, exprNode, exprNode.ExprType)
+      if err != nil {
+        return "", nil, nil, "", err
+      }
+    } else {
+      tnme = cg.GetTmpVar()
+      irt := mapTypeToIRType(tpe)
+      irs = append(irs, fmt.Sprintf("%s =%s load%s %%%s", tnme, irt, irt, exprNode.Name))
+    }
+
+  setups = append(setups, irs...)
+  val = tnme
 
   case *parser.NumberLiteralNode:
     val = exprNode.Value
@@ -769,6 +854,36 @@ func (cg *CodeGen) GenerateExprIR(eNode parser.ExpressionNode) (string, []string
     val = fmt.Sprintf("%s", nm)
     setups = append(setups, fmt.Sprintf("%s =l %s", val, emitAllocForType(eNode.GetType(), 1)))
 
+    strct := eNode.GetType().(shared.Struct)
+    layout := strct.GetLayout()
+    for i, fld := range strct.Fields {
+      found := false
+      var expr parser.ExpressionNode
+      for _, initFld := range exprNode.Fields {
+        if initFld.L == fld.L {
+          expr = initFld.R
+          found = true
+          break
+        }
+      }
+      if !found {
+        return "", nil, nil, "", shared.NewError(exprNode.GetLoc(), "missing initializer for field '%s'", fld.L)
+      }
+
+      exprVal, exprSetups, exprGSetups, _, err := cg.GenerateExprIR(expr)
+      if err != nil {
+        return "", nil, nil, "", err
+      }
+      gsetups = append(gsetups, exprGSetups...)
+      for _, s := range exprSetups {
+        setups = append(setups, s)
+      }
+
+      addrTmp := cg.GetTmpVar()
+      setups = append(setups, fmt.Sprintf("%s =l add %s, %d", addrTmp, val, layout.Offsets[i]))
+      setups = append(setups, fmt.Sprintf("store%s %s, %s", mapTypeToIRType(fld.R), exprVal, addrTmp))
+    }
+
   default:
     return "", nil, nil, "", shared.NewError(exprNode.GetLoc(), "unexpected expression")
   }
@@ -833,6 +948,14 @@ func emitAllocForType(t shared.Type, count int) string {
   default:
     panic(fmt.Sprintf("unsupported alignment %d", align))
   }
+}
+
+func getLastIdentifierInChain(ident *parser.IdentifierNode) *parser.IdentifierNode {
+  current := ident
+  for current.Next != nil {
+    current = current.Next
+  }
+  return current
 }
 
 func getTruncateMaskAndExt(t shared.Type) (mask int, extOp string) {
