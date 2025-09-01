@@ -191,7 +191,7 @@ func CanCastTo(t1, t2 Type) bool {
     return true
   }
 
-  // pointer <-> void*
+  // pointer <-> *void
   if t1.IsPointer() && t2.IsPointer() {
     if t1.(Pointer).To.Compare(PRIMITIVE_VOID) || t2.(Pointer).To.Compare(PRIMITIVE_VOID) {
       return true
@@ -317,6 +317,9 @@ func (pt Pointer) IsPointer() bool { return true }
 func (pt Pointer) Compare(t2 Type) bool {
   if !t2.IsPointer() {
     return false
+  }
+  if pt.To.Compare(PRIMITIVE_VOID) {
+    return true
   }
   return pt.To.Compare(t2.(Pointer).To)
 }

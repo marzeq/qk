@@ -1,6 +1,7 @@
 declare printf(fmt: *char, ...)
 
 declare malloc(size: u64): *void
+declare free(ptr: *void)
 
 let strlen(cstr: *char): u64 =
   given {
