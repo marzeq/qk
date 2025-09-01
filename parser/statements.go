@@ -257,7 +257,7 @@ func (p *Parser) ParseStructDefinition() (*StructDefNode, error) {
     p.Inc()
   }
 
-  var fields []shared.Pair[string, *IdentifierNode]
+  var fields []StructField
   for !p.Match(tokeniser.TOKEN_TYPE_CLOSE_CURLY) {
     fieldName, err := p.ParseIdent()
     if err != nil {
@@ -271,14 +271,15 @@ func (p *Parser) ParseStructDefinition() (*StructDefNode, error) {
       return nil, shared.NewError(p.PrevLoc(), "expected ':'")
     }
 
-    fieldType, err := p.ParseIdent()
+    pointerLevel, fieldType, err := p.ParseType()
     if err != nil {
       return nil, err
     }
 
-    fields = append(fields, shared.Pair[string, *IdentifierNode]{
-      L: fieldName.Name,
-      R: fieldType,
+    fields = append(fields, StructField{
+      Name: fieldName.Name,
+      Type: fieldType,
+      PointerLevel: pointerLevel,
     })
 
     if !p.Match(tokeniser.TOKEN_TYPE_COMMA, tokeniser.TOKEN_TYPE_NEWLINE) {

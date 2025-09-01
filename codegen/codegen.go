@@ -468,7 +468,7 @@ func (cg *CodeGen) GenerateStmtIR(stmtNd parser.Node, last bool, loopBegin, loop
           line += stp + "\n"
         }
         gsetups = append(gsetups, gsetps...)
-        line += fmt.Sprintf("jnz %s %s, %s\n", cond, bodyLbl, endLbl)
+        line += fmt.Sprintf("jnz %s, %s, %s\n", cond, bodyLbl, endLbl)
         line += bodyLbl + "\n" + body + "\n"
         line += fmt.Sprintf("jmp %s\n", beginLbl)
       } else {
@@ -512,7 +512,9 @@ func (cg *CodeGen) GenerateStmtIR(stmtNd parser.Node, last bool, loopBegin, loop
       line += reass + "\n"
       line += fmt.Sprintf("jmp %s\n", beginLbl)
     } else {
+      line += fmt.Sprintf("jmp %s\n", bodyLbl)
       line += bodyLbl + "\n" + body + "\n"
+      line += fmt.Sprintf("jmp %s\n", beginLbl)
     }
 
     line += endLbl
@@ -1007,8 +1009,6 @@ func mapTypeToIRType(t shared.Type) string {
     return "w"
   case shared.PRIMITIVE_CHAR:
     return "w"
-  case shared.PRIMITIVE_CSTRING:
-    return "l"
   case shared.PRIMITIVE_I8, shared.PRIMITIVE_U8:
     return "w"
   case shared.PRIMITIVE_I16, shared.PRIMITIVE_U16:

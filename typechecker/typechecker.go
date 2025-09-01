@@ -70,12 +70,17 @@ func (tc *TypeChecker) TypeCheck(root *parser.RootNode) (*parser.RootNode, map[s
       fields := make([]shared.Pair[string, shared.Type], len(node.Fields))
 
       for i, field := range node.Fields {
-        tpe := field.R.Name
+        tpe := field.Type.Name
         resolved, ok := tc.TypeTable.Lookup(tpe)
         if !ok {
-          return nil, nil, nil, shared.NewError(field.R.Loc, "field '%s' has undefined type '%s'", field.L, tpe)
+          return nil, nil, nil, shared.NewError(field.Type.Loc, "field '%s' has undefined type '%s'", field.Name, tpe)
         }
-        fields[i] = shared.Pair[string, shared.Type]{L: field.L, R: resolved}
+        for j := field.PointerLevel; j > 0; j-- {
+          resolved = shared.Pointer{
+            To: resolved,
+          }
+        }
+        fields[i] = shared.Pair[string, shared.Type]{L: field.Name, R: resolved}
       }
 
       tc.TypeTable.Define(node.Name, shared.Struct{
@@ -291,8 +296,11 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
     return shared.PRIMITIVE_CHAR, nil
 
   case *parser.StringLiteralNode:
-    exprNode.ExprType = shared.PRIMITIVE_CSTRING
-    return shared.PRIMITIVE_CSTRING, nil
+    char_ptr := shared.Pointer{
+      To: shared.PRIMITIVE_CHAR,
+    }
+    exprNode.ExprType = char_ptr
+    return char_ptr, nil
 
   case *parser.BoolLiteralNode:
     exprNode.ExprType = shared.PRIMITIVE_BOOL
@@ -394,12 +402,16 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
       parser.BINARY_OP_MULTIPLY, parser.BINARY_OP_DIVIDE,
       parser.BINARY_OP_MODULO:
       if (leftType.IsPointer() && shared.IsNumericType(rightType)) || (rightType.IsPointer() && shared.IsNumericType(leftType)) {
-        if rightType.IsPointer() && leftType.Compare(shared.PRIMITIVE_UNTYPED_INT) {
-          SetNodeType(exprNode.Operand1, leftType)
+        if rightType.IsPointer() {
+          if leftType.Compare(shared.PRIMITIVE_UNTYPED_INT) {
+            SetNodeType(exprNode.Operand1, leftType)
+          }
           exprNode.ExprType = rightType
         }
-        if leftType.IsPointer() && rightType.Compare(shared.PRIMITIVE_UNTYPED_INT) {
-          SetNodeType(exprNode.Operand2, rightType)
+        if leftType.IsPointer() {
+          if rightType.Compare(shared.PRIMITIVE_UNTYPED_INT) {
+            SetNodeType(exprNode.Operand2, rightType)
+          }
           exprNode.ExprType = leftType
         }
         return exprNode.ExprType, nil

@@ -1,7 +1,8 @@
 package parser
 
 import (
-  "github.com/marzeq/quokka/shared"
+  "slices"
+	"github.com/marzeq/quokka/shared"
   "github.com/marzeq/quokka/tokeniser"
 )
 
@@ -85,13 +86,7 @@ func (p *Parser) ExpectGet(expected tokeniser.TokenType) (*tokeniser.Token, bool
 func (p *Parser) Match(ttypes ...tokeniser.TokenType) bool {
   ptype := p.Peek().Type
 
-  for _, ttype := range ttypes {
-    if ptype == ttype {
-      return true
-    }
-  }
-
-  return false
+  return slices.Contains(ttypes, ptype)
 }
 
 func (p *Parser) Parse() (*RootNode, error) {

@@ -35,9 +35,6 @@ func GetAlignOfType(t Type) int {
   if t.Compare(PRIMITIVE_BOOL) {
     return 4
   }
-  if t.Compare(PRIMITIVE_CSTRING) {
-    return 8
-  }
   if _, ok := t.(Pointer); ok {
     return 8
   }
@@ -76,9 +73,6 @@ func GetSizeOfType(t Type) int {
   }
   if t.Compare(PRIMITIVE_BOOL) {
     return 4
-  }
-  if t.Compare(PRIMITIVE_CSTRING) {
-    return 8
   }
   if st, ok := t.(Struct); ok {
     offset := 0
@@ -204,14 +198,6 @@ func CanCastTo(t1, t2 Type) bool {
     }
   }
 
-  // char* / u8* <-> cstring
-  if pt1, ok := t1.(Pointer); ok && (pt1.To.Compare(PRIMITIVE_CHAR) || pt1.To.Compare(PRIMITIVE_U8)) && t2.Compare(PRIMITIVE_CSTRING) {
-    return true
-  }
-  if pt2, ok := t2.(Pointer); ok && (pt2.To.Compare(PRIMITIVE_CHAR) || pt2.To.Compare(PRIMITIVE_U8)) && t1.Compare(PRIMITIVE_CSTRING) {
-    return true
-  }
-
   return false
 }
 
@@ -235,7 +221,6 @@ const (
   PRIMITIVE_BOOL Primitive = "bool"
 
   PRIMITIVE_CHAR Primitive = "char"
-  PRIMITIVE_CSTRING Primitive = "cstring"
 )
 
 func (pt Primitive) IsPrimitive() bool { return true }
@@ -363,7 +348,6 @@ func NewTypeTable() TypeTable {
   tt.Define(string(PRIMITIVE_BOOL), PRIMITIVE_BOOL)
 
   tt.Define(string(PRIMITIVE_CHAR), PRIMITIVE_CHAR)
-  tt.Define(string(PRIMITIVE_CSTRING), PRIMITIVE_CSTRING)
 
   return tt
 }

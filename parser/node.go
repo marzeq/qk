@@ -191,9 +191,14 @@ type FunctionDefNode struct {
 }
 func (n FunctionDefNode) GetLoc() shared.Location { return n.Loc }
 
+type StructField struct {
+  Name string
+  Type *IdentifierNode
+  PointerLevel int
+}
 type StructDefNode struct {
   Name string
-  Fields []shared.Pair[string, *IdentifierNode] // field name, field type
+  Fields []StructField
   Loc shared.Location
 }
 func (n StructDefNode) GetLoc() shared.Location { return n.Loc }
