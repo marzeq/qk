@@ -357,7 +357,7 @@ func (p *Parser) ParseCast() (*CastNode, error) {
     p.Inc()
   }
 
-  tpe, err := p.ParseIdent()
+  pointerLevel, tpe, err := p.ParseType()
   if err != nil {
     return nil, err
   }
@@ -383,6 +383,7 @@ func (p *Parser) ParseCast() (*CastNode, error) {
 
   return &CastNode{
     ToType: tpe,
+    PointerLevel: pointerLevel,
     Operand: expr,
     Loc: beginLoc,
   }, nil

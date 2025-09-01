@@ -896,6 +896,9 @@ func (cg *CodeGen) GenerateExprIR(eNode parser.ExpressionNode) (string, []string
 
   case *parser.CastNode:
     targetType, _ := cg.typeTable.Lookup(exprNode.ToType.Name)
+    for i := exprNode.PointerLevel; i > 0; i-- {
+      targetType = shared.Pointer{To: targetType}
+    }
     targetIRType := mapTypeToIRType(targetType)
     sourceType := exprNode.Operand.GetType()
     sourceIRType := mapTypeToIRType(sourceType)

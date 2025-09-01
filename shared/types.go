@@ -193,6 +193,12 @@ func CanCastTo(t1, t2 Type) bool {
     return true
   }
 
+  if t1.IsPointer() && t2.IsPointer() {
+    if t1.(Pointer).To == PRIMITIVE_VOID || t2.(Pointer).To == PRIMITIVE_VOID {
+      return true
+    }
+  }
+
   return false
 }
 

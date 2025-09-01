@@ -161,6 +161,7 @@ func (n BinaryOpNode) GetType() shared.Type { return n.ExprType }
 
 type CastNode struct {
   ToType *IdentifierNode
+  PointerLevel int
   Operand ExpressionNode
   Loc shared.Location
   ExprType shared.Type

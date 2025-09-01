@@ -423,6 +423,11 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
     if !ok {
       return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "no such type '%s'", tpeName)
     }
+    for i := 0; i < exprNode.PointerLevel; i++ {
+      tpe = shared.Pointer{
+        To: tpe,
+      }
+    }
     exTpe, err := tc.typeCheckExpression(exprNode.Operand, shared.PRIMITIVE_VOID)
     if err != nil {
       return shared.PRIMITIVE_VOID, err
