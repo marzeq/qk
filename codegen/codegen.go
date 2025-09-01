@@ -52,6 +52,18 @@ func (cg *CodeGen) EmitIR() (string, error) {
   ir := ""
   gsetups := []string{}
 
+  for name, tpe := range cg.typeTable {
+    if !tpe.IsStruct() {
+      continue
+    }
+
+    ir += fmt.Sprintf("type :%s = {", name)
+    for _, field := range tpe.(shared.Struct).Fields {
+      ir += fmt.Sprintf(" %s,", mapTypeToIRType(field.R))
+    }
+    ir += "}\n"
+  }
+
   for _, n := range cg.rootNode.Body {
     switch node := n.(type) {
     case *parser.StructDefNode:
@@ -71,18 +83,6 @@ func (cg *CodeGen) EmitIR() (string, error) {
     default:
       return "", shared.NewError(node.GetLoc(), "unexpected node")
     }
-  }
-
-  for name, tpe := range cg.typeTable {
-    if !tpe.IsStruct() {
-      continue
-    }
-
-    ir += fmt.Sprintf("type :%s = {", name)
-    for _, field := range tpe.(shared.Struct).Fields {
-      ir += fmt.Sprintf(" %s,", mapTypeToIRType(field.R))
-    }
-    ir += "}\n"
   }
 
   for _, gsetup := range gsetups {
@@ -109,7 +109,20 @@ func (cg *CodeGen) GenerateFuncIR(funcNode *parser.FunctionDefNode) (string, []s
     after := ""
     for i, arg := range fsig.ArgTypes {
       tnm := cg.GetTmpVar()
-      tpe := mapTypeToIRType(arg.R)
+      tpe := ""
+      if arg.R.IsStruct() {
+        for name, st := range cg.typeTable {
+          if st.Compare(arg.R) {
+            tpe = fmt.Sprintf(":%s", name)
+            break
+          }
+        }
+        if tpe == "" {
+          tpe = "l"
+        }
+      } else {
+        tpe = mapTypeToIRType(arg.R)
+      }
       prologue += fmt.Sprintf("%s %s", tpe, tnm)
       if i != len(fsig.ArgTypes)-1 {
         prologue += ", "
@@ -330,7 +343,19 @@ func (cg *CodeGen) GenerateStmtIR(stmtNd parser.Node, last bool, loopBegin, loop
         return "", nil, nil, err
       }
       if i < len(fsig.ArgTypes) {
-        argType = mapTypeToIRType(fsig.ArgTypes[i].R)
+        if fsig.ArgTypes[i].R.IsStruct() {
+          for name, st := range cg.typeTable {
+            if st.Compare(fsig.ArgTypes[i].R) {
+              argType  = fmt.Sprintf(":%s", name)
+              break
+            }
+          }
+          if argType == "" {
+            argType = "l"
+          }
+        } else {
+          argType  = mapTypeToIRType(fsig.ArgTypes[i].R)
+        }
       } else {
         argType = exprTpe
       }

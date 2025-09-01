@@ -1,15 +1,50 @@
-declare printf(s: cstring, ...): void
-
 struct A {
   a: i32
+  junk1: i32
+  junk2: i32
+  junk3: i32
+  junk4: i32
+  junk5: i32
+  junk6: i32
+  junk7: i32
+  junk8: i32
 }
 
-let test(x: A) = {
-  printf("%d\n", x.a)
+declare printAFromC(a: A): void -- from this C code that is linked with the program:
+-- typedef struct {
+--   int a;
+--   int junk1;
+--   int junk2;
+--   int junk3;
+--   int junk4;
+--   int junk5;
+--   int junk6;
+--   int junk7;
+--   int junk8;
+-- } A;
+-- 
+-- void printAFromC(A a) {
+--     printf("C: %d\n", a.a);
+-- }
+
+declare printf(s: cstring, ...): void
+let printAFromQK(a: A) = {
+  printf("QK: %d\n", a.a)
 }
 
 let main() = {
-  var s = A{ a = 0 }
-  test(s)
-  return s.a
+  var a = A{
+    a = 3
+    junk1 = 0
+    junk2 = 0
+    junk3 = 0
+    junk4 = 0
+    junk5 = 0
+    junk6 = 0
+    junk7 = 0
+    junk8 = 0
+  }
+  printAFromQK(a) -- should print 3
+  printAFromC(a) -- should also print 3
+  return a.a -- exit code should be 3
 }
