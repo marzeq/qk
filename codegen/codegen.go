@@ -116,7 +116,12 @@ func (cg *CodeGen) GenerateFuncIR(funcNode *parser.FunctionDefNode) (string, []s
       }
 
       after += fmt.Sprintf("%%%s =l %s\n", arg.L, emitAllocForType(arg.R, 1))
-      after += fmt.Sprintf("store%s %s, %%%s", tpe, tnm, arg.L)
+      switch argR := arg.R.(type) {
+      case shared.Struct:
+        after += fmt.Sprintf("blit %s, %%%s, %d", tnm, arg.L, argR.GetLayout().Size)
+      default:
+        after += fmt.Sprintf("store%s %s, %%%s", tpe, tnm, arg.L)
+      }
     }
 
     prologue += ") {\n@start\n"
@@ -569,19 +574,20 @@ func (cg *CodeGen) GenerateExprIR(eNode parser.ExpressionNode) (string, []string
   switch exprNode := eNode.(type) {
   case *parser.IdentifierNode:
     tnme := ""
-    tpe := exprNode.ExprType
     irs := []string{}
-    var err error
 
     if exprNode.Next != nil {
-      tnme, tpe, irs, err = cg.EmitFieldAccess("%"+exprNode.Name, exprNode, exprNode.ExprType, false)
+      gotname, gottpe, gotirs, err := cg.EmitFieldAccess("%"+exprNode.Name, exprNode, exprNode.ExprType, false)
       if err != nil {
         return "", nil, nil, "", err
       }
+      tpe = mapTypeToIRType(gottpe)
+      irs = append(irs, gotirs...)
+      tnme = gotname
     } else {
       tnme = cg.GetTmpVar()
-      irt := mapTypeToIRType(tpe)
-      if tpe.IsStruct() {
+      irt := mapTypeToIRType(exprNode.GetType())
+      if exprNode.GetType().IsStruct() {
         irs = append(irs, fmt.Sprintf("%s =%s copy %%%s", tnme, irt, exprNode.Name))
       } else {
         irs = append(irs, fmt.Sprintf("%s =%s load%s %%%s", tnme, irt, irt, exprNode.Name))

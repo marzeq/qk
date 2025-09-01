@@ -4,8 +4,8 @@ struct A {
   a: i32
 }
 
-let test(s: A) = {
-  printf("%d\n", s.a)
+let test(x: A) = {
+  printf("%d\n", x.a)
 }
 
 let main() = {
