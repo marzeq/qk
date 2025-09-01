@@ -33,12 +33,12 @@ func runCmd(args ...string) error {
 
 func main() {
   if len(os.Args) < 3 {
-    fmt.Println("Usage: quokka [src file] [output binary]")
+    fmt.Println("Usage: quokka [output binary] [src file]")
     return
   }
 
-  srcfile := os.Args[1]
-  binfile := os.Args[2]
+  binfile := os.Args[1]
+  srcfile := os.Args[2]
   rest := os.Args[3:]
   binname := path.Base(binfile)
 
