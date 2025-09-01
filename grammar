@@ -2,7 +2,7 @@ grammar         = {(fn_decl | import_stmt) (stmt_end | EOF)} ;
 
 import_stmt     = "import" STRING ;
 
-fn_decl         = "let" IDENT '(' [arg {',' arg}] ')' ':' IDENT '=' (expression | block_expr) ;
+fn_decl         = "let" IDENT '(' [{'var'} arg {',' {'var'} arg}] ')' ':' IDENT '=' (expression | block_expr) ;
 
 arg             = IDENT ':' IDENT ;
 
