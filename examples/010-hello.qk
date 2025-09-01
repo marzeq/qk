@@ -1,0 +1,6 @@
+declare printf(s: cstring, ...)
+
+let main = {
+  printf("Hello from Quokka!\n")
+  return 0
+}

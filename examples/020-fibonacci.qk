@@ -2,12 +2,9 @@ let fib(n: i32): i32 =
   if n <= 1 { n }
   else { fib(n - 1) + fib(n - 2) }
 
-let a(): i32 = 0
-
 declare printf(s: cstring, ...): void
 
 let main(): i32 = {
-  let x = a()
   for var i: i32 = x; i < 40; i = i+1 {
     printf("fib(%d) = %d\n", i, fib(i))
   }
