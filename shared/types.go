@@ -17,25 +17,25 @@ func alignUp(x, a int) int {
 }
 
 func GetAlignOfType(t Type) int {
-  if t == PRIMITIVE_U8 || t == PRIMITIVE_I8 {
+  if t.Compare(PRIMITIVE_U8) || t.Compare(PRIMITIVE_I8) {
     return 4
   }
-  if t == PRIMITIVE_U16 || t == PRIMITIVE_I16 {
+  if t.Compare(PRIMITIVE_U16) || t.Compare(PRIMITIVE_I16) {
     return 4
   }
-  if t == PRIMITIVE_U32 || t == PRIMITIVE_I32 {
+  if t.Compare(PRIMITIVE_U32) || t.Compare(PRIMITIVE_I32) {
     return 4
   }
-  if t == PRIMITIVE_U64 || t == PRIMITIVE_I64 {
+  if t.Compare(PRIMITIVE_U64) || t.Compare(PRIMITIVE_I64) {
     return 8
   }
-  if t == PRIMITIVE_CHAR {
+  if t.Compare(PRIMITIVE_CHAR) {
     return 4
   }
-  if t == PRIMITIVE_BOOL {
+  if t.Compare(PRIMITIVE_BOOL) {
     return 4
   }
-  if t == PRIMITIVE_CSTRING {
+  if t.Compare(PRIMITIVE_CSTRING) {
     return 8
   }
   if _, ok := t.(Pointer); ok {
@@ -59,25 +59,25 @@ func GetAlignOfType(t Type) int {
 }
 
 func GetSizeOfType(t Type) int {
-  if t == PRIMITIVE_U8 || t == PRIMITIVE_I8 {
+  if t.Compare(PRIMITIVE_U8) || t.Compare(PRIMITIVE_I8) {
     return 4
   }
-  if t == PRIMITIVE_U16 || t == PRIMITIVE_I16 {
+  if t.Compare(PRIMITIVE_U16) || t.Compare(PRIMITIVE_I16) {
     return 4
   }
-  if t == PRIMITIVE_U32 || t == PRIMITIVE_I32 {
+  if t.Compare(PRIMITIVE_U32) || t.Compare(PRIMITIVE_I32) {
     return 4
   }
-  if t == PRIMITIVE_U64 || t == PRIMITIVE_I64 {
+  if t.Compare(PRIMITIVE_U64) || t.Compare(PRIMITIVE_I64) {
     return 8
   }
-  if t == PRIMITIVE_CHAR {
+  if t.Compare(PRIMITIVE_CHAR) {
     return 4
   }
-  if t == PRIMITIVE_BOOL {
+  if t.Compare(PRIMITIVE_BOOL) {
     return 4
   }
-  if t == PRIMITIVE_CSTRING {
+  if t.Compare(PRIMITIVE_CSTRING) {
     return 8
   }
   if st, ok := t.(Struct); ok {
@@ -101,23 +101,23 @@ func GetSizeOfType(t Type) int {
 
 
 func IsNumericType(t Type) bool {
-  return t == PRIMITIVE_U8 ||
-    t == PRIMITIVE_I8 ||
-    t == PRIMITIVE_U16 ||
-    t == PRIMITIVE_I16 ||
-    t == PRIMITIVE_U32 ||
-    t == PRIMITIVE_I32 ||
-    t == PRIMITIVE_U64 ||
-    t == PRIMITIVE_I64 ||
-    t == PRIMITIVE_UNTYPED_INT
+  return t.Compare(PRIMITIVE_U8) ||
+    t.Compare(PRIMITIVE_I8) ||
+    t.Compare(PRIMITIVE_U16) ||
+    t.Compare(PRIMITIVE_I16) ||
+    t.Compare(PRIMITIVE_U32) ||
+    t.Compare(PRIMITIVE_I32) ||
+    t.Compare(PRIMITIVE_U64) ||
+    t.Compare(PRIMITIVE_I64) ||
+    t.Compare(PRIMITIVE_UNTYPED_INT)
 }
 
 func IsUnsignedType(ts ...Type) bool {
   for _, t := range ts {
-    if !(t == PRIMITIVE_U8 ||
-      t == PRIMITIVE_U16 ||
-      t == PRIMITIVE_U32 ||
-      t == PRIMITIVE_U64) {
+    if !(t.Compare(PRIMITIVE_U8) ||
+      t.Compare(PRIMITIVE_U16) ||
+      t.Compare(PRIMITIVE_U32) ||
+      t.Compare(PRIMITIVE_U64)) {
       return false
     }
   }
@@ -126,10 +126,10 @@ func IsUnsignedType(ts ...Type) bool {
 
 func IsSignedType(ts ...Type) bool {
   for _, t := range ts {
-    if !(t == PRIMITIVE_I8 ||
-      t == PRIMITIVE_I16 ||
-      t == PRIMITIVE_I32 ||
-      t == PRIMITIVE_I64) {
+    if !(t.Compare(PRIMITIVE_I8) ||
+      t.Compare(PRIMITIVE_I16) ||
+      t.Compare(PRIMITIVE_I32) ||
+      t.Compare(PRIMITIVE_I64)) {
       return false
     }
   }
@@ -137,43 +137,44 @@ func IsSignedType(ts ...Type) bool {
 }
 
 func BiggerNumericType(t1, t2 Type) Type {
-  if t1 == PRIMITIVE_U64 || t2 == PRIMITIVE_U64 {
+  if t1.Compare(PRIMITIVE_U64) || t2.Compare(PRIMITIVE_U64) {
     return PRIMITIVE_U64
   }
-  if t1 == PRIMITIVE_I64 || t2 == PRIMITIVE_I64 {
+  if t1.Compare(PRIMITIVE_I64) || t2.Compare(PRIMITIVE_I64) {
     return PRIMITIVE_I64
   }
-  if t1 == PRIMITIVE_U32 || t2 == PRIMITIVE_U32 {
+  if t1.Compare(PRIMITIVE_U32) || t2.Compare(PRIMITIVE_U32) {
     return PRIMITIVE_U32
   }
-  if t1 == PRIMITIVE_I32 || t2 == PRIMITIVE_I32 {
+  if t1.Compare(PRIMITIVE_I32) || t2.Compare(PRIMITIVE_I32) {
     return PRIMITIVE_I32
   }
-  if t1 == PRIMITIVE_U16 || t2 == PRIMITIVE_U16 {
+  if t1.Compare(PRIMITIVE_U16) || t2.Compare(PRIMITIVE_U16) {
     return PRIMITIVE_U16
   }
-  if t1 == PRIMITIVE_I16 || t2 == PRIMITIVE_I16 {
+  if t1.Compare(PRIMITIVE_I16) || t2.Compare(PRIMITIVE_I16) {
     return PRIMITIVE_I16
   }
-  if t1 == PRIMITIVE_U8 || t2 == PRIMITIVE_U8 {
+  if t1.Compare(PRIMITIVE_U8) || t2.Compare(PRIMITIVE_U8) {
     return PRIMITIVE_U8
   }
-  if t1 == PRIMITIVE_I8 || t2 == PRIMITIVE_I8 {
+  if t1.Compare(PRIMITIVE_I8) || t2.Compare(PRIMITIVE_I8) {
     return PRIMITIVE_I8
   }
   return PRIMITIVE_UNTYPED_INT
 }
 
 func CanCoerceTo(t1, t2 Type) bool {
-  if t1 == PRIMITIVE_UNTYPED_INT && IsNumericType(t2) {
+  if t1.Compare(PRIMITIVE_UNTYPED_INT) && IsNumericType(t2) ||
+  t2.Compare(PRIMITIVE_UNTYPED_INT) && IsNumericType(t1) {
     return true
   }
 
-  if t1 == t2 {
+  if t1.Compare(t2) {
     return true
   }
 
-  if (IsSignedType(t1, t2) || IsUnsignedType(t1, t2)) && BiggerNumericType(t1, t2) == t2 {
+  if (IsSignedType(t1, t2) || IsUnsignedType(t1, t2)) && BiggerNumericType(t1, t2).Compare(t2) {
     return true
   }
 
@@ -181,22 +182,34 @@ func CanCoerceTo(t1, t2 Type) bool {
 }
 
 func CanCastTo(t1, t2 Type) bool {
-  if t1 == t2 {
+  if t1.Compare(t2) {
     return true
   }
 
-  if t1 == PRIMITIVE_CHAR && t2 == PRIMITIVE_U8 || t1 == PRIMITIVE_U8 && t2 == PRIMITIVE_CHAR {
+  // char <-> u8
+  if t1.Compare(PRIMITIVE_CHAR) && t2.Compare(PRIMITIVE_U8) ||
+  t2.Compare(PRIMITIVE_CHAR) && t1.Compare(PRIMITIVE_U8) {
     return true
   }
 
+  // numeric <-> numeric
   if IsNumericType(t1) && IsNumericType(t2) {
     return true
   }
 
+  // pointer <-> void*
   if t1.IsPointer() && t2.IsPointer() {
-    if t1.(Pointer).To == PRIMITIVE_VOID || t2.(Pointer).To == PRIMITIVE_VOID {
+    if t1.(Pointer).To.Compare(PRIMITIVE_VOID) || t2.(Pointer).To.Compare(PRIMITIVE_VOID) {
       return true
     }
+  }
+
+  // char* / u8* <-> cstring
+  if pt1, ok := t1.(Pointer); ok && (pt1.To.Compare(PRIMITIVE_CHAR) || pt1.To.Compare(PRIMITIVE_U8)) && t2.Compare(PRIMITIVE_CSTRING) {
+    return true
+  }
+  if pt2, ok := t2.(Pointer); ok && (pt2.To.Compare(PRIMITIVE_CHAR) || pt2.To.Compare(PRIMITIVE_U8)) && t1.Compare(PRIMITIVE_CSTRING) {
+    return true
   }
 
   return false

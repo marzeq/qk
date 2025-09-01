@@ -291,21 +291,16 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
   }
 
   if p.Match(tokeniser.TOKEN_TYPE_IDENT) {
-    ident, err := p.ParseIdent()
-    if err != nil {
-      return nil, err
-    }
+    p.Inc()
     if p.Match(tokeniser.TOKEN_TYPE_OPEN_PAREN) {
-      p.Dec()
-      return p.ParseFunctionCall(ident)
+      return p.Dec().ParseFunctionCall()
     }
 
     if p.Match(tokeniser.TOKEN_TYPE_OPEN_CURLY) {
-      p.Dec()
-      return p.ParseStructLiteral()
+      return p.Dec().ParseStructLiteral()
     }
 
-    return ident, nil
+    return p.Dec().ParseIdent()
   }
 
   if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == "true" || p.Peek().Value == "false" {
@@ -378,7 +373,7 @@ func (p *Parser) ParseCast() (*CastNode, error) {
     p.Inc()
   }
   if !p.Expect(tokeniser.TOKEN_TYPE_CLOSE_PAREN) {
-    return nil, shared.NewError(p.PrevLoc(), "expected ')")
+    return nil, shared.NewError(p.PrevLoc(), "expected ')'")
   }
 
   return &CastNode{
@@ -389,11 +384,12 @@ func (p *Parser) ParseCast() (*CastNode, error) {
   }, nil
 }
 
-func (p *Parser) ParseFunctionCall(name *IdentifierNode) (*FunctionCallNode, error) {
+func (p *Parser) ParseFunctionCall() (*FunctionCallNode, error) {
   var args []ExpressionNode
 
-  if !p.Expect(tokeniser.TOKEN_TYPE_IDENT) {
-    return nil, shared.NewError(p.PrevLoc(), "expected function name")
+  name, err := p.ParseIdent()
+  if err != nil {
+    return nil, err
   }
   if !p.Expect(tokeniser.TOKEN_TYPE_OPEN_PAREN) {
     return nil, shared.NewError(p.PrevLoc(), "expected '('")

@@ -355,16 +355,18 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
   }
 
   if p.Match(tokeniser.TOKEN_TYPE_IDENT) {
-    ident, err := p.ParseIdent()
-    if err != nil {
-      return nil, false, err
-    }
-
+    p.Inc()
     if p.Match(tokeniser.TOKEN_TYPE_EQUALS) {
+      ident, err := p.Dec().ParseIdent()
+      if err != nil {
+        return nil, false, err
+      }
+
       node, err := p.ParseAssignment(ident)
       return node, true, err
     } else if p.Match(tokeniser.TOKEN_TYPE_OPEN_PAREN) {
-      node, err := p.ParseFunctionCall(ident)
+      p.Dec().Dec()
+      node, err := p.ParseFunctionCall()
       return node, true, err
     }
 
