@@ -568,13 +568,14 @@ func (cg *CodeGen) EmitFieldAccess(baseVar string, field *parser.IdentifierNode,
   }
   offset := layout.Offsets[fieldIdx]
 
-  addrTmp := cg.GetTmpVar()
-  irs = append(irs, fmt.Sprintf("%s =l add %s, %d", addrTmp, baseVar, offset))
   if tpe.IsPointer() {
     loadedTmp := cg.GetTmpVar()
-    irs = append(irs, fmt.Sprintf("%s =l loadl %s", loadedTmp, addrTmp))
+    irs = append(irs, fmt.Sprintf("%s =l loadl %s", loadedTmp, baseVar))
 
-    tmp, ftype, nextIrs, err := cg.EmitFieldAccess(loadedTmp, field.Next, f.R, getAddress)
+    addrTmp := cg.GetTmpVar()
+    irs = append(irs, fmt.Sprintf("%s =l add %s, %d", addrTmp, loadedTmp, offset))
+
+    tmp, ftype, nextIrs, err := cg.EmitFieldAccess(addrTmp, field.Next, f.R, getAddress)
 
     if err != nil {
       return "", nil, nil, err
@@ -582,6 +583,9 @@ func (cg *CodeGen) EmitFieldAccess(baseVar string, field *parser.IdentifierNode,
     irs = append(irs, nextIrs...)
     return tmp, ftype, irs, nil
   } else {
+    addrTmp := cg.GetTmpVar()
+    irs = append(irs, fmt.Sprintf("%s =l add %s, %d", addrTmp, baseVar, offset))
+
     tmp, ftype, nextIrs, err := cg.EmitFieldAccess(addrTmp, field.Next, f.R, getAddress)
     if err != nil {
       return "", nil, nil, err
