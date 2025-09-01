@@ -673,7 +673,19 @@ func (cg *CodeGen) GenerateExprIR(eNode parser.ExpressionNode) (string, []string
         return "", nil, nil, "", err
       }
       if i < len(fsig.ArgTypes) {
-        argType = mapTypeToIRType(fsig.ArgTypes[i].Type)
+        if fsig.ArgTypes[i].Type.IsStruct() {
+          for name, st := range cg.typeTable {
+            if st.Compare(fsig.ArgTypes[i].Type) {
+              argType  = fmt.Sprintf(":%s", name)
+              break
+            }
+          }
+          if argType == "" {
+            argType = "l"
+          }
+        } else {
+          argType  = mapTypeToIRType(fsig.ArgTypes[i].Type)
+        }
       } else {
         argType = exprTpe
       }

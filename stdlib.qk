@@ -17,3 +17,7 @@ struct string {
 
 let string_new(cstr: *char): string =
   string{data=cstr, len=strlen(cstr)}
+
+let string_get_at(s: string, i: u64): char =
+  if i > s.len { '\0' }
+  else { *(s.data+i) }

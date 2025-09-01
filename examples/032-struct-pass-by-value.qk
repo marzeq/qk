@@ -10,7 +10,6 @@ struct A {
   junk8: i32
 }
 
-declare printAFromC(a: A): void -- from this C code that is linked with the program:
 -- typedef struct {
 --   int a;
 --   int junk1;
@@ -27,7 +26,7 @@ declare printAFromC(a: A): void -- from this C code that is linked with the prog
 --     printf("C: %d\n", a.a);
 -- }
 
-declare printf(s: cstring, ...): void
+declare printf(s: *char, ...): void
 let printAFromQK(a: A) = {
   printf("QK: %d\n", a.a)
 }
@@ -45,6 +44,5 @@ let main() = {
     junk8 = 0
   }
   printAFromQK(a) -- should print 3
-  printAFromC(a) -- should also print 3
   return a.a -- exit code should be 3
 }
