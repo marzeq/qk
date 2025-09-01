@@ -229,16 +229,23 @@ func (cg *CodeGen) GenerateStmtIR(stmtNd parser.Node, last bool, loopBegin, loop
 
   case *parser.DeclarationNode:
     nme := stmtNode.Name
-    switch assignee :=stmtNode.Value.(type) {
+    switch assignee := stmtNode.Value.(type) {
     case *parser.IdentifierNode:
-      setups = append(setups, fmt.Sprintf("%%%s =l %s", nme, emitAllocForType(getLastIdentifierInChain(assignee).GetType(), 1)))
+      lastId := getLastIdentifierInChain(assignee)
+      setups = append(setups, fmt.Sprintf("%%%s =l %s", nme, emitAllocForType(lastId.GetType(), 1)))
 
       val, setps, gsetps, _, err := cg.GenerateExprIR(assignee)
       if err != nil {
         return "", nil, nil, err
       }
 
-      line += fmt.Sprintf("store%s %s, %%%s", mapTypeToIRType(getLastIdentifierInChain(assignee).GetType()), val, nme)
+      switch strct := lastId.GetType().(type) {
+      case shared.Struct:
+        line += fmt.Sprintf("blit %s, %%%s, %d", val, nme, strct.GetLayout().Size)
+      default:
+        line += fmt.Sprintf("store%s %s, %%%s", mapTypeToIRType(lastId.GetType()), val, nme)
+      }
+      
       setups = append(setups, setps...)
       gsetups = append(gsetups, gsetps...)
     default:
@@ -248,25 +255,44 @@ func (cg *CodeGen) GenerateStmtIR(stmtNd parser.Node, last bool, loopBegin, loop
       if err != nil {
         return "", nil, nil, err
       }
-      line += fmt.Sprintf("store%s %s, %%%s", mapTypeToIRType(assignee.GetType()), val, nme)
+
+      switch strct := assignee.GetType().(type) {
+      case shared.Struct:
+        line += fmt.Sprintf("blit %s, %%%s, %d", val, nme, strct.GetLayout().Size)
+      default:
+        line += fmt.Sprintf("store%s %s, %%%s", mapTypeToIRType(assignee.GetType()), val, nme)
+      }
+
       setups = append(setups, setps...)
       gsetups = append(gsetups, gsetps...)
-
     }
 
   case *parser.AssignmentNode:
     switch assignee := stmtNode.Assignee.(type) {
     case *parser.IdentifierNode:
-      val, setps, gsetps, _, err := cg.GenerateExprIR(assignee)
+      lastId := getLastIdentifierInChain(assignee)
+      val, setps, gsetps, _, err := cg.GenerateExprIR(stmtNode.Value)
       if err != nil {
         return "", nil, nil, err
       }
 
-      line = fmt.Sprintf("store%s %s, %%%s", mapTypeToIRType(getLastIdentifierInChain(assignee).GetType()), val, assignee.Name)
+      deepname, tpe, deepstps, err := cg.EmitFieldAccess("%"+assignee.Name, assignee, assignee.ExprType, true)
+      if err != nil {
+        return "", nil, nil, err
+      }
+
+      switch strct := lastId.GetType().(type) {
+      case shared.Struct:
+        line += fmt.Sprintf("blit %s, %s, %d", val, deepname, strct.GetLayout().Size)
+      default:
+        line += fmt.Sprintf("store%s %s, %s", mapTypeToIRType(tpe), val, deepname)
+      }
+
       setups = append(setups, setps...)
       gsetups = append(gsetups, gsetps...)
+      setups = append(setups, deepstps...)
     case *parser.UnaryOpNode:
-      val, setps, gsetps, _, err := cg.GenerateExprIR(assignee)
+      val, setps, gsetps, _, err := cg.GenerateExprIR(stmtNode.Value)
       if err != nil {
         return "", nil, nil, err
       }
@@ -282,6 +308,7 @@ func (cg *CodeGen) GenerateStmtIR(stmtNd parser.Node, last bool, loopBegin, loop
     default:
       return "", nil, nil, shared.NewError(stmtNode.GetLoc(), "invalid assignment target")
     }
+
   case *parser.FunctionCallNode:
     fsig := cg.funcSigs[stmtNode.Name.Name]
 
@@ -467,9 +494,12 @@ func (cg *CodeGen) GenerateStmtIR(stmtNd parser.Node, last bool, loopBegin, loop
   return line, setups, gsetups, nil
 }
 
-func (cg *CodeGen) EmitFieldAccess(baseVar string, field *parser.IdentifierNode, tpe shared.Type) (string, shared.Type, []string, error) {
+func (cg *CodeGen) EmitFieldAccess(baseVar string, field *parser.IdentifierNode, tpe shared.Type, getAddress bool) (string, shared.Type, []string, error) {
   var irs []string
   if field.Next == nil {
+    if getAddress {
+      return baseVar, tpe, irs, nil
+    }
     irt := mapTypeToIRType(tpe)
     tmp := cg.GetTmpVar()
     irs = append(irs, fmt.Sprintf("%s =%s load%s %s", tmp, irt, irt, baseVar))
@@ -509,16 +539,26 @@ func (cg *CodeGen) EmitFieldAccess(baseVar string, field *parser.IdentifierNode,
   offset := layout.Offsets[fieldIdx]
 
   addrTmp := cg.GetTmpVar()
-  irs = append(irs, fmt.Sprintf("%s =l add %%%s, %d", addrTmp, baseVar, offset))
-  loadedTmp := cg.GetTmpVar()
-  irs = append(irs, fmt.Sprintf("%s =l loadl %s", loadedTmp, addrTmp))
+  irs = append(irs, fmt.Sprintf("%s =l add %s, %d", addrTmp, baseVar, offset))
+  if tpe.IsPointer() {
+    loadedTmp := cg.GetTmpVar()
+    irs = append(irs, fmt.Sprintf("%s =l loadl %s", loadedTmp, addrTmp))
 
-  tmp, ftype, nextIrs, err := cg.EmitFieldAccess(loadedTmp, field.Next, f.R)
-  if err != nil {
-    return "", nil, nil, err
+    tmp, ftype, nextIrs, err := cg.EmitFieldAccess(loadedTmp, field.Next, f.R, getAddress)
+
+    if err != nil {
+      return "", nil, nil, err
+    }
+    irs = append(irs, nextIrs...)
+    return tmp, ftype, irs, nil
+  } else {
+    tmp, ftype, nextIrs, err := cg.EmitFieldAccess(addrTmp, field.Next, f.R, getAddress)
+    if err != nil {
+      return "", nil, nil, err
+    }
+    irs = append(irs, nextIrs...)
+    return tmp, ftype, irs, nil
   }
-  irs = append(irs, nextIrs...)
-  return tmp, ftype, irs, nil
 }
 
 func (cg *CodeGen) GenerateExprIR(eNode parser.ExpressionNode) (string, []string, []string, string, error) {
@@ -534,18 +574,22 @@ func (cg *CodeGen) GenerateExprIR(eNode parser.ExpressionNode) (string, []string
     var err error
 
     if exprNode.Next != nil {
-      tnme, tpe, irs, err = cg.EmitFieldAccess(exprNode.Name, exprNode, exprNode.ExprType)
+      tnme, tpe, irs, err = cg.EmitFieldAccess("%"+exprNode.Name, exprNode, exprNode.ExprType, false)
       if err != nil {
         return "", nil, nil, "", err
       }
     } else {
       tnme = cg.GetTmpVar()
       irt := mapTypeToIRType(tpe)
-      irs = append(irs, fmt.Sprintf("%s =%s load%s %%%s", tnme, irt, irt, exprNode.Name))
+      if tpe.IsStruct() {
+        irs = append(irs, fmt.Sprintf("%s =%s copy %%%s", tnme, irt, exprNode.Name))
+      } else {
+        irs = append(irs, fmt.Sprintf("%s =%s load%s %%%s", tnme, irt, irt, exprNode.Name))
+      }
     }
 
-  setups = append(setups, irs...)
-  val = tnme
+    setups = append(setups, irs...)
+    val = tnme
 
   case *parser.NumberLiteralNode:
     val = exprNode.Value

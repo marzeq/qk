@@ -1,17 +1,16 @@
-struct A {
-  a: i32
+struct B {
   b: i32
-  c: i32
-  d: i64
+}
+
+struct A {
+  a: B
 }
 
 let main() = {
-  let a = A{
-    a = 1
-    b = 2
-    c = 3
-    d = 4
-  }
-  let b = a.a
-  return b
+  -- var s = A{a=B{b = 2}}
+  -- s.a.b = 3
+  -- return s.a.b
+  var a = 2
+  a = 3
+  return a
 }

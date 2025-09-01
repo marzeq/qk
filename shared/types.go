@@ -260,6 +260,29 @@ func (st Struct) IsPrimitive() bool { return false }
 func (st Struct) IsStruct() bool { return true }
 func (st Struct) IsPointer() bool { return false }
 
+func (st1 Struct) Compare(t2 Type) bool {
+  if !t2.IsStruct() {
+    return false
+  }
+
+  st2 := t2.(Struct)
+
+  if len(st1.Fields) != len(st2.Fields) {
+    return false
+  }
+  for i, f1 := range st1.Fields {
+    f2 := st2.Fields[i]
+    if f1.R.IsStruct() && f2.R.IsStruct() {
+      if !f1.R.(Struct).Compare(f2.R.(Struct)) {
+        return false
+      }
+    } else if f1.R != f2.R {
+      return false
+    }
+  }
+  return true
+}
+
 type Pointer struct {
   To Type
   Const bool

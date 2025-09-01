@@ -496,8 +496,10 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
       if err != nil {
         return shared.PRIMITIVE_VOID, err
       }
-      if exprType != fieldType {
-        return shared.PRIMITIVE_VOID, shared.NewError(field.R.GetLoc(), "field '%s' of struct '%s' expects type '%s', got '%s'", field.L, name, fieldType, exprType)
+      if exprType.IsStruct() {
+        if exprTypeStrct, ok := exprType.(shared.Struct); !ok && exprType != fieldType && !exprTypeStrct.Compare(fieldType) {
+          return shared.PRIMITIVE_VOID, shared.NewError(field.R.GetLoc(), "field '%s' of struct '%s' expects type '%s', got '%s'", field.L, name, fieldType, exprType)
+        }
       }
     }
     exprNode.ExprType = structType
@@ -573,6 +575,7 @@ func (tc *TypeChecker) typeCheckDeclaration(declNode *parser.DeclarationNode) (s
 
   if varType == shared.PRIMITIVE_UNTYPED_INT {
     varType = shared.PRIMITIVE_I32
+    declNode.Value.(*parser.NumberLiteralNode).ExprType = varType
     exprType = shared.PRIMITIVE_I32
   }
   if varType == shared.PRIMITIVE_VOID {
