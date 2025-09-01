@@ -1,7 +1,6 @@
 package typechecker
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/marzeq/quokka/parser"
@@ -204,7 +203,6 @@ func (tc *TypeChecker) typeCheckBlock(blockNode *parser.BlockNode, sig *Function
           if !shared.CanCoerceTo(retType, sig.RetType) {
             return false, shared.NewError(node.Loc, "wrong return type for function, expected '%s' got '%s'", sig.RetType, retType)
           }
-          SetNodeType(node.ReturnValue, sig.RetType)
         } else if sig.RetType != shared.PRIMITIVE_VOID {
           return false, shared.NewError(node.Loc, "wrong return type for function, expected '%s' got void", sig.RetType)
         }
@@ -272,6 +270,7 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
     if !ok {
       return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "undefined variable '%s'", exprNode.Name)
     }
+    SetNodeType(exprNode, varSig.Type)
     gotType, err := ResolveFieldChain(exprNode, varSig.Type)
     if err != nil {
       return shared.PRIMITIVE_VOID, err
@@ -658,7 +657,6 @@ func (tc *TypeChecker) typeCheckIdentifierAssignment(asNode *parser.AssignmentNo
 }
 
 func (tc *TypeChecker) typeCheckPointerAssignment(asNode *parser.AssignmentNode, assignee *parser.UnaryOpNode) error {
-  fmt.Print()
   switch ident := assignee.Operand.(type) {
   case *parser.IdentifierNode:
     typeWereDereferencing, err := tc.typeCheckExpression(assignee.Operand, shared.PRIMITIVE_VOID)
