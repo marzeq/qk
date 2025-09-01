@@ -1,0 +1,8 @@
+declare malloc(size: u64): *i32
+
+let main() = {
+  var p = malloc(8)
+  *p = 2
+  *(p+4) = 4
+  return *(p+4)
+}

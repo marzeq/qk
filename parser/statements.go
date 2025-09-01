@@ -1,110 +1,11 @@
 package parser
 
 import (
+	"fmt"
+
 	"github.com/marzeq/quokka/shared"
 	"github.com/marzeq/quokka/tokeniser"
 )
-
-func (p *Parser) ParseDeclaration() (*DeclarationNode, error) {
-  beginLoc := p.CurrLoc()
-
-  kw, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_KEYWORD)
-  if !ok || kw.Value != "let" && kw.Value != "var" {
-    return nil, shared.NewError(p.PrevLoc(), "expected `let` or `var` keyword")
-  }
-
-  ident, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_IDENT)
-  if !ok {
-    return nil, shared.NewError(p.PrevLoc(), "expected name")
-  }
-
-  var tpe *IdentifierNode
-  if p.Match(tokeniser.TOKEN_TYPE_COLON) {
-    p.Inc()
-
-    ident, err := p.ParseIdent()
-    if err != nil {
-      return nil, err
-    }
-    tpe = ident
-  }
-
-  if !p.Expect(tokeniser.TOKEN_TYPE_EQUALS) {
-    return nil, shared.NewError(p.PrevLoc(), "expected '='")
-  }
-
-  for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
-    p.Inc()
-  }
-
-  expr, err := p.ParseExpression()
-  if err != nil {
-    return nil, err
-  }
-
-  return &DeclarationNode{
-    Name: ident.Value,
-    Type: tpe,
-    Mutable: kw.Value == "var",
-    Value: expr,
-    Loc: beginLoc,
-  }, nil
-}
-
-func (p *Parser) ParseAssignment(ident *IdentifierNode) (*AssignmentNode, error) {
-  if !p.Expect(tokeniser.TOKEN_TYPE_EQUALS) {
-    return nil, shared.NewError(p.PrevLoc(), "expected '='")
-  }
-
-  for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
-    p.Inc()
-  }
-
-  expr, err := p.ParseExpression()
-  if err != nil {
-    return nil, err
-  }
-
-  return &AssignmentNode{
-    Assignee: ident,
-    Value: expr,
-    Loc: ident.Loc,
-  }, err
-}
-
-func (p *Parser) ParsePointerAssignment() (*AssignmentNode, error) {
-  identLoc := p.CurrLoc()
-  if (!p.Expect(tokeniser.TOKEN_TYPE_ASTERISK)) {
-    return nil, shared.NewError(p.PrevLoc(), "expected '*'")
-  }
-  ident, err := p.ParseIdent()
-  if err != nil {
-    return nil, err
-  }
-
-  if !p.Expect(tokeniser.TOKEN_TYPE_EQUALS) {
-    return nil, shared.NewError(p.PrevLoc(), "expected '='")
-  }
-
-  for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
-    p.Inc()
-  }
-
-  expr, err := p.ParseExpression()
-  if err != nil {
-    return nil, err
-  }
-
-  return &AssignmentNode{
-    Assignee: &UnaryOpNode{
-      Op: UNARY_OP_DEREFERENCE,
-      Operand: ident,
-      Loc: identLoc,
-    },
-    Value: expr,
-    Loc: identLoc,
-  }, err
-}
 
 func (p *Parser) ParseBlock() (*BlockNode, error) {
   beginLoc := p.CurrLoc()
@@ -475,12 +376,110 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
     return node, true, err
   }
 
- if p.Match(tokeniser.TOKEN_TYPE_ASTERISK) {
-  node, err := p.ParsePointerAssignment()
-  return node, true, err
- }
+  if p.Match(tokeniser.TOKEN_TYPE_ASTERISK) {
+    node, err := p.ParsePointerAssignment()
+    return node, true, err
+  }
 
   return nil, false, shared.NewError(p.CurrLoc(), "unexpected token %s", p.Peek())
+}
+
+func (p *Parser) ParseDeclaration() (*DeclarationNode, error) {
+  beginLoc := p.CurrLoc()
+
+  kw, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_KEYWORD)
+  if !ok || kw.Value != "let" && kw.Value != "var" {
+    return nil, shared.NewError(p.PrevLoc(), "expected `let` or `var` keyword")
+  }
+
+  ident, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_IDENT)
+  if !ok {
+    return nil, shared.NewError(p.PrevLoc(), "expected name")
+  }
+
+  var tpe *IdentifierNode
+  if p.Match(tokeniser.TOKEN_TYPE_COLON) {
+    p.Inc()
+
+    ident, err := p.ParseIdent()
+    if err != nil {
+      return nil, err
+    }
+    tpe = ident
+  }
+
+  if !p.Expect(tokeniser.TOKEN_TYPE_EQUALS) {
+    return nil, shared.NewError(p.PrevLoc(), "expected '='")
+  }
+
+  for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
+    p.Inc()
+  }
+
+  expr, err := p.ParseExpression()
+  if err != nil {
+    return nil, err
+  }
+
+  return &DeclarationNode{
+    Name: ident.Value,
+    Type: tpe,
+    Mutable: kw.Value == "var",
+    Value: expr,
+    Loc: beginLoc,
+  }, nil
+}
+
+func (p *Parser) ParseAssignment(ident *IdentifierNode) (*AssignmentNode, error) {
+  if !p.Expect(tokeniser.TOKEN_TYPE_EQUALS) {
+    return nil, shared.NewError(p.PrevLoc(), "expected '='")
+  }
+
+  for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
+    p.Inc()
+  }
+
+  expr, err := p.ParseExpression()
+  if err != nil {
+    return nil, err
+  }
+
+  return &AssignmentNode{
+    Assignee: ident,
+    Value: expr,
+    Loc: ident.Loc,
+  }, err
+}
+
+func (p *Parser) ParsePointerAssignment() (*AssignmentNode, error) {
+  fmt.Print()
+  identLoc := p.CurrLoc()
+  if !p.Match(tokeniser.TOKEN_TYPE_ASTERISK) {
+    return nil, shared.NewError(p.PrevLoc(), "expected '*'")
+  }
+  expr, err := p.ParseExpression()
+  if err != nil {
+    return nil, err
+  }
+
+  if !p.Expect(tokeniser.TOKEN_TYPE_EQUALS) {
+    return nil, shared.NewError(p.PrevLoc(), "expected '='")
+  }
+
+  for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
+    p.Inc()
+  }
+
+  valExpr, err := p.ParseExpression()
+  if err != nil {
+    return nil, err
+  }
+
+  return &AssignmentNode{
+    Assignee: expr,
+    Value: valExpr,
+    Loc: identLoc,
+  }, err
 }
 
 func (p *Parser) ParseIfStatement() (*IfNode, error) {

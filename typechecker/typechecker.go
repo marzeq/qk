@@ -657,42 +657,32 @@ func (tc *TypeChecker) typeCheckIdentifierAssignment(asNode *parser.AssignmentNo
 }
 
 func (tc *TypeChecker) typeCheckPointerAssignment(asNode *parser.AssignmentNode, assignee *parser.UnaryOpNode) error {
-  switch ident := assignee.Operand.(type) {
-  case *parser.IdentifierNode:
-    typeWereDereferencing, err := tc.typeCheckExpression(assignee.Operand, shared.PRIMITIVE_VOID)
-    if err != nil {
-      return err
-    }
-
-    currType, err := ResolveFieldChain(ident, typeWereDereferencing)
-    if err != nil {
-      return err
-    }
-
-    ptrType, ok := currType.(shared.Pointer)
-    if !ok {
-      panic("expected pointer type after dereference")
-    }
-
-    exprType, err := tc.typeCheckExpression(asNode.Value, currType)
-    if err != nil {
-      return err
-    }
-
-    if !exprType.Compare(ptrType.To) {
-      if exprType == shared.PRIMITIVE_UNTYPED_INT && shared.IsNumericType(ptrType.To) {
-        SetNodeType(asNode.Value, ptrType.To)
-      } else {
-        return shared.NewError(asNode.Loc,
-          "cannot assign value of type '%s' to variable of type '%s'",
-          exprType, ptrType.To,
-          )
-      }
-    }
-    assignee.ExprType = currType
-  default:
-    return shared.NewError(assignee.Operand.GetLoc(), "left side of assignment must be a pointer to a variable")
+  typeWereDereferencing, err := tc.typeCheckExpression(assignee.Operand, shared.PRIMITIVE_VOID)
+  if err != nil {
+    return err
   }
+
+  ptrType, ok := typeWereDereferencing.(shared.Pointer)
+  if !ok {
+    panic("expected pointer type after dereference")
+  }
+
+  exprType, err := tc.typeCheckExpression(asNode.Value, typeWereDereferencing)
+  if err != nil {
+    return err
+  }
+
+  if !exprType.Compare(ptrType.To) {
+    if exprType == shared.PRIMITIVE_UNTYPED_INT && shared.IsNumericType(ptrType.To) {
+      SetNodeType(asNode.Value, ptrType.To)
+    } else {
+      return shared.NewError(asNode.Loc,
+        "cannot assign value of type '%s' to variable of type '%s'",
+        exprType, ptrType.To,
+        )
+    }
+  }
+  assignee.ExprType = typeWereDereferencing
   return nil
 }
 

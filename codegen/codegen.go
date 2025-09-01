@@ -769,15 +769,13 @@ func (cg *CodeGen) GenerateExprIR(eNode parser.ExpressionNode) (string, []string
         return "", nil, nil, "", shared.NewError(exprNode.Loc, "cannot take address of non-variable expression")
       }
     case parser.UNARY_OP_DEREFERENCE:
-      switch operand := exprNode.Operand.(type) {
-      case *parser.IdentifierNode:
-        nm2 := cg.GetTmpVar()
-        val2 := fmt.Sprintf("%s", nm2)
-        setups = append(setups, fmt.Sprintf("%s =l loadl %%%s", val2, operand.Name))
-        setups = append(setups, fmt.Sprintf("%s =%s load%s %s", val, mapTypeToIRType(exprNode.ExprType), mapTypeToIRType(exprNode.ExprType), val2))
-      default:
-        return "", nil, nil, "", shared.NewError(exprNode.Loc, "cannot dereference non-variable expression")
+      v, st, gst, _, err := cg.GenerateExprIR(exprNode.Operand)
+      if err != nil {
+        return "", nil, nil, "", err
       }
+      setups = append(setups, st...)
+      gsetups = append(gsetups, gst...)
+      setups = append(setups, fmt.Sprintf("%s =%s load%s %s", val, mapTypeToIRType(exprNode.ExprType), mapTypeToIRType(exprNode.ExprType), v))
     default:
       setup := ""
       v, st, gst, _, err := cg.GenerateExprIR(exprNode.Operand)
