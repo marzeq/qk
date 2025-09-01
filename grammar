@@ -54,10 +54,13 @@ term            = NUMBER
                 | fn_call
                 | IDENT
                 | if_expr
+                | given_expr
                 | cast
                 | '(' expression ')' ;
 
 if_expr         = "if" expression block_expr {'else' 'if' expression block_expr} 'else' block_expr ;
+
+given_expr      = "given" block '->' expression ;
 
 cast            = "cast" '(' IDENT ',' expression ')' ;
 

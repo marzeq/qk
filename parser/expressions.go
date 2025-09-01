@@ -249,6 +249,15 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
     return expr, nil
   }
 
+  if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == "given" {
+    expr, err := p.ParseGivenExpression()
+    if err != nil {
+      return nil, err
+    }
+
+    return expr, nil
+  }
+
   if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == "cast" {
     expr, err := p.ParseCast()
     if err != nil {
@@ -496,6 +505,39 @@ func (p *Parser) ParseIfExpression() (*IfExprNode, error) {
 
   return node, nil
 }
+
+func (p *Parser) ParseGivenExpression() (*GivenExprNode, error) {
+  beginLoc := p.CurrLoc()
+  if !p.Expect(tokeniser.TOKEN_TYPE_KEYWORD) {
+    return nil, shared.NewError(p.PrevLoc(), "expected 'given' keyword")
+  }
+  for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
+    p.Inc()
+  }
+  block, err := p.ParseBlock()
+  if err != nil {
+    return nil, err
+  }
+  for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
+    p.Inc()
+  }
+  if !p.Expect(tokeniser.TOKEN_TYPE_ARROW) {
+    return nil, shared.NewError(p.PrevLoc(), "expected '->'")
+  }
+  for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
+    p.Inc()
+  }
+  expr, err := p.ParseExpression()
+  if err != nil {
+    return nil, err
+  }
+  return &GivenExprNode{
+    Block: block,
+    FinalExpr: expr,
+    Loc: beginLoc,
+  }, nil
+}
+
 
 func (p *Parser) ParseBlockExpression() (ExpressionNode, error) {
   if !p.Expect(tokeniser.TOKEN_TYPE_OPEN_CURLY) {

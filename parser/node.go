@@ -94,6 +94,15 @@ type IfExprNode struct {
 func (n IfExprNode) GetLoc() shared.Location { return n.Loc }
 func (n IfExprNode) GetType() shared.Type { return n.ExprType }
 
+type GivenExprNode struct {
+  Block *BlockNode
+  FinalExpr ExpressionNode
+  Loc shared.Location
+  ExprType shared.Type
+}
+func (n GivenExprNode) GetLoc() shared.Location { return n.Loc }
+func (n GivenExprNode) GetType() shared.Type { return n.ExprType }
+
 type UnaryOpType uint
 
 const (

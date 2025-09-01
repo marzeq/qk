@@ -138,11 +138,8 @@ func (tc *TypeChecker) typeCheckFunction(funcNode *parser.FunctionDefNode, sig *
           funcNode.Name, sig.RetType, exprType)
       }
 
-      switch b := body.(type) {
-      case *parser.NumberLiteralNode:
-        if b.ExprType == shared.PRIMITIVE_UNTYPED_INT && sig.RetType != shared.PRIMITIVE_VOID {
-          b.ExprType = sig.RetType
-        }
+      if expr.GetType() == shared.PRIMITIVE_UNTYPED_INT && sig.RetType != shared.PRIMITIVE_VOID {
+        SetNodeType(expr, sig.RetType)
       }
       return nil
     }
@@ -173,11 +170,11 @@ func (tc *TypeChecker) typeCheckBlock(blockNode *parser.BlockNode, sig *Function
         return false, shared.NewError(node.Loc, "function '%s' is already defined", fsig.Name)
       }
 
-      tc.enterScope()
+      if sig != nil { tc.enterScope() }
       if err := tc.typeCheckFunction(node, fsig); err != nil {
         return false, err
       }
-      tc.exitScope()
+      if sig != nil { tc.exitScope() }
 
     case *parser.AssignmentNode:
       if err := tc.typeCheckAssignment(node); err != nil {
@@ -192,6 +189,9 @@ func (tc *TypeChecker) typeCheckBlock(blockNode *parser.BlockNode, sig *Function
     case *parser.ControlKeywordNode:
       switch node.Keyword {
       case parser.KEYWORD_TYPE_RETURN:
+        if sig == nil {
+          return false, shared.NewError(node.Loc, "cannot return from here")
+        }
         var retType shared.Type = shared.PRIMITIVE_VOID
         if node.ReturnValue != nil {
           var err error
@@ -203,9 +203,7 @@ func (tc *TypeChecker) typeCheckBlock(blockNode *parser.BlockNode, sig *Function
           if !shared.CanCoerceTo(retType, sig.RetType) {
             return false, shared.NewError(node.Loc, "wrong return type for function, expected '%s' got '%s'", sig.RetType, retType)
           }
-          if retVal, ok := node.ReturnValue.(*parser.NumberLiteralNode); ok && shared.IsNumericType(sig.RetType) {
-            retVal.ExprType = sig.RetType
-          }
+          SetNodeType(node.ReturnValue, sig.RetType)
         } else if sig.RetType != shared.PRIMITIVE_VOID {
           return false, shared.NewError(node.Loc, "wrong return type for function, expected '%s' got void", sig.RetType)
         }
@@ -222,12 +220,12 @@ func (tc *TypeChecker) typeCheckBlock(blockNode *parser.BlockNode, sig *Function
       }
 
     case *parser.BlockNode:
-      tc.enterScope()
+      if sig != nil { tc.enterScope() }
       returns, err := tc.typeCheckBlock(node, sig, isLoop, false)
       if err != nil {
         return false, err
       }
-      tc.exitScope()
+      if sig != nil { tc.exitScope() }
 
       if i == len(blockNode.Body)-1 && !foundReturn {
         foundReturn = returns
@@ -239,12 +237,12 @@ func (tc *TypeChecker) typeCheckBlock(blockNode *parser.BlockNode, sig *Function
       }
 
     case *parser.IfNode:
-      tc.enterScope()
+      if sig != nil { tc.enterScope() }
       returns, err := tc.typeCheckIfStatement(node, sig, isLoop)
       if err != nil {
         return false, err
       }
-      tc.exitScope()
+      if sig != nil { tc.exitScope() }
 
       if i == len(blockNode.Body)-1 && !foundReturn {
         foundReturn = returns
@@ -309,9 +307,8 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
       return shared.PRIMITIVE_VOID, err
     }
 
-    if nlNode, ok := exprNode.Operand.(parser.NumberLiteralNode);
-      ok && expectedType != shared.PRIMITIVE_VOID && operandType == shared.PRIMITIVE_UNTYPED_INT && shared.IsNumericType(expectedType) {
-      nlNode.ExprType = expectedType
+    if expectedType != shared.PRIMITIVE_VOID && operandType == shared.PRIMITIVE_UNTYPED_INT && shared.IsNumericType(expectedType) {
+      SetNodeType(exprNode.Operand, expectedType)
       operandType = expectedType
     }
 
@@ -367,11 +364,11 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
 
     if expectedType != shared.PRIMITIVE_VOID {
       if leftType == shared.PRIMITIVE_UNTYPED_INT && shared.IsNumericType(expectedType) {
-        exprNode.Operand1.(*parser.NumberLiteralNode).ExprType = expectedType
+        SetNodeType(exprNode.Operand1, expectedType)
         leftType = expectedType
       }
       if rightType == shared.PRIMITIVE_UNTYPED_INT && shared.IsNumericType(expectedType) {
-        exprNode.Operand2.(*parser.NumberLiteralNode).ExprType = expectedType
+        SetNodeType(exprNode.Operand2, expectedType)
         rightType = expectedType
       }
     }
@@ -379,7 +376,7 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
     switch exprNode.Op {
     case parser.BINARY_OP_LOGICAL_AND, parser.BINARY_OP_LOGICAL_OR:
       if leftType != shared.PRIMITIVE_BOOL || rightType != shared.PRIMITIVE_BOOL {
-        return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "operator '%s' expects boolean operands, found '%s' and '%s'", exprNode.Op, leftType, rightType)
+        return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "operator expects boolean operands")
       }
       exprNode.ExprType = shared.PRIMITIVE_BOOL
       return shared.PRIMITIVE_BOOL, nil
@@ -388,7 +385,7 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
       parser.BINARY_OP_LESS, parser.BINARY_OP_LESS_EQUAL,
       parser.BINARY_OP_GREATER, parser.BINARY_OP_GREATER_EQUAL:
       if !shared.IsNumericType(leftType) || !shared.IsNumericType(rightType) {
-        return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "operator '%s' cannot be applied to operands of type '%s' and '%s'", exprNode.Op, leftType, rightType)
+        return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "operator cannot be applied to operands")
       }
       exprNode.ExprType = shared.PRIMITIVE_BOOL
       return shared.PRIMITIVE_BOOL, nil
@@ -397,11 +394,11 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
       parser.BINARY_OP_MULTIPLY, parser.BINARY_OP_DIVIDE,
       parser.BINARY_OP_MODULO:
       if !shared.IsNumericType(leftType) || !shared.IsNumericType(rightType) {
-        return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "operator '%s' requires numeric operands, found '%s' and '%s'", exprNode.Op, leftType, rightType)
+        return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "operator requires numeric operands")
       }
       commonType := shared.BiggerNumericType(leftType, rightType)
-      exprNode.Operand1.(*parser.NumberLiteralNode).ExprType = commonType
-      exprNode.Operand2.(*parser.NumberLiteralNode).ExprType = commonType
+      SetNodeType(exprNode.Operand1, commonType)
+      SetNodeType(exprNode.Operand2, commonType)
       exprNode.ExprType = commonType
       return commonType, nil
 
@@ -421,7 +418,7 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
     }
 
     if exTpe == shared.PRIMITIVE_UNTYPED_INT {
-      exprNode.Operand.(*parser.NumberLiteralNode).ExprType = tpe
+      SetNodeType(exprNode.Operand, tpe)
     }
 
     if shared.CanCastTo(exTpe, tpe) {
@@ -474,6 +471,18 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
 
     exprNode.ExprType = commonType
     return commonType, nil
+
+  case *parser.GivenExprNode:
+    _, err := tc.typeCheckBlock(exprNode.Block, nil, false, false)
+    if err != nil {
+      return shared.PRIMITIVE_VOID, err
+    }
+    exprType, err := tc.typeCheckExpression(exprNode.FinalExpr, expectedType)
+    if err != nil {
+      return shared.PRIMITIVE_VOID, err
+    }
+    exprNode.ExprType = exprType
+    return exprType, nil
 
   case *parser.StructLiteralNode:
     name := exprNode.Name.Name
@@ -580,7 +589,7 @@ func (tc *TypeChecker) typeCheckDeclaration(declNode *parser.DeclarationNode) (s
 
   if varType == shared.PRIMITIVE_UNTYPED_INT {
     varType = shared.PRIMITIVE_I32
-    declNode.Value.(*parser.NumberLiteralNode).ExprType = varType
+    SetNodeType(declNode.Value, varType)
     exprType = shared.PRIMITIVE_I32
   }
   if varType == shared.PRIMITIVE_VOID {
@@ -853,4 +862,35 @@ func (tc *TypeChecker) ExtractFunctionSig(functionNode *parser.FunctionDefNode) 
     Name: functionNode.Name,
     HasVariadic: functionNode.HasVariadic,
   }, nil
+}
+
+func SetNodeType(n parser.ExpressionNode, t shared.Type) {
+  switch node := n.(type) {
+  case *parser.IdentifierNode:
+    node.ExprType = t
+  case *parser.BoolLiteralNode:
+    node.ExprType = t
+  case *parser.NumberLiteralNode:
+    node.ExprType = t
+  case *parser.StringLiteralNode:
+    node.ExprType = t
+  case *parser.CharLiteralNode:
+    node.ExprType = t
+  case *parser.StructLiteralNode:
+    node.ExprType = t
+  case *parser.FunctionCallNode:
+    node.ExprType = t
+  case *parser.IfExprNode:
+    node.ExprType = t
+  case *parser.GivenExprNode:
+    node.ExprType = t
+  case *parser.UnaryOpNode:
+    node.ExprType = t
+  case *parser.BinaryOpNode:
+    node.ExprType = t
+  case *parser.CastNode:
+    node.ExprType = t
+  default:
+    panic("SetNodeType: unknown node type")
+  }
 }

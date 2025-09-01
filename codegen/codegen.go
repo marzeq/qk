@@ -880,6 +880,22 @@ func (cg *CodeGen) GenerateExprIR(eNode parser.ExpressionNode) (string, []string
 
     setups = append(setups, fmt.Sprintf("%s", endLabel))
 
+  case *parser.GivenExprNode:
+    blockIR, blockGSetups, _, err := cg.GenerateBlockIR(exprNode.Block, "", "")
+    if err != nil {
+      return "", nil, nil, "", err
+    }
+    setups = append(setups, blockIR)
+    gsetups = append(gsetups, blockGSetups...)
+    givenVal, givenSetups, givenGSetups, _, err := cg.GenerateExprIR(exprNode.FinalExpr)
+    if err != nil {
+      return "", nil, nil, "", err
+    }
+    setups = append(setups, givenSetups...)
+    gsetups = append(gsetups, givenGSetups...)
+    val = givenVal
+    tpe = mapTypeToIRType(exprNode.FinalExpr.GetType())
+
   case *parser.CastNode:
     targetType, _ := cg.typeTable.Lookup(exprNode.ToType.Name)
     targetIRType := mapTypeToIRType(targetType)
