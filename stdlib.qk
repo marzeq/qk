@@ -1,0 +1,19 @@
+declare printf(fmt: *char, ...)
+
+declare malloc(size: u64): *void
+
+let strlen(cstr: *char): u64 =
+  given {
+    var len: u64 = 0
+    for cast(u8, *(cstr+len)) != 0 {
+      len = len+1
+    }
+  } -> len
+
+struct string {
+  data: *char
+  len: u64
+}
+
+let string_new(cstr: *char): string =
+  string{data=cstr, len=strlen(cstr)}
