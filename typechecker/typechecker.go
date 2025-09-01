@@ -12,9 +12,15 @@ type VarSig struct {
   Mutable bool
 }
 
+type FunctionSigArg struct {
+  Name string
+  Type shared.Type
+  Mutable bool
+}
+
 type FunctionSig struct {
   Name string
-  ArgTypes []shared.Pair[string, shared.Type]
+  ArgTypes []FunctionSigArg
   HasVariadic bool
   RetType shared.Type
   ImplicitReturn bool
@@ -106,9 +112,9 @@ func (tc *TypeChecker) exitScope() {
 
 func (tc *TypeChecker) typeCheckFunction(funcNode *parser.FunctionDefNode, sig *FunctionSig) error {
   for _, arg := range sig.ArgTypes {
-    tc.VarTable.Define(arg.L, &VarSig{
-      Type: arg.R,
-      Mutable: true,
+    tc.VarTable.Define(arg.Name, &VarSig{
+      Type: arg.Type,
+      Mutable: arg.Mutable,
     })
   }
 
@@ -523,7 +529,7 @@ func (tc *TypeChecker) typeCheckFunctionCall(funccallNode *parser.FunctionCallNo
   for i, arg := range funccallNode.Args {
     var fsigArgType shared.Type = shared.PRIMITIVE_VOID
     if i < len(fsig.ArgTypes) {
-      fsigArgType = fsig.ArgTypes[i].R
+      fsigArgType = fsig.ArgTypes[i].Type
     }
     argType, err := tc.typeCheckExpression(arg, fsigArgType)
     if err != nil {
@@ -822,7 +828,7 @@ func (tc *TypeChecker) ExtractFunctionSig(functionNode *parser.FunctionDefNode) 
     }
   }
 
-  argTypes := make([]shared.Pair[string, shared.Type], len(functionNode.Args))
+  argTypes := make([]FunctionSigArg, len(functionNode.Args))
   for i, arg := range functionNode.Args {
     tpe := arg.Type.Name
     resolved, ok := tc.TypeTable.Lookup(tpe)
@@ -834,9 +840,10 @@ func (tc *TypeChecker) ExtractFunctionSig(functionNode *parser.FunctionDefNode) 
         To: resolved,
       }
     }
-    argTypes[i] = shared.Pair[string, shared.Type]{
-      L: arg.Name,
-      R: resolved,
+    argTypes[i] = FunctionSigArg{
+      Name: arg.Name,
+      Type: resolved,
+      Mutable: arg.Mutable,
     }
   }
 

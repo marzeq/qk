@@ -169,6 +169,7 @@ type FunctionDefArg struct {
   Name string
   Type *IdentifierNode
   PointerLevel int
+  Mutable bool
 }
 type FunctionDefNode struct {
   Name string

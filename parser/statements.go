@@ -164,6 +164,16 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 
   var args []FunctionDefArg
   for !p.Match(tokeniser.TOKEN_TYPE_CLOSE_PAREN) {
+    mutable := false
+    if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) {
+      kw := p.Consume().Value
+      if kw == "var" {
+        mutable = true
+      } else {
+        return nil, shared.NewError(p.CurrLoc(), "expected either 'var' or argument name")
+      }
+    }
+
     arg, err := p.ParseIdent()
     if err != nil {
       return nil, err
@@ -185,6 +195,7 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
       Name: arg.Name,
       Type: argType,
       PointerLevel: pointerLevel,
+      Mutable: mutable,
     })
 
     if !p.Match(tokeniser.TOKEN_TYPE_COMMA) {

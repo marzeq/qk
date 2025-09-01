@@ -110,9 +110,9 @@ func (cg *CodeGen) GenerateFuncIR(funcNode *parser.FunctionDefNode) (string, []s
     for i, arg := range fsig.ArgTypes {
       tnm := cg.GetTmpVar()
       tpe := ""
-      if arg.R.IsStruct() {
+      if arg.Type.IsStruct() {
         for name, st := range cg.typeTable {
-          if st.Compare(arg.R) {
+          if st.Compare(arg.Type) {
             tpe = fmt.Sprintf(":%s", name)
             break
           }
@@ -121,19 +121,19 @@ func (cg *CodeGen) GenerateFuncIR(funcNode *parser.FunctionDefNode) (string, []s
           tpe = "l"
         }
       } else {
-        tpe = mapTypeToIRType(arg.R)
+        tpe = mapTypeToIRType(arg.Type)
       }
       prologue += fmt.Sprintf("%s %s", tpe, tnm)
       if i != len(fsig.ArgTypes)-1 {
         prologue += ", "
       }
 
-      after += fmt.Sprintf("%%%s =l %s\n", arg.L, emitAllocForType(arg.R, 1))
-      switch argR := arg.R.(type) {
+      after += fmt.Sprintf("%%%s =l %s\n", arg.Name, emitAllocForType(arg.Type, 1))
+      switch argR := arg.Type.(type) {
       case shared.Struct:
-        after += fmt.Sprintf("blit %s, %%%s, %d\n", tnm, arg.L, argR.GetLayout().Size)
+        after += fmt.Sprintf("blit %s, %%%s, %d\n", tnm, arg.Name, argR.GetLayout().Size)
       default:
-        after += fmt.Sprintf("store%s %s, %%%s\n", tpe, tnm, arg.L)
+        after += fmt.Sprintf("store%s %s, %%%s\n", tpe, tnm, arg.Name)
       }
     }
 
@@ -343,9 +343,9 @@ func (cg *CodeGen) GenerateStmtIR(stmtNd parser.Node, last bool, loopBegin, loop
         return "", nil, nil, err
       }
       if i < len(fsig.ArgTypes) {
-        if fsig.ArgTypes[i].R.IsStruct() {
+        if fsig.ArgTypes[i].Type.IsStruct() {
           for name, st := range cg.typeTable {
-            if st.Compare(fsig.ArgTypes[i].R) {
+            if st.Compare(fsig.ArgTypes[i].Type) {
               argType  = fmt.Sprintf(":%s", name)
               break
             }
@@ -354,7 +354,7 @@ func (cg *CodeGen) GenerateStmtIR(stmtNd parser.Node, last bool, loopBegin, loop
             argType = "l"
           }
         } else {
-          argType  = mapTypeToIRType(fsig.ArgTypes[i].R)
+          argType  = mapTypeToIRType(fsig.ArgTypes[i].Type)
         }
       } else {
         argType = exprTpe
@@ -671,7 +671,7 @@ func (cg *CodeGen) GenerateExprIR(eNode parser.ExpressionNode) (string, []string
         return "", nil, nil, "", err
       }
       if i < len(fsig.ArgTypes) {
-        argType = mapTypeToIRType(fsig.ArgTypes[i].R)
+        argType = mapTypeToIRType(fsig.ArgTypes[i].Type)
       } else {
         argType = exprTpe
       }

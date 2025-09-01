@@ -5,7 +5,7 @@ struct Point {
   y: i32
 }
 
-let setNewPos(p: *Point, nx: i32, ny: i32) = {
+let setNewPos(var p: *Point, nx: i32, ny: i32) = {
   p.x = nx
   p.y = ny
 }
