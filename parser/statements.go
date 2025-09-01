@@ -214,22 +214,25 @@ func (p *Parser) ParseExternalFunctionDefinition() (*FunctionDefNode, error) {
     return nil, shared.NewError(p.PrevLoc(), "expected ')'")
   }
 
-  if !p.Expect(tokeniser.TOKEN_TYPE_COLON) {
-    return nil, shared.NewError(p.PrevLoc(), "expected ':'")
+  retType := FunctionNodeType{
+    Type: nil,
   }
-
-  pointerLevel, returnType, err := p.ParseType()
-  if err != nil {
-    return nil, err
+  if p.Match(tokeniser.TOKEN_TYPE_COLON) {
+    p.Inc()
+    pointerLevel, argType, err := p.ParseType()
+    if err != nil {
+      return nil, err
+    }
+    retType = FunctionNodeType{
+      Type: argType,
+      PointerLevel: pointerLevel,
+    }
   }
 
   return &FunctionDefNode{
     Name: name.Value,
     Args: args,
-    RetType: FunctionNodeType{
-      Type: returnType,
-      PointerLevel: pointerLevel,
-    },
+    RetType: retType,
     HasVariadic: variadic,
     Loc: beginLoc,
   }, nil
@@ -365,7 +368,7 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
       node, err := p.ParseAssignment(ident)
       return node, true, err
     } else if p.Match(tokeniser.TOKEN_TYPE_OPEN_PAREN) {
-      p.Dec().Dec()
+      p.Dec()
       node, err := p.ParseFunctionCall()
       return node, true, err
     }
