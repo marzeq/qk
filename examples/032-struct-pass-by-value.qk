@@ -1,4 +1,4 @@
-struct A {
+struct A = {
   a: i32
   junk1: i32
   junk2: i32

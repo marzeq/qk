@@ -11,7 +11,7 @@ let strlen(cstr: *char): u64 =
     }
   } -> len
 
-struct string {
+struct string = {
   data: *char
   len: u64
 }

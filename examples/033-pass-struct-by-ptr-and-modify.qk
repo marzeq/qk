@@ -1,6 +1,6 @@
 declare printf(s: cstring, ...): void
 
-struct Point {
+struct Point = {
   x: i32
   y: i32
 }

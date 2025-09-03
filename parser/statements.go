@@ -249,6 +249,10 @@ func (p *Parser) ParseStructDefinition() (*StructDefNode, error) {
     return nil, shared.NewError(p.PrevLoc(), "expected struct name")
   }
 
+  if !p.Expect(tokeniser.TOKEN_TYPE_EQUALS) {
+    return nil, shared.NewError(p.PrevLoc(), "expected '='")
+  }
+
   if !p.Expect(tokeniser.TOKEN_TYPE_OPEN_CURLY) {
     return nil, shared.NewError(p.PrevLoc(), "expected '{'")
   }
