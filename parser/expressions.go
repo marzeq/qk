@@ -667,6 +667,15 @@ func (p *Parser) ParseType() (int, *IdentifierNode, error) {
     p.Inc()
     pointerLevel++
   }
-  ident, err := p.ParseIdent()
-  return pointerLevel, ident, err
+  beginLoc := p.CurrLoc()
+  firstIdent, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_IDENT)
+  if !ok {
+    return 0, nil, shared.NewError(p.PrevLoc(), "expected type name or asterisk")
+  }
+  node := &IdentifierNode{
+    Name: firstIdent.Value,
+    Loc: beginLoc,
+  }
+
+  return pointerLevel, node, nil
 }
