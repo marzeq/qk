@@ -206,13 +206,14 @@ func (t *Tokeniser) AddToken(ttype TokenType, loc shared.Location, _value ...str
 
 func IsKeyword(w string) bool {
   return w == "let" || w == "var" ||
-    w == "declare" || w == "struct" ||
-    w == "if" || w == "else" || w == "given" ||
-    w == "for" || w == "break" || w == "continue" ||
-    w == "return" || w == "import" ||
-    w == "and" || w == "or" || w == "not" ||
-    w == "true" || w == "false" ||
-    w == "cast"
+  w == "declare" || w == "struct" ||
+  w == "if" || w == "else" || w == "given" ||
+  w == "for" || w == "break" ||
+  w == "continue" || w == "return" ||
+  w == "import" || w == "module" ||
+  w == "and" || w == "or" || w == "not" ||
+  w == "true" || w == "false" ||
+  w == "cast"
 }
 
 func (t *Tokeniser) Tokenise() ([]Token, error) {

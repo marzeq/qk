@@ -170,7 +170,7 @@ func (n CastNode) GetLoc() shared.Location { return n.Loc }
 func (n CastNode) GetType() shared.Type { return n.ExprType }
 
 type ImportNode struct {
-  Module string
+  Modules []string
   Loc shared.Location
 }
 func (n ImportNode) GetLoc() shared.Location { return n.Loc }

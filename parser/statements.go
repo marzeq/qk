@@ -313,13 +313,43 @@ func (p *Parser) ParseImport() (*ImportNode, error) {
     return nil, shared.NewError(p.PrevLoc(), "expected 'import' keyword")
   }
 
-  path, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_STRING)
-  if !ok {
-    return nil, shared.NewError(p.PrevLoc(), "expected path")
+  if !p.Expect(tokeniser.TOKEN_TYPE_OPEN_PAREN) {
+    return nil, shared.NewError(p.PrevLoc(), "expected '('")
+  }
+
+  modules := []string{}
+  for {
+    for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
+      p.Inc()
+    }
+
+    strTok, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_STRING)
+    if !ok {
+      return nil, shared.NewError(p.PrevLoc(), "expected string literal")
+    }
+    modules = append(modules, strTok.Value)
+
+    for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
+      p.Inc()
+    }
+
+    if p.Match(tokeniser.TOKEN_TYPE_COMMA) {
+      p.Inc()
+      for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
+        p.Inc()
+      }
+      continue
+    }
+
+    if p.Match(tokeniser.TOKEN_TYPE_CLOSE_PAREN) {
+      p.Inc()
+      break
+    }
+    return nil, shared.NewError(p.PrevLoc(), "expected ',' or ')'")
   }
 
   return &ImportNode{
-    Module: path.Value,
+    Modules: modules,
     Loc: beginLoc,
   }, nil
 }

@@ -31,33 +31,35 @@ func ProcessImports(root *parser.RootNode, loaded map[string]*parser.RootNode, r
   for _, n := range root.Body {
     switch node := n.(type) {
     case *parser.ImportNode:
-      resolvedPath := filepath.Join(filepath.Dir(filePath), node.Module)
+      for _, module := range(node.Modules) {
+        resolvedPath := filepath.Join(filepath.Dir(filePath), module)
 
-      t, err := tokeniser.NewTokeniserFromFile(resolvedPath)
-      if err != nil {
-        switch err.(type) {
-        case shared.Error:
-          return nil, err
-        default:
-          return nil, shared.NewError(node.Loc, "import failed: %v", err)
+        t, err := tokeniser.NewTokeniserFromFile(resolvedPath)
+        if err != nil {
+          switch err.(type) {
+          case shared.Error:
+            return nil, err
+          default:
+            return nil, shared.NewError(node.Loc, "import failed: %v", err)
+          }
         }
-      }
-      toks, err := t.Tokenise()
-      if err != nil {
-        return nil, err
-      }
-      p := parser.NewParser(toks)
-      ast, err := p.Parse()
-      if err != nil {
-        return nil, err
-      }
+        toks, err := t.Tokenise()
+        if err != nil {
+          return nil, err
+        }
+        p := parser.NewParser(toks)
+        ast, err := p.Parse()
+        if err != nil {
+          return nil, err
+        }
 
-      importedMerged, err := ProcessImports(ast, loaded, recStack)
-      if err != nil {
-        return nil, err
-      }
+        importedMerged, err := ProcessImports(ast, loaded, recStack)
+        if err != nil {
+          return nil, err
+        }
 
-      merged.Body = append(merged.Body, importedMerged.Body...)
+        merged.Body = append(merged.Body, importedMerged.Body...)
+      }
     }
   }
 
