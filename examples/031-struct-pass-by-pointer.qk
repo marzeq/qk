@@ -3,7 +3,7 @@ struct Point = {
   y: i32
 }
 
-declare printf(s: cstring, ...)
+declare printf(s: *char, ...)
 
 let Point_print(p: *Point) = {
   printf("Point(%d, %d)\n", p.x, p.y)

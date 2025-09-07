@@ -1,6 +1,6 @@
-declare printf(s: cstring, ...)
+declare printf(s: *char, ...)
 
-let main = {
+let main() = {
   printf("Hello from Quokka!\n")
   return 0
 }

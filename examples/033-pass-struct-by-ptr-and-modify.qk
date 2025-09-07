@@ -1,4 +1,4 @@
-declare printf(s: cstring, ...): void
+declare printf(s: *char, ...): void
 
 struct Point = {
   x: i32
