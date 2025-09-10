@@ -3,4 +3,5 @@ test
 test.o
 test.so
 test.a
+test.qk
 quokka

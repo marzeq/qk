@@ -295,12 +295,39 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
     if err != nil {
       return nil, err
     }
+
+    for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
+      p.Inc()
+    }
+
     if p.Match(tokeniser.TOKEN_TYPE_OPEN_PAREN) {
       return p.ParseFunctionCall(ident)
     }
 
     if p.Match(tokeniser.TOKEN_TYPE_OPEN_CURLY) {
       return p.ParseStructLiteral(ident)
+    }
+
+    if p.Match(tokeniser.TOKEN_TYPE_COLON) {
+      p.Inc()
+
+      if ident.Next != nil {
+        return nil, shared.NewError(ident.Loc, "module name cannot be a qualified identifier")
+      }
+        
+      for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
+        p.Inc()
+      }
+
+      modIdent, err := p.ParseIdent()
+      if err != nil {
+        return nil, err
+      }
+      return &ModuleAccessNode{
+        ModName: ident.Name,
+        Ident: modIdent,
+        Loc: ident.Loc,
+      }, nil
     }
 
     return ident, nil

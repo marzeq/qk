@@ -29,6 +29,18 @@ func (n IdentifierNode) String() string {
   return n.Name
 }
 
+type ModuleAccessNode struct {
+  ModName string
+  Ident *IdentifierNode
+  Loc shared.Location
+  ExprType shared.Type
+}
+func (n ModuleAccessNode) GetLoc() shared.Location { return n.Loc }
+func (n ModuleAccessNode) GetType() shared.Type { return n.ExprType }
+func (n ModuleAccessNode) String() string {
+  return n.ModName + ":" + n.Ident.String()
+}
+
 type BoolLiteralNode struct {
   Value string
   Loc shared.Location
