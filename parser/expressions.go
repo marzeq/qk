@@ -291,16 +291,19 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
   }
 
   if p.Match(tokeniser.TOKEN_TYPE_IDENT) {
-    p.Inc()
+    ident, err := p.ParseIdent()
+    if err != nil {
+      return nil, err
+    }
     if p.Match(tokeniser.TOKEN_TYPE_OPEN_PAREN) {
-      return p.Dec().ParseFunctionCall()
+      return p.ParseFunctionCall(ident)
     }
 
     if p.Match(tokeniser.TOKEN_TYPE_OPEN_CURLY) {
-      return p.Dec().ParseStructLiteral()
+      return p.ParseStructLiteral(ident)
     }
 
-    return p.Dec().ParseIdent()
+    return ident, nil
   }
 
   if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) {
@@ -394,13 +397,9 @@ func (p *Parser) ParseCast() (*CastNode, error) {
   }, nil
 }
 
-func (p *Parser) ParseFunctionCall() (*FunctionCallNode, error) {
+func (p *Parser) ParseFunctionCall(name *IdentifierNode) (*FunctionCallNode, error) {
   var args []ExpressionNode
 
-  name, err := p.ParseIdent()
-  if err != nil {
-    return nil, err
-  }
   if !p.Expect(tokeniser.TOKEN_TYPE_OPEN_PAREN) {
     return nil, shared.NewError(p.PrevLoc(), "expected '('")
   }
@@ -576,12 +575,8 @@ func (p *Parser) ParseBlockExpression() (ExpressionNode, error) {
   return blockExpression, err
 }
 
-func (p *Parser) ParseStructLiteral() (*StructLiteralNode, error) {
+func (p *Parser) ParseStructLiteral(name *IdentifierNode) (*StructLiteralNode, error) {
   beginLoc := p.CurrLoc()
-  name, err := p.ParseIdent()
-  if err != nil {
-    return nil, err
-  }
 
   if !p.Expect(tokeniser.TOKEN_TYPE_OPEN_CURLY) {
     return nil, shared.NewError(p.PrevLoc(), "expected '{' to start struct literal")
