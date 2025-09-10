@@ -134,6 +134,12 @@ func (p *Parser) Parse() (*RootNode, error) {
         return nil, err
       }
       rootNode.Body = append(rootNode.Body, imp)
+    case "module":
+      mod, err := p.ParseModule()
+      if err != nil {
+        return nil, err
+      }
+      rootNode.Body = append(rootNode.Body, mod)
     default:
       return nil, e
     }

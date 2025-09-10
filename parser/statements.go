@@ -354,6 +354,27 @@ func (p *Parser) ParseImport() (*ImportNode, error) {
   }, nil
 }
 
+func (p *Parser) ParseModule() (*ModuleNode, error) {
+  beginLoc := p.CurrLoc()
+  if kw, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_KEYWORD); !ok || kw.Value != "module" {
+    return nil, shared.NewError(p.PrevLoc(), "expected 'module' keyword")
+  }
+  
+  if !p.Expect(tokeniser.TOKEN_TYPE_EQUALS) {
+    return nil, shared.NewError(p.PrevLoc(), "expected '='")
+  }
+  nameTok, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_STRING)
+  if !ok {
+    return nil, shared.NewError(p.PrevLoc(), "expected module name as a string")
+  }
+  name := nameTok.Value
+  
+  return &ModuleNode{
+    Name: name,
+    Loc: beginLoc,
+  }, nil
+}
+
 func (p *Parser) ParseStatement() (Node, bool, error) {
   if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) {
     kw := p.Peek().Value

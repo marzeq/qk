@@ -175,6 +175,12 @@ type ImportNode struct {
 }
 func (n ImportNode) GetLoc() shared.Location { return n.Loc }
 
+type ModuleNode struct {
+  Name string
+  Loc shared.Location
+}
+func (n ModuleNode) GetLoc() shared.Location { return n.Loc }
+
 type FunctionNodeType struct {
   Name string
   Type *IdentifierNode
