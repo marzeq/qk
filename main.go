@@ -68,6 +68,9 @@ func main() {
   os.WriteFile(fmt.Sprintf("build/%s.ssa", binname), []byte(ir), 0644)
 
   _check(runCmd("qbe", "-o", "build/"+binname+".s", "build/"+binname+".ssa"))
-  args := append([]string{"cc", "-o", binfile, "build/" + binname + ".s"}, rest...)
+
+  _check(runCmd("cc", "-c", "-o", "build/"+binname+".o", "build/"+binname+".s"))
+
+  args := append([]string{"cc", "-o", binfile, "build/" + binname + ".o"}, rest...)
   _check(runCmd(args...))
 }
