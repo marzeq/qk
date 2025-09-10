@@ -102,47 +102,47 @@ func (cg *CodeGen) GenerateFuncIR(funcNode *parser.FunctionDefNode) (string, []s
 
   fsig := cg.funcSigs[funcNode.Name]
 
-  if fsig.Name == "main" {
-    prologue += "export function w $main() {\n@start"
-  } else {
-    prologue += fmt.Sprintf("function %s $%s(", mapTypeToIRType(fsig.RetType), fsig.Name)
-    after := ""
-    for i, arg := range fsig.ArgTypes {
-      tnm := cg.GetTmpVar()
-      tpe := ""
-      if arg.Type.IsStruct() {
-        for name, st := range cg.typeTable {
-          if st.Compare(arg.Type) {
-            tpe = fmt.Sprintf(":%s", name)
-            break
-          }
-        }
-        if tpe == "" {
-          tpe = "l"
-        }
-      } else {
-        tpe = mapTypeToIRType(arg.Type)
-      }
-      prologue += fmt.Sprintf("%s %s", tpe, tnm)
-      if i != len(fsig.ArgTypes)-1 {
-        prologue += ", "
-      }
+  if funcNode.Exported {
+    prologue += "export "
+  }
 
-      after += fmt.Sprintf("%%%s =l %s\n", arg.Name, emitAllocForType(arg.Type, 1))
-      switch argR := arg.Type.(type) {
-      case shared.Struct:
-        after += fmt.Sprintf("blit %s, %%%s, %d\n", tnm, arg.Name, argR.GetLayout().Size)
-      default:
-        after += fmt.Sprintf("store%s %s, %%%s\n", tpe, tnm, arg.Name)
+  prologue += fmt.Sprintf("function %s $%s(", mapTypeToIRType(fsig.RetType), fsig.Name)
+  after := ""
+  for i, arg := range fsig.ArgTypes {
+    tnm := cg.GetTmpVar()
+    tpe := ""
+    if arg.Type.IsStruct() {
+      for name, st := range cg.typeTable {
+        if st.Compare(arg.Type) {
+          tpe = fmt.Sprintf(":%s", name)
+          break
+        }
       }
+      if tpe == "" {
+        tpe = "l"
+      }
+    } else {
+      tpe = mapTypeToIRType(arg.Type)
+    }
+    prologue += fmt.Sprintf("%s %s", tpe, tnm)
+    if i != len(fsig.ArgTypes)-1 {
+      prologue += ", "
     }
 
-    prologue += ") {\n@start\n"
-    prologue += after
-
-    if fsig.ImplicitReturn {
-      epilogue = "\nret"
+    after += fmt.Sprintf("%%%s =l %s\n", arg.Name, emitAllocForType(arg.Type, 1))
+    switch argR := arg.Type.(type) {
+    case shared.Struct:
+      after += fmt.Sprintf("blit %s, %%%s, %d\n", tnm, arg.Name, argR.GetLayout().Size)
+    default:
+      after += fmt.Sprintf("store%s %s, %%%s\n", tpe, tnm, arg.Name)
     }
+  }
+
+  prologue += ") {\n@start\n"
+  prologue += after
+
+  if fsig.ImplicitReturn {
+    epilogue = "\nret"
   }
 
   epilogue += "\n}\n"
@@ -630,6 +630,9 @@ func (cg *CodeGen) GenerateExprIR(eNode parser.ExpressionNode) (string, []string
 
   case *parser.NumberLiteralNode:
     val = exprNode.Value
+
+  case *parser.NilLiteralNode:
+    val = "0"
 
   case *parser.CharLiteralNode:
     val = strconv.Itoa(int(exprNode.Value))

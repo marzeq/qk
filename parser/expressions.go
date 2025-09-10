@@ -303,12 +303,22 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
     return p.Dec().ParseIdent()
   }
 
-  if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == "true" || p.Peek().Value == "false" {
-    bLit := p.Consume()
-    return &BoolLiteralNode{
-      Value: bLit.Value,
-      Loc: beginLoc,
-    }, nil
+  if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) {
+    val := p.Peek().Value
+
+    switch val {
+    case "true", "false":
+      bLit := p.Consume()
+      return &BoolLiteralNode{
+        Value: bLit.Value,
+        Loc: beginLoc,
+      }, nil
+    case "nil":
+      p.Inc()
+      return &NilLiteralNode{
+        Loc: beginLoc,
+      }, nil
+    }
   }
 
   if p.Match(tokeniser.TOKEN_TYPE_NUMBER) {

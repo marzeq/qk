@@ -61,6 +61,12 @@ type CharLiteralNode struct {
 func (n CharLiteralNode) GetLoc() shared.Location { return n.Loc }
 func (n CharLiteralNode) GetType() shared.Type { return n.ExprType }
 
+type NilLiteralNode struct {
+  Loc shared.Location
+}
+func (n NilLiteralNode) GetLoc() shared.Location { return n.Loc }
+func (n NilLiteralNode) GetType() shared.Type { return shared.Pointer{To: shared.PRIMITIVE_VOID } }
+
 type StructLiteralNode struct {
   Name *IdentifierNode
   Fields []shared.Pair[string, ExpressionNode] // field name, value
@@ -193,6 +199,7 @@ type FunctionDefNode struct {
   RetType FunctionNodeType
   Body Node
   HasVariadic bool
+  Exported bool
   Loc shared.Location
 }
 func (n FunctionDefNode) GetLoc() shared.Location { return n.Loc }

@@ -210,10 +210,10 @@ func IsKeyword(w string) bool {
   w == "if" || w == "else" || w == "given" ||
   w == "for" || w == "break" ||
   w == "continue" || w == "return" ||
-  w == "import" || w == "module" ||
+  w == "import" || w == "module" || w == "export" ||
   w == "and" || w == "or" || w == "not" ||
   w == "true" || w == "false" ||
-  w == "cast"
+  w == "nil" || w == "cast"
 }
 
 func (t *Tokeniser) Tokenise() ([]Token, error) {

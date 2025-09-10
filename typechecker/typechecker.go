@@ -306,6 +306,9 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
     exprNode.ExprType = shared.PRIMITIVE_BOOL
     return shared.PRIMITIVE_BOOL, nil
 
+  case *parser.NilLiteralNode:
+    return exprNode.GetType(), nil
+
   case *parser.FunctionCallNode:
     return tc.typeCheckFunctionCall(exprNode)
 

@@ -110,6 +110,14 @@ func (p *Parser) Parse() (*RootNode, error) {
     }
 
     switch p.Peek().Value {
+    case "export":
+      p.Inc()
+      fnDef, err := p.ParseFunctionDefinition()
+      if err != nil {
+        return nil, err
+      }
+      fnDef.Exported = true
+      rootNode.Body = append(rootNode.Body, fnDef)
     case "let":
       fnDef, err := p.ParseFunctionDefinition()
       if err != nil {
