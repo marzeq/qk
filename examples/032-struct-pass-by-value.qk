@@ -44,5 +44,5 @@ export let main() = {
     junk8 = 0
   }
   printAFromQK(a) -- should print 3
-  return a.a -- exit code should be 3
+  printf("%d\n", a.a) -- should print 3
 }

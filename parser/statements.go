@@ -87,7 +87,7 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
       return nil, shared.NewError(p.PrevLoc(), "expected ':'")
     }
 
-    pointerLevel, argType, err := p.ParseType()
+    argType, err := p.ParseType()
     if err != nil {
       return nil, err
     }
@@ -95,7 +95,6 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
     args = append(args, FunctionNodeType{
       Name: arg.Name,
       Type: argType,
-      PointerLevel: pointerLevel,
       Mutable: mutable,
     })
 
@@ -114,13 +113,12 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
   }
   if p.Match(tokeniser.TOKEN_TYPE_COLON) {
     p.Inc()
-    pointerLevel, argType, err := p.ParseType()
+    argType, err := p.ParseType()
     if err != nil {
       return nil, err
     }
     retType = FunctionNodeType{
       Type: argType,
-      PointerLevel: pointerLevel,
     }
   }
 
@@ -193,7 +191,7 @@ func (p *Parser) ParseExternalFunctionDefinition() (*FunctionDefNode, error) {
       return nil, shared.NewError(p.PrevLoc(), "expected ':'")
     }
 
-    pointerLevel, argType, err := p.ParseType()
+    argType, err := p.ParseType()
     if err != nil {
       return nil, err
     }
@@ -201,7 +199,6 @@ func (p *Parser) ParseExternalFunctionDefinition() (*FunctionDefNode, error) {
     args = append(args, FunctionNodeType{
       Name: arg.Name,
       Type: argType,
-      PointerLevel: pointerLevel,
     })
 
     if !p.Match(tokeniser.TOKEN_TYPE_COMMA) {
@@ -219,13 +216,12 @@ func (p *Parser) ParseExternalFunctionDefinition() (*FunctionDefNode, error) {
   }
   if p.Match(tokeniser.TOKEN_TYPE_COLON) {
     p.Inc()
-    pointerLevel, argType, err := p.ParseType()
+    argType, err := p.ParseType()
     if err != nil {
       return nil, err
     }
     retType = FunctionNodeType{
       Type: argType,
-      PointerLevel: pointerLevel,
     }
   }
 
@@ -275,7 +271,7 @@ func (p *Parser) ParseStructDefinition() (*StructDefNode, error) {
       return nil, shared.NewError(p.PrevLoc(), "expected ':'")
     }
 
-    pointerLevel, fieldType, err := p.ParseType()
+    fieldType, err := p.ParseType()
     if err != nil {
       return nil, err
     }
@@ -283,7 +279,6 @@ func (p *Parser) ParseStructDefinition() (*StructDefNode, error) {
     fields = append(fields, StructField{
       Name: fieldName.Name,
       Type: fieldType,
-      PointerLevel: pointerLevel,
     })
 
     if !p.Match(tokeniser.TOKEN_TYPE_COMMA, tokeniser.TOKEN_TYPE_NEWLINE) {
@@ -418,11 +413,47 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
     if err != nil {
       return nil, false, err
     }
+
+    if p.Match(tokeniser.TOKEN_TYPE_COLON) {
+      p.Inc()
+
+      if ident.Next != nil {
+        return nil, true, shared.NewError(ident.Loc, "module name cannot be a qualified identifier")
+      }
+
+      for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
+        p.Inc()
+      }
+
+      modIdent, err := p.ParseIdent()
+      if err != nil {
+        return nil, true, err
+      }
+
+      modAN := &ModuleAccessNode{
+        ModName: ident.Name,
+        Ident: modIdent,
+        Loc: ident.Loc,
+      }
+
+      if p.Match(tokeniser.TOKEN_TYPE_OPEN_PAREN) {
+        node, err := p.ParseFunctionCall(modAN)
+        return node, true, err
+      }
+
+      return modAN, true, nil
+    }
+
     if p.Match(tokeniser.TOKEN_TYPE_EQUALS) {
       node, err := p.ParseAssignment(ident)
       return node, true, err
     } else if p.Match(tokeniser.TOKEN_TYPE_OPEN_PAREN) {
-      node, err := p.ParseFunctionCall(ident)
+      modAN := &ModuleAccessNode{
+        ModName: "",
+        Ident: ident,
+        Loc: ident.Loc,
+      }
+      node, err := p.ParseFunctionCall(modAN)
       return node, true, err
     }
 
@@ -455,15 +486,15 @@ func (p *Parser) ParseDeclaration() (*DeclarationNode, error) {
     return nil, shared.NewError(p.PrevLoc(), "expected name")
   }
 
-  var tpe *IdentifierNode
+  var tpe *TypeNode
   if p.Match(tokeniser.TOKEN_TYPE_COLON) {
     p.Inc()
 
-    ident, err := p.ParseIdent()
+    t, err := p.ParseType()
     if err != nil {
       return nil, err
     }
-    tpe = ident
+    tpe = t
   }
 
   if !p.Expect(tokeniser.TOKEN_TYPE_EQUALS) {

@@ -4,10 +4,11 @@ struct Point = {
 }
 
 declare malloc(size: u64): *Point
+declare printf(s: *char, ...): void
 
 export let main() = {
   var p = malloc(8)
   p.x = 10
   p.y = 20
-  return p.x
+  printf("%d\n", p.x)
 }

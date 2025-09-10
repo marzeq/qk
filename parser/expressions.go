@@ -300,14 +300,6 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
       p.Inc()
     }
 
-    if p.Match(tokeniser.TOKEN_TYPE_OPEN_PAREN) {
-      return p.ParseFunctionCall(ident)
-    }
-
-    if p.Match(tokeniser.TOKEN_TYPE_OPEN_CURLY) {
-      return p.ParseStructLiteral(ident)
-    }
-
     if p.Match(tokeniser.TOKEN_TYPE_COLON) {
       p.Inc()
 
@@ -323,11 +315,40 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
       if err != nil {
         return nil, err
       }
-      return &ModuleAccessNode{
+
+      modAN := &ModuleAccessNode{
         ModName: ident.Name,
         Ident: modIdent,
         Loc: ident.Loc,
-      }, nil
+      }
+
+      if p.Match(tokeniser.TOKEN_TYPE_OPEN_CURLY) {
+        return p.ParseStructLiteral(modAN)
+      }
+
+      if p.Match(tokeniser.TOKEN_TYPE_OPEN_PAREN) {
+        return p.ParseFunctionCall(modAN)
+      }
+
+      return modAN, nil
+    }
+
+    if p.Match(tokeniser.TOKEN_TYPE_OPEN_PAREN) {
+      modAN := &ModuleAccessNode{
+        ModName: "",
+        Ident: ident,
+        Loc: ident.Loc,
+      }
+      return p.ParseFunctionCall(modAN)
+    }
+
+    if p.Match(tokeniser.TOKEN_TYPE_OPEN_CURLY) {
+      modAN := &ModuleAccessNode{
+        ModName: "",
+        Ident: ident,
+        Loc: ident.Loc,
+      }
+      return p.ParseStructLiteral(modAN)
     }
 
     return ident, nil
@@ -392,7 +413,7 @@ func (p *Parser) ParseCast() (*CastNode, error) {
     p.Inc()
   }
 
-  pointerLevel, tpe, err := p.ParseType()
+  tpe, err := p.ParseType()
   if err != nil {
     return nil, err
   }
@@ -418,13 +439,12 @@ func (p *Parser) ParseCast() (*CastNode, error) {
 
   return &CastNode{
     ToType: tpe,
-    PointerLevel: pointerLevel,
     Operand: expr,
     Loc: beginLoc,
   }, nil
 }
 
-func (p *Parser) ParseFunctionCall(name *IdentifierNode) (*FunctionCallNode, error) {
+func (p *Parser) ParseFunctionCall(name *ModuleAccessNode) (*FunctionCallNode, error) {
   var args []ExpressionNode
 
   if !p.Expect(tokeniser.TOKEN_TYPE_OPEN_PAREN) {
@@ -602,7 +622,7 @@ func (p *Parser) ParseBlockExpression() (ExpressionNode, error) {
   return blockExpression, err
 }
 
-func (p *Parser) ParseStructLiteral(name *IdentifierNode) (*StructLiteralNode, error) {
+func (p *Parser) ParseStructLiteral(name *ModuleAccessNode) (*StructLiteralNode, error) {
   beginLoc := p.CurrLoc()
 
   if !p.Expect(tokeniser.TOKEN_TYPE_OPEN_CURLY) {
@@ -693,7 +713,7 @@ func (p *Parser) ParseIdent() (*IdentifierNode, error) {
   return node, nil
 }
 
-func (p *Parser) ParseType() (int, *IdentifierNode, error) {
+func (p *Parser) ParseType() (*TypeNode, error) {
   pointerLevel := 0
   for p.Match(tokeniser.TOKEN_TYPE_ASTERISK) {
     p.Inc()
@@ -702,12 +722,32 @@ func (p *Parser) ParseType() (int, *IdentifierNode, error) {
   beginLoc := p.CurrLoc()
   firstIdent, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_IDENT)
   if !ok {
-    return 0, nil, shared.NewError(p.PrevLoc(), "expected type name or asterisk")
+    return nil, shared.NewError(p.PrevLoc(), "expected type name, module name or asterisk")
   }
-  node := &IdentifierNode{
+  modName := ""
+  if p.Match(tokeniser.TOKEN_TYPE_COLON) {
+    p.Inc()
+    modName = firstIdent.Value
+    for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
+      p.Inc()
+    }
+    tn, err := p.ParseType()
+    if err != nil {
+      return nil, err
+    }
+    if pointerLevel > 0 && tn.PointerLevel > 0 {
+      return nil, shared.NewError(beginLoc, "you must either put all asterisks before or after the module name")
+    }
+    tn.ModName = modName
+    tn.PointerLevel += pointerLevel
+    return tn, nil
+  }
+    
+  node := &TypeNode{
     Name: firstIdent.Value,
+    PointerLevel: pointerLevel,
     Loc: beginLoc,
   }
 
-  return pointerLevel, node, nil
+  return node, nil
 }

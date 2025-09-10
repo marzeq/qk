@@ -1,5 +1,9 @@
-export let main() = given {
+declare printf(s: *char, ...): void
+
+export let main() = {
+  printf("%d\n", given {
     let a = 2 + 2
   } -> given {
     let b = a + 2
-  } -> b -- should return 6
+  } -> b) -- should print 6
+}

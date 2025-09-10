@@ -24,98 +24,71 @@ type FunctionSig struct {
   HasVariadic bool
   RetType shared.Type
   ImplicitReturn bool
+  External bool
 }
 
-type (
-  VarTable = *shared.SymbolTable[*VarSig]
-  FuncTable = *shared.SymbolTable[*FunctionSig]
-  TypeTable = shared.TypeTable
-)
+type FuncTable map[string]*FunctionSig
+
+func (ft FuncTable) Define(name string, fsig *FunctionSig) bool {
+  if _, ok := ft[name]; ok {
+    return false
+  }
+  ft[name] = fsig
+  return true
+}
+
+func (ft FuncTable) Lookup(name string) (*FunctionSig, bool) {
+  fsig, ok := ft[name]
+  return fsig, ok
+}
 
 type TypeChecker struct {
-  VarTable VarTable
-  FuncTable FuncTable
-  TypeTable TypeTable
+  VarTable *shared.SymbolTable[*VarSig]
+  ModSigs ModulesSignatures
+  Mod string
 }
 
-func NewTypeChecker() *TypeChecker {
+func NewTypeChecker(mod string, ms ModulesSignatures) *TypeChecker {
   return &TypeChecker{
     VarTable: shared.NewSymbolTable[*VarSig](),
-    FuncTable: shared.NewSymbolTable[*FunctionSig](),
-    TypeTable: shared.NewTypeTable(),
+    ModSigs: ms,
+    Mod: mod,
   }
 }
 
-func (tc *TypeChecker) TypeCheck(root *parser.RootNode) (*parser.RootNode, map[string]*FunctionSig, TypeTable, error) {
-  for _, n := range root.Body {
+func (tc *TypeChecker) TypeCheck(ast *parser.RootNode) (*parser.RootNode, error) {
+  for _, n := range ast.Body {
     switch node := n.(type) {
     case *parser.FunctionDefNode:
-      fsig, err := tc.ExtractFunctionSig(node)
-      if err != nil {
-        return nil, nil, nil, err
+      sig, ok := tc.ModSigs.LookupFunction(tc.Mod, node.Name, tc.Mod)
+      if !ok {
+        return nil, shared.NewError(node.Loc, "fatal: function %s should have been in the signature table", node.Name)
       }
 
-      if ok := tc.FuncTable.Define(fsig.Name, fsig); !ok {
-        return nil, nil, nil, shared.NewError(node.Loc, "function '%s' is already defined", fsig.Name)
+      tc.enterScope()
+      if err := tc.typeCheckFunction(node, sig); err != nil {
+        return nil, err
       }
-
-      if fsig.Name == "main" && fsig.RetType != shared.PRIMITIVE_I32 {
-        return nil, nil, nil, shared.NewError(node.Loc, "'main' function must be of '%s' return type", shared.PRIMITIVE_I32)
-      }
-    case *parser.StructDefNode:
-      if _, ok := tc.TypeTable.Lookup(node.Name); ok {
-        return nil, nil, nil, shared.NewError(node.Loc, "struct '%s' is already defined", node.Name)
-      }
-
-      fields := make([]shared.Pair[string, shared.Type], len(node.Fields))
-
-      for i, field := range node.Fields {
-        tpe := field.Type.Name
-        resolved, ok := tc.TypeTable.Lookup(tpe)
-        if !ok {
-          return nil, nil, nil, shared.NewError(field.Type.Loc, "field '%s' has undefined type '%s'", field.Name, tpe)
-        }
-        for j := field.PointerLevel; j > 0; j-- {
-          resolved = shared.Pointer{
-            To: resolved,
-          }
-        }
-        fields[i] = shared.Pair[string, shared.Type]{L: field.Name, R: resolved}
-      }
-
-      tc.TypeTable.Define(node.Name, shared.Struct{
-        Fields: fields,
-      })
+      tc.exitScope()
     }
   }
 
-  for _, n := range root.Body {
-    switch node := n.(type) {
-    case *parser.FunctionDefNode:
-    sig, _ := tc.FuncTable.Lookup(node.Name)
-
-    tc.enterScope()
-    if err := tc.typeCheckFunction(node, sig); err != nil {
-      return nil, nil, nil, err
-    }
-    tc.exitScope()
-    }
-  }
-
-  return root, tc.FuncTable.GetScope(), tc.TypeTable, nil
+  return ast, nil
 }
 
 func (tc *TypeChecker) enterScope() {
   tc.VarTable.EnterScope()
-  tc.FuncTable.EnterScope()
 }
 
 func (tc *TypeChecker) exitScope() {
   tc.VarTable.ExitScope()
-  tc.FuncTable.ExitScope()
 }
 
 func (tc *TypeChecker) typeCheckFunction(funcNode *parser.FunctionDefNode, sig *FunctionSig) error {
+  if strings.HasPrefix(funcNode.Name, "___") {
+    return shared.NewError(funcNode.Loc, "functions starting with '___' are reserved for the compiler")
+  }
+
   for _, arg := range sig.ArgTypes {
     tc.VarTable.Define(arg.Name, &VarSig{
       Type: arg.Type,
@@ -123,7 +96,6 @@ func (tc *TypeChecker) typeCheckFunction(funcNode *parser.FunctionDefNode, sig *
     })
   }
 
-  
   if funcNode.Body == nil {
     return nil
   }
@@ -167,19 +139,7 @@ func (tc *TypeChecker) typeCheckBlock(blockNode *parser.BlockNode, sig *Function
       }
 
     case *parser.FunctionDefNode:
-      fsig, err := tc.ExtractFunctionSig(node)
-      if err != nil {
-        return false, err
-      }
-      if ok := tc.FuncTable.Define(fsig.Name, fsig); !ok {
-        return false, shared.NewError(node.Loc, "function '%s' is already defined", fsig.Name)
-      }
-
-      if sig != nil { tc.enterScope() }
-      if err := tc.typeCheckFunction(node, fsig); err != nil {
-        return false, err
-      }
-      if sig != nil { tc.exitScope() }
+      return false, shared.NewError(node.Loc, "closures are not supported")
 
     case *parser.AssignmentNode:
       if err := tc.typeCheckAssignment(node); err != nil {
@@ -433,12 +393,11 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
     }
 
   case *parser.CastNode:
-    tpeName := exprNode.ToType.Name
-    tpe, ok := tc.TypeTable.Lookup(tpeName)
+    tpe, ok := tc.ModSigs.LookupType(exprNode.ToType.ModName, exprNode.ToType.Name, tc.Mod)
     if !ok {
-      return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "no such type '%s'", tpeName)
+      return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "no such type '%s'", tpe)
     }
-    for i := 0; i < exprNode.PointerLevel; i++ {
+    for i := 0; i < exprNode.ToType.PointerLevel; i++ {
       tpe = shared.Pointer{
         To: tpe,
       }
@@ -516,17 +475,19 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
     return exprType, nil
 
   case *parser.StructLiteralNode:
-    name := exprNode.Name.Name
-    structType, ok := tc.TypeTable.Lookup(name)
+    if exprNode.Name.Ident.Next != nil {
+      return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Name.Loc, "struct name cannot be qualified")
+    }
+    structType, ok := tc.ModSigs.LookupType(exprNode.Name.ModName, exprNode.Name.Ident.Name, tc.Mod)
     if !ok {
-      return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "no such struct type '%s'", name)
+      return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "no such struct type '%s'", exprNode.Name.Ident)
     }
     st, ok := structType.(shared.Struct)
     if !ok {
-      return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "'%s' is not a struct type", name)
+      return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "'%s' is not a struct type", exprNode.Name.Ident)
     }
     if len(st.Fields) != len(exprNode.Fields) {
-      return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "struct '%s' expects %d fields, got %d (zero values are not allowed)", name, len(st.Fields), len(exprNode.Fields))
+      return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "struct '%s' expects %d fields, got %d (zero values are not allowed)", exprNode.Name.Ident, len(st.Fields), len(exprNode.Fields))
     }
     for _, field := range exprNode.Fields {
       var fieldType shared.Type = nil
@@ -536,14 +497,14 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
         }
       }
       if fieldType == nil {
-        return shared.PRIMITIVE_VOID, shared.NewError(field.R.GetLoc(), "struct '%s' has no field named '%s'", name, field.L)
+        return shared.PRIMITIVE_VOID, shared.NewError(field.R.GetLoc(), "struct '%s' has no field named '%s'", exprNode.Name.Ident, field.L)
       }
       exprType, err := tc.typeCheckExpression(field.R, fieldType)
       if err != nil {
         return shared.PRIMITIVE_VOID, err
       }
       if !exprType.Compare(fieldType) {
-        return shared.PRIMITIVE_VOID, shared.NewError(field.R.GetLoc(), "field '%s' of struct '%s' expects type '%s', got '%s'", field.L, name, fieldType, exprType)
+        return shared.PRIMITIVE_VOID, shared.NewError(field.R.GetLoc(), "field '%s' of struct '%s' expects type '%s', got '%s'", field.L, exprNode.Name.Ident, fieldType, exprType)
       }
     }
     exprNode.ExprType = structType
@@ -555,11 +516,9 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
 }
 
 func (tc *TypeChecker) typeCheckFunctionCall(funccallNode *parser.FunctionCallNode) (shared.Type, error) {
-  fname := funccallNode.Name.Name
-
-  fsig, ok := tc.FuncTable.Lookup(fname)
+  fsig, ok := tc.ModSigs.LookupFunction(funccallNode.Name.ModName, funccallNode.Name.Ident.Name, tc.Mod)
   if !ok {
-    return shared.PRIMITIVE_VOID, shared.NewError(funccallNode.Name.Loc, "undefined function '%s'", fname)
+    return shared.PRIMITIVE_VOID, shared.NewError(funccallNode.Name.Loc, "undefined function '%s'", funccallNode.Name)
   }
 
   if (len(funccallNode.Args) > len(fsig.ArgTypes) && !fsig.HasVariadic) || len(funccallNode.Args) < len(fsig.ArgTypes) {
@@ -579,7 +538,7 @@ func (tc *TypeChecker) typeCheckFunctionCall(funccallNode *parser.FunctionCallNo
     if !fsigArgType.Compare(argType) && !fsigArgType.Compare(shared.PRIMITIVE_VOID) {
       return shared.PRIMITIVE_VOID, shared.NewError(arg.GetLoc(),
         "argument %d of function '%s' has type '%s' but expected '%s'",
-        i+1, fname, argType, fsigArgType,
+        i+1, funccallNode.Name, argType, fsigArgType,
       )
     }
   }
@@ -597,7 +556,7 @@ func (tc *TypeChecker) typeCheckDeclaration(declNode *parser.DeclarationNode) (s
 
   if declNode.Type != nil {
     varTypeStr := declNode.Type.Name
-    vt, ok := tc.TypeTable.Lookup(varTypeStr)
+    vt, ok := tc.ModSigs.LookupType(declNode.Type.ModName, varTypeStr, tc.Mod)
     if !ok {
       return "", nil, shared.NewError(declNode.Type.Loc, "variable '%s' has undefined type '%s'", declNode.Name, varTypeStr)
     }
@@ -841,61 +800,6 @@ func ResolveFieldChain(field *parser.IdentifierNode, tpe shared.Type) (shared.Ty
   }
 
   return nil, shared.NewError(field.Next.Loc, "type has no field named '%s'", field.Next.Name)
-}
-
-func (tc *TypeChecker) ExtractFunctionSig(functionNode *parser.FunctionDefNode) (*FunctionSig, error) {
-  var retType shared.Type
-  if (functionNode.RetType.Type != nil) {
-    retTypeStr := functionNode.RetType.Type.Name
-
-    r, ok := tc.TypeTable.Lookup(retTypeStr)
-    if !ok {
-      return nil, shared.NewError(functionNode.RetType.Type.Loc, "function '%s' has undefined return type '%s'", functionNode.Name, retTypeStr)
-    }
-    if functionNode.RetType.PointerLevel == 0 {
-      retType = r
-    } else {
-      ptr := r
-      for i := functionNode.RetType.PointerLevel; i > 0; i-- {
-        ptr = shared.Pointer{
-          To: ptr,
-        }
-      }
-      retType = ptr
-    }
-  } else {
-    if functionNode.Name == "main" {
-      retType = shared.PRIMITIVE_I32
-    } else {
-      retType = shared.PRIMITIVE_VOID
-    }
-  }
-
-  argTypes := make([]FunctionSigArg, len(functionNode.Args))
-  for i, arg := range functionNode.Args {
-    tpe := arg.Type.Name
-    resolved, ok := tc.TypeTable.Lookup(tpe)
-    if !ok {
-      return nil, shared.NewError(arg.Type.Loc, "parameter '%s' has undefined type '%s'", arg.Name, tpe)
-    }
-    for i := arg.PointerLevel; i > 0; i-- {
-      resolved = shared.Pointer{
-        To: resolved,
-      }
-    }
-    argTypes[i] = FunctionSigArg{
-      Name: arg.Name,
-      Type: resolved,
-      Mutable: arg.Mutable,
-    }
-  }
-
-  return &FunctionSig{
-    ArgTypes: argTypes,
-    RetType: retType,
-    Name: functionNode.Name,
-    HasVariadic: functionNode.HasVariadic,
-  }, nil
 }
 
 func SetNodeType(n parser.ExpressionNode, t shared.Type) {

@@ -1,8 +1,9 @@
 declare malloc(size: u64): *void
+declare printf(s: *char, ...): void
 
 export let main() = {
   var p = cast(*i32, malloc(8))
   *p = 2
   *(p+4) = 4
-  return *(p+4)
+  printf("%d\n", *(p+4))
 }

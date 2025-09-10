@@ -11,5 +11,5 @@ let Point_print(p: *Point) = {
 
 export let main() = {
   let p = Point{ x=10, y=20 }
-  return p.x
+  Point_print(&p)
 }

@@ -9,8 +9,9 @@ import (
 	"strings"
 
 	"github.com/marzeq/quokka/codegen"
-	"github.com/marzeq/quokka/import_resolve"
+	"github.com/marzeq/quokka/modules"
 	"github.com/marzeq/quokka/parser"
+	"github.com/marzeq/quokka/shared"
 	"github.com/marzeq/quokka/tokeniser"
 	"github.com/marzeq/quokka/typechecker"
 )
@@ -157,16 +158,57 @@ func main() {
   ast, err := p.Parse()
   _check(err)
 
-  merged, err := import_resolve.ProcessImports(ast, map[string]*parser.RootNode{}, map[string]bool{})
+  dg, err := modules.NewDepGraph(srcFile, ast)
   _check(err)
 
-  tc := typechecker.NewTypeChecker()
-  ast, funcTable, typeTable, err := tc.TypeCheck(merged)
+  files, err := dg.TopoSort()
   _check(err)
 
-  cg := codegen.NewCodeGen(ast, funcTable, typeTable)
-  ir, err := cg.EmitIR()
-  _check(err)
+  ms := make(typechecker.ModulesSignatures)
+  filesToMods := make(map[string]string)
+  for _, f := range files {
+    mod, err := ms.CollectSignaturesFromRootNode(dg.ASTs[f])
+    _check(err)
+    filesToMods[f] = mod
+  }
+
+  for f, mod := range filesToMods {
+    tc := typechecker.NewTypeChecker(mod, ms)
+    ast, err := tc.TypeCheck(dg.ASTs[f])
+    _check(err)
+    dg.ASTs[f] = ast
+  }
+
+  ir := ""
+
+  for f, mod := range filesToMods {
+    cg := codegen.NewCodeGen(dg.ASTs[f], mod, ms)
+    fileIr, err := cg.EmitIR()
+    _check(err)
+    ir += fileIr + "\n"
+  }
+
+  switch pathExt {
+  case "":
+    mainSig, ok := ms.LookupFunction("", "main", "")
+    if !ok {
+      fmt.Println("no main function found in the default module")
+      os.Exit(1)
+    }
+    if len(mainSig.ArgTypes) != 0 {
+      fmt.Println("main function must take no arguments")
+      os.Exit(1)
+    }
+    if !mainSig.RetType.Compare(shared.PRIMITIVE_VOID) {
+      fmt.Println("main function must return void")
+      os.Exit(1)
+    }
+    ir += "\nexport function w $main() {\n"
+    ir += "@start\n"
+    ir += "  call $___main()\n"
+    ir += "  ret\n"
+    ir += "}\n"
+  }
 
   ssaPath := path.Join(tmpDir, outBaseName+".ssa")
   _check(os.WriteFile(ssaPath, []byte(ir), 0644))

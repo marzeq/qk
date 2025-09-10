@@ -41,6 +41,26 @@ func (n ModuleAccessNode) String() string {
   return n.ModName + ":" + n.Ident.String()
 }
 
+type TypeNode struct {
+  ModName string
+  Name string
+  PointerLevel int
+  Loc shared.Location
+}
+func (n TypeNode) GetLoc() shared.Location { return n.Loc }
+func (n TypeNode) String() string {
+  ret := ""
+  for i := 0; i < n.PointerLevel; i++ {
+    ret += "*"
+  }
+  if n.ModName != "" {
+    ret += n.ModName
+    ret += ":"
+  }
+  ret += n.Name
+  return ret
+}
+
 type BoolLiteralNode struct {
   Value string
   Loc shared.Location
@@ -80,7 +100,7 @@ func (n NilLiteralNode) GetLoc() shared.Location { return n.Loc }
 func (n NilLiteralNode) GetType() shared.Type { return shared.Pointer{To: shared.PRIMITIVE_VOID } }
 
 type StructLiteralNode struct {
-  Name *IdentifierNode
+  Name *ModuleAccessNode
   Fields []shared.Pair[string, ExpressionNode] // field name, value
   Loc shared.Location
   ExprType shared.Type
@@ -89,7 +109,7 @@ func (n StructLiteralNode) GetLoc() shared.Location { return n.Loc }
 func (n StructLiteralNode) GetType() shared.Type { return n.ExprType }
 
 type FunctionCallNode struct {
-  Name *IdentifierNode
+  Name *ModuleAccessNode
   Args []ExpressionNode
   Loc shared.Location
   ExprType shared.Type
@@ -178,8 +198,7 @@ func (n BinaryOpNode) GetLoc() shared.Location { return n.Loc }
 func (n BinaryOpNode) GetType() shared.Type { return n.ExprType }
 
 type CastNode struct {
-  ToType *IdentifierNode
-  PointerLevel int
+  ToType *TypeNode
   Operand ExpressionNode
   Loc shared.Location
   ExprType shared.Type
@@ -201,8 +220,7 @@ func (n ModuleNode) GetLoc() shared.Location { return n.Loc }
 
 type FunctionNodeType struct {
   Name string
-  Type *IdentifierNode
-  PointerLevel int
+  Type *TypeNode
   Mutable bool
 }
 type FunctionDefNode struct {
@@ -218,8 +236,7 @@ func (n FunctionDefNode) GetLoc() shared.Location { return n.Loc }
 
 type StructField struct {
   Name string
-  Type *IdentifierNode
-  PointerLevel int
+  Type *TypeNode
 }
 type StructDefNode struct {
   Name string
@@ -283,7 +300,7 @@ func (n ControlKeywordNode) GetLoc() shared.Location { return n.Loc }
 type DeclarationNode struct {
   Name string
   Mutable bool
-  Type *IdentifierNode
+  Type *TypeNode
   Value ExpressionNode
   Loc shared.Location
 }

@@ -19,5 +19,4 @@ export let main() = {
   printPoint(p)
   setNewPos(&p, 30, 40)
   printPoint(p)
-  return 0
 }

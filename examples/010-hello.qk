@@ -2,5 +2,4 @@ declare printf(s: *char, ...)
 
 export let main() = {
   printf("Hello from Quokka!\n")
-  return 0
 }

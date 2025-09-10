@@ -3,7 +3,9 @@ struct Point = {
   y: i32
 }
 
+declare printf(s: *char, ...): void
+
 export let main() = {
   let p = Point{ x=10, y=20 }
-  return p.x
+  printf("%d\n", p.x)
 }

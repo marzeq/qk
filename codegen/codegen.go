@@ -11,22 +11,22 @@ import (
 )
 
 type CodeGen struct {
-  tmpVarId  uint
-  tmpLblId  uint
-  cnstId    uint
-  rootNode  *parser.RootNode
-  funcSigs  map[string]*typechecker.FunctionSig
-  typeTable shared.TypeTable
+  tmpVarId uint
+  tmpLblId uint
+  cnstId uint
+  rootNode *parser.RootNode
+  mod string
+  modSigs typechecker.ModulesSignatures
 }
 
-func NewCodeGen(rootNode *parser.RootNode, funcSigs map[string]*typechecker.FunctionSig, typeTable shared.TypeTable) *CodeGen {
+func NewCodeGen(rootNode *parser.RootNode, mod string, ms typechecker.ModulesSignatures) *CodeGen {
   return &CodeGen{
     tmpVarId: 0,
     tmpLblId: 0,
     cnstId: 0,
     rootNode: rootNode,
-    funcSigs: funcSigs,
-    typeTable: typeTable,
+    mod: mod,
+    modSigs: ms,
   }
 }
 
@@ -48,24 +48,35 @@ func (cg *CodeGen) GetCnst() string {
   return val
 }
 
+func modFieldToString(mod string, name string) string {
+  if mod != "" {
+    return fmt.Sprintf("___%s_%s", mod, name)
+  } 
+  return fmt.Sprintf("___%s", name)
+}
+
 func (cg *CodeGen) EmitIR() (string, error) {
   ir := ""
   gsetups := []string{}
 
-  for name, tpe := range cg.typeTable {
-    if !tpe.IsStruct() {
-      continue
-    }
+  for mod, ms := range cg.modSigs {
+    for name, tpe := range ms.TypeTable {
+      if !tpe.IsStruct() {
+        continue
+      }
 
-    ir += fmt.Sprintf("type :%s = {", name)
-    for _, field := range tpe.(shared.Struct).Fields {
-      ir += fmt.Sprintf(" %s,", mapTypeToIRType(field.R))
+      ir += fmt.Sprintf("type :%s = {", modFieldToString(mod, name))
+      for _, field := range tpe.(shared.Struct).Fields {
+        ir += fmt.Sprintf(" %s,", mapTypeToIRType(field.R))
+      }
+      ir += "}\n"
     }
-    ir += "}\n"
   }
 
   for _, n := range cg.rootNode.Body {
     switch node := n.(type) {
+    case *parser.ModuleNode:
+      continue
     case *parser.StructDefNode:
       continue
     case *parser.FunctionDefNode:
@@ -100,21 +111,31 @@ func (cg *CodeGen) GenerateFuncIR(funcNode *parser.FunctionDefNode) (string, []s
   epilogue := ""
   gsetups := []string{}
 
-  fsig := cg.funcSigs[funcNode.Name]
+  fsig, ok := cg.modSigs.LookupFunction(cg.mod, funcNode.Name, cg.mod)
+  if !ok {
+    return "", nil, shared.NewError(funcNode.Loc, "fatal: function %s should have been in the signature table", funcNode.Name)
+  }
 
   if funcNode.Exported {
     prologue += "export "
   }
 
-  prologue += fmt.Sprintf("function %s $%s(", mapTypeToIRType(fsig.RetType), fsig.Name)
+  prologue += fmt.Sprintf("function %s $%s(", mapTypeToIRType(fsig.RetType), modFieldToString(cg.mod, fsig.Name))
   after := ""
   for i, arg := range fsig.ArgTypes {
     tnm := cg.GetTmpVar()
     tpe := ""
     if arg.Type.IsStruct() {
-      for name, st := range cg.typeTable {
-        if st.Compare(arg.Type) {
-          tpe = fmt.Sprintf(":%s", name)
+      found := false
+      for mod, ms := range cg.modSigs {
+        for name, st := range ms.TypeTable {
+          if st.Compare(arg.Type) {
+            tpe = fmt.Sprintf(":%s", modFieldToString(mod, name))
+            found = true
+            break
+          }
+        }
+        if found {
           break
         }
       }
@@ -328,9 +349,16 @@ func (cg *CodeGen) GenerateStmtIR(stmtNd parser.Node, last bool, loopBegin, loop
     }
 
   case *parser.FunctionCallNode:
-    fsig := cg.funcSigs[stmtNode.Name.Name]
+    fsig, ok := cg.modSigs.LookupFunction(stmtNode.Name.ModName, stmtNode.Name.Ident.Name, cg.mod)
+    if !ok {
+      return "", nil, nil, shared.NewError(stmtNode.GetLoc(), "fatal: function %s not found in signature table", stmtNode.Name)
+    }
 
-    line = fmt.Sprintf("call $%s(", fsig.Name)
+    if fsig.External {
+      line = fmt.Sprintf("call $%s(", fsig.Name)
+    } else {
+      line = fmt.Sprintf("call $%s(", modFieldToString(stmtNode.Name.ModName, fsig.Name))
+    }
     for i, arg := range stmtNode.Args {
       if i == len(fsig.ArgTypes) {
         line += "..., "
@@ -344,9 +372,16 @@ func (cg *CodeGen) GenerateStmtIR(stmtNd parser.Node, last bool, loopBegin, loop
       }
       if i < len(fsig.ArgTypes) {
         if fsig.ArgTypes[i].Type.IsStruct() {
-          for name, st := range cg.typeTable {
-            if st.Compare(fsig.ArgTypes[i].Type) {
-              argType  = fmt.Sprintf(":%s", name)
+          found := false
+          for mod, ms := range cg.modSigs {
+            for name, st := range ms.TypeTable {
+              if st.Compare(fsig.ArgTypes[i].Type) {
+                argType  = fmt.Sprintf(":%s", modFieldToString(mod, name))
+                found = true
+                break
+              }
+            }
+            if found {
               break
             }
           }
@@ -660,10 +695,18 @@ func (cg *CodeGen) GenerateExprIR(eNode parser.ExpressionNode) (string, []string
     }
 
   case *parser.FunctionCallNode:
-    fsig := cg.funcSigs[exprNode.Name.Name]
+    fsig, ok := cg.modSigs.LookupFunction(exprNode.Name.ModName, exprNode.Name.Ident.Name, cg.mod)
+    if !ok {
+      return "", nil, nil, "", shared.NewError(exprNode.GetLoc(), "fatal: function %s not found in signature table", exprNode.Name)
+    }
     val = cg.GetTmpVar()
     tpe = mapTypeToIRType(fsig.RetType)
-    setup := fmt.Sprintf("%s =%s call $%s(", val, tpe, exprNode.Name.Name)
+    setup := ""
+    if fsig.External {
+      setup = fmt.Sprintf("%s =%s call $%s(", val, tpe, fsig.Name)
+    } else {
+      setup = fmt.Sprintf("%s =%s call $%s(", val, tpe, modFieldToString(exprNode.Name.ModName, fsig.Name))
+    }
     for i, arg := range exprNode.Args {
       if i == len(fsig.ArgTypes) {
         setup += "..., "
@@ -677,9 +720,16 @@ func (cg *CodeGen) GenerateExprIR(eNode parser.ExpressionNode) (string, []string
       }
       if i < len(fsig.ArgTypes) {
         if fsig.ArgTypes[i].Type.IsStruct() {
-          for name, st := range cg.typeTable {
-            if st.Compare(fsig.ArgTypes[i].Type) {
-              argType  = fmt.Sprintf(":%s", name)
+          found := false
+          for mod, ms := range cg.modSigs {
+            for name, st := range ms.TypeTable {
+              if st.Compare(fsig.ArgTypes[i].Type) {
+                argType  = fmt.Sprintf(":%s", modFieldToString(mod, name))
+                found = true
+                break
+              }
+            }
+            if found {
               break
             }
           }
@@ -912,8 +962,8 @@ func (cg *CodeGen) GenerateExprIR(eNode parser.ExpressionNode) (string, []string
     tpe = mapTypeToIRType(exprNode.FinalExpr.GetType())
 
   case *parser.CastNode:
-    targetType, _ := cg.typeTable.Lookup(exprNode.ToType.Name)
-    for i := exprNode.PointerLevel; i > 0; i-- {
+    targetType, _ := cg.modSigs.LookupType(exprNode.ToType.ModName, exprNode.ToType.Name, cg.mod)
+    for i := exprNode.ToType.PointerLevel; i > 0; i-- {
       targetType = shared.Pointer{To: targetType}
     }
     targetIRType := mapTypeToIRType(targetType)

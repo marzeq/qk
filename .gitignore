@@ -1,7 +1,8 @@
 build
 test
-test.o
-test.so
-test.a
+*.o
+*.so
+*.a
 test.qk
+*.ssa
 quokka

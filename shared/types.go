@@ -355,8 +355,12 @@ func NewTypeTable() TypeTable {
   return tt
 }
 
-func (tt TypeTable) Define(name string, t Type) {
+func (tt TypeTable) Define(name string, t Type) bool {
+  if _, exists := tt[name]; exists {
+    return false
+  }
   tt[name] = t
+  return true
 }
 
 func (tt TypeTable) Lookup(name string) (Type, bool) {
