@@ -5,4 +5,5 @@ test
 *.a
 test.qk
 *.ssa
+a.out
 quokka
