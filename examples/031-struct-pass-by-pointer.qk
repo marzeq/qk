@@ -9,7 +9,7 @@ let Point_print(p: *Point) = {
   printf("Point(%d, %d)\n", p.x, p.y)
 }
 
-let main() = {
+export let main() = {
   let p = Point{ x=10, y=20 }
   return p.x
 }

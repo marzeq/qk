@@ -3,7 +3,7 @@ struct Point {
   y: i32
 }
 
-let main() = {
+export let main() = {
   let p = Point{ x=10, y=20 }
   return p.x
 }

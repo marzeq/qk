@@ -5,7 +5,7 @@ struct Point = {
 
 declare malloc(size: u64): *Point
 
-let main() = {
+export let main() = {
   var p = malloc(8)
   p.x = 10
   p.y = 20

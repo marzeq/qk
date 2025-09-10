@@ -1,4 +1,4 @@
-let main() = given {
+export let main() = given {
     let a = 2 + 2
   } -> given {
     let b = a + 2

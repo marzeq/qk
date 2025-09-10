@@ -31,7 +31,7 @@ let printAFromQK(a: A) = {
   printf("QK: %d\n", a.a)
 }
 
-let main() = {
+export let main() = {
   var a = A{
     a = 3
     junk1 = 0

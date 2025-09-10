@@ -1,6 +1,6 @@
 declare malloc(size: u64): *void
 
-let main() = {
+export let main() = {
   var p = cast(*i32, malloc(8))
   *p = 2
   *(p+4) = 4

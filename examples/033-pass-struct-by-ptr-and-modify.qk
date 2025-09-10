@@ -14,7 +14,7 @@ let printPoint(p: Point) = {
   printf("Point(%d, %d)\n", p.x, p.y)
 }
 
-let main() = {
+export let main() = {
   let p = Point{ x=10, y=20 }
   printPoint(p)
   setNewPos(&p, 30, 40)
