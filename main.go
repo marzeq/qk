@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"slices"
 	"strings"
 
 	"github.com/marzeq/quokka/codegen"
@@ -165,23 +166,44 @@ func main() {
 	_check(err)
 
 	ms := make(typechecker.ModulesSignatures)
-	filesToMods := make(map[string]string)
+	moduleToFiles := make(map[string][]string)
+
 	for _, f := range files {
 		mod, err := ms.CollectSignaturesFromRootNode(dg.ASTs[f])
 		_check(err)
-		filesToMods[f] = mod
+		moduleToFiles[mod] = append(moduleToFiles[mod], f)
 	}
 
-	for f, mod := range filesToMods {
+	processedModules := map[string]struct{}{}
+
+	for mod, filesInMod := range moduleToFiles {
+		if _, ok := processedModules[mod]; ok {
+			continue
+		}
+
 		tc := typechecker.NewTypeChecker(mod, ms)
-		ast, err := tc.TypeCheck(dg.ASTs[f])
-		_check(err)
-		dg.ASTs[f] = ast
+
+		for _, f := range filesInMod {
+			ast, err := tc.TypeCheck(dg.ASTs[f])
+			_check(err)
+			dg.ASTs[f] = ast
+		}
+
+		processedModules[mod] = struct{}{}
 	}
 
 	ir := ""
+	for _, f := range files {
+		mod := ""
+		for m, fs := range moduleToFiles {
+			if slices.Contains(fs, f) {
+				mod = m
+			}
+			if mod != "" {
+				break
+			}
+		}
 
-	for f, mod := range filesToMods {
 		cg := codegen.NewCodeGen(dg.ASTs[f], mod, ms)
 		fileIr, err := cg.EmitIR()
 		_check(err)
