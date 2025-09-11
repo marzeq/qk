@@ -1,3 +1,6 @@
 module = "std"
 
-declare printf(fmt: *char, ...)
+let printf(s: *char, ...) = extern("printf")
+
+let _exit(status: i32) = extern("_exit")
+let exit(status: i32) = { _exit(status) }

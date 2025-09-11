@@ -1,8 +1,6 @@
 package typechecker
 
 import (
-	"fmt"
-
 	"github.com/marzeq/quokka/parser"
 	"github.com/marzeq/quokka/shared"
 )
@@ -15,26 +13,57 @@ type ModuleSignatures struct {
 type ModulesSignatures map[string]*ModuleSignatures
 
 func (ms ModulesSignatures) LookupType(module string, typeName string, lookingFrom string) (shared.Type, bool) {
-  m, ok := ms[module]
-  if !ok && module == "" && lookingFrom != "" {
-    m, ok = ms[lookingFrom]
-  }
-  if !ok {
+  if module == "" && lookingFrom == "" {
+    if m, ok := ms[""]; ok {
+      return m.TypeTable.Lookup(typeName)
+    }
     return nil, false
   }
-  return m.TypeTable.Lookup(typeName)
+
+  if module == "" {
+    if m, ok := ms[lookingFrom]; ok {
+      if t, ok := m.TypeTable.Lookup(typeName); ok {
+        return t, true
+      }
+    }
+    if m, ok := ms[""]; ok {
+      return m.TypeTable.Lookup(typeName)
+    }
+    return nil, false
+  }
+
+  if m, ok := ms[module]; ok {
+    return m.TypeTable.Lookup(typeName)
+  }
+  return nil, false
 }
 
 func (ms ModulesSignatures) LookupFunction(module string, funcName string, lookingFrom string) (*FunctionSig, bool) {
-  m, ok := ms[module]
-  if !ok && module == "" {
-    m, ok = ms[lookingFrom]
-  }
-  if !ok {
+  if module == "" && lookingFrom == "" {
+    if m, ok := ms[""]; ok {
+      return m.Functions.Lookup(funcName)
+    }
     return nil, false
   }
-  return m.Functions.Lookup(funcName)
+
+  if module == "" {
+    if m, ok := ms[lookingFrom]; ok {
+      if f, ok := m.Functions.Lookup(funcName); ok {
+        return f, true
+      }
+    }
+    if m, ok := ms[""]; ok {
+      return m.Functions.Lookup(funcName)
+    }
+    return nil, false
+  }
+
+  if m, ok := ms[module]; ok {
+    return m.Functions.Lookup(funcName)
+  }
+  return nil, false
 }
+
 
 func (ms ModulesSignatures) DefineType(module string, typeName string, typ shared.Type) bool {
   m, ok := ms[module]
@@ -76,7 +105,6 @@ func (ms ModulesSignatures) CollectSignaturesFromRootNode(ast *parser.RootNode) 
       }
       moduleForAst = node.Name
       if _, exists := ms[moduleForAst]; !exists {
-        fmt.Println("Creating module signatures for", moduleForAst)
         ms[moduleForAst] = &ModuleSignatures{
           TypeTable: shared.NewTypeTable(),
           Functions: make(FuncTable),

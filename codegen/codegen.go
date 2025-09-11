@@ -77,6 +77,8 @@ func (cg *CodeGen) EmitIR() (string, error) {
     switch node := n.(type) {
     case *parser.ModuleNode:
       continue
+    case *parser.ImportNode:
+      continue
     case *parser.StructDefNode:
       continue
     case *parser.FunctionDefNode:
