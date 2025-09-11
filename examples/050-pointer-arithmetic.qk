@@ -1,8 +1,9 @@
-import("std")
+let printf(s: *char, ...) = extern("printf")
+let malloc(size: u64): *void = extern("malloc")
 
 let main() = {
-  var p = std:malloc(8) as *i32
+  var p = malloc(8) as *i32
   *p = 2
   *(p+4) = 4
-  std:printf("%d\n", *(p+4))
+  printf("%d\n", *(p+4))
 }

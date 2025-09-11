@@ -1,7 +1,7 @@
-import("std")
+let printf(s: *char, ...) = extern("printf")
 
 let main() = {
-  std:printf("%d\n", given {
+  printf("%d\n", given {
     let a = 2 + 2
   } -> given {
     let b = a + 2

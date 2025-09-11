@@ -1,0 +1,10 @@
+#!/bin/sh
+
+exec 1>&2
+
+if ! ./test.sh run; then
+  echo "Tests failed. Push aborted."
+  exit 1
+fi
+
+exit 0

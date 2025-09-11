@@ -1,4 +1,4 @@
-import("std")
+let printf(s: *char, ...) = extern("printf")
 
 struct Point = {
   x: i32
@@ -7,5 +7,5 @@ struct Point = {
 
 let main() = {
   let p = Point{ x=10, y=20 }
-  std:printf("%d\n", p.x)
+  printf("%d\n", p.x)
 }

@@ -1,5 +1,5 @@
-import("std")
+let printf(s: *char, ...) = extern("printf")
 
 let main() = {
-  std:printf("Hello from Quokka!\n")
+  printf("Hello from Quokka!\n")
 }

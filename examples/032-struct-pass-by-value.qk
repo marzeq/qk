@@ -1,4 +1,4 @@
-import("std")
+let printf(s: *char, ...) = extern("printf")
 
 struct A = {
   a: i32
@@ -31,7 +31,7 @@ struct A = {
 -- }
 
 let printAFromQK(a: A) = {
-  std:printf("QK: %d\n", a.a)
+  printf("QK: %d\n", a.a)
 }
 
 let main() = {
@@ -47,5 +47,5 @@ let main() = {
     junk8 = 0
   }
   printAFromQK(a) -- should print 3
-  std:printf("%d\n", a.a) -- should print 3
+  printf("%d\n", a.a) -- should print 3
 }
