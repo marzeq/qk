@@ -1,8 +1,6 @@
 package parser
 
 import (
-	"fmt"
-
 	"github.com/marzeq/quokka/shared"
 	"github.com/marzeq/quokka/tokeniser"
 )
@@ -378,7 +376,7 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 		case string(tokeniser.KEYWORD_IF):
 			node, err := p.ParseIfStatement()
 			return node, false, err
-		case string(tokeniser.KEYWORD_STRUCT):
+		case string(tokeniser.KEYWORD_FOR):
 			node, err := p.ParseForLoop()
 			return node, false, err
 		default:
@@ -519,7 +517,6 @@ func (p *Parser) ParseAssignment(ident *IdentifierNode) (*AssignmentNode, error)
 }
 
 func (p *Parser) ParsePointerAssignment() (*AssignmentNode, error) {
-	fmt.Print()
 	identLoc := p.CurrLoc()
 	if !p.Match(tokeniser.TOKEN_TYPE_ASTERISK) {
 		return nil, shared.NewError(p.PrevLoc(), "expected '*'")

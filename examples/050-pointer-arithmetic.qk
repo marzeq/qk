@@ -1,9 +1,8 @@
-declare malloc(size: u64): *void
-declare printf(s: *char, ...): void
+import("std")
 
-export let main() = {
-  var p = cast(*i32, malloc(8))
+let main() = {
+  var p = cast(*i32, std:malloc(8))
   *p = 2
   *(p+4) = 4
-  printf("%d\n", *(p+4))
+  std:printf("%d\n", *(p+4))
 }

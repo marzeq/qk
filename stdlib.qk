@@ -4,3 +4,5 @@ pub let printf(s: *char, ...) = extern("printf")
 
 let _exit(status: i32) = extern("_exit")
 pub let exit(status: i32) = { _exit(status) }
+
+pub let malloc(size: u64): *void = extern("malloc")

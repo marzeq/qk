@@ -1,4 +1,4 @@
-declare printf(s: *char, ...): void
+import("std")
 
 struct Point = {
   x: i32
@@ -11,10 +11,10 @@ let setNewPos(var p: *Point, nx: i32, ny: i32) = {
 }
 
 let printPoint(p: Point) = {
-  printf("Point(%d, %d)\n", p.x, p.y)
+  std:printf("Point(%d, %d)\n", p.x, p.y)
 }
 
-export let main() = {
+let main() = {
   let p = Point{ x=10, y=20 }
   printPoint(p)
   setNewPos(&p, 30, 40)

@@ -1,14 +1,13 @@
+import("std")
+
 struct Point = {
   x: i32
   y: i32
 }
 
-declare malloc(size: u64): *Point
-declare printf(s: *char, ...): void
-
-export let main() = {
-  var p = malloc(8)
+let main() = {
+  var p = cast(*Point, std:malloc(8))
   p.x = 10
   p.y = 20
-  printf("%d\n", p.x)
+  std:printf("%d\n", p.x)
 }

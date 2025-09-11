@@ -1,3 +1,5 @@
+import("std")
+
 struct A = {
   a: i32
   junk1: i32
@@ -10,6 +12,8 @@ struct A = {
   junk8: i32
 }
 
+-- #include <stdio.h>
+--
 -- typedef struct {
 --   int a;
 --   int junk1;
@@ -26,12 +30,11 @@ struct A = {
 --     printf("C: %d\n", a.a);
 -- }
 
-declare printf(s: *char, ...): void
 let printAFromQK(a: A) = {
-  printf("QK: %d\n", a.a)
+  std:printf("QK: %d\n", a.a)
 }
 
-export let main() = {
+let main() = {
   var a = A{
     a = 3
     junk1 = 0
@@ -44,5 +47,5 @@ export let main() = {
     junk8 = 0
   }
   printAFromQK(a) -- should print 3
-  printf("%d\n", a.a) -- should print 3
+  std:printf("%d\n", a.a) -- should print 3
 }

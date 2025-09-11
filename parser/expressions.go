@@ -296,10 +296,6 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 			return nil, err
 		}
 
-		for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
-			p.Inc()
-		}
-
 		if p.Match(tokeniser.TOKEN_TYPE_COLON) {
 			p.Inc()
 

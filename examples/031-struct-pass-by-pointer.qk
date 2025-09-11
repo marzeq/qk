@@ -1,15 +1,15 @@
+import("std")
+
 struct Point = {
   x: i32
   y: i32
 }
 
-declare printf(s: *char, ...)
-
 let Point_print(p: *Point) = {
-  printf("Point(%d, %d)\n", p.x, p.y)
+  std:printf("Point(%d, %d)\n", p.x, p.y)
 }
 
-export let main() = {
+let main() = {
   let p = Point{ x=10, y=20 }
   Point_print(&p)
 }
