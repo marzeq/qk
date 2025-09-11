@@ -75,14 +75,14 @@ func (g *DepGraph) Construct(path string, rn *parser.RootNode) error {
 			t, err := tokeniser.NewTokeniserFromFile(f)
 			if err != nil {
 				if isCwd {
-					return fmt.Errorf("failed to tokenise %s: %w", f, err)
+					return err
 				}
 				continue
 			}
 			toks, err := t.Tokenise()
 			if err != nil {
 				if isCwd {
-					return fmt.Errorf("failed to tokenise %s: %w", f, err)
+					return err
 				}
 				continue
 			}
@@ -90,7 +90,7 @@ func (g *DepGraph) Construct(path string, rn *parser.RootNode) error {
 			ast, err := p.Parse()
 			if err != nil || len(ast.Body) == 0 {
 				if isCwd {
-					return fmt.Errorf("failed to parse %s: %w", f, err)
+					return err
 				}
 				continue
 			}

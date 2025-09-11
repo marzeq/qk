@@ -20,11 +20,11 @@ type CodeGen struct {
 	modSigs  typechecker.ModulesSignatures
 }
 
-func NewCodeGen(rootNode *parser.RootNode, mod string, ms typechecker.ModulesSignatures) *CodeGen {
+func NewCodeGen(rootNode *parser.RootNode, mod string, ms typechecker.ModulesSignatures, cnstId uint) *CodeGen {
 	return &CodeGen{
 		tmpVarId: 0,
 		tmpLblId: 0,
-		cnstId:   0,
+		cnstId:   cnstId,
 		rootNode: rootNode,
 		mod:      mod,
 		modSigs:  ms,
@@ -91,7 +91,7 @@ func modFieldToString(mod, name string) string {
 	}
 }
 
-func (cg *CodeGen) EmitIR() (string, error) {
+func (cg *CodeGen) EmitIR() (string, uint, error) {
 	ir := ""
 	gsetups := []string{}
 
@@ -124,13 +124,13 @@ func (cg *CodeGen) EmitIR() (string, error) {
 
 			funcIr, gstps, err := cg.GenerateFuncIR(node)
 			if err != nil {
-				return "", err
+				return "", 0, err
 			}
 
 			ir += funcIr
 			gsetups = append(gsetups, gstps...)
 		default:
-			return "", shared.NewError(node.GetLoc(), "unexpected node")
+			return "", 0, shared.NewError(node.GetLoc(), "unexpected node")
 		}
 	}
 
@@ -138,7 +138,7 @@ func (cg *CodeGen) EmitIR() (string, error) {
 		ir = gsetup + "\n" + ir
 	}
 
-	return ir, nil
+	return ir, cg.cnstId, nil
 }
 
 func (cg *CodeGen) GenerateFuncIR(funcNode *parser.FunctionDefNode) (string, []string, error) {

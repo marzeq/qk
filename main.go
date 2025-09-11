@@ -193,6 +193,7 @@ func main() {
 	}
 
 	ir := ""
+	var cnstId uint = 0
 	for _, f := range files {
 		mod := ""
 		for m, fs := range moduleToFiles {
@@ -204,10 +205,11 @@ func main() {
 			}
 		}
 
-		cg := codegen.NewCodeGen(dg.ASTs[f], mod, ms)
-		fileIr, err := cg.EmitIR()
+		cg := codegen.NewCodeGen(dg.ASTs[f], mod, ms, cnstId)
+		fileIr, cId, err := cg.EmitIR()
 		_check(err)
 		ir += fileIr + "\n"
+		cnstId += cId
 	}
 
 	switch pathExt {
