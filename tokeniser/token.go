@@ -70,7 +70,7 @@ const (
 	KEYWORD_RETURN   KeywordType = "return"
 	KEYWORD_IMPORT   KeywordType = "import"
 	KEYWORD_MODULE   KeywordType = "module"
-	KEYWORD_EXPORT   KeywordType = "export"
+	KEYWORD_PUB      KeywordType = "pub"
 	KEYWORD_AND      KeywordType = "and"
 	KEYWORD_OR       KeywordType = "or"
 	KEYWORD_NOT      KeywordType = "not"

@@ -110,33 +110,28 @@ func (p *Parser) Parse() (*RootNode, error) {
 		}
 
 		switch p.Peek().Value {
-		case "export":
-			p.Inc()
-			fnDef, err := p.ParseFunctionDefinition()
-			if err != nil {
-				return nil, err
-			}
-			fnDef.Exported = true
-			rootNode.Body = append(rootNode.Body, fnDef)
-		case "let":
+		case
+			string(tokeniser.KEYWORD_LET),
+			string(tokeniser.KEYWORD_EXTERN),
+			string(tokeniser.KEYWORD_PUB):
 			fnDef, err := p.ParseFunctionDefinition()
 			if err != nil {
 				return nil, err
 			}
 			rootNode.Body = append(rootNode.Body, fnDef)
-		case "struct":
+		case string(tokeniser.KEYWORD_STRUCT):
 			str, err := p.ParseStructDefinition()
 			if err != nil {
 				return nil, err
 			}
 			rootNode.Body = append(rootNode.Body, str)
-		case "import":
+		case string(tokeniser.KEYWORD_IMPORT):
 			imp, err := p.ParseImport()
 			if err != nil {
 				return nil, err
 			}
 			rootNode.Body = append(rootNode.Body, imp)
-		case "module":
+		case string(tokeniser.KEYWORD_MODULE):
 			mod, err := p.ParseModule()
 			if err != nil {
 				return nil, err

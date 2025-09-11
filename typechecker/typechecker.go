@@ -3,6 +3,7 @@ package typechecker
 import (
 	"github.com/marzeq/quokka/parser"
 	"github.com/marzeq/quokka/shared"
+	"github.com/marzeq/quokka/tokeniser"
 )
 
 type VarSig struct {
@@ -147,7 +148,7 @@ func (tc *TypeChecker) typeCheckBlock(blockNode *parser.BlockNode, sig *Function
 
 		case *parser.ControlKeywordNode:
 			switch node.Keyword {
-			case parser.KEYWORD_TYPE_RETURN:
+			case tokeniser.KEYWORD_RETURN:
 				if sig == nil {
 					return false, shared.NewError(node.Loc, "cannot return from here")
 				}
@@ -171,7 +172,7 @@ func (tc *TypeChecker) typeCheckBlock(blockNode *parser.BlockNode, sig *Function
 					return false, shared.NewError(blockNode.Body[i+1].GetLoc(), "dead code following return statement")
 				}
 
-			case parser.KEYWORD_TYPE_BREAK, parser.KEYWORD_TYPE_CONTINUE:
+			case tokeniser.KEYWORD_BREAK, tokeniser.KEYWORD_CONTINUE:
 				if !isLoop {
 					return false, shared.NewError(node.Loc, "'%s' statement outside a loop", node.Keyword)
 				}

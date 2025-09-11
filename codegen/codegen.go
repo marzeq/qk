@@ -7,6 +7,7 @@ import (
 
 	"github.com/marzeq/quokka/parser"
 	"github.com/marzeq/quokka/shared"
+	"github.com/marzeq/quokka/tokeniser"
 	"github.com/marzeq/quokka/typechecker"
 )
 
@@ -724,7 +725,7 @@ func (cg *CodeGen) GenerateExprIR(eNode parser.ExpressionNode) (string, []string
 		).Replace(exprNode.Value)))
 
 	case *parser.BoolLiteralNode:
-		if exprNode.Value == "true" {
+		if exprNode.Value == string(tokeniser.KEYWORD_TRUE) {
 			val = "1"
 		} else {
 			val = "0"

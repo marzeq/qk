@@ -50,6 +50,19 @@ func (p *Parser) ParseBlock() (*BlockNode, error) {
 
 func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 	beginLoc := p.CurrLoc()
+
+	extern := false
+	pub := false
+
+	if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == string(tokeniser.KEYWORD_EXTERN) {
+		extern = true
+		p.Inc()
+	}
+	if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == string(tokeniser.KEYWORD_PUB) {
+		pub = true
+		p.Inc()
+	}
+
 	if !p.Expect(tokeniser.TOKEN_TYPE_KEYWORD) {
 		return nil, shared.NewError(p.PrevLoc(), "expected 'let' keyword")
 	}
@@ -75,7 +88,7 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 		mutable := false
 		if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) {
 			kw := p.Consume().Value
-			if kw == "var" {
+			if kw == string(tokeniser.KEYWORD_VAR) {
 				mutable = true
 			} else {
 				return nil, shared.NewError(p.CurrLoc(), "expected either 'var' or argument name")
@@ -139,7 +152,7 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 
 	var body Node
 
-	if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == "extern" {
+	if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == string(tokeniser.KEYWORD_EXTERN) {
 		p.Inc()
 		if !p.Expect(tokeniser.TOKEN_TYPE_OPEN_PAREN) {
 			return nil, shared.NewError(p.PrevLoc(), "expected '(' after 'extern'")
@@ -157,6 +170,7 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 			RetType:     retType,
 			ExternFrom:  externNameTok.Value,
 			HasVariadic: variadic,
+			Pub:         pub,
 			Loc:         beginLoc,
 		}, nil
 	}
@@ -184,6 +198,8 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 		Args:    args,
 		RetType: retType,
 		Body:    body,
+		Extern:  extern,
+		Pub:     pub,
 		Loc:     beginLoc,
 	}, nil
 }
@@ -258,7 +274,7 @@ func (p *Parser) ParseStructDefinition() (*StructDefNode, error) {
 
 func (p *Parser) ParseImport() (*ImportNode, error) {
 	beginLoc := p.CurrLoc()
-	if kw, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_KEYWORD); !ok || kw.Value != "import" {
+	if kw, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_KEYWORD); !ok || kw.Value != string(tokeniser.KEYWORD_IMPORT) {
 		return nil, shared.NewError(p.PrevLoc(), "expected 'import' keyword")
 	}
 
@@ -305,7 +321,7 @@ func (p *Parser) ParseImport() (*ImportNode, error) {
 
 func (p *Parser) ParseModule() (*ModuleNode, error) {
 	beginLoc := p.CurrLoc()
-	if kw, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_KEYWORD); !ok || kw.Value != "module" {
+	if kw, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_KEYWORD); !ok || kw.Value != string(tokeniser.KEYWORD_MODULE) {
 		return nil, shared.NewError(p.PrevLoc(), "expected 'module' keyword")
 	}
 
@@ -328,7 +344,7 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 	if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) {
 		kw := p.Peek().Value
 		switch kw {
-		case "let":
+		case string(tokeniser.KEYWORD_LET):
 			p.Inc()
 			if !p.Expect(tokeniser.TOKEN_TYPE_IDENT) {
 				return nil, false, shared.NewError(p.PrevLoc(), "expected name")
@@ -342,16 +358,19 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 			}
 			node, err := p.ParseDeclaration()
 			return node, true, err
-		case "var":
+		case string(tokeniser.KEYWORD_VAR):
 			node, err := p.ParseDeclaration()
 			return node, true, err
-		case "return", "naked_return", "break", "continue":
+		case
+			string(tokeniser.KEYWORD_RETURN),
+			string(tokeniser.KEYWORD_BREAK),
+			string(tokeniser.KEYWORD_CONTINUE):
 			node, err := p.ParseControlKeyword()
 			return node, true, err
-		case "if":
+		case string(tokeniser.KEYWORD_IF):
 			node, err := p.ParseIfStatement()
 			return node, false, err
-		case "for":
+		case string(tokeniser.KEYWORD_STRUCT):
 			node, err := p.ParseForLoop()
 			return node, false, err
 		default:
@@ -428,7 +447,7 @@ func (p *Parser) ParseDeclaration() (*DeclarationNode, error) {
 	beginLoc := p.CurrLoc()
 
 	kw, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_KEYWORD)
-	if !ok || kw.Value != "let" && kw.Value != "var" {
+	if !ok || (kw.Value != string(tokeniser.KEYWORD_LET) && kw.Value != string(tokeniser.KEYWORD_VAR)) {
 		return nil, shared.NewError(p.PrevLoc(), "expected `let` or `var` keyword")
 	}
 
@@ -464,7 +483,7 @@ func (p *Parser) ParseDeclaration() (*DeclarationNode, error) {
 	return &DeclarationNode{
 		Name:    ident.Value,
 		Type:    tpe,
-		Mutable: kw.Value == "var",
+		Mutable: kw.Value == string(tokeniser.KEYWORD_VAR),
 		Value:   expr,
 		Loc:     beginLoc,
 	}, nil
@@ -558,14 +577,14 @@ func (p *Parser) ParseIfStatement() (*IfNode, error) {
 		},
 	}
 
-	for p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == "else" {
+	for p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == string(tokeniser.KEYWORD_ELSE) {
 		p.Consume()
 
 		for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
 			p.Inc()
 		}
 
-		if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == "if" {
+		if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == string(tokeniser.KEYWORD_IF) {
 			p.Consume()
 
 			for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
@@ -611,13 +630,14 @@ func (p *Parser) ParseControlKeyword() (*ControlKeywordNode, error) {
 	if !ok {
 		return nil, shared.NewError(p.PrevLoc(), "expected 'return', 'break' or 'continue'")
 	}
-	kt, ok := KeywordTypeFromString(kw.Value)
-	if !ok {
+	if kw.Value != string(tokeniser.KEYWORD_RETURN) &&
+		kw.Value != string(tokeniser.KEYWORD_BREAK) &&
+		kw.Value != string(tokeniser.KEYWORD_CONTINUE) {
 		return nil, shared.NewError(p.PrevLoc(), "expected 'return', 'break' or 'continue'")
 	}
 
 	var expr ExpressionNode
-	if kw.Value == "return" && !p.Match(tokeniser.TOKEN_TYPE_NEWLINE, tokeniser.TOKEN_TYPE_SEMICOLON) {
+	if kw.Value == string(tokeniser.KEYWORD_RETURN) && !p.Match(tokeniser.TOKEN_TYPE_NEWLINE, tokeniser.TOKEN_TYPE_SEMICOLON) {
 		got, err := p.ParseExpression()
 		if err != nil {
 			return nil, err
@@ -626,7 +646,7 @@ func (p *Parser) ParseControlKeyword() (*ControlKeywordNode, error) {
 	}
 
 	return &ControlKeywordNode{
-		Keyword:     kt,
+		Keyword:     tokeniser.KeywordType(kw.Value),
 		ReturnValue: expr,
 		Loc:         loc,
 	}, nil

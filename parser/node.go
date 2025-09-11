@@ -1,6 +1,9 @@
 package parser
 
-import "github.com/marzeq/quokka/shared"
+import (
+	"github.com/marzeq/quokka/shared"
+	"github.com/marzeq/quokka/tokeniser"
+)
 
 type Node interface{ GetLoc() shared.Location }
 type ExpressionNode interface {
@@ -256,7 +259,8 @@ type FunctionDefNode struct {
 	Body        Node
 	ExternFrom  string
 	HasVariadic bool
-	Exported    bool
+	Extern      bool
+	Pub         bool
 	Loc         shared.Location
 }
 
@@ -264,6 +268,7 @@ func (n FunctionDefNode) GetLoc() shared.Location { return n.Loc }
 
 type StructField struct {
 	Name string
+	Pub  bool
 	Type *TypeNode
 }
 type StructDefNode struct {
@@ -295,42 +300,8 @@ type ForNode struct {
 
 func (n ForNode) GetLoc() shared.Location { return n.Loc }
 
-type KeywordType uint
-
-const (
-	KEYWORD_TYPE_BREAK KeywordType = iota
-	KEYWORD_TYPE_CONTINUE
-	KEYWORD_TYPE_RETURN
-)
-
-func (k KeywordType) String() string {
-	switch k {
-	case KEYWORD_TYPE_BREAK:
-		return "break"
-	case KEYWORD_TYPE_CONTINUE:
-		return "continue"
-	case KEYWORD_TYPE_RETURN:
-		return "return"
-	default:
-		return "unknown"
-	}
-}
-
-func KeywordTypeFromString(s string) (KeywordType, bool) {
-	switch s {
-	case "break":
-		return KEYWORD_TYPE_BREAK, true
-	case "continue":
-		return KEYWORD_TYPE_CONTINUE, true
-	case "return":
-		return KEYWORD_TYPE_RETURN, true
-	default:
-		return 0, false
-	}
-}
-
 type ControlKeywordNode struct {
-	Keyword     KeywordType
+	Keyword     tokeniser.KeywordType
 	ReturnValue ExpressionNode // only for "return"
 	Loc         shared.Location
 }

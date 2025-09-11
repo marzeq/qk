@@ -16,7 +16,7 @@ func (p *Parser) ParseLogicalOr() (ExpressionNode, error) {
 		return nil, err
 	}
 
-	for p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == "or" {
+	for p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == string(tokeniser.KEYWORD_OR) {
 		p.Inc()
 
 		for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
@@ -45,7 +45,7 @@ func (p *Parser) ParseLogicalAnd() (ExpressionNode, error) {
 		return nil, err
 	}
 
-	for p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == "and" {
+	for p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == string(tokeniser.KEYWORD_AND) {
 		p.Inc()
 
 		for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
@@ -69,7 +69,7 @@ func (p *Parser) ParseLogicalAnd() (ExpressionNode, error) {
 
 func (p *Parser) ParseLogicalNot() (ExpressionNode, error) {
 	beginLoc := p.CurrLoc()
-	if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == "not" {
+	if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == string(tokeniser.KEYWORD_NOT) {
 		p.Inc()
 
 		for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
@@ -240,7 +240,7 @@ func (p *Parser) ParseMulDiv() (ExpressionNode, error) {
 
 func (p *Parser) ParseTerm() (ExpressionNode, error) {
 	beginLoc := p.CurrLoc()
-	if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == "if" {
+	if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == string(tokeniser.KEYWORD_IF) {
 		expr, err := p.ParseIfExpression()
 		if err != nil {
 			return nil, err
@@ -249,7 +249,7 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 		return expr, nil
 	}
 
-	if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == "given" {
+	if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == string(tokeniser.KEYWORD_GIVEN) {
 		expr, err := p.ParseGivenExpression()
 		if err != nil {
 			return nil, err
@@ -258,7 +258,7 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 		return expr, nil
 	}
 
-	if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == "cast" {
+	if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == string(tokeniser.KEYWORD_CAST) {
 		expr, err := p.ParseCast()
 		if err != nil {
 			return nil, err
@@ -358,13 +358,13 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 		val := p.Peek().Value
 
 		switch val {
-		case "true", "false":
+		case string(tokeniser.KEYWORD_TRUE), string(tokeniser.KEYWORD_FALSE):
 			bLit := p.Consume()
 			return &BoolLiteralNode{
 				Value: bLit.Value,
 				Loc:   beginLoc,
 			}, nil
-		case "nil":
+		case string(tokeniser.KEYWORD_NIL):
 			p.Inc()
 			return &NilLiteralNode{
 				Loc: beginLoc,
@@ -402,7 +402,7 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 func (p *Parser) ParseCast() (*CastNode, error) {
 	beginLoc := p.CurrLoc()
 
-	if t, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_KEYWORD); !ok || t.Value != "cast" {
+	if t, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_KEYWORD); !ok || t.Value != string(tokeniser.KEYWORD_CAST) {
 		return nil, shared.NewError(beginLoc, "expected 'cast' keyword")
 	}
 
@@ -517,14 +517,14 @@ func (p *Parser) ParseIfExpression() (*IfExprNode, error) {
 		},
 	}
 
-	for p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == "else" {
+	for p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == string(tokeniser.KEYWORD_ELSE) {
 		p.Consume()
 
 		for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
 			p.Inc()
 		}
 
-		if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == "if" {
+		if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == string(tokeniser.KEYWORD_IF) {
 			p.Consume()
 
 			for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
