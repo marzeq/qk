@@ -149,7 +149,7 @@ func (cg *CodeGen) GenerateFuncIR(funcNode *parser.FunctionDefNode) (string, []s
 	epilogue := ""
 	gsetups := []string{}
 
-	fsig, ok := cg.modSigs.LookupFunction(cg.mod, funcNode.Name, cg.mod)
+	fsig, ok := cg.modSigs.LookupFunction(cg.mod, funcNode.Name, cg.mod, false)
 	if !ok {
 		return "", nil, shared.NewError(funcNode.Loc, "fatal: function %s should have been in the signature table", funcNode.Name)
 	}

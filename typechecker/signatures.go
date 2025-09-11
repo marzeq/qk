@@ -12,17 +12,20 @@ type ModuleSignatures struct {
 
 type ModulesSignatures map[string]*ModuleSignatures
 
-func (ms ModulesSignatures) LookupType(module string, typeName string, lookingFrom string) (shared.Type, bool) {
+func (ms ModulesSignatures) LookupType(module string, typeName string, lookingFrom string, ignorePubCheckA ...bool) (shared.Type, bool) {
+	ignorePubCheck := len(ignorePubCheckA) > 0 && ignorePubCheckA[0]
 	var t shared.Type
 	var ok bool
 
 	if module == "" && lookingFrom == "" {
 		if m, exists := ms[""]; exists {
 			t, ok = m.TypeTable.Lookup(typeName)
+			ignorePubCheck = true
 		}
 	} else if module == "" {
 		if m, exists := ms[lookingFrom]; exists {
 			t, ok = m.TypeTable.Lookup(typeName)
+			ignorePubCheck = true
 		}
 		if !ok {
 			if m, exists := ms[""]; exists {
@@ -35,38 +38,48 @@ func (ms ModulesSignatures) LookupType(module string, typeName string, lookingFr
 		}
 	}
 
-	if ok {
-		return t, true
+	if !ok {
+		primitive, ok := shared.GetPrimitive(typeName)
+		return primitive, ok
 	}
 
-	primitive, ok := shared.GetPrimitive(typeName)
-	return primitive, ok
+	if s, isStruct := t.(*shared.Struct); isStruct {
+		if !s.Pub && !ignorePubCheck {
+			return nil, false
+		}
+	}
+
+	return t, true
 }
 
-func (ms ModulesSignatures) LookupFunction(module string, funcName string, lookingFrom string) (*FunctionSig, bool) {
-	if module == "" && lookingFrom == "" {
-		if m, ok := ms[""]; ok {
-			return m.Functions.Lookup(funcName)
-		}
-		return nil, false
-	}
+func (ms ModulesSignatures) LookupFunction(module string, funcName string, lookingFrom string, ignorePubCheckA ...bool) (*FunctionSig, bool) {
+	ignorePubCheck := len(ignorePubCheckA) > 0 && ignorePubCheckA[0]
+	var f *FunctionSig
+	var ok bool
 
-	if module == "" {
-		if m, ok := ms[lookingFrom]; ok {
-			if f, ok := m.Functions.Lookup(funcName); ok {
-				return f, true
+	if module == "" && lookingFrom == "" {
+		if m, exists := ms[""]; exists {
+			f, ok = m.Functions.Lookup(funcName)
+			ignorePubCheck = true
+		}
+	} else if module == "" {
+		if m, exists := ms[lookingFrom]; exists {
+			f, ok = m.Functions.Lookup(funcName)
+			ignorePubCheck = true
+		}
+		if !ok {
+			if m, exists := ms[""]; exists {
+				f, ok = m.Functions.Lookup(funcName)
 			}
 		}
-		if m, ok := ms[""]; ok {
-			return m.Functions.Lookup(funcName)
-		}
-		return nil, false
+	} else if m, exists := ms[module]; exists {
+		f, ok = m.Functions.Lookup(funcName)
 	}
 
-	if m, ok := ms[module]; ok {
-		return m.Functions.Lookup(funcName)
+	if !ok || f == nil || (!f.Pub && !ignorePubCheck) {
+		return nil, false
 	}
-	return nil, false
+	return f, true
 }
 
 func (ms ModulesSignatures) DefineType(module string, typeName string, typ shared.Type) bool {
@@ -199,5 +212,6 @@ func (ms ModulesSignatures) ExtractFunctionSig(functionNode *parser.FunctionDefN
 		Name:        functionNode.Name,
 		HasVariadic: functionNode.HasVariadic,
 		ExternFrom:  functionNode.ExternFrom,
+		Pub:         functionNode.Pub,
 	}, nil
 }

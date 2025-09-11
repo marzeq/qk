@@ -24,6 +24,7 @@ type FunctionSig struct {
 	RetType        shared.Type
 	ImplicitReturn bool
 	ExternFrom     string
+	Pub            bool
 }
 
 type FuncTable map[string]*FunctionSig
@@ -59,7 +60,7 @@ func (tc *TypeChecker) TypeCheck(ast *parser.RootNode) (*parser.RootNode, error)
 	for _, n := range ast.Body {
 		switch node := n.(type) {
 		case *parser.FunctionDefNode:
-			sig, ok := tc.ModSigs.LookupFunction(tc.Mod, node.Name, tc.Mod)
+			sig, ok := tc.ModSigs.LookupFunction(tc.Mod, node.Name, tc.Mod, true)
 			if !ok {
 				return nil, shared.NewError(node.Loc, "fatal: function %s should have been in the signature table", node.Name)
 			}

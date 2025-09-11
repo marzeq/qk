@@ -270,6 +270,7 @@ type StructLayout struct {
 type Struct struct {
 	Fields []Pair[string, Type]
 	Layout StructLayout
+	Pub    bool
 }
 
 func (st *Struct) GetLayout() StructLayout {

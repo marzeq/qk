@@ -1,9 +1,10 @@
 package parser
 
 import (
+	"slices"
+
 	"github.com/marzeq/quokka/shared"
 	"github.com/marzeq/quokka/tokeniser"
-	"slices"
 )
 
 type Parser struct {

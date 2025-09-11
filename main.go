@@ -212,7 +212,7 @@ func main() {
 
 	switch pathExt {
 	case "":
-		mainSig, ok := ms.LookupFunction("", "main", "")
+		mainSig, ok := ms.LookupFunction("", "main", "", false)
 		if !ok {
 			fmt.Println("no main function found in the default module")
 			os.Exit(1)

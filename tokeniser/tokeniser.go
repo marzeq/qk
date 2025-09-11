@@ -218,6 +218,7 @@ var keywords = map[string]struct{}{
 	string(KEYWORD_RETURN):        {},
 	string(KEYWORD_IMPORT):        {},
 	string(KEYWORD_MODULE):        {},
+	string(KEYWORD_PUB):           {},
 	string(KEYWORD_AND):           {},
 	string(KEYWORD_OR):            {},
 	string(KEYWORD_NOT):           {},
