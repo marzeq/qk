@@ -56,62 +56,58 @@ func (g *DepGraph) Construct(path string, rn *parser.RootNode) error {
 	g.Files[path] = node
 	g.ASTs[path] = rn
 
-	modules := getImports(rn)
-	for _, moduleName := range modules {
-		files, err := findFilesForModule(moduleName)
-		if err != nil {
-			return err
-		}
+	allFiles, err := findSrcFiles()
+	if err != nil {
+		return err
+	}
 
-		modules := getImports(rn)
-		for _, moduleName := range modules {
-			files, err := findFilesForModule(moduleName)
-			if err != nil {
-				return err
+	for _, moduleName := range getImports(rn) {
+		moduleFilesFound := false
+
+		for _, f := range allFiles {
+			isCwd := false
+			absF, _ := filepath.Abs(f)
+			cwd, _ := filepath.Abs(".")
+			if filepath.Dir(absF) == cwd {
+				isCwd = true
 			}
 
-			if len(files) == 0 {
-				return fmt.Errorf("module not found: %s", moduleName)
-			}
-
-			for _, f := range files {
-				childNode, ok := g.Files[f]
-				if !ok || childNode == nil {
-					continue
-				}
-				node.Imports = append(node.Imports, childNode)
-			}
-		}
-
-		for _, f := range files {
 			t, err := tokeniser.NewTokeniserFromFile(f)
 			if err != nil {
-				return err
+				if isCwd {
+					return fmt.Errorf("failed to tokenise %s: %w", f, err)
+				}
+				continue
 			}
 			toks, err := t.Tokenise()
 			if err != nil {
-				return err
+				if isCwd {
+					return fmt.Errorf("failed to tokenise %s: %w", f, err)
+				}
+				continue
 			}
 			p := parser.NewParser(toks)
 			ast, err := p.Parse()
-			if err != nil {
-				return err
-			}
-
-			firstModule := ""
-			if len(ast.Body) > 0 {
-				if mn, ok := ast.Body[0].(*parser.ModuleNode); ok {
-					firstModule = mn.Name
+			if err != nil || len(ast.Body) == 0 {
+				if isCwd {
+					return fmt.Errorf("failed to parse %s: %w", f, err)
 				}
-			}
-			if firstModule != moduleName {
 				continue
 			}
 
+			if mn, ok := ast.Body[0].(*parser.ModuleNode); !ok || mn.Name != moduleName {
+				continue
+			}
+
+			moduleFilesFound = true
 			if err := g.Construct(f, ast); err != nil {
 				return err
 			}
 			node.Imports = append(node.Imports, g.Files[f])
+		}
+
+		if !moduleFilesFound {
+			return fmt.Errorf("module not found: %s", moduleName)
 		}
 	}
 
@@ -128,7 +124,7 @@ func getImports(rn *parser.RootNode) []string {
 	return modules
 }
 
-func findFilesForModule(moduleName string) ([]string, error) {
+func findSrcFiles() ([]string, error) {
 	var result []string
 	seen := map[string]struct{}{}
 
@@ -137,31 +133,14 @@ func findFilesForModule(moduleName string) ([]string, error) {
 			if err != nil || info.IsDir() {
 				return nil
 			}
-			if _, ok := seen[path]; ok {
-				return nil
-			}
-
 			if filepath.Ext(path) != ".qk" {
 				return nil
 			}
-
-			t, err := tokeniser.NewTokeniserFromFile(path)
-			if err != nil {
+			if _, ok := seen[path]; ok {
 				return nil
 			}
-			toks, err := t.Tokenise()
-			if err != nil {
-				return nil
-			}
-			p := parser.NewParser(toks)
-			ast, err := p.Parse()
-			if err != nil || len(ast.Body) == 0 {
-				return nil
-			}
-			if mn, ok := ast.Body[0].(*parser.ModuleNode); ok && mn.Name == moduleName {
-				result = append(result, path)
-				seen[path] = struct{}{}
-			}
+			seen[path] = struct{}{}
+			result = append(result, path)
 			return nil
 		})
 		if err != nil {
