@@ -204,16 +204,44 @@ func (t *Tokeniser) AddToken(ttype TokenType, loc shared.Location, _value ...str
 	t.tokens = append(t.tokens, Token{Type: ttype, Value: value, Loc: loc})
 }
 
+var keywords = map[string]struct{}{
+	string(KEYWORD_LET):           {},
+	string(KEYWORD_VAR):           {},
+	string(KEYWORD_EXTERN):        {},
+	string(KEYWORD_STRUCT):        {},
+	string(KEYWORD_IF):            {},
+	string(KEYWORD_ELSE):          {},
+	string(KEYWORD_GIVEN):         {},
+	string(KEYWORD_FOR):           {},
+	string(KEYWORD_BREAK):         {},
+	string(KEYWORD_CONTINUE):      {},
+	string(KEYWORD_RETURN):        {},
+	string(KEYWORD_IMPORT):        {},
+	string(KEYWORD_MODULE):        {},
+	string(KEYWORD_EXPORT):        {},
+	string(KEYWORD_AND):           {},
+	string(KEYWORD_OR):            {},
+	string(KEYWORD_NOT):           {},
+	string(KEYWORD_TRUE):          {},
+	string(KEYWORD_FALSE):         {},
+	string(KEYWORD_NIL):           {},
+	string(KEYWORD_CAST):          {},
+	string(shared.PRIMITIVE_VOID): {},
+	string(shared.PRIMITIVE_BOOL): {},
+	string(shared.PRIMITIVE_CHAR): {},
+	string(shared.PRIMITIVE_U8):   {},
+	string(shared.PRIMITIVE_U16):  {},
+	string(shared.PRIMITIVE_U32):  {},
+	string(shared.PRIMITIVE_U64):  {},
+	string(shared.PRIMITIVE_I8):   {},
+	string(shared.PRIMITIVE_I16):  {},
+	string(shared.PRIMITIVE_I32):  {},
+	string(shared.PRIMITIVE_I64):  {},
+}
+
 func IsKeyword(w string) bool {
-	return w == "let" || w == "var" ||
-		w == "extern" || w == "struct" ||
-		w == "if" || w == "else" || w == "given" ||
-		w == "for" || w == "break" ||
-		w == "continue" || w == "return" ||
-		w == "import" || w == "module" || w == "export" ||
-		w == "and" || w == "or" || w == "not" ||
-		w == "true" || w == "false" ||
-		w == "nil" || w == "cast"
+	_, ok := keywords[w]
+	return ok
 }
 
 func (t *Tokeniser) Tokenise() ([]Token, error) {

@@ -54,6 +54,32 @@ const (
 	TOKEN_TYPE_ARROW
 )
 
+type KeywordType string
+
+const (
+	KEYWORD_LET      KeywordType = "let"
+	KEYWORD_VAR      KeywordType = "var"
+	KEYWORD_EXTERN   KeywordType = "extern"
+	KEYWORD_STRUCT   KeywordType = "struct"
+	KEYWORD_IF       KeywordType = "if"
+	KEYWORD_ELSE     KeywordType = "else"
+	KEYWORD_GIVEN    KeywordType = "given"
+	KEYWORD_FOR      KeywordType = "for"
+	KEYWORD_BREAK    KeywordType = "break"
+	KEYWORD_CONTINUE KeywordType = "continue"
+	KEYWORD_RETURN   KeywordType = "return"
+	KEYWORD_IMPORT   KeywordType = "import"
+	KEYWORD_MODULE   KeywordType = "module"
+	KEYWORD_EXPORT   KeywordType = "export"
+	KEYWORD_AND      KeywordType = "and"
+	KEYWORD_OR       KeywordType = "or"
+	KEYWORD_NOT      KeywordType = "not"
+	KEYWORD_TRUE     KeywordType = "true"
+	KEYWORD_FALSE    KeywordType = "false"
+	KEYWORD_NIL      KeywordType = "nil"
+	KEYWORD_CAST     KeywordType = "cast"
+)
+
 func (t Token) String() string {
 	switch t.Type {
 	case TOKEN_TYPE_EOF:

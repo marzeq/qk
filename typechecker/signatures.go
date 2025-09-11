@@ -13,29 +13,34 @@ type ModuleSignatures struct {
 type ModulesSignatures map[string]*ModuleSignatures
 
 func (ms ModulesSignatures) LookupType(module string, typeName string, lookingFrom string) (shared.Type, bool) {
-	if module == "" && lookingFrom == "" {
-		if m, ok := ms[""]; ok {
-			return m.TypeTable.Lookup(typeName)
-		}
-		return nil, false
-	}
+	var t shared.Type
+	var ok bool
 
-	if module == "" {
-		if m, ok := ms[lookingFrom]; ok {
-			if t, ok := m.TypeTable.Lookup(typeName); ok {
-				return t, true
+	if module == "" && lookingFrom == "" {
+		if m, exists := ms[""]; exists {
+			t, ok = m.TypeTable.Lookup(typeName)
+		}
+	} else if module == "" {
+		if m, exists := ms[lookingFrom]; exists {
+			t, ok = m.TypeTable.Lookup(typeName)
+		}
+		if !ok {
+			if m, exists := ms[""]; exists {
+				t, ok = m.TypeTable.Lookup(typeName)
 			}
 		}
-		if m, ok := ms[""]; ok {
-			return m.TypeTable.Lookup(typeName)
+	} else {
+		if m, exists := ms[module]; exists {
+			t, ok = m.TypeTable.Lookup(typeName)
 		}
-		return nil, false
 	}
 
-	if m, ok := ms[module]; ok {
-		return m.TypeTable.Lookup(typeName)
+	if ok {
+		return t, true
 	}
-	return nil, false
+
+	primitive, ok := shared.GetPrimitive(typeName)
+	return primitive, ok
 }
 
 func (ms ModulesSignatures) LookupFunction(module string, funcName string, lookingFrom string) (*FunctionSig, bool) {
@@ -88,7 +93,7 @@ func (ms ModulesSignatures) CollectSignaturesFromRootNode(ast *parser.RootNode) 
 		default:
 			if _, exists := ms[moduleForAst]; !exists && i == 0 {
 				ms[""] = &ModuleSignatures{
-					TypeTable: shared.NewTypeTable(),
+					TypeTable: make(shared.TypeTable),
 					Functions: make(FuncTable),
 				}
 			}
@@ -105,7 +110,7 @@ func (ms ModulesSignatures) CollectSignaturesFromRootNode(ast *parser.RootNode) 
 			moduleForAst = node.Name
 			if _, exists := ms[moduleForAst]; !exists {
 				ms[moduleForAst] = &ModuleSignatures{
-					TypeTable: shared.NewTypeTable(),
+					TypeTable: make(shared.TypeTable),
 					Functions: make(FuncTable),
 				}
 			}

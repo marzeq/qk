@@ -713,12 +713,23 @@ func (p *Parser) ParseIdent() (*IdentifierNode, error) {
 }
 
 func (p *Parser) ParseType() (*TypeNode, error) {
+	beginLoc := p.CurrLoc()
+
 	pointerLevel := 0
 	for p.Match(tokeniser.TOKEN_TYPE_ASTERISK) {
 		p.Inc()
 		pointerLevel++
 	}
-	beginLoc := p.CurrLoc()
+
+	if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) {
+		kw := p.Consume().Value
+		return &TypeNode{
+			Name:         kw,
+			PointerLevel: pointerLevel,
+			Loc:          beginLoc,
+		}, nil
+	}
+
 	firstIdent, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_IDENT)
 	if !ok {
 		return nil, shared.NewError(p.PrevLoc(), "expected type name, module name or asterisk")

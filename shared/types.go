@@ -233,6 +233,34 @@ func (pt Primitive) Compare(t2 Type) bool {
 }
 func (pt Primitive) String() string { return string(pt) }
 
+func GetPrimitive(name string) (Primitive, bool) {
+	switch name {
+	case string(PRIMITIVE_VOID):
+		return PRIMITIVE_VOID, true
+	case string(PRIMITIVE_U8):
+		return PRIMITIVE_U8, true
+	case string(PRIMITIVE_U16):
+		return PRIMITIVE_U16, true
+	case string(PRIMITIVE_U32):
+		return PRIMITIVE_U32, true
+	case string(PRIMITIVE_U64):
+		return PRIMITIVE_U64, true
+	case string(PRIMITIVE_I8):
+		return PRIMITIVE_I8, true
+	case string(PRIMITIVE_I16):
+		return PRIMITIVE_I16, true
+	case string(PRIMITIVE_I32):
+		return PRIMITIVE_I32, true
+	case string(PRIMITIVE_I64):
+		return PRIMITIVE_I64, true
+	case string(PRIMITIVE_BOOL):
+		return PRIMITIVE_BOOL, true
+	case string(PRIMITIVE_CHAR):
+		return PRIMITIVE_CHAR, true
+	}
+	return "", false
+}
+
 type StructLayout struct {
 	Size    int
 	Align   int
@@ -330,29 +358,6 @@ func (pt Pointer) String() string {
 }
 
 type TypeTable map[string]Type
-
-func NewTypeTable() TypeTable {
-	tt := TypeTable{}
-
-	tt.Define(string(PRIMITIVE_VOID), PRIMITIVE_VOID)
-	tt.Define(string(PRIMITIVE_UNTYPED_INT), PRIMITIVE_UNTYPED_INT)
-
-	tt.Define(string(PRIMITIVE_U8), PRIMITIVE_U8)
-	tt.Define(string(PRIMITIVE_U16), PRIMITIVE_U16)
-	tt.Define(string(PRIMITIVE_U32), PRIMITIVE_U32)
-	tt.Define(string(PRIMITIVE_U64), PRIMITIVE_U64)
-
-	tt.Define(string(PRIMITIVE_I8), PRIMITIVE_I8)
-	tt.Define(string(PRIMITIVE_I16), PRIMITIVE_I16)
-	tt.Define(string(PRIMITIVE_I32), PRIMITIVE_I32)
-	tt.Define(string(PRIMITIVE_I64), PRIMITIVE_I64)
-
-	tt.Define(string(PRIMITIVE_BOOL), PRIMITIVE_BOOL)
-
-	tt.Define(string(PRIMITIVE_CHAR), PRIMITIVE_CHAR)
-
-	return tt
-}
 
 func (tt TypeTable) Define(name string, t Type) bool {
 	if _, exists := tt[name]; exists {
