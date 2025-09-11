@@ -1,12 +1,7 @@
 #!/bin/sh
-# pre-commit hook to ensure all Go files are formatted
-
-# Redirect output to stderr
-exec 1>&2
-
-echo "Running go fmt..."
-
 unformatted=$(gofmt -l -s .)
+
+exec 1>&2
 
 if [ -n "$unformatted" ]; then
   echo "The following Go files are not formatted:"
