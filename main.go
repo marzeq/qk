@@ -205,8 +205,8 @@ func main() {
     }
     ir += "\nexport function w $main() {\n"
     ir += "@start\n"
-    ir += "  call $___main()\n"
-    ir += "  ret\n"
+    ir += "  call $_main()\n"
+    ir += "  ret 0\n"
     ir += "}\n"
   }
 

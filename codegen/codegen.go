@@ -48,11 +48,46 @@ func (cg *CodeGen) GetCnst() string {
   return val
 }
 
-func modFieldToString(mod string, name string) string {
+func varNameToIRName(name string) string {
+  if strings.HasPrefix(name, "___") {
+    return "_" + name
+  }
+  return name
+}
+
+func modFieldToString(mod, name string) string {
+  if mod == "" && name == "main" {
+    return "_main"
+  } else if mod == "" && strings.HasPrefix(name, "_main") {
+    return "__" + name
+  }
+
+  leading := 0
+  for i := 0; i < len(name); i++ {
+    if name[i] == '_' {
+      leading++
+    } else {
+      break
+    }
+  }
+
   if mod != "" {
-    return fmt.Sprintf("___%s_%s", mod, name)
-  } 
-  return fmt.Sprintf("___%s", name)
+    var sep string
+    switch leading {
+    case 0:
+      sep = "__"
+    case 1:
+      sep = "_"
+    default:
+      sep = strings.Repeat("_", leading+1)
+    }
+    return mod + sep + name[leading:]
+  } else {
+    if leading >= 2 {
+      return strings.Repeat("_", leading+1) + name[leading:]
+    }
+    return name
+  }
 }
 
 func (cg *CodeGen) EmitIR() (string, error) {
@@ -269,7 +304,7 @@ func (cg *CodeGen) GenerateStmtIR(stmtNd parser.Node, last bool, loopBegin, loop
     }
 
   case *parser.DeclarationNode:
-    nme := stmtNode.Name
+    nme := varNameToIRName(stmtNode.Name)
     switch assignee := stmtNode.Value.(type) {
     case *parser.IdentifierNode:
       lastId := getLastIdentifierInChain(assignee)
@@ -317,7 +352,7 @@ func (cg *CodeGen) GenerateStmtIR(stmtNd parser.Node, last bool, loopBegin, loop
         return "", nil, nil, err
       }
 
-      deepname, tpe, deepstps, err := cg.EmitFieldAccess("%"+assignee.Name, assignee, assignee.ExprType, true)
+      deepname, tpe, deepstps, err := cg.EmitFieldAccess("%"+varNameToIRName(assignee.Name), assignee, assignee.ExprType, true)
       if err != nil {
         return "", nil, nil, err
       }
@@ -645,7 +680,7 @@ func (cg *CodeGen) GenerateExprIR(eNode parser.ExpressionNode) (string, []string
     irs := []string{}
 
     if exprNode.Next != nil {
-      gotname, gottpe, gotirs, err := cg.EmitFieldAccess("%"+exprNode.Name, exprNode, exprNode.ExprType, false)
+      gotname, gottpe, gotirs, err := cg.EmitFieldAccess("%"+varNameToIRName(exprNode.Name), exprNode, exprNode.ExprType, false)
       if err != nil {
         return "", nil, nil, "", err
       }
@@ -833,7 +868,7 @@ func (cg *CodeGen) GenerateExprIR(eNode parser.ExpressionNode) (string, []string
     case parser.UNARY_OP_REFERENCE:
       switch identNode := exprNode.Operand.(type) {
       case *parser.IdentifierNode:
-        setups = append(setups, fmt.Sprintf("%s =l copy %%%s", val, identNode.Name))
+        setups = append(setups, fmt.Sprintf("%s =l copy %%%s", val, varNameToIRName(identNode.Name)))
       default:
         return "", nil, nil, "", shared.NewError(exprNode.Loc, "cannot take address of non-variable expression")
       }

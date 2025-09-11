@@ -1,8 +1,6 @@
 package typechecker
 
 import (
-	"strings"
-
 	"github.com/marzeq/quokka/parser"
 	"github.com/marzeq/quokka/shared"
 )
@@ -85,10 +83,6 @@ func (tc *TypeChecker) exitScope() {
 }
 
 func (tc *TypeChecker) typeCheckFunction(funcNode *parser.FunctionDefNode, sig *FunctionSig) error {
-  if strings.HasPrefix(funcNode.Name, "___") {
-    return shared.NewError(funcNode.Loc, "functions starting with '___' are reserved for the compiler")
-  }
-
   for _, arg := range sig.ArgTypes {
     tc.VarTable.Define(arg.Name, &VarSig{
       Type: arg.Type,
@@ -548,9 +542,6 @@ func (tc *TypeChecker) typeCheckFunctionCall(funccallNode *parser.FunctionCallNo
 }
 
 func (tc *TypeChecker) typeCheckDeclaration(declNode *parser.DeclarationNode) (string, *VarSig, error) {
-  if strings.HasPrefix(declNode.Name, "___") {
-    return "", nil, shared.NewError(declNode.Loc, "variables starting with '___' are reserved for the compiler")
-  }
   mutable := declNode.Mutable
   var varType shared.Type = shared.PRIMITIVE_VOID
 
