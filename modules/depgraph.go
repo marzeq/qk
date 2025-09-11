@@ -2,6 +2,7 @@ package modules
 
 import (
   "fmt"
+  "path/filepath"
 
   "github.com/marzeq/quokka/parser"
   "github.com/marzeq/quokka/tokeniser"
@@ -32,6 +33,10 @@ func NewDepGraph(path string, rn *parser.RootNode) (*DepGraph, error) {
 }
 
 func (g *DepGraph) Construct(path string, rn *parser.RootNode) error {
+  path, err := filepath.Abs(path)
+  if err != nil {
+    return err
+  }
   if _, ok := g.ASTs[path]; ok {
     return nil
   }
@@ -45,18 +50,22 @@ func (g *DepGraph) Construct(path string, rn *parser.RootNode) error {
 
   imports := getImports(rn)
   for _, imp := range imports {
+    imp, err := filepath.Abs(imp)
+    if err != nil {
+      return err
+    }
     t, err := tokeniser.NewTokeniserFromFile(imp)
     if err != nil {
-      return fmt.Errorf("import %q in %q: %w", imp, path, err)
+      return err
     }
     toks, err := t.Tokenise()
     if err != nil {
-      return fmt.Errorf("tokenise %q: %w", imp, err)
+      return err
     }
     p := parser.NewParser(toks)
     ast, err := p.Parse()
     if err != nil {
-      return fmt.Errorf("parse %q: %w", imp, err)
+      return err
     }
 
     if err := g.Construct(imp, ast); err != nil {
