@@ -24,7 +24,7 @@ type FunctionSig struct {
   HasVariadic bool
   RetType shared.Type
   ImplicitReturn bool
-  External bool
+  ExternFrom string
 }
 
 type FuncTable map[string]*FunctionSig

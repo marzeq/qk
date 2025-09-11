@@ -166,6 +166,6 @@ func (ms ModulesSignatures) ExtractFunctionSig(functionNode *parser.FunctionDefN
     RetType: retType,
     Name: functionNode.Name,
     HasVariadic: functionNode.HasVariadic,
-    External: functionNode.Body == nil,
+    ExternFrom: functionNode.ExternFrom,
   }, nil
 }

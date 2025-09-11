@@ -206,7 +206,7 @@ func (t *Tokeniser) AddToken(ttype TokenType, loc shared.Location, _value ...str
 
 func IsKeyword(w string) bool {
   return w == "let" || w == "var" ||
-  w == "declare" || w == "struct" ||
+  w == "extern" || w == "struct" ||
   w == "if" || w == "else" || w == "given" ||
   w == "for" || w == "break" ||
   w == "continue" || w == "return" ||

@@ -354,8 +354,8 @@ func (cg *CodeGen) GenerateStmtIR(stmtNd parser.Node, last bool, loopBegin, loop
       return "", nil, nil, shared.NewError(stmtNode.GetLoc(), "fatal: function %s not found in signature table", stmtNode.Name)
     }
 
-    if fsig.External {
-      line = fmt.Sprintf("call $%s(", fsig.Name)
+    if fsig.ExternFrom != "" {
+      line = fmt.Sprintf("call $%s(", fsig.ExternFrom)
     } else {
       line = fmt.Sprintf("call $%s(", modFieldToString(stmtNode.Name.ModName, fsig.Name))
     }
@@ -702,8 +702,8 @@ func (cg *CodeGen) GenerateExprIR(eNode parser.ExpressionNode) (string, []string
     val = cg.GetTmpVar()
     tpe = mapTypeToIRType(fsig.RetType)
     setup := ""
-    if fsig.External {
-      setup = fmt.Sprintf("%s =%s call $%s(", val, tpe, fsig.Name)
+    if fsig.ExternFrom != "" {
+      setup = fmt.Sprintf("%s =%s call $%s(", val, tpe, fsig.ExternFrom)
     } else {
       setup = fmt.Sprintf("%s =%s call $%s(", val, tpe, modFieldToString(exprNode.Name.ModName, fsig.Name))
     }

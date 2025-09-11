@@ -124,12 +124,6 @@ func (p *Parser) Parse() (*RootNode, error) {
         return nil, err
       }
       rootNode.Body = append(rootNode.Body, fnDef)
-    case "declare":
-      fnDef, err := p.ParseExternalFunctionDefinition()
-      if err != nil {
-        return nil, err
-      }
-      rootNode.Body = append(rootNode.Body, fnDef)
     case "struct":
       str, err := p.ParseStructDefinition()
       if err != nil {

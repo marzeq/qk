@@ -38,6 +38,9 @@ type ModuleAccessNode struct {
 func (n ModuleAccessNode) GetLoc() shared.Location { return n.Loc }
 func (n ModuleAccessNode) GetType() shared.Type { return n.ExprType }
 func (n ModuleAccessNode) String() string {
+  if n.ModName == "" {
+    return n.Ident.String()
+  }
   return n.ModName + ":" + n.Ident.String()
 }
 
@@ -228,6 +231,7 @@ type FunctionDefNode struct {
   Args []FunctionNodeType
   RetType FunctionNodeType
   Body Node
+  ExternFrom string
   HasVariadic bool
   Exported bool
   Loc shared.Location

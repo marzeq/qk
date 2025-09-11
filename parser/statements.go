@@ -64,7 +64,14 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
   }
 
   var args []FunctionNodeType
+  variadic := false
   for !p.Match(tokeniser.TOKEN_TYPE_CLOSE_PAREN) {
+    if p.Match(tokeniser.TOKEN_TYPE_3DOTS) {
+      p.Inc()
+      variadic = true
+      break
+    }
+
     mutable := false
     if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) {
       kw := p.Consume().Value
@@ -132,6 +139,28 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 
   var body Node
 
+  if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == "extern" {
+    p.Inc()
+    if !p.Expect(tokeniser.TOKEN_TYPE_OPEN_PAREN) {
+      return nil, shared.NewError(p.PrevLoc(), "expected '(' after 'extern'")
+    }
+    externNameTok, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_STRING)
+    if !ok {
+      return nil, shared.NewError(p.PrevLoc(), "expected string literal for extern function name")
+    }
+    if !p.Expect(tokeniser.TOKEN_TYPE_CLOSE_PAREN) {
+      return nil, shared.NewError(p.PrevLoc(), "expected ')' after extern function name")
+    }
+    return &FunctionDefNode{
+      Name: name.Value,
+      Args: args,
+      RetType: retType,
+      ExternFrom: externNameTok.Value,
+      HasVariadic: variadic,
+      Loc: beginLoc,
+    }, nil
+  }
+
   if p.Match(tokeniser.TOKEN_TYPE_OPEN_CURLY) {
     b, err := p.ParseBlock()
     if err != nil {
@@ -146,90 +175,15 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
     body = b
   }
 
+  if variadic {
+    return nil, shared.NewError(beginLoc, "variadics are only supported for extern functions for now")
+  }
+
   return &FunctionDefNode{
     Name: name.Value,
     Args: args,
     RetType: retType,
     Body: body,
-    Loc: beginLoc,
-  }, nil
-}
-
-func (p *Parser) ParseExternalFunctionDefinition() (*FunctionDefNode, error) {
-  beginLoc := p.CurrLoc()
-  if !p.Expect(tokeniser.TOKEN_TYPE_KEYWORD) {
-    return nil, shared.NewError(p.PrevLoc(), "expected 'declare' keyword")
-  }
-
-  name, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_IDENT)
-  if !ok {
-    return nil, shared.NewError(p.PrevLoc(), "expected function name")
-  }
-
-  if !p.Expect(tokeniser.TOKEN_TYPE_OPEN_PAREN) {
-    return nil, shared.NewError(p.PrevLoc(), "expected '('")
-  }
-
-  var args []FunctionNodeType
-  variadic := false
-  for !p.Match(tokeniser.TOKEN_TYPE_CLOSE_PAREN) {
-    if p.Match(tokeniser.TOKEN_TYPE_3DOTS) {
-      p.Inc()
-      variadic = true
-      break
-    }
-
-    arg, err := p.ParseIdent()
-    if err != nil {
-      return nil, err
-    }
-    if arg.Next != nil {
-      return nil, shared.NewError(arg.Next.Loc, "argument names cannot be qualified")
-    }
-
-    if !p.Expect(tokeniser.TOKEN_TYPE_COLON) {
-      return nil, shared.NewError(p.PrevLoc(), "expected ':'")
-    }
-
-    argType, err := p.ParseType()
-    if err != nil {
-      return nil, err
-    }
-
-    args = append(args, FunctionNodeType{
-      Name: arg.Name,
-      Type: argType,
-    })
-
-    if !p.Match(tokeniser.TOKEN_TYPE_COMMA) {
-      break
-    }
-    p.Consume()
-  }
-
-  if !p.Expect(tokeniser.TOKEN_TYPE_CLOSE_PAREN) {
-    return nil, shared.NewError(p.PrevLoc(), "expected ')'")
-  }
-
-  retType := FunctionNodeType{
-    Type: nil,
-  }
-  if p.Match(tokeniser.TOKEN_TYPE_COLON) {
-    p.Inc()
-    argType, err := p.ParseType()
-    if err != nil {
-      return nil, err
-    }
-    retType = FunctionNodeType{
-      Type: argType,
-    }
-  }
-
-  return &FunctionDefNode{
-    Name: name.Value,
-    Args: args,
-    RetType: retType,
-    HasVariadic: variadic,
     Loc: beginLoc,
   }, nil
 }
@@ -387,9 +341,6 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
         return node, true, err
       }
       node, err := p.ParseDeclaration()
-      return node, true, err
-    case "declare":
-      node, err := p.ParseExternalFunctionDefinition()
       return node, true, err
     case "var":
       node, err := p.ParseDeclaration()
