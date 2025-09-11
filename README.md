@@ -12,7 +12,9 @@ As this is my first language I aim for:
 ```bash
 git clone git@github.com:marzeq/quokka.git
 cd quokka
-git config core.hooksPath .githooks # please do this, it ensures formatting consistency by blocking your commit if it's misformatted
+git config core.hooksPath .githooks # please do this, it:
+# 1. ensures formatting consistency by blocking your commit if it's misformatted
+# 2. runs tests before you push
 
 go build . # or go run . (args...)
 ```
@@ -29,6 +31,7 @@ There is a special branch in QBE called `winabi` and I plan to vendor in that br
 
 - QBE
 - Standard POSIX build tools
+- (in the future mingw for Windows support)
 
 ## Contributing
 
