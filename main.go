@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path"
-	"path/filepath"
 	"slices"
 	"strings"
 
@@ -168,34 +167,23 @@ func main() {
 
 	ms := make(typechecker.ModulesSignatures)
 	moduleToFiles := make(map[string][]string)
-	userFiles := []string{}
 
-	cwd, _ := filepath.Abs(".")
 	for _, f := range files {
-		absF, _ := filepath.Abs(f)
 		mod, err := ms.CollectSignaturesFromRootNode(dg.ASTs[f])
 		_check(err)
 		moduleToFiles[mod] = append(moduleToFiles[mod], f)
-
-		if filepath.Dir(absF) == cwd {
-			userFiles = append(userFiles, f)
-		}
 	}
 
 	processedModules := map[string]struct{}{}
-	for mod := range moduleToFiles {
+
+	for mod, filesInMod := range moduleToFiles {
 		if _, ok := processedModules[mod]; ok {
 			continue
 		}
 
 		tc := typechecker.NewTypeChecker(mod, ms)
 
-		for _, f := range moduleToFiles[mod] {
-			absF, _ := filepath.Abs(f)
-			if filepath.Dir(absF) != cwd {
-				continue
-			}
-
+		for _, f := range filesInMod {
 			ast, err := tc.TypeCheck(dg.ASTs[f])
 			_check(err)
 			dg.ASTs[f] = ast
