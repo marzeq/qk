@@ -18,9 +18,9 @@ let _strncpy(dest: *char, src: *char, n: u64): *char = extern("strncpy")
 
 pub let string_new(s: *char): *string = {
   let n = _strlen(s)
-  let buf = cast(*char, malloc(n))
+  let buf = malloc(n) as *char
   _strncpy(buf, s, n)
   let str = string{data=buf, len=n}
   return &str
 }
-pub let string_free(s: *string) = { free(cast(*void, s.data)) }
+pub let string_free(s: *string) = { free(s.data as *void) }

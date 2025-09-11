@@ -6,7 +6,7 @@ struct Point = {
 }
 
 let main() = {
-  var p = cast(*Point, std:malloc(8))
+  var p = std:malloc(8) as *Point
   p.x = 10
   p.y = 20
   std:printf("%d\n", p.x)

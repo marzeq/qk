@@ -6,7 +6,31 @@ import (
 )
 
 func (p *Parser) ParseExpression() (ExpressionNode, error) {
-	return p.ParseLogicalOr()
+	return p.ParseAsCast()
+}
+
+func (p *Parser) ParseAsCast() (ExpressionNode, error) {
+	beginLoc := p.CurrLoc()
+	left, err := p.ParseLogicalOr()
+	if err != nil {
+		return nil, err
+	}
+	if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == string(tokeniser.KEYWORD_AS) {
+		p.Inc()
+		for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
+			p.Inc()
+		}
+		typ, err := p.ParseType()
+		if err != nil {
+			return nil, err
+		}
+		return &CastNode{
+			ToType:  typ,
+			Operand: left,
+			Loc:     beginLoc,
+		}, nil
+	}
+	return left, nil
 }
 
 func (p *Parser) ParseLogicalOr() (ExpressionNode, error) {
@@ -258,15 +282,6 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 		return expr, nil
 	}
 
-	if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == string(tokeniser.KEYWORD_CAST) {
-		expr, err := p.ParseCast()
-		if err != nil {
-			return nil, err
-		}
-
-		return expr, nil
-	}
-
 	if p.Match(tokeniser.TOKEN_TYPE_OPEN_PAREN) {
 		p.Consume()
 
@@ -393,51 +408,6 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 	}
 
 	return nil, shared.NewError(p.CurrLoc(), "unexpected token %s", p.Peek())
-}
-
-func (p *Parser) ParseCast() (*CastNode, error) {
-	beginLoc := p.CurrLoc()
-
-	if t, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_KEYWORD); !ok || t.Value != string(tokeniser.KEYWORD_CAST) {
-		return nil, shared.NewError(beginLoc, "expected 'cast' keyword")
-	}
-
-	if !p.Expect(tokeniser.TOKEN_TYPE_OPEN_PAREN) {
-		return nil, shared.NewError(p.PrevLoc(), "expected '(")
-	}
-	for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
-		p.Inc()
-	}
-
-	tpe, err := p.ParseType()
-	if err != nil {
-		return nil, err
-	}
-
-	if !p.Expect(tokeniser.TOKEN_TYPE_COMMA) {
-		return nil, shared.NewError(p.PrevLoc(), "expected ','")
-	}
-	for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
-		p.Inc()
-	}
-
-	expr, err := p.ParseExpression()
-	if err != nil {
-		return nil, err
-	}
-
-	for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
-		p.Inc()
-	}
-	if !p.Expect(tokeniser.TOKEN_TYPE_CLOSE_PAREN) {
-		return nil, shared.NewError(p.PrevLoc(), "expected ')'")
-	}
-
-	return &CastNode{
-		ToType:  tpe,
-		Operand: expr,
-		Loc:     beginLoc,
-	}, nil
 }
 
 func (p *Parser) ParseFunctionCall(name *ModuleAccessNode) (*FunctionCallNode, error) {

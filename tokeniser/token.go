@@ -77,7 +77,7 @@ const (
 	KEYWORD_TRUE     KeywordType = "true"
 	KEYWORD_FALSE    KeywordType = "false"
 	KEYWORD_NIL      KeywordType = "nil"
-	KEYWORD_CAST     KeywordType = "cast"
+	KEYWORD_AS       KeywordType = "as"
 )
 
 func (t Token) String() string {

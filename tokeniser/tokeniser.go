@@ -225,7 +225,7 @@ var keywords = map[string]struct{}{
 	string(KEYWORD_TRUE):          {},
 	string(KEYWORD_FALSE):         {},
 	string(KEYWORD_NIL):           {},
-	string(KEYWORD_CAST):          {},
+	string(KEYWORD_AS):            {},
 	string(shared.PRIMITIVE_VOID): {},
 	string(shared.PRIMITIVE_BOOL): {},
 	string(shared.PRIMITIVE_CHAR): {},
