@@ -154,7 +154,7 @@ func (cg *CodeGen) GenerateFuncIR(funcNode *parser.FunctionDefNode) (string, []s
 		return "", nil, shared.NewError(funcNode.Loc, "fatal: function %s should have been in the signature table", funcNode.Name)
 	}
 
-	if funcNode.Exported {
+	if funcNode.Extern {
 		prologue += "export "
 	}
 
@@ -279,7 +279,7 @@ func (cg *CodeGen) GenerateStmtIR(stmtNd parser.Node, last bool, loopBegin, loop
 	switch stmtNode := stmtNd.(type) {
 	case *parser.ControlKeywordNode:
 		switch stmtNode.Keyword {
-		case parser.KEYWORD_TYPE_RETURN:
+		case tokeniser.KEYWORD_RETURN:
 			line = "ret"
 			if stmtNode.ReturnValue != nil {
 				line += " "
@@ -291,12 +291,12 @@ func (cg *CodeGen) GenerateStmtIR(stmtNd parser.Node, last bool, loopBegin, loop
 				setups = append(setups, setps...)
 				gsetups = append(gsetups, gsetps...)
 			}
-		case parser.KEYWORD_TYPE_BREAK:
+		case tokeniser.KEYWORD_BREAK:
 			if loopEnd == "" {
 				return "", nil, nil, shared.NewError(stmtNode.GetLoc(), "used 'break' keyword outside loop")
 			}
 			line = fmt.Sprintf("jmp %s", loopEnd)
-		case parser.KEYWORD_TYPE_CONTINUE:
+		case tokeniser.KEYWORD_CONTINUE:
 			if loopBegin == "" {
 				return "", nil, nil, shared.NewError(stmtNode.GetLoc(), "used 'continue' keyword outside loop")
 			}

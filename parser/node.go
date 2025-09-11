@@ -268,12 +268,12 @@ func (n FunctionDefNode) GetLoc() shared.Location { return n.Loc }
 
 type StructField struct {
 	Name string
-	Pub  bool
 	Type *TypeNode
 }
 type StructDefNode struct {
 	Name   string
 	Fields []StructField
+	Pub    bool
 	Loc    shared.Location
 }
 

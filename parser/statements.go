@@ -206,6 +206,13 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 
 func (p *Parser) ParseStructDefinition() (*StructDefNode, error) {
 	beginLoc := p.CurrLoc()
+
+	pub := false
+	if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == string(tokeniser.KEYWORD_PUB) {
+		pub = true
+		p.Inc()
+	}
+
 	if !p.Expect(tokeniser.TOKEN_TYPE_KEYWORD) {
 		return nil, shared.NewError(p.PrevLoc(), "expected 'struct' keyword")
 	}
@@ -268,6 +275,7 @@ func (p *Parser) ParseStructDefinition() (*StructDefNode, error) {
 	return &StructDefNode{
 		Name:   name.Value,
 		Fields: fields,
+		Pub:    pub,
 		Loc:    beginLoc,
 	}, nil
 }
