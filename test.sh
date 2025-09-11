@@ -55,8 +55,7 @@ run_tests() {
     local expected_output="examples/expected_outputs/$(basename "${file%.qk}.ssa")"
     if [ ! -f "$expected_output" ]; then
       echo "Missing expected output for $file. Run './test.sh gen' first."
-      failed=$((failed + 1))
-      continue
+      return 1
     fi
 
     go run main.go "$file" -irout /tmp/test.ssa
