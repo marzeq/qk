@@ -141,6 +141,10 @@ func findFilesForModule(moduleName string) ([]string, error) {
 				return nil
 			}
 
+			if filepath.Ext(path) != ".qk" {
+				return nil
+			}
+
 			t, err := tokeniser.NewTokeniserFromFile(path)
 			if err != nil {
 				return nil
