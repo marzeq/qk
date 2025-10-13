@@ -1,0 +1,51 @@
+data $___cnst1 = { b "%d\n", b 0 }
+data $___cnst0 = { b "QK: %d\n", b 0 }
+type :A = { w, w, w, w, w, w, w, w, w,}
+function  $printAFromQK(:A %___tmpvar0) {
+@start
+%a =l alloc4 36
+blit %___tmpvar0, %a, 36
+
+%___tmpvar1 =l add %a, 0
+%___tmpvar2 =w loadw %___tmpvar1
+call $printf(l $___cnst0, ..., w %___tmpvar2)
+ret
+}
+function  $_main() {
+@start
+
+%a =l alloc4 36
+%___tmpvar0 =l alloc4 36
+%___tmpvar1 =l add %___tmpvar0, 0
+storew 3, %___tmpvar1
+%___tmpvar2 =l add %___tmpvar0, 4
+storew 0, %___tmpvar2
+%___tmpvar3 =l add %___tmpvar0, 8
+storew 0, %___tmpvar3
+%___tmpvar4 =l add %___tmpvar0, 12
+storew 0, %___tmpvar4
+%___tmpvar5 =l add %___tmpvar0, 16
+storew 0, %___tmpvar5
+%___tmpvar6 =l add %___tmpvar0, 20
+storew 0, %___tmpvar6
+%___tmpvar7 =l add %___tmpvar0, 24
+storew 0, %___tmpvar7
+%___tmpvar8 =l add %___tmpvar0, 28
+storew 0, %___tmpvar8
+%___tmpvar9 =l add %___tmpvar0, 32
+storew 0, %___tmpvar9
+blit %___tmpvar0, %a, 36
+%___tmpvar10 =l copy %a
+call $printAFromQK(:A %___tmpvar10)
+%___tmpvar11 =l add %a, 0
+%___tmpvar12 =w loadw %___tmpvar11
+call $printf(l $___cnst1, ..., w %___tmpvar12)
+ret
+}
+
+
+export function w $main() {
+@start
+  call $_main()
+  ret 0
+}

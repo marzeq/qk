@@ -1,0 +1,25 @@
+data $___cnst0 = { b "%d\n", b 0 }
+function  $_main() {
+@start
+
+%p =l alloc8 8
+%___tmpvar0 =l call $malloc(l 8)
+storel %___tmpvar0, %p
+%___tmpvar1 =l loadl %p
+storel 2, %___tmpvar1
+%___tmpvar3 =l loadl %p
+%___tmpvar2 =l add %___tmpvar3, 4
+storel 4, %___tmpvar2
+%___tmpvar6 =l loadl %p
+%___tmpvar5 =l add %___tmpvar6, 4
+%___tmpvar4 =w loadw %___tmpvar5
+call $printf(l $___cnst0, ..., w %___tmpvar4)
+ret
+}
+
+
+export function w $main() {
+@start
+  call $_main()
+  ret 0
+}

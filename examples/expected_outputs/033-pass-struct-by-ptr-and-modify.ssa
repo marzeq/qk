@@ -1,0 +1,58 @@
+data $___cnst0 = { b "Point(%d, %d)\n", b 0 }
+type :Point = { w, w,}
+function  $setNewPos(l %___tmpvar0, w %___tmpvar1, w %___tmpvar2) {
+@start
+%p =l alloc8 8
+storel %___tmpvar0, %p
+%nx =l alloc4 4
+storew %___tmpvar1, %nx
+%ny =l alloc4 4
+storew %___tmpvar2, %ny
+
+%___tmpvar3 =w loadw %nx
+%___tmpvar4 =l loadl %p
+%___tmpvar5 =l add %___tmpvar4, 0
+storew %___tmpvar3, %___tmpvar5
+%___tmpvar6 =w loadw %ny
+%___tmpvar7 =l loadl %p
+%___tmpvar8 =l add %___tmpvar7, 4
+storew %___tmpvar6, %___tmpvar8
+ret
+}
+function  $printPoint(:Point %___tmpvar0) {
+@start
+%p =l alloc4 8
+blit %___tmpvar0, %p, 8
+
+%___tmpvar1 =l add %p, 0
+%___tmpvar2 =w loadw %___tmpvar1
+%___tmpvar3 =l add %p, 4
+%___tmpvar4 =w loadw %___tmpvar3
+call $printf(l $___cnst0, ..., w %___tmpvar2, w %___tmpvar4)
+ret
+}
+function  $_main() {
+@start
+
+%p =l alloc4 8
+%___tmpvar0 =l alloc4 8
+%___tmpvar1 =l add %___tmpvar0, 0
+storew 10, %___tmpvar1
+%___tmpvar2 =l add %___tmpvar0, 4
+storew 20, %___tmpvar2
+blit %___tmpvar0, %p, 8
+%___tmpvar3 =l copy %p
+call $printPoint(:Point %___tmpvar3)
+%___tmpvar4 =l copy %p
+call $setNewPos(l %___tmpvar4, w 30, w 40)
+%___tmpvar5 =l copy %p
+call $printPoint(:Point %___tmpvar5)
+ret
+}
+
+
+export function w $main() {
+@start
+  call $_main()
+  ret 0
+}

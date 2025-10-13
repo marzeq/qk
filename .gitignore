@@ -4,7 +4,5 @@ test
 *.so
 *.a
 test.qk
-*.ssa
-*.s
 a.out
 quokka
