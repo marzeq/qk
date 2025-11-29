@@ -1,6 +1,8 @@
 package typechecker
 
 import (
+	"slices"
+
 	"github.com/marzeq/quokka/parser"
 	"github.com/marzeq/quokka/shared"
 )
@@ -12,7 +14,7 @@ type ModuleSignatures struct {
 
 type ModulesSignatures map[string]*ModuleSignatures
 
-func (ms ModulesSignatures) LookupType(module string, typeName string, lookingFrom string, ignorePubCheckA ...bool) (shared.Type, bool) {
+func (ms ModulesSignatures) LookupType(module string, typeName string, lookingFrom string, canImportMods []string, ignorePubCheckA ...bool) (shared.Type, bool) {
 	ignorePubCheck := len(ignorePubCheckA) > 0 && ignorePubCheckA[0]
 	var t shared.Type
 	var ok bool
@@ -33,6 +35,10 @@ func (ms ModulesSignatures) LookupType(module string, typeName string, lookingFr
 			}
 		}
 	} else {
+		if canImportMods != nil && !slices.Contains(canImportMods, module) {
+			return nil, false
+		}
+
 		if m, exists := ms[module]; exists {
 			t, ok = m.TypeTable.Lookup(typeName)
 		}
@@ -52,7 +58,7 @@ func (ms ModulesSignatures) LookupType(module string, typeName string, lookingFr
 	return t, true
 }
 
-func (ms ModulesSignatures) LookupFunction(module string, funcName string, lookingFrom string, ignorePubCheckA ...bool) (*FunctionSig, bool) {
+func (ms ModulesSignatures) LookupFunction(module string, funcName string, lookingFrom string, canImportMods []string, ignorePubCheckA ...bool) (*FunctionSig, bool) {
 	ignorePubCheck := len(ignorePubCheckA) > 0 && ignorePubCheckA[0]
 	var f *FunctionSig
 	var ok bool
@@ -98,7 +104,7 @@ func (ms ModulesSignatures) DefineFunction(module string, funcSig *FunctionSig) 
 	return m.Functions.Define(funcSig.Name, funcSig)
 }
 
-func (ms ModulesSignatures) CollectSignaturesFromRootNode(ast *parser.RootNode) (string, error) {
+func (ms ModulesSignatures) CollectSignaturesFromRootNode(ast *parser.RootNode, canImportMods []string) (string, error) {
 	moduleForAst := ""
 	for i, n := range ast.Body {
 		switch n.(type) {
@@ -128,7 +134,7 @@ func (ms ModulesSignatures) CollectSignaturesFromRootNode(ast *parser.RootNode) 
 				}
 			}
 		case *parser.FunctionDefNode:
-			sig, err := ms.ExtractFunctionSig(node, moduleForAst)
+			sig, err := ms.ExtractFunctionSig(node, moduleForAst, canImportMods)
 			if err != nil {
 				return "", err
 			}
@@ -136,14 +142,14 @@ func (ms ModulesSignatures) CollectSignaturesFromRootNode(ast *parser.RootNode) 
 				return "", shared.NewError(node.Loc, "function '%s' is already defined", sig.Name)
 			}
 		case *parser.StructDefNode:
-			if _, ok := ms.LookupType(moduleForAst, node.Name, moduleForAst); ok {
+			if _, ok := ms.LookupType(moduleForAst, node.Name, moduleForAst, canImportMods); ok {
 				return "", shared.NewError(node.Loc, "struct '%s' is already defined", node.Name)
 			}
 
 			fields := make([]shared.Pair[string, shared.Type], len(node.Fields))
 
 			for i, field := range node.Fields {
-				resolved, ok := ms.LookupType(field.Type.ModName, field.Type.Name, moduleForAst)
+				resolved, ok := ms.LookupType(field.Type.ModName, field.Type.Name, moduleForAst, canImportMods)
 				if !ok {
 					return "", shared.NewError(field.Type.Loc, "field '%s' has undefined type '%s'", field.Name, field.Type)
 				}
@@ -165,11 +171,11 @@ func (ms ModulesSignatures) CollectSignaturesFromRootNode(ast *parser.RootNode) 
 	return moduleForAst, nil
 }
 
-func (ms ModulesSignatures) ExtractFunctionSig(functionNode *parser.FunctionDefNode, currMod string) (*FunctionSig, error) {
+func (ms ModulesSignatures) ExtractFunctionSig(functionNode *parser.FunctionDefNode, currMod string, canImportMods []string) (*FunctionSig, error) {
 	var retType shared.Type
 	rtNode := functionNode.RetType.Type
 	if rtNode != nil {
-		r, ok := ms.LookupType(rtNode.ModName, rtNode.Name, currMod)
+		r, ok := ms.LookupType(rtNode.ModName, rtNode.Name, currMod, canImportMods)
 		if !ok {
 			return nil, shared.NewError(functionNode.RetType.Type.Loc, "function '%s' has undefined return type '%s'", functionNode.Name, rtNode)
 		}
@@ -190,7 +196,7 @@ func (ms ModulesSignatures) ExtractFunctionSig(functionNode *parser.FunctionDefN
 
 	argTypes := make([]FunctionSigArg, len(functionNode.Args))
 	for i, arg := range functionNode.Args {
-		resolved, ok := ms.LookupType(arg.Type.ModName, arg.Type.Name, currMod)
+		resolved, ok := ms.LookupType(arg.Type.ModName, arg.Type.Name, currMod, canImportMods)
 		if !ok {
 			return nil, shared.NewError(arg.Type.Loc, "parameter '%s' has undefined type '%s'", arg.Name, arg.Type)
 		}

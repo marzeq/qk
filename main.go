@@ -169,7 +169,7 @@ func main() {
 	moduleToFiles := make(map[string][]string)
 
 	for _, f := range files {
-		mod, err := ms.CollectSignaturesFromRootNode(dg.ASTs[f])
+		mod, err := ms.CollectSignaturesFromRootNode(dg.ASTs[f], typechecker.CollectImports(dg.ASTs[f]))
 		_check(err)
 		moduleToFiles[mod] = append(moduleToFiles[mod], f)
 	}
@@ -214,7 +214,7 @@ func main() {
 
 	switch pathExt {
 	case "":
-		mainSig, ok := ms.LookupFunction("", "main", "", false)
+		mainSig, ok := ms.LookupFunction("", "main", "", nil, false)
 		if !ok {
 			fmt.Println("no main function found in the default module")
 			os.Exit(1)

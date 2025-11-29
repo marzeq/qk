@@ -46,6 +46,7 @@ type TypeChecker struct {
 	VarTable *shared.SymbolTable[*VarSig]
 	ModSigs  ModulesSignatures
 	Mod      string
+	Imports  []string
 }
 
 func NewTypeChecker(mod string, ms ModulesSignatures) *TypeChecker {
@@ -56,11 +57,22 @@ func NewTypeChecker(mod string, ms ModulesSignatures) *TypeChecker {
 	}
 }
 
+func CollectImports(rn *parser.RootNode) []string {
+	imports := []string{}
+	for _, n := range rn.Body {
+		if imn, ok := n.(*parser.ImportNode); ok {
+			imports = append(imports, imn.Modules...)
+		}
+	}
+	return imports
+}
+
 func (tc *TypeChecker) TypeCheck(ast *parser.RootNode) (*parser.RootNode, error) {
+	tc.Imports = CollectImports(ast)
 	for _, n := range ast.Body {
 		switch node := n.(type) {
 		case *parser.FunctionDefNode:
-			sig, ok := tc.ModSigs.LookupFunction(tc.Mod, node.Name, tc.Mod, true)
+			sig, ok := tc.ModSigs.LookupFunction(tc.Mod, node.Name, tc.Mod, tc.Imports, true)
 			if !ok {
 				return nil, shared.NewError(node.Loc, "fatal: function %s should have been in the signature table", node.Name)
 			}
@@ -397,7 +409,7 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
 		}
 
 	case *parser.CastNode:
-		tpe, ok := tc.ModSigs.LookupType(exprNode.ToType.ModName, exprNode.ToType.Name, tc.Mod)
+		tpe, ok := tc.ModSigs.LookupType(exprNode.ToType.ModName, exprNode.ToType.Name, tc.Mod, tc.Imports)
 		if !ok {
 			return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "no such type '%s'", tpe)
 		}
@@ -482,7 +494,7 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
 		if exprNode.Name.Ident.Next != nil {
 			return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Name.Loc, "struct name cannot be qualified")
 		}
-		structType, ok := tc.ModSigs.LookupType(exprNode.Name.ModName, exprNode.Name.Ident.Name, tc.Mod)
+		structType, ok := tc.ModSigs.LookupType(exprNode.Name.ModName, exprNode.Name.Ident.Name, tc.Mod, tc.Imports)
 		if !ok {
 			return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "no such struct type '%s'", exprNode.Name.Ident)
 		}
@@ -520,7 +532,7 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
 }
 
 func (tc *TypeChecker) typeCheckFunctionCall(funccallNode *parser.FunctionCallNode) (shared.Type, error) {
-	fsig, ok := tc.ModSigs.LookupFunction(funccallNode.Name.ModName, funccallNode.Name.Ident.Name, tc.Mod)
+	fsig, ok := tc.ModSigs.LookupFunction(funccallNode.Name.ModName, funccallNode.Name.Ident.Name, tc.Mod, tc.Imports)
 	if !ok {
 		return shared.PRIMITIVE_VOID, shared.NewError(funccallNode.Name.Loc, "undefined function '%s'", funccallNode.Name)
 	}
@@ -557,7 +569,7 @@ func (tc *TypeChecker) typeCheckDeclaration(declNode *parser.DeclarationNode) (s
 
 	if declNode.Type != nil {
 		varTypeStr := declNode.Type.Name
-		vt, ok := tc.ModSigs.LookupType(declNode.Type.ModName, varTypeStr, tc.Mod)
+		vt, ok := tc.ModSigs.LookupType(declNode.Type.ModName, varTypeStr, tc.Mod, tc.Imports)
 		if !ok {
 			return "", nil, shared.NewError(declNode.Type.Loc, "variable '%s' has undefined type '%s'", declNode.Name, varTypeStr)
 		}

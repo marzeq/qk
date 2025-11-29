@@ -149,7 +149,7 @@ func (cg *CodeGen) GenerateFuncIR(funcNode *parser.FunctionDefNode) (string, []s
 	epilogue := ""
 	gsetups := []string{}
 
-	fsig, ok := cg.modSigs.LookupFunction(cg.mod, funcNode.Name, cg.mod, true)
+	fsig, ok := cg.modSigs.LookupFunction(cg.mod, funcNode.Name, cg.mod, nil, true)
 	if !ok {
 		return "", nil, shared.NewError(funcNode.Loc, "fatal: function %s should have been in the signature table", funcNode.Name)
 	}
@@ -386,7 +386,7 @@ func (cg *CodeGen) GenerateStmtIR(stmtNd parser.Node, last bool, loopBegin, loop
 		}
 
 	case *parser.FunctionCallNode:
-		fsig, ok := cg.modSigs.LookupFunction(stmtNode.Name.ModName, stmtNode.Name.Ident.Name, cg.mod)
+		fsig, ok := cg.modSigs.LookupFunction(stmtNode.Name.ModName, stmtNode.Name.Ident.Name, cg.mod, nil)
 		if !ok {
 			return "", nil, nil, shared.NewError(stmtNode.GetLoc(), "fatal: function %s not found in signature table", stmtNode.Name)
 		}
@@ -732,7 +732,7 @@ func (cg *CodeGen) GenerateExprIR(eNode parser.ExpressionNode) (string, []string
 		}
 
 	case *parser.FunctionCallNode:
-		fsig, ok := cg.modSigs.LookupFunction(exprNode.Name.ModName, exprNode.Name.Ident.Name, cg.mod)
+		fsig, ok := cg.modSigs.LookupFunction(exprNode.Name.ModName, exprNode.Name.Ident.Name, cg.mod, nil)
 		if !ok {
 			return "", nil, nil, "", shared.NewError(exprNode.GetLoc(), "fatal: function %s not found in signature table", exprNode.Name)
 		}
@@ -999,7 +999,7 @@ func (cg *CodeGen) GenerateExprIR(eNode parser.ExpressionNode) (string, []string
 		tpe = mapTypeToIRType(exprNode.FinalExpr.GetType())
 
 	case *parser.CastNode:
-		targetType, _ := cg.modSigs.LookupType(exprNode.ToType.ModName, exprNode.ToType.Name, cg.mod)
+		targetType, _ := cg.modSigs.LookupType(exprNode.ToType.ModName, exprNode.ToType.Name, cg.mod, nil)
 		for i := exprNode.ToType.PointerLevel; i > 0; i-- {
 			targetType = shared.Pointer{To: targetType}
 		}
