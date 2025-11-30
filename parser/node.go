@@ -80,14 +80,23 @@ type BoolLiteralNode struct {
 func (n BoolLiteralNode) GetLoc() shared.Location { return n.Loc }
 func (n BoolLiteralNode) GetType() shared.Type    { return n.ExprType }
 
-type NumberLiteralNode struct {
+type IntegerLiteralNode struct {
 	Value    string
 	Loc      shared.Location
 	ExprType shared.Type
 }
 
-func (n NumberLiteralNode) GetLoc() shared.Location { return n.Loc }
-func (n NumberLiteralNode) GetType() shared.Type    { return n.ExprType }
+func (n IntegerLiteralNode) GetLoc() shared.Location { return n.Loc }
+func (n IntegerLiteralNode) GetType() shared.Type    { return n.ExprType }
+
+type FloatLiteralNode struct {
+	Value    string
+	Loc      shared.Location
+	ExprType shared.Type
+}
+
+func (n FloatLiteralNode) GetLoc() shared.Location { return n.Loc }
+func (n FloatLiteralNode) GetType() shared.Type    { return n.ExprType }
 
 type StringLiteralNode struct {
 	Value    string

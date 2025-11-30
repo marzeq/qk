@@ -4,7 +4,7 @@ function  $_main() {
 
 
 %a =l alloc4 4
-%___tmpvar0 =l add 2, 2
+%___tmpvar0 =w add 2, 2
 storew %___tmpvar0, %a
 
 %b =l alloc4 4

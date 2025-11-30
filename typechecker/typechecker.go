@@ -1,6 +1,8 @@
 package typechecker
 
 import (
+	"fmt"
+
 	"github.com/marzeq/quokka/parser"
 	"github.com/marzeq/quokka/shared"
 	"github.com/marzeq/quokka/tokeniser"
@@ -68,6 +70,7 @@ func CollectImports(rn *parser.RootNode) []string {
 }
 
 func (tc *TypeChecker) TypeCheck(ast *parser.RootNode) (*parser.RootNode, error) {
+	fmt.Print()
 	tc.Imports = CollectImports(ast)
 	for _, n := range ast.Body {
 		switch node := n.(type) {
@@ -258,8 +261,17 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
 		}
 		return gotType, nil
 
-	case *parser.NumberLiteralNode:
+	case *parser.IntegerLiteralNode:
 		exprType := shared.PRIMITIVE_UNTYPED_INT
+		if expectedType != shared.PRIMITIVE_VOID && shared.CanCoerceTo(exprType, expectedType) {
+			exprNode.ExprType = expectedType
+			return expectedType, nil
+		}
+		exprNode.ExprType = exprType
+		return exprType, nil
+
+	case *parser.FloatLiteralNode:
+		exprType := shared.PRIMITIVE_F64
 		if expectedType != shared.PRIMITIVE_VOID && shared.CanCoerceTo(exprType, expectedType) {
 			exprNode.ExprType = expectedType
 			return expectedType, nil
@@ -371,36 +383,59 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
 		case parser.BINARY_OP_EQUAL, parser.BINARY_OP_NOT_EQUAL,
 			parser.BINARY_OP_LESS, parser.BINARY_OP_LESS_EQUAL,
 			parser.BINARY_OP_GREATER, parser.BINARY_OP_GREATER_EQUAL:
+
 			if !shared.IsNumericType(leftType) || !shared.IsNumericType(rightType) {
 				return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "operator cannot be applied to operands")
 			}
+
 			exprNode.ExprType = shared.PRIMITIVE_BOOL
 			return shared.PRIMITIVE_BOOL, nil
 
 		case parser.BINARY_OP_ADD, parser.BINARY_OP_SUBTRACT,
 			parser.BINARY_OP_MULTIPLY, parser.BINARY_OP_DIVIDE,
 			parser.BINARY_OP_MODULO:
-			if (leftType.IsPointer() && shared.IsNumericType(rightType)) || (rightType.IsPointer() && shared.IsNumericType(leftType)) {
+
+			if (leftType.IsPointer() && shared.IsIntegerType(rightType)) ||
+				(rightType.IsPointer() && shared.IsIntegerType(leftType)) {
+
 				if rightType.IsPointer() {
 					if leftType.Compare(shared.PRIMITIVE_UNTYPED_INT) {
-						SetNodeType(exprNode.Operand1, leftType)
+						SetNodeType(exprNode.Operand1, rightType)
 					}
 					exprNode.ExprType = rightType
-				}
-				if leftType.IsPointer() {
+				} else {
 					if rightType.Compare(shared.PRIMITIVE_UNTYPED_INT) {
-						SetNodeType(exprNode.Operand2, rightType)
+						SetNodeType(exprNode.Operand2, leftType)
 					}
 					exprNode.ExprType = leftType
 				}
 				return exprNode.ExprType, nil
 			}
-			if !shared.IsNumericType(leftType) || !shared.IsNumericType(rightType) {
-				return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "operator requires numeric operands or a pointer and a numeric operand")
+
+			if !(shared.IsNumericType(leftType) || shared.IsNumericType(rightType)) {
+				return shared.PRIMITIVE_VOID, shared.NewError(
+					exprNode.Loc,
+					"operator requires numeric operands or a pointer and an integer",
+				)
 			}
-			commonType := shared.BiggerNumericType(leftType, rightType)
-			SetNodeType(exprNode.Operand1, commonType)
-			SetNodeType(exprNode.Operand2, commonType)
+
+			if exprNode.Op == parser.BINARY_OP_MODULO &&
+				(shared.IsFloatType(leftType) || shared.IsFloatType(rightType)) {
+				return shared.PRIMITIVE_VOID, shared.NewError(
+					exprNode.Loc,
+					"modulo operator requires integer operands",
+				)
+			}
+
+			var commonType shared.Type
+			if leftType.IsPointer() {
+				commonType = leftType
+			} else if rightType.IsPointer() {
+				commonType = rightType
+			} else {
+				commonType = shared.BiggerNumericType(leftType, rightType)
+			}
+
 			exprNode.ExprType = commonType
 			return commonType, nil
 
@@ -820,7 +855,9 @@ func SetNodeType(n parser.ExpressionNode, t shared.Type) {
 		node.ExprType = t
 	case *parser.BoolLiteralNode:
 		node.ExprType = t
-	case *parser.NumberLiteralNode:
+	case *parser.IntegerLiteralNode:
+		node.ExprType = t
+	case *parser.FloatLiteralNode:
 		node.ExprType = t
 	case *parser.StringLiteralNode:
 		node.ExprType = t

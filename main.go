@@ -26,7 +26,7 @@ func _check(err error) {
 
 func usage() {
 	prog := path.Base(os.Args[0])
-	fmt.Printf("Usage: %s -o <output file> [-lib] [-lf ...] <src files>\n", prog)
+	fmt.Printf("Usage: %s -o <output file> [-lf ...] <src files>\n", prog)
 }
 
 func runCmd(args ...string) error {

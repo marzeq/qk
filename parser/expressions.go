@@ -385,8 +385,34 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 
 	if p.Match(tokeniser.TOKEN_TYPE_NUMBER) {
 		nLit := p.Consume()
-		return &NumberLiteralNode{
-			Value: nLit.Value,
+		if !p.Match(tokeniser.TOKEN_TYPE_DOT) {
+			return &IntegerLiteralNode{
+				Value: nLit.Value,
+				Loc:   beginLoc,
+			}, nil
+		}
+		p.Inc()
+		if !p.Match(tokeniser.TOKEN_TYPE_NUMBER) {
+			return &FloatLiteralNode{
+				Value: nLit.Value + ".0",
+				Loc:   beginLoc,
+			}, nil
+		}
+		n2Lit := p.Consume()
+		return &FloatLiteralNode{
+			Value: nLit.Value + "." + n2Lit.Value,
+			Loc:   beginLoc,
+		}, nil
+	}
+
+	if p.Match(tokeniser.TOKEN_TYPE_DOT) {
+		p.Inc()
+		if !p.Match(tokeniser.TOKEN_TYPE_NUMBER) {
+			return nil, shared.NewError(p.PrevLoc(), "expected number after decimal point")
+		}
+		n2Lit := p.Consume()
+		return &FloatLiteralNode{
+			Value: "0." + n2Lit.Value,
 			Loc:   beginLoc,
 		}, nil
 	}

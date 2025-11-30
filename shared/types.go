@@ -29,10 +29,13 @@ func GetAlignOfType(t Type) int {
 	if t.Compare(PRIMITIVE_U64) || t.Compare(PRIMITIVE_I64) {
 		return 8
 	}
-	if t.Compare(PRIMITIVE_CHAR) {
+	if t.Compare(PRIMITIVE_F32) {
 		return 4
 	}
-	if t.Compare(PRIMITIVE_BOOL) {
+	if t.Compare(PRIMITIVE_F64) {
+		return 8
+	}
+	if t.Compare(PRIMITIVE_CHAR) || t.Compare(PRIMITIVE_BOOL) {
 		return 4
 	}
 	if _, ok := t.(Pointer); ok {
@@ -41,17 +44,12 @@ func GetAlignOfType(t Type) int {
 	if st, ok := t.(Struct); ok {
 		maxAlign := 1
 		for _, field := range st.Fields {
-			a := GetAlignOfType(field.R)
-			if a > maxAlign {
+			if a := GetAlignOfType(field.R); a > maxAlign {
 				maxAlign = a
 			}
 		}
-		if maxAlign == 0 {
-			maxAlign = 1
-		}
 		return maxAlign
 	}
-	// default conservative minimum
 	return 8
 }
 
@@ -68,10 +66,13 @@ func GetSizeOfType(t Type) int {
 	if t.Compare(PRIMITIVE_U64) || t.Compare(PRIMITIVE_I64) {
 		return 8
 	}
-	if t.Compare(PRIMITIVE_CHAR) {
+	if t.Compare(PRIMITIVE_F32) {
 		return 4
 	}
-	if t.Compare(PRIMITIVE_BOOL) {
+	if t.Compare(PRIMITIVE_F64) {
+		return 8
+	}
+	if t.Compare(PRIMITIVE_CHAR) || t.Compare(PRIMITIVE_BOOL) {
 		return 4
 	}
 	if st, ok := t.(Struct); ok {
@@ -82,7 +83,7 @@ func GetSizeOfType(t Type) int {
 			if a > maxAlign {
 				maxAlign = a
 			}
-			offset = alignUp(offset, a) // pad before the field if needed
+			offset = alignUp(offset, a)
 			offset += GetSizeOfType(field.R)
 		}
 		return alignUp(offset, maxAlign)
@@ -102,7 +103,17 @@ func IsNumericType(t Type) bool {
 		t.Compare(PRIMITIVE_I32) ||
 		t.Compare(PRIMITIVE_U64) ||
 		t.Compare(PRIMITIVE_I64) ||
+		t.Compare(PRIMITIVE_F32) ||
+		t.Compare(PRIMITIVE_F64) ||
 		t.Compare(PRIMITIVE_UNTYPED_INT)
+}
+
+func IsFloatType(t Type) bool {
+	return t.Compare(PRIMITIVE_F32) || t.Compare(PRIMITIVE_F64)
+}
+
+func IsIntegerType(t Type) bool {
+	return IsNumericType(t) && !IsFloatType(t) && !t.Compare(PRIMITIVE_UNTYPED_INT)
 }
 
 func IsUnsignedType(ts ...Type) bool {
@@ -130,6 +141,13 @@ func IsSignedType(ts ...Type) bool {
 }
 
 func BiggerNumericType(t1, t2 Type) Type {
+	if t1.Compare(PRIMITIVE_F64) || t2.Compare(PRIMITIVE_F64) {
+		return PRIMITIVE_F64
+	}
+	if t1.Compare(PRIMITIVE_F32) || t2.Compare(PRIMITIVE_F32) {
+		return PRIMITIVE_F32
+	}
+
 	if t1.Compare(PRIMITIVE_U64) || t2.Compare(PRIMITIVE_U64) {
 		return PRIMITIVE_U64
 	}
@@ -158,8 +176,7 @@ func BiggerNumericType(t1, t2 Type) Type {
 }
 
 func CanCoerceTo(t1, t2 Type) bool {
-	if t1.Compare(PRIMITIVE_UNTYPED_INT) && IsNumericType(t2) ||
-		t2.Compare(PRIMITIVE_UNTYPED_INT) && IsNumericType(t1) {
+	if t1.Compare(PRIMITIVE_UNTYPED_INT) && IsNumericType(t2) {
 		return true
 	}
 
@@ -167,7 +184,15 @@ func CanCoerceTo(t1, t2 Type) bool {
 		return true
 	}
 
-	if (IsSignedType(t1, t2) || IsUnsignedType(t1, t2)) && BiggerNumericType(t1, t2).Compare(t2) {
+	// integer widening
+	if IsIntegerType(t1) && IsIntegerType(t2) &&
+		BiggerNumericType(t1, t2).Compare(t2) {
+		return true
+	}
+
+	// float widening
+	if IsFloatType(t1) && IsFloatType(t2) &&
+		BiggerNumericType(t1, t2).Compare(t2) {
 		return true
 	}
 
@@ -185,7 +210,7 @@ func CanCastTo(t1, t2 Type) bool {
 		return true
 	}
 
-	// numeric <-> numeric
+	// numeric <-> numeric (includes int <-> float)
 	if IsNumericType(t1) && IsNumericType(t2) {
 		return true
 	}
@@ -216,6 +241,9 @@ const (
 	PRIMITIVE_I16 Primitive = "i16"
 	PRIMITIVE_I32 Primitive = "i32"
 	PRIMITIVE_I64 Primitive = "i64"
+
+	PRIMITIVE_F32 Primitive = "f32"
+	PRIMITIVE_F64 Primitive = "f64"
 
 	PRIMITIVE_BOOL Primitive = "bool"
 
@@ -253,6 +281,10 @@ func GetPrimitive(name string) (Primitive, bool) {
 		return PRIMITIVE_I32, true
 	case string(PRIMITIVE_I64):
 		return PRIMITIVE_I64, true
+	case string(PRIMITIVE_F32):
+		return PRIMITIVE_F32, true
+	case string(PRIMITIVE_F64):
+		return PRIMITIVE_F64, true
 	case string(PRIMITIVE_BOOL):
 		return PRIMITIVE_BOOL, true
 	case string(PRIMITIVE_CHAR):

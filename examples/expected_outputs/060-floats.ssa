@@ -1,0 +1,99 @@
+type :std__string = { l, l,}
+function  $std__exit(w %___tmpvar0) {
+@start
+%status =l alloc4 4
+storew %___tmpvar0, %status
+
+%___tmpvar1 =w loadw %status
+call $_exit(w %___tmpvar1)
+ret
+}
+function l $std__string_new(l %___tmpvar0) {
+@start
+%s =l alloc8 8
+storel %___tmpvar0, %s
+
+%n =l alloc8 8
+%___tmpvar2 =l loadl %s
+%___tmpvar1 =l call $strlen(l %___tmpvar2)
+storel %___tmpvar1, %n
+%buf =l alloc8 8
+%___tmpvar4 =l loadl %n
+%___tmpvar3 =l call $malloc(l %___tmpvar4)
+storel %___tmpvar3, %buf
+%___tmpvar5 =l loadl %buf
+%___tmpvar6 =l loadl %s
+%___tmpvar7 =l loadl %n
+call $strncpy(l %___tmpvar5, l %___tmpvar6, l %___tmpvar7)
+%str =l alloc8 16
+%___tmpvar8 =l alloc8 16
+%___tmpvar9 =l loadl %buf
+%___tmpvar10 =l add %___tmpvar8, 0
+storel %___tmpvar9, %___tmpvar10
+%___tmpvar11 =l loadl %n
+%___tmpvar12 =l add %___tmpvar8, 8
+storel %___tmpvar11, %___tmpvar12
+blit %___tmpvar8, %str, 16
+%___tmpvar13 =l copy %str
+ret %___tmpvar13
+}
+function  $std__string_free(l %___tmpvar0) {
+@start
+%s =l alloc8 8
+storel %___tmpvar0, %s
+
+%___tmpvar1 =l loadl %s
+%___tmpvar2 =l add %___tmpvar1, 0
+%___tmpvar3 =l loadl %___tmpvar2
+call $free(l %___tmpvar3)
+ret
+}
+
+type :std__string = { l, l,}
+function  $_main() {
+@start
+
+%a =l alloc4 4
+storew 7, %a
+%b =l alloc8 8
+stored d_2.0, %b
+%sum =l alloc8 8
+%___tmpvar1 =w loadw %a
+%___tmpvar3 =d swtof %___tmpvar1
+%___tmpvar2 =d loadd %b
+%___tmpvar0 =d add %___tmpvar3, %___tmpvar2
+stored %___tmpvar0, %sum
+%difference =l alloc8 8
+%___tmpvar5 =w loadw %a
+%___tmpvar7 =d swtof %___tmpvar5
+%___tmpvar6 =d loadd %b
+%___tmpvar4 =d sub %___tmpvar7, %___tmpvar6
+stored %___tmpvar4, %difference
+%product =l alloc8 8
+%___tmpvar9 =w loadw %a
+%___tmpvar11 =d swtof %___tmpvar9
+%___tmpvar10 =d loadd %b
+%___tmpvar8 =d mul %___tmpvar11, %___tmpvar10
+stored %___tmpvar8, %product
+%quotient =l alloc8 8
+%___tmpvar13 =w loadw %a
+%___tmpvar15 =d swtof %___tmpvar13
+%___tmpvar14 =d loadd %b
+%___tmpvar12 =d div %___tmpvar15, %___tmpvar14
+stored %___tmpvar12, %quotient
+%castedback =l alloc4 4
+%___tmpvar17 =w loadw %a
+%___tmpvar19 =d swtof %___tmpvar17
+%___tmpvar18 =d loadd %b
+%___tmpvar16 =d div %___tmpvar19, %___tmpvar18
+%___tmpvar20 =w dtoui %___tmpvar16
+storew %___tmpvar20, %castedback
+ret
+}
+
+
+export function w $main() {
+@start
+  call $_main()
+  ret 0
+}

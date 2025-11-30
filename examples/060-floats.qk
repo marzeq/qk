@@ -1,0 +1,13 @@
+import("std")
+
+let main() = {
+  let a = 7
+  let b = 2.0
+
+  let sum = a + b
+  let difference = a - b
+  let product = a * b
+  let quotient = a / b
+
+  let castedback = (a/b) as u32
+}

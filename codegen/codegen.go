@@ -669,6 +669,18 @@ func (cg *CodeGen) EmitFieldAccess(baseVar string, field *parser.IdentifierNode,
 	}
 }
 
+func (cg *CodeGen) IntToFloat(intVar string, intType, floatType shared.Type) (string, []string) {
+	irs := []string{}
+	y := cg.GetTmpVar()
+	sign := "s"
+	if !shared.IsSignedType(intType) {
+		sign = "u"
+	}
+	irt := mapTypeToIRType(intType)
+	irs = append(irs, fmt.Sprintf("%s =%s %s%stof %s", y, mapTypeToIRType(floatType), sign, irt, intVar))
+	return y, irs
+}
+
 func (cg *CodeGen) GenerateExprIR(eNode parser.ExpressionNode) (string, []string, []string, string, error) {
 	val := ""
 	setups := []string{}
@@ -700,8 +712,12 @@ func (cg *CodeGen) GenerateExprIR(eNode parser.ExpressionNode) (string, []string
 		setups = append(setups, irs...)
 		val = tnme
 
-	case *parser.NumberLiteralNode:
+	case *parser.IntegerLiteralNode:
 		val = exprNode.Value
+
+	case *parser.FloatLiteralNode:
+		irt := mapTypeToIRType(exprNode.GetType())
+		val = irt + "_" + exprNode.Value
 
 	case *parser.NilLiteralNode:
 		val = "0"
@@ -791,8 +807,6 @@ func (cg *CodeGen) GenerateExprIR(eNode parser.ExpressionNode) (string, []string
 		setups = append(setups, setup)
 
 	case *parser.BinaryOpNode:
-		tpe = mapTypeToIRType(exprNode.Operand1.GetType())
-
 		op := ""
 		switch exprNode.Op {
 		case parser.BINARY_OP_ADD:
@@ -852,6 +866,15 @@ func (cg *CodeGen) GenerateExprIR(eNode parser.ExpressionNode) (string, []string
 		v2, st2, gst2, _, err := cg.GenerateExprIR(exprNode.Operand2)
 		if err != nil {
 			return "", nil, nil, "", err
+		}
+		if shared.IsFloatType(exprNode.Operand1.GetType()) && !shared.IsFloatType(exprNode.Operand2.GetType()) {
+			v2Conv, convSts := cg.IntToFloat(v2, exprNode.Operand2.GetType(), exprNode.Operand1.GetType())
+			v2 = v2Conv
+			st2 = append(st2, convSts...)
+		} else if !shared.IsFloatType(exprNode.Operand1.GetType()) && shared.IsFloatType(exprNode.Operand2.GetType()) {
+			v1Conv, convSts := cg.IntToFloat(v1, exprNode.Operand1.GetType(), exprNode.Operand2.GetType())
+			v1 = v1Conv
+			st1 = append(st1, convSts...)
 		}
 		setup := fmt.Sprintf("%s =%s %s %s, %s", val, tpe, op, v1, v2)
 		setups = append(setups, st1...)
@@ -1029,21 +1052,40 @@ func (cg *CodeGen) GenerateExprIR(eNode parser.ExpressionNode) (string, []string
 			} else if sourceIRType == "l" && targetIRType == "w" {
 				setups = append(setups, fmt.Sprintf("%s =w copy %s", tmpVar, currentVal))
 				currentVal = tmpVar
+			} else if sourceIRType == "w" && (targetIRType == "s" || targetIRType == "d") {
+				floatVar, convSts := cg.IntToFloat(currentVal, sourceType, targetType)
+				setups = append(setups, convSts...)
+				currentVal = floatVar
+			} else if (sourceIRType == "s" || sourceIRType == "d") && targetIRType == "w" {
+				sign := "s"
+				if !shared.IsSignedType(targetType) {
+					sign = "u"
+				}
+				setups = append(setups, fmt.Sprintf("%s =%s %sto%si %s", tmpVar, targetIRType, sourceIRType, sign, currentVal))
+				currentVal = tmpVar
+			} else if sourceIRType == "s" && targetIRType == "d" {
+				setups = append(setups, fmt.Sprintf("%s =%s exts %s", tmpVar, targetIRType, currentVal))
+				currentVal = tmpVar
+			} else if sourceIRType == "d" && targetIRType == "s" {
+				setups = append(setups, fmt.Sprintf("%s =%s truncd %s", tmpVar, targetIRType, currentVal))
+				currentVal = tmpVar
 			} else {
 				return "", nil, nil, "", shared.NewError(exprNode.Loc, "unsupported cast from %s to %s", sourceIRType, targetIRType)
 			}
 		}
 
-		mask, ext := getTruncateMaskAndExt(targetType)
-		if mask != 0 {
-			tmpTrunc := cg.GetTmpVar()
-			setups = append(setups, fmt.Sprintf("%s =w and %s, %d", tmpTrunc, currentVal, mask))
-			currentVal = tmpTrunc
+		if shared.IsIntegerType(targetType) {
+			mask, ext := getTruncateMaskAndExt(targetType)
+			if mask != 0 {
+				tmpTrunc := cg.GetTmpVar()
+				setups = append(setups, fmt.Sprintf("%s =w and %s, %d", tmpTrunc, currentVal, mask))
+				currentVal = tmpTrunc
 
-			if ext != "" {
-				tmpExt := cg.GetTmpVar()
-				setups = append(setups, fmt.Sprintf("%s =w %s %s", tmpExt, ext, currentVal))
-				currentVal = tmpExt
+				if ext != "" {
+					tmpExt := cg.GetTmpVar()
+					setups = append(setups, fmt.Sprintf("%s =w %s %s", tmpExt, ext, currentVal))
+					currentVal = tmpExt
+				}
 			}
 		}
 
@@ -1119,6 +1161,10 @@ func mapTypeToIRType(t shared.Type) string {
 		return "w"
 	case shared.PRIMITIVE_I64, shared.PRIMITIVE_U64:
 		return "l"
+	case shared.PRIMITIVE_F32:
+		return "s"
+	case shared.PRIMITIVE_F64:
+		return "d"
 	case shared.PRIMITIVE_UNTYPED_INT:
 		return "l"
 	default:
