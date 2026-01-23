@@ -7,20 +7,3 @@ pub let exit(status: i32) = { _exit(status) }
 
 pub let malloc(size: u64): *void = extern("malloc")
 pub let free(ptr: *void) = extern("free")
-
-pub struct string = {
-  data: *char,
-  len: u64,
-}
-
-let _strlen(s: *char): u64 = extern("strlen")
-let _strncpy(dest: *char, src: *char, n: u64): *char = extern("strncpy")
-
-pub let string_new(s: *char): *string = {
-  let n = _strlen(s)
-  let buf = malloc(n) as *char
-  _strncpy(buf, s, n)
-  let str = string{data=buf, len=n}
-  return &str
-}
-pub let string_free(s: *string) = { free(s.data as *void) }

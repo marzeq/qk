@@ -78,6 +78,7 @@ const (
 	KEYWORD_FALSE    KeywordType = "false"
 	KEYWORD_NIL      KeywordType = "nil"
 	KEYWORD_AS       KeywordType = "as"
+	KEYWORD_SIZEOF   KeywordType = "sizeof"
 )
 
 func (t Token) String() string {

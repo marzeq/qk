@@ -629,7 +629,7 @@ func (cg *CodeGen) EmitFieldAccess(baseVar string, field *parser.IdentifierNode,
 		}
 	}
 	if !found {
-		return "", nil, nil, shared.NewError(field.Next.Loc, "type has no field named '%s'", field.Next.Name)
+		return "", nil, nil, shared.NewError(field.Next.Loc, "type should have field '%s' but it does not. probable bug in typechecker", field.Next.Name)
 	}
 
 	layout := strct.GetLayout()
@@ -892,6 +892,29 @@ func (cg *CodeGen) GenerateExprIR(eNode parser.ExpressionNode) (string, []string
 			switch identNode := exprNode.Operand.(type) {
 			case *parser.IdentifierNode:
 				setups = append(setups, fmt.Sprintf("%s =l copy %%%s", val, varNameToIRName(identNode.Name)))
+			case *parser.StructLiteralNode:
+				tmp := cg.GetTmpVar()
+				setups = append(setups, fmt.Sprintf("%s =l %s", tmp, emitAllocForType(identNode.GetType(), 1)))
+				strct := identNode.GetType().(shared.Struct)
+				layout := strct.GetLayout()
+				for i, field := range strct.Fields {
+					fieldVal, st, gst, _, err := cg.GenerateExprIR(identNode.Fields[i].R)
+					if err != nil {
+						return "", nil, nil, "", err
+					}
+					setups = append(setups, st...)
+					gsetups = append(gsetups, gst...)
+					fieldOffset := layout.Offsets[i]
+					fieldAddr := cg.GetTmpVar()
+					setups = append(setups, fmt.Sprintf("%s =l add %s, %d", fieldAddr, tmp, fieldOffset))
+					switch field.R.(type) {
+					case shared.Struct:
+						setups = append(setups, fmt.Sprintf("blit %s, %s, %d", fieldVal, fieldAddr, field.R.(*shared.Struct).GetLayout().Size))
+					default:
+						setups = append(setups, fmt.Sprintf("store%s %s, %s", mapTypeToIRType(field.R), fieldVal, fieldAddr))
+					}
+				}
+				setups = append(setups, fmt.Sprintf("%s =l copy %s", val, tmp))
 			default:
 				return "", nil, nil, "", shared.NewError(exprNode.Loc, "cannot take address of non-variable expression")
 			}
@@ -1022,10 +1045,7 @@ func (cg *CodeGen) GenerateExprIR(eNode parser.ExpressionNode) (string, []string
 		tpe = mapTypeToIRType(exprNode.FinalExpr.GetType())
 
 	case *parser.CastNode:
-		targetType, _ := cg.modSigs.LookupType(exprNode.ToType.ModName, exprNode.ToType.Name, cg.mod, nil)
-		for i := exprNode.ToType.PointerLevel; i > 0; i-- {
-			targetType = shared.Pointer{To: targetType}
-		}
+		targetType, _ := cg.modSigs.LookupType(exprNode.ToType.ModName, exprNode.ToType.Name, exprNode.ToType.PointerLevel, cg.mod, nil)
 		targetIRType := mapTypeToIRType(targetType)
 		sourceType := exprNode.Operand.GetType()
 		sourceIRType := mapTypeToIRType(sourceType)
@@ -1090,6 +1110,17 @@ func (cg *CodeGen) GenerateExprIR(eNode parser.ExpressionNode) (string, []string
 		}
 
 		val = currentVal
+
+	case *parser.SizeOfNode:
+		nm := cg.GetTmpVar()
+		val = fmt.Sprintf("%s", nm)
+		tpegot, ok := cg.modSigs.LookupType(exprNode.Operand.ModName, exprNode.Operand.Name, exprNode.Operand.PointerLevel, cg.mod, nil)
+		if !ok {
+			return "", nil, nil, "", shared.NewError(exprNode.GetLoc(), "type %s not found for sizeof", exprNode.Operand)
+		}
+		size := shared.GetSizeOfType(tpegot)
+		setups = append(setups, fmt.Sprintf("%s =l copy %d", val, size))
+		tpe = "l"
 
 	case *parser.StructLiteralNode:
 		nm := cg.GetTmpVar()

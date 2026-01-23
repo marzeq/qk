@@ -33,6 +33,26 @@ func (p *Parser) ParseAsCast() (ExpressionNode, error) {
 	return left, nil
 }
 
+func (p *Parser) ParseSizeOfExpression() (ExpressionNode, error) {
+	beginLoc := p.CurrLoc()
+	if !p.Match(tokeniser.TOKEN_TYPE_KEYWORD) || p.Peek().Value != string(tokeniser.KEYWORD_SIZEOF) {
+		return nil, shared.NewError(p.PrevLoc(), "expected 'sizeof' keyword")
+	}
+	p.Inc()
+
+	for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
+		p.Inc()
+	}
+	typ, err := p.ParseType()
+	if err != nil {
+		return nil, err
+	}
+	return &SizeOfNode{
+		Operand: typ,
+		Loc:     beginLoc,
+	}, nil
+}
+
 func (p *Parser) ParseLogicalOr() (ExpressionNode, error) {
 	beginLoc := p.CurrLoc()
 	left, err := p.ParseLogicalAnd()
@@ -279,6 +299,14 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 			return nil, err
 		}
 
+		return expr, nil
+	}
+
+	if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == string(tokeniser.KEYWORD_SIZEOF) {
+		expr, err := p.ParseSizeOfExpression()
+		if err != nil {
+			return nil, err
+		}
 		return expr, nil
 	}
 

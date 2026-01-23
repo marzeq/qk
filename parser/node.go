@@ -242,6 +242,15 @@ type CastNode struct {
 func (n CastNode) GetLoc() shared.Location { return n.Loc }
 func (n CastNode) GetType() shared.Type    { return n.ExprType }
 
+type SizeOfNode struct {
+	Operand  *TypeNode
+	Loc      shared.Location
+	ExprType shared.Type
+}
+
+func (n SizeOfNode) GetLoc() shared.Location { return n.Loc }
+func (n SizeOfNode) GetType() shared.Type    { return n.ExprType }
+
 type ImportNode struct {
 	Modules []string
 	Loc     shared.Location

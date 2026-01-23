@@ -222,6 +222,17 @@ func CanCastTo(t1, t2 Type) bool {
 		}
 	}
 
+	// pointer <-> integer
+	if t1.IsPointer() {
+		if IsIntegerType(t2) || t2.Compare(PRIMITIVE_UNTYPED_INT) {
+			return true
+		}
+	} else if t2.IsPointer() {
+		if IsIntegerType(t1) || t1.Compare(PRIMITIVE_UNTYPED_INT) {
+			return true
+		}
+	}
+
 	return false
 }
 
