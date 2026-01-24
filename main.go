@@ -146,7 +146,7 @@ func main() {
 		defer os.RemoveAll(tmpDir)
 	} else {
 		tmpDir = buildDir
-		os.MkdirAll(tmpDir, 0755)
+		os.MkdirAll(tmpDir, 0o755)
 	}
 
 	t, err := tokeniser.NewTokeniserFromFile(srcFile)
@@ -234,8 +234,16 @@ func main() {
 		ir += "}\n"
 	}
 
+	cc := []string{os.Getenv("CC")}
+	if cc[0] == "" {
+		cc = []string{"cc"}
+	}
+	if cc[0] == "zig cc" {
+		cc = []string{"zig", "cc"}
+	}
+
 	ssaPath := path.Join(tmpDir, outBaseName+".ssa")
-	_check(os.WriteFile(ssaPath, []byte(ir), 0644))
+	_check(os.WriteFile(ssaPath, []byte(ir), 0o644))
 	if irOutput != "" {
 		_check(copyFile(ssaPath, irOutput))
 	}
@@ -247,7 +255,7 @@ func main() {
 	}
 
 	oPath := path.Join(tmpDir, outBaseName+".o")
-	_check(runCmd("cc", "-c", "-o", oPath, sPath))
+	_check(runCmd(slices.Concat(cc, []string{"-c", "-o", oPath, sPath})...))
 
 	switch pathExt {
 	case ".o":
@@ -255,13 +263,13 @@ func main() {
 	case ".a":
 		_check(runCmd("ar", "rcs", outFile, oPath))
 	case ".so":
-		args := append([]string{"cc", "-shared", "-o", outFile, oPath}, linkerFlags...)
+		args := slices.Concat(cc, append([]string{"cc", "-shared", "-o", outFile, oPath}, linkerFlags...))
 		_check(runCmd(args...))
 	case "":
 		if outFile == "" {
 			outFile = "a.out"
 		}
-		args := append([]string{"cc", "-o", outFile, oPath}, linkerFlags...)
+		args := slices.Concat(cc, append([]string{"-o", outFile, oPath}, linkerFlags...))
 		_check(runCmd(args...))
 	default:
 		fmt.Printf("unknown output file extension: %s\n", pathExt)
