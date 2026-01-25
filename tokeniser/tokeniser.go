@@ -317,6 +317,14 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 			t.AddToken(TOKEN_TYPE_CLOSE_CURLY, t.GetLoc())
 			t.Inc()
 			continue
+		case '[':
+			t.AddToken(TOKEN_TYPE_OPEN_SQUARE, t.GetLoc())
+			t.Inc()
+			continue
+		case ']':
+			t.AddToken(TOKEN_TYPE_CLOSE_SQUARE, t.GetLoc())
+			t.Inc()
+			continue
 		case '=':
 			if t.Next() == '=' {
 				t.AddToken(TOKEN_TYPE_EQUALS_EQUALS, t.GetLoc())

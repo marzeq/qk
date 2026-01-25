@@ -1,15 +1,19 @@
 package parser
 
 import (
+	"strconv"
+
 	"github.com/marzeq/quokka/shared"
 	"github.com/marzeq/quokka/tokeniser"
 )
 
-type Node interface{ GetLoc() shared.Location }
-type ExpressionNode interface {
-	Node
-	GetType() shared.Type
-}
+type (
+	Node           interface{ GetLoc() shared.Location }
+	ExpressionNode interface {
+		Node
+		GetType() shared.Type
+	}
+)
 
 type RootNode struct {
 	Body []Node
@@ -51,24 +55,35 @@ func (n ModuleAccessNode) String() string {
 }
 
 type TypeNode struct {
-	ModName      string
-	Name         string
-	PointerLevel int
-	Loc          shared.Location
+	ModName string
+	Name    string
+
+	PointerTo *TypeNode
+
+	ArrayTo  *TypeNode
+	ArrayLen int
+
+	Loc shared.Location
 }
 
 func (n TypeNode) GetLoc() shared.Location { return n.Loc }
 func (n TypeNode) String() string {
-	ret := ""
-	for i := 0; i < n.PointerLevel; i++ {
-		ret += "*"
+	if n.ArrayTo != nil {
+		if n.ArrayLen > 0 {
+			return "[" + n.ArrayTo.String() + ", " + strconv.Itoa(n.ArrayLen) + "]"
+		} else {
+			return "[" + n.ArrayTo.String() + "]"
+		}
 	}
+
+	if n.PointerTo != nil {
+		return "*" + n.PointerTo.String()
+	}
+
 	if n.ModName != "" {
-		ret += n.ModName
-		ret += ":"
+		return n.ModName + ":" + n.Name
 	}
-	ret += n.Name
-	return ret
+	return n.Name
 }
 
 type BoolLiteralNode struct {
@@ -121,7 +136,11 @@ type NilLiteralNode struct {
 }
 
 func (n NilLiteralNode) GetLoc() shared.Location { return n.Loc }
-func (n NilLiteralNode) GetType() shared.Type    { return shared.Pointer{To: shared.PRIMITIVE_VOID} }
+func (n NilLiteralNode) GetType() shared.Type {
+	return shared.Pointer{
+		To: shared.PRIMITIVE_VOID,
+	}
+}
 
 type StructLiteralNode struct {
 	Name     *ModuleAccessNode
@@ -132,6 +151,15 @@ type StructLiteralNode struct {
 
 func (n StructLiteralNode) GetLoc() shared.Location { return n.Loc }
 func (n StructLiteralNode) GetType() shared.Type    { return n.ExprType }
+
+type ArrayLiteralNode struct {
+	Elements []ExpressionNode
+	Loc      shared.Location
+	ExprType shared.Type
+}
+
+func (n ArrayLiteralNode) GetLoc() shared.Location { return n.Loc }
+func (n ArrayLiteralNode) GetType() shared.Type    { return n.ExprType }
 
 type FunctionCallNode struct {
 	Name     *ModuleAccessNode
@@ -176,6 +204,7 @@ const (
 	UNARY_OP_NEGATE
 	UNARY_OP_REFERENCE
 	UNARY_OP_DEREFERENCE
+	UNARY_OP_ARRAY_LEN
 )
 
 func (u UnaryOpType) String() string {
@@ -188,6 +217,8 @@ func (u UnaryOpType) String() string {
 		return "&"
 	case UNARY_OP_DEREFERENCE:
 		return "*"
+	case UNARY_OP_ARRAY_LEN:
+		return "[]"
 	default:
 		return "unknown"
 	}
@@ -202,6 +233,16 @@ type UnaryOpNode struct {
 
 func (n UnaryOpNode) GetLoc() shared.Location { return n.Loc }
 func (n UnaryOpNode) GetType() shared.Type    { return n.ExprType }
+
+type IndexExprNode struct {
+	Subject  ExpressionNode
+	Index    ExpressionNode
+	Loc      shared.Location
+	ExprType shared.Type
+}
+
+func (n IndexExprNode) GetLoc() shared.Location { return n.Loc }
+func (n IndexExprNode) GetType() shared.Type    { return n.ExprType }
 
 type BinaryOpType uint
 
@@ -343,6 +384,15 @@ type AssignmentNode struct {
 }
 
 func (n AssignmentNode) GetLoc() shared.Location { return n.Loc }
+
+type ArrayAssignmentNode struct {
+	Assignee ExpressionNode
+	Index    ExpressionNode
+	Value    ExpressionNode
+	Loc      shared.Location
+}
+
+func (n ArrayAssignmentNode) GetLoc() shared.Location { return n.Loc }
 
 type BlockNode struct {
 	Body []Node

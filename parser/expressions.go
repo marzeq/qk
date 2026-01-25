@@ -1,6 +1,8 @@
 package parser
 
 import (
+	"strconv"
+
 	"github.com/marzeq/quokka/shared"
 	"github.com/marzeq/quokka/tokeniser"
 )
@@ -137,8 +139,15 @@ func (p *Parser) ParseLogicalNot() (ExpressionNode, error) {
 
 func (p *Parser) ParseUnary() (ExpressionNode, error) {
 	beginLoc := p.CurrLoc()
-	if p.Match(tokeniser.TOKEN_TYPE_MINUS, tokeniser.TOKEN_TYPE_ASTERISK, tokeniser.TOKEN_TYPE_AMPERSAND) {
+
+	if p.Match(
+		tokeniser.TOKEN_TYPE_MINUS,
+		tokeniser.TOKEN_TYPE_ASTERISK,
+		tokeniser.TOKEN_TYPE_AMPERSAND,
+		tokeniser.TOKEN_TYPE_OPEN_SQUARE,
+	) {
 		op := p.Consume()
+
 		var val UnaryOpType
 		switch op.Type {
 		case tokeniser.TOKEN_TYPE_MINUS:
@@ -147,14 +156,25 @@ func (p *Parser) ParseUnary() (ExpressionNode, error) {
 			val = UNARY_OP_DEREFERENCE
 		case tokeniser.TOKEN_TYPE_AMPERSAND:
 			val = UNARY_OP_REFERENCE
+		case tokeniser.TOKEN_TYPE_OPEN_SQUARE:
+			val = UNARY_OP_ARRAY_LEN
 		}
+
 		for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
 			p.Inc()
 		}
+
 		expr, err := p.ParseUnary()
 		if err != nil {
 			return nil, err
 		}
+
+		if op.Type == tokeniser.TOKEN_TYPE_OPEN_SQUARE {
+			if !p.Expect(tokeniser.TOKEN_TYPE_CLOSE_SQUARE) {
+				return nil, shared.NewError(p.PrevLoc(), "expected ']'")
+			}
+		}
+
 		return &UnaryOpNode{
 			Op:      val,
 			Operand: expr,
@@ -162,7 +182,45 @@ func (p *Parser) ParseUnary() (ExpressionNode, error) {
 		}, nil
 	}
 
-	return p.ParseTerm()
+	return p.ParsePostfix()
+}
+
+func (p *Parser) ParsePostfix() (ExpressionNode, error) {
+	beginLoc := p.CurrLoc()
+
+	expr, err := p.ParseTerm()
+	if err != nil {
+		return nil, err
+	}
+
+	for p.Match(tokeniser.TOKEN_TYPE_OPEN_SQUARE) {
+		p.Inc()
+
+		for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
+			p.Inc()
+		}
+
+		index, err := p.ParseExpression()
+		if err != nil {
+			return nil, err
+		}
+
+		for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
+			p.Inc()
+		}
+
+		if !p.Expect(tokeniser.TOKEN_TYPE_CLOSE_SQUARE) {
+			return nil, shared.NewError(p.PrevLoc(), "expected ']'")
+		}
+
+		expr = &IndexExprNode{
+			Subject: expr,
+			Index:   index,
+			Loc:     beginLoc,
+		}
+	}
+
+	return expr, nil
 }
 
 func (p *Parser) ParseComparison() (ExpressionNode, error) {
@@ -172,7 +230,8 @@ func (p *Parser) ParseComparison() (ExpressionNode, error) {
 		return nil, err
 	}
 
-	for p.Match(tokeniser.TOKEN_TYPE_EQUALS_EQUALS, tokeniser.TOKEN_TYPE_NOT_EQUALS, tokeniser.TOKEN_TYPE_LESS, tokeniser.TOKEN_TYPE_GREATER, tokeniser.TOKEN_TYPE_LESS_EQUALS, tokeniser.TOKEN_TYPE_GREATER_EQUALS) {
+	for p.Match(tokeniser.TOKEN_TYPE_EQUALS_EQUALS, tokeniser.TOKEN_TYPE_NOT_EQUALS,
+		tokeniser.TOKEN_TYPE_LESS, tokeniser.TOKEN_TYPE_GREATER, tokeniser.TOKEN_TYPE_LESS_EQUALS, tokeniser.TOKEN_TYPE_GREATER_EQUALS) {
 		op := p.Consume()
 		var val BinaryOpType
 		switch op.Type {
@@ -343,7 +402,8 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 			p.Inc()
 
 			if ident.Next != nil {
-				return nil, shared.NewError(ident.Loc, "module name cannot be a qualified identifier")
+				return nil, shared.NewError(ident.Loc,
+					"module name cannot be a qualified identifier")
 			}
 
 			for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
@@ -391,6 +451,10 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 		}
 
 		return ident, nil
+	}
+
+	if p.Match(tokeniser.TOKEN_TYPE_OPEN_CURLY) {
+		return p.ParseArrayLiteral()
 	}
 
 	if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) {
@@ -544,7 +608,8 @@ func (p *Parser) ParseIfExpression() (*IfExprNode, error) {
 			p.Inc()
 		}
 
-		if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == string(tokeniser.KEYWORD_IF) {
+		if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) &&
+			p.Peek().Value == string(tokeniser.KEYWORD_IF) {
 			p.Consume()
 
 			for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
@@ -698,6 +763,38 @@ func (p *Parser) ParseStructLiteral(name *ModuleAccessNode) (*StructLiteralNode,
 	return node, nil
 }
 
+func (p *Parser) ParseArrayLiteral() (*ArrayLiteralNode, error) {
+	beginLoc := p.CurrLoc()
+	if !p.Expect(tokeniser.TOKEN_TYPE_OPEN_CURLY) {
+		return nil, shared.NewError(p.PrevLoc(), "expected '{' to start array literal")
+	}
+	var elements []ExpressionNode
+	for {
+		if p.Match(tokeniser.TOKEN_TYPE_CLOSE_CURLY) {
+			break
+		}
+		elem, err := p.ParseExpression()
+		if err != nil {
+			return nil, err
+		}
+		elements = append(elements, elem)
+		if !p.Match(tokeniser.TOKEN_TYPE_COMMA, tokeniser.TOKEN_TYPE_NEWLINE) {
+			break
+		}
+		p.Inc()
+		for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
+			p.Inc()
+		}
+	}
+	if !p.Expect(tokeniser.TOKEN_TYPE_CLOSE_CURLY) {
+		return nil, shared.NewError(p.PrevLoc(), "expected '}' to end array literal")
+	}
+	return &ArrayLiteralNode{
+		Elements: elements,
+		Loc:      beginLoc,
+	}, nil
+}
+
 func (p *Parser) ParseIdent() (*IdentifierNode, error) {
 	beginLoc := p.CurrLoc()
 	firstIdent, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_IDENT)
@@ -735,25 +832,85 @@ func (p *Parser) ParseIdent() (*IdentifierNode, error) {
 func (p *Parser) ParseType() (*TypeNode, error) {
 	beginLoc := p.CurrLoc()
 
-	pointerLevel := 0
+	var base *TypeNode
 	for p.Match(tokeniser.TOKEN_TYPE_ASTERISK) {
 		p.Inc()
-		pointerLevel++
+		base = &TypeNode{
+			PointerTo: base,
+			Loc:       beginLoc,
+		}
+	}
+
+	attachPointers := func(t *TypeNode) *TypeNode {
+		if base == nil {
+			return t
+		}
+		curr := base
+		for curr.PointerTo != nil {
+			curr = curr.PointerTo
+		}
+		curr.PointerTo = t
+		return base
 	}
 
 	if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) {
 		kw := p.Consume().Value
-		return &TypeNode{
-			Name:         kw,
-			PointerLevel: pointerLevel,
-			Loc:          beginLoc,
-		}, nil
+		return attachPointers(&TypeNode{
+			Name: kw,
+			Loc:  beginLoc,
+		}), nil
+	}
+
+	if p.Match(tokeniser.TOKEN_TYPE_OPEN_SQUARE) {
+		p.Inc()
+		for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
+			p.Inc()
+		}
+
+		elemType, err := p.ParseType()
+		if err != nil {
+			return nil, err
+		}
+
+		for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
+			p.Inc()
+		}
+
+		l := 0
+		if p.Match(tokeniser.TOKEN_TYPE_COMMA) {
+			p.Inc()
+			for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
+				p.Inc()
+			}
+			sizeToken, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_NUMBER)
+			if !ok {
+				return nil, shared.NewError(p.PrevLoc(), "expected array size")
+			}
+			l, err = strconv.Atoi(sizeToken.Value)
+			if err != nil || l <= 0 {
+				return nil, shared.NewError(sizeToken.Loc,
+					"invalid array size '%s'", sizeToken.Value)
+			}
+		}
+
+		if !p.Expect(tokeniser.TOKEN_TYPE_CLOSE_SQUARE) {
+			return nil, shared.NewError(p.PrevLoc(), "expected ']'")
+		}
+
+		tn := &TypeNode{
+			ArrayTo:  elemType,
+			ArrayLen: l,
+			Loc:      beginLoc,
+		}
+
+		return attachPointers(tn), nil
 	}
 
 	firstIdent, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_IDENT)
 	if !ok {
 		return nil, shared.NewError(p.PrevLoc(), "expected type name, module name or asterisk")
 	}
+
 	modName := ""
 	if p.Match(tokeniser.TOKEN_TYPE_COLON) {
 		p.Inc()
@@ -765,19 +922,16 @@ func (p *Parser) ParseType() (*TypeNode, error) {
 		if err != nil {
 			return nil, err
 		}
-		if pointerLevel > 0 && tn.PointerLevel > 0 {
-			return nil, shared.NewError(beginLoc, "you must either put all asterisks before or after the module name")
+		if base != nil && tn.PointerTo != nil {
+			return nil, shared.NewError(beginLoc,
+				"you must either put all asterisks before or after the module name")
 		}
 		tn.ModName = modName
-		tn.PointerLevel += pointerLevel
-		return tn, nil
+		return attachPointers(tn), nil
 	}
 
-	node := &TypeNode{
-		Name:         firstIdent.Value,
-		PointerLevel: pointerLevel,
-		Loc:          beginLoc,
-	}
-
-	return node, nil
+	return attachPointers(&TypeNode{
+		Name: firstIdent.Value,
+		Loc:  beginLoc,
+	}), nil
 }

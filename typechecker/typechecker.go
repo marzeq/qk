@@ -1,9 +1,17 @@
 package typechecker
 
 import (
+	"fmt"
+	"runtime"
+
 	"github.com/marzeq/quokka/parser"
 	"github.com/marzeq/quokka/shared"
 	"github.com/marzeq/quokka/tokeniser"
+)
+
+var (
+	_ = fmt.Println
+	_ = runtime.GOOS
 )
 
 type VarSig struct {
@@ -153,7 +161,8 @@ func (tc *TypeChecker) typeCheckBlock(blockNode *parser.BlockNode, sig *Function
 				return false, err
 			}
 			if ok := tc.VarTable.Define(varName, varSig); !ok {
-				return false, shared.NewError(node.Loc, "variable '%s' is already declared in this scope", varName)
+				return false, shared.NewError(node.Loc,
+					"variable '%s' is already declared in this scope", varName)
 			}
 
 		case *parser.FunctionDefNode:
@@ -161,6 +170,11 @@ func (tc *TypeChecker) typeCheckBlock(blockNode *parser.BlockNode, sig *Function
 
 		case *parser.AssignmentNode:
 			if err := tc.typeCheckAssignment(node); err != nil {
+				return false, err
+			}
+
+		case *parser.ArrayAssignmentNode:
+			if err := tc.typeCheckArrayAssignment(node); err != nil {
 				return false, err
 			}
 
@@ -184,10 +198,12 @@ func (tc *TypeChecker) typeCheckBlock(blockNode *parser.BlockNode, sig *Function
 					}
 
 					if !shared.CanCoerceTo(retType, sig.RetType) {
-						return false, shared.NewError(node.Loc, "wrong return type for function, expected '%s' got '%s'", sig.RetType, retType)
+						return false, shared.NewError(node.Loc,
+							"wrong return type for function, expected '%s' got '%s'", sig.RetType, retType)
 					}
 				} else if sig.RetType != shared.PRIMITIVE_VOID {
-					return false, shared.NewError(node.Loc, "wrong return type for function, expected '%s' got void", sig.RetType)
+					return false, shared.NewError(node.Loc,
+						"wrong return type for function, expected '%s' got void", sig.RetType)
 				}
 				foundReturn = true
 
@@ -197,7 +213,8 @@ func (tc *TypeChecker) typeCheckBlock(blockNode *parser.BlockNode, sig *Function
 
 			case tokeniser.KEYWORD_BREAK, tokeniser.KEYWORD_CONTINUE:
 				if !isLoop {
-					return false, shared.NewError(node.Loc, "'%s' statement outside a loop", node.Keyword)
+					return false, shared.NewError(node.Loc,
+						"'%s' statement outside a loop", node.Keyword)
 				}
 			}
 
@@ -239,13 +256,15 @@ func (tc *TypeChecker) typeCheckBlock(blockNode *parser.BlockNode, sig *Function
 			}
 
 		default:
-			return false, shared.NewError(node.GetLoc(), "unexpected node in block when type checking")
+			return false, shared.NewError(node.GetLoc(),
+				"unexpected node in block when type checking")
 		}
 	}
 
 	if isMainBody {
 		if !foundReturn && sig.RetType != shared.PRIMITIVE_VOID {
-			return false, shared.NewError(blockNode.Loc, "function with return type '%s' is missing a return statement", sig.RetType)
+			return false, shared.NewError(blockNode.Loc,
+				"function with return type '%s' is missing a return statement", sig.RetType)
 		}
 
 		sig.ImplicitReturn = !foundReturn
@@ -259,7 +278,8 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
 	case *parser.IdentifierNode:
 		varSig, ok := tc.VarTable.Lookup(exprNode.Name)
 		if !ok {
-			return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "undefined variable '%s'", exprNode.Name)
+			return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc,
+				"undefined variable '%s'", exprNode.Name)
 		}
 		SetNodeType(exprNode, varSig.Type)
 		gotType, err := ResolveFieldChain(exprNode, varSig.Type)
@@ -270,7 +290,8 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
 
 	case *parser.IntegerLiteralNode:
 		exprType := shared.PRIMITIVE_UNTYPED_INT
-		if expectedType != shared.PRIMITIVE_VOID && shared.CanCoerceTo(exprType, expectedType) {
+		if expectedType != shared.PRIMITIVE_VOID &&
+			shared.CanCoerceTo(exprType, expectedType) {
 			exprNode.ExprType = expectedType
 			return expectedType, nil
 		}
@@ -279,7 +300,8 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
 
 	case *parser.FloatLiteralNode:
 		exprType := shared.PRIMITIVE_F64
-		if expectedType != shared.PRIMITIVE_VOID && shared.CanCoerceTo(exprType, expectedType) {
+		if expectedType != shared.PRIMITIVE_VOID &&
+			shared.CanCoerceTo(exprType, expectedType) {
 			exprNode.ExprType = expectedType
 			return expectedType, nil
 		}
@@ -313,7 +335,8 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
 			return shared.PRIMITIVE_VOID, err
 		}
 
-		if expectedType != shared.PRIMITIVE_VOID && operandType == shared.PRIMITIVE_UNTYPED_INT && shared.IsNumericType(expectedType) {
+		if expectedType != shared.PRIMITIVE_VOID &&
+			operandType == shared.PRIMITIVE_UNTYPED_INT && shared.IsNumericType(expectedType) {
 			SetNodeType(exprNode.Operand, expectedType)
 			operandType = expectedType
 		}
@@ -321,19 +344,22 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
 		switch exprNode.Op {
 		case parser.UNARY_OP_LOGICAL_NOT:
 			if operandType != shared.PRIMITIVE_BOOL {
-				return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Operand.GetLoc(), "unary operator 'not' expects a boolean operand, found '%s'", operandType)
+				return shared.PRIMITIVE_VOID, shared.NewError(
+					exprNode.Operand.GetLoc(), "unary operator 'not' expects a boolean operand, found '%s'", operandType)
 			}
 			exprNode.ExprType = shared.PRIMITIVE_BOOL
 			return shared.PRIMITIVE_BOOL, nil
 		case parser.UNARY_OP_NEGATE:
 			if !shared.IsNumericType(operandType) {
-				return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Operand.GetLoc(), "unary operator '-' requires numeric operand, found '%s'", operandType)
+				return shared.PRIMITIVE_VOID, shared.NewError(
+					exprNode.Operand.GetLoc(), "unary operator '-' requires numeric operand, found '%s'", operandType)
 			}
 			exprNode.ExprType = operandType
 			return operandType, nil
 		case parser.UNARY_OP_DEREFERENCE:
 			if !operandType.IsPointer() {
-				return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Operand.GetLoc(), "unary operator '*' requires a pointer operand, found '%s'", operandType)
+				return shared.PRIMITIVE_VOID, shared.NewError(
+					exprNode.Operand.GetLoc(), "unary operator '*' requires a pointer operand, found '%s'", operandType)
 			}
 			t := operandType.(shared.Pointer).To
 			exprNode.ExprType = t
@@ -344,7 +370,8 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
 				varName := operand.Name
 				varSig, ok := tc.VarTable.Lookup(varName)
 				if !ok {
-					return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Operand.GetLoc(), "undefined variable '%s'", varName)
+					return shared.PRIMITIVE_VOID, shared.NewError(
+						exprNode.Operand.GetLoc(), "undefined variable '%s'", varName)
 				}
 				t := shared.Pointer{
 					To:    operandType,
@@ -359,8 +386,16 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
 				exprNode.ExprType = t
 				return t, nil
 			default:
-				return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Operand.GetLoc(), "unary operator '&' requires an identifier or struct literal operand")
+				return shared.PRIMITIVE_VOID, shared.NewError(
+					exprNode.Operand.GetLoc(), "unary operator '&' requires an identifier or struct literal operand")
 			}
+		case parser.UNARY_OP_ARRAY_LEN:
+			if !operandType.IsArray() {
+				return shared.PRIMITIVE_VOID, shared.NewError(
+					exprNode.Operand.GetLoc(), "unary operator '[]' requires an array operand, found '%s'", operandType)
+			}
+			exprNode.ExprType = shared.PRIMITIVE_U64
+			return shared.PRIMITIVE_U64, nil
 		default:
 			return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "unknown operator")
 		}
@@ -399,7 +434,8 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
 			parser.BINARY_OP_GREATER, parser.BINARY_OP_GREATER_EQUAL:
 
 			if !shared.IsNumericType(leftType) || !shared.IsNumericType(rightType) {
-				return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "operator cannot be applied to operands")
+				return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc,
+					"operator cannot be applied to operands")
 			}
 
 			exprNode.ExprType = shared.PRIMITIVE_BOOL
@@ -457,8 +493,29 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
 			return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "unknown operator")
 		}
 
+	case *parser.IndexExprNode:
+		arrayType, err := tc.typeCheckExpression(exprNode.Subject, shared.PRIMITIVE_VOID)
+		if err != nil {
+			return shared.PRIMITIVE_VOID, err
+		}
+		if !arrayType.IsArray() {
+			return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Subject.GetLoc(),
+				"indexing operator requires an array type, found '%s'", arrayType)
+		}
+		indexType, err := tc.typeCheckExpression(exprNode.Index, shared.PRIMITIVE_U64)
+		if err != nil {
+			return shared.PRIMITIVE_VOID, err
+		}
+		if !shared.IsIntegerType(indexType) {
+			return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Index.GetLoc(),
+				"array index must be an integer type, found '%s'", indexType)
+		}
+		elemType := arrayType.(shared.Array).Of
+		exprNode.ExprType = elemType
+		return elemType, nil
+
 	case *parser.CastNode:
-		tpe, ok := tc.ModSigs.LookupType(exprNode.ToType.ModName, exprNode.ToType.Name, exprNode.ToType.PointerLevel, tc.Mod, tc.Imports)
+		tpe, ok := tc.ModSigs.LookupType(exprNode.ToType, tc.Mod, tc.Imports)
 		if !ok {
 			return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "no such type '%s'", tpe)
 		}
@@ -475,15 +532,17 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
 			exprNode.ExprType = tpe
 			return tpe, nil
 		} else {
-			return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "cannot cast type '%s' to '%s'", exTpe, tpe)
+			return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc,
+				"cannot cast type '%s' to '%s'", exTpe, tpe)
 		}
 
 	case *parser.SizeOfNode:
 		if expectedType != shared.PRIMITIVE_VOID && !shared.IsNumericType(expectedType) {
-			return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "sizeof expression produces a numeric type, but expected type is '%s'", expectedType)
+			return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc,
+				"sizeof expression produces a numeric type, but expected type is '%s'", expectedType)
 		}
 
-		tpe, ok := tc.ModSigs.LookupType(exprNode.Operand.ModName, exprNode.Operand.Name, exprNode.Operand.PointerLevel, tc.Mod, tc.Imports)
+		tpe, ok := tc.ModSigs.LookupType(exprNode.Operand, tc.Mod, tc.Imports)
 		if !ok {
 			return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "no such type '%s'", tpe)
 		}
@@ -500,7 +559,9 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
 			return shared.PRIMITIVE_VOID, err
 		}
 		if condType != shared.PRIMITIVE_BOOL {
-			return shared.PRIMITIVE_VOID, shared.NewError(exprNode.IfBranch.Condition.GetLoc(), "if condition must be boolean, found '%s'", condType)
+			return shared.PRIMITIVE_VOID, shared.NewError(
+				exprNode.IfBranch.Condition.GetLoc(),
+				"if condition must be boolean, found '%s'", condType)
 		}
 
 		ifType, err := tc.typeCheckExpression(exprNode.IfBranch.Node, expectedType)
@@ -515,7 +576,8 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
 				return shared.PRIMITIVE_VOID, err
 			}
 			if elseIfCondType != shared.PRIMITIVE_BOOL {
-				return shared.PRIMITIVE_VOID, shared.NewError(elseIf.Condition.GetLoc(), "else-if condition must be boolean, found '%s'", elseIfCondType)
+				return shared.PRIMITIVE_VOID, shared.NewError(
+					elseIf.Condition.GetLoc(), "else-if condition must be boolean, found '%s'", elseIfCondType)
 			}
 
 			elseIfType, err := tc.typeCheckExpression(elseIf.Node, expectedType)
@@ -523,7 +585,8 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
 				return shared.PRIMITIVE_VOID, err
 			}
 			if elseIfType != commonType {
-				return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "all branches must return same type, expected '%s' but found '%s'", commonType, elseIfType)
+				return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc,
+					"all branches must return same type, expected '%s' but found '%s'", commonType, elseIfType)
 			}
 		}
 
@@ -532,7 +595,8 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
 			return shared.PRIMITIVE_VOID, err
 		}
 		if elseType != commonType {
-			return shared.PRIMITIVE_VOID, shared.NewError(exprNode.ElseBranch.GetLoc(), "else branch must match type '%s', found '%s'", commonType, elseType)
+			return shared.PRIMITIVE_VOID, shared.NewError(exprNode.ElseBranch.GetLoc(),
+				"else branch must match type '%s', found '%s'", commonType, elseType)
 		}
 
 		exprNode.ExprType = commonType
@@ -554,16 +618,21 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
 		if exprNode.Name.Ident.Next != nil {
 			return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Name.Loc, "struct name cannot be qualified")
 		}
-		structType, ok := tc.ModSigs.LookupType(exprNode.Name.ModName, exprNode.Name.Ident.Name, 0, tc.Mod, tc.Imports)
+		structType, ok := tc.ModSigs.LookupFlatType(exprNode.Name.ModName,
+			exprNode.Name.Ident.Name, tc.Mod, tc.Imports)
 		if !ok {
-			return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "no such struct type '%s'", exprNode.Name.Ident)
+			return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc,
+				"no such struct type '%s'", exprNode.Name.Ident)
 		}
 		st, ok := structType.(shared.Struct)
 		if !ok {
-			return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "'%s' is not a struct type", exprNode.Name.Ident)
+			return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc,
+				"'%s' is not a struct type", exprNode.Name.Ident)
 		}
 		if len(st.Fields) != len(exprNode.Fields) {
-			return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "struct '%s' expects %d fields, got %d (zero values are not allowed)", exprNode.Name.Ident, len(st.Fields), len(exprNode.Fields))
+			return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc,
+				"struct '%s' expects %d fields, got %d (zero values are not allowed)",
+				exprNode.Name.Ident, len(st.Fields), len(exprNode.Fields))
 		}
 		for _, field := range exprNode.Fields {
 			var fieldType shared.Type = nil
@@ -573,18 +642,67 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
 				}
 			}
 			if fieldType == nil {
-				return shared.PRIMITIVE_VOID, shared.NewError(field.R.GetLoc(), "struct '%s' has no field named '%s'", exprNode.Name.Ident, field.L)
+				return shared.PRIMITIVE_VOID, shared.NewError(field.R.GetLoc(),
+					"struct '%s' has no field named '%s'", exprNode.Name.Ident, field.L)
 			}
 			exprType, err := tc.typeCheckExpression(field.R, fieldType)
 			if err != nil {
 				return shared.PRIMITIVE_VOID, err
 			}
-			if !exprType.Compare(fieldType) {
-				return shared.PRIMITIVE_VOID, shared.NewError(field.R.GetLoc(), "field '%s' of struct '%s' expects type '%s', got '%s'", field.L, exprNode.Name.Ident, fieldType, exprType)
+			if !fieldType.Compare(exprType) {
+				if !shared.CanCoerceTo(exprType, fieldType) {
+					return shared.PRIMITIVE_VOID, shared.NewError(field.R.GetLoc(),
+						"field '%s' of struct '%s' expects type '%s', got '%s'", field.L,
+						exprNode.Name.Ident, fieldType, exprType)
+				} else {
+					SetNodeType(field.R, fieldType)
+				}
 			}
 		}
 		exprNode.ExprType = structType
 		return structType, nil
+
+	case *parser.ArrayLiteralNode:
+		if len(exprNode.Elements) == 0 {
+			return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc, "array literals cannot be empty")
+		}
+		var elementType shared.Type = nil
+		for i, elem := range exprNode.Elements {
+			elemType, err := tc.typeCheckExpression(elem, shared.PRIMITIVE_VOID)
+			if err != nil {
+				return shared.PRIMITIVE_VOID, err
+			}
+			if elementType == nil {
+				elementType = elemType
+			} else if shared.IsNumericType(elementType) &&
+				elemType == shared.PRIMITIVE_UNTYPED_INT {
+				SetNodeType(elem, elementType)
+			} else if shared.IsNumericType(elemType) &&
+				elementType == shared.PRIMITIVE_UNTYPED_INT {
+				elementType = elemType
+				for j := range i {
+					prevElem := exprNode.Elements[j]
+					if prevElem.GetType() == shared.PRIMITIVE_UNTYPED_INT {
+						SetNodeType(prevElem, elementType)
+					}
+				}
+			} else if !elementType.Compare(elemType) {
+				return shared.PRIMITIVE_VOID, shared.NewError(elem.GetLoc(),
+					"array literal elements must be of the same type, expected '%s' but found '%s'", elementType, elemType)
+			}
+		}
+		if elementType == shared.PRIMITIVE_UNTYPED_INT && expectedType.IsArray() &&
+			shared.IsNumericType(expectedType.(shared.Array).Of) {
+			for _, elem := range exprNode.Elements {
+				SetNodeType(elem, expectedType.(shared.Array).Of)
+			}
+		}
+		arrayType := shared.Array{
+			Of:  elementType,
+			Len: len(exprNode.Elements),
+		}
+		exprNode.ExprType = arrayType
+		return arrayType, nil
 
 	default:
 		return shared.PRIMITIVE_VOID, shared.NewError(exprNode.GetLoc(), "unsupported expression type")
@@ -592,13 +710,17 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
 }
 
 func (tc *TypeChecker) typeCheckFunctionCall(funccallNode *parser.FunctionCallNode) (shared.Type, error) {
-	fsig, ok := tc.ModSigs.LookupFunction(funccallNode.Name.ModName, funccallNode.Name.Ident.Name, tc.Mod, tc.Imports)
+	fsig, ok := tc.ModSigs.LookupFunction(funccallNode.Name.ModName,
+		funccallNode.Name.Ident.Name, tc.Mod, tc.Imports)
 	if !ok {
-		return shared.PRIMITIVE_VOID, shared.NewError(funccallNode.Name.Loc, "undefined function '%s'", funccallNode.Name)
+		return shared.PRIMITIVE_VOID, shared.NewError(funccallNode.Name.Loc,
+			"undefined function '%s'", funccallNode.Name)
 	}
 
-	if (len(funccallNode.Args) > len(fsig.ArgTypes) && !fsig.HasVariadic) || len(funccallNode.Args) < len(fsig.ArgTypes) {
-		return shared.PRIMITIVE_VOID, shared.NewError(funccallNode.Loc, "argument count mismatch, expected at least %d, got %d", len(fsig.ArgTypes), len(funccallNode.Args))
+	if (len(funccallNode.Args) > len(fsig.ArgTypes) && !fsig.HasVariadic) ||
+		len(funccallNode.Args) < len(fsig.ArgTypes) {
+		return shared.PRIMITIVE_VOID, shared.NewError(funccallNode.Loc,
+			"argument count mismatch, expected at least %d, got %d", len(fsig.ArgTypes), len(funccallNode.Args))
 	}
 
 	for i, arg := range funccallNode.Args {
@@ -628,10 +750,10 @@ func (tc *TypeChecker) typeCheckDeclaration(declNode *parser.DeclarationNode) (s
 	var varType shared.Type = shared.PRIMITIVE_VOID
 
 	if declNode.Type != nil {
-		varTypeStr := declNode.Type.Name
-		vt, ok := tc.ModSigs.LookupType(declNode.Type.ModName, varTypeStr, declNode.Type.PointerLevel, tc.Mod, tc.Imports)
+		vt, ok := tc.ModSigs.LookupType(declNode.Type, tc.Mod, tc.Imports)
 		if !ok {
-			return "", nil, shared.NewError(declNode.Type.Loc, "variable '%s' has undefined type '%s'", declNode.Name, varTypeStr)
+			return "", nil, shared.NewError(declNode.Type.Loc,
+				"variable '%s' has undefined type '%s'", declNode.Name, declNode.Type)
 		}
 		varType = vt
 	}
@@ -659,6 +781,39 @@ func (tc *TypeChecker) typeCheckDeclaration(declNode *parser.DeclarationNode) (s
 		return "", nil, shared.NewError(declNode.Loc, "a variable cannot be of type void")
 	}
 
+	if varType.IsArray() && varType.(shared.Array).Of.Compare(shared.PRIMITIVE_UNTYPED_INT) {
+		if varType.(shared.Array).Of == shared.PRIMITIVE_UNTYPED_INT {
+			return "", nil, shared.NewError(declNode.Loc,
+				"a variable cannot be of type untyped int array")
+		} else if shared.IsIntegerType(varType.(shared.Array).Of) {
+			SetNodeType(declNode.Value, varType)
+		} else {
+			return "", nil, shared.NewError(declNode.Loc,
+				"a variable cannot be of type untyped int array")
+		}
+	}
+
+	if varType.IsArray() {
+		switch dn := declNode.Value.(type) {
+		case *parser.ArrayLiteralNode:
+			varType = shared.Array{
+				Of:  varType.(shared.Array).Of,
+				Len: len(declNode.Value.(*parser.ArrayLiteralNode).Elements),
+			}
+		case *parser.IdentifierNode:
+			idType, ok := tc.VarTable.Lookup(dn.Name)
+			if ok {
+				if arrType, ok := idType.Type.(shared.Array); ok {
+					varType = shared.Array{
+						Of:  varType.(shared.Array).Of,
+						Len: arrType.Len,
+					}
+				}
+			}
+		}
+		SetNodeType(declNode.Value, varType)
+	}
+
 	return declNode.Name, &VarSig{
 		Type:    varType,
 		Mutable: mutable,
@@ -676,6 +831,50 @@ func (tc *TypeChecker) typeCheckAssignment(asNode *parser.AssignmentNode) error 
 	}
 
 	return shared.NewError(asNode.Assignee.GetLoc(), "left side of assignment must be a variable or dereferenced pointer")
+}
+
+func (tc *TypeChecker) typeCheckArrayAssignment(asNode *parser.ArrayAssignmentNode) error {
+	varNameNode, ok := asNode.Assignee.(*parser.IdentifierNode)
+	if !ok {
+		return shared.NewError(asNode.Assignee.GetLoc(),
+			"left side of array assignment must be an identifier")
+	}
+	varName := varNameNode.Name
+	varSig, ok := tc.VarTable.Lookup(varName)
+	if !ok {
+		return shared.NewError(varNameNode.Loc, "undefined variable '%s'", varName)
+	}
+	if !varSig.Mutable {
+		return shared.NewError(asNode.Loc, "cannot assign to immutable variable '%s'", varName)
+	}
+	currType, err := ResolveFieldChain(varNameNode, varSig.Type)
+	if err != nil {
+		return err
+	}
+	arrayType, ok := currType.(shared.Array)
+	if !ok {
+		return shared.NewError(asNode.Loc,
+			fmt.Sprintf("variable '%s' is not an array", varName))
+	}
+	indexType, err := tc.typeCheckExpression(asNode.Index, shared.PRIMITIVE_U64)
+	if err != nil {
+		return err
+	}
+	if !shared.IsIntegerType(indexType) {
+		return shared.NewError(asNode.Index.GetLoc(),
+			"array index must be an integer type, found '%s'", indexType)
+	}
+	exprType, err := tc.typeCheckExpression(asNode.Value, arrayType.Of)
+	if err != nil {
+		return err
+	}
+	if !exprType.Compare(arrayType.Of) {
+		return shared.NewError(asNode.Loc,
+			"cannot assign value of type '%s' to array element of type '%s'",
+			exprType, arrayType.Of,
+		)
+	}
+	return nil
 }
 
 func (tc *TypeChecker) typeCheckIdentifierAssignment(asNode *parser.AssignmentNode, assignee *parser.IdentifierNode) error {
@@ -744,7 +943,8 @@ func (tc *TypeChecker) typeCheckForLoop(loopNode *parser.ForNode, sig *FunctionS
 	if len(loopNode.ExprsOrStmts) == 1 {
 		condMb := loopNode.ExprsOrStmts[0]
 		if _, ok := condMb.(parser.ExpressionNode); !ok {
-			return shared.NewError(condMb.GetLoc(), "for loop condition must be a boolean expression")
+			return shared.NewError(condMb.GetLoc(),
+				"for loop condition must be a boolean expression")
 		}
 		cond := condMb.(parser.ExpressionNode)
 		exprType, err := tc.typeCheckExpression(cond, shared.PRIMITIVE_BOOL)
@@ -774,7 +974,8 @@ func (tc *TypeChecker) typeCheckForLoop(loopNode *parser.ForNode, sig *FunctionS
 
 		condMb := loopNode.ExprsOrStmts[1]
 		if _, ok := condMb.(parser.ExpressionNode); !ok {
-			return shared.NewError(condMb.GetLoc(), "for loop condition must be a boolean expression")
+			return shared.NewError(condMb.GetLoc(),
+				"for loop condition must be a boolean expression")
 		}
 		cond := condMb.(parser.ExpressionNode)
 		exprType, err := tc.typeCheckExpression(cond, shared.PRIMITIVE_BOOL)
@@ -792,7 +993,8 @@ func (tc *TypeChecker) typeCheckForLoop(loopNode *parser.ForNode, sig *FunctionS
 				return err
 			}
 		default:
-			return shared.NewError(reass.GetLoc(), "for loop 'after' step must be an assignment statement")
+			return shared.NewError(reass.GetLoc(),
+				"for loop 'after' step must be an assignment statement")
 		}
 	} else if len(loopNode.ExprsOrStmts) != 0 {
 		return shared.NewError(loopNode.Loc, "for loop must have either: no conditions, a condition or an initlaiser, a condition and an 'after' assignment")
@@ -812,7 +1014,8 @@ func (tc *TypeChecker) typeCheckIfStatement(ifNode *parser.IfNode, sig *Function
 		return false, err
 	}
 	if ifCondType != shared.PRIMITIVE_BOOL {
-		return false, shared.NewError(ifNode.IfBranch.Condition.GetLoc(), "if condition must be boolean, found '%s'", ifCondType)
+		return false, shared.NewError(ifNode.IfBranch.Condition.GetLoc(),
+			"if condition must be boolean, found '%s'", ifCondType)
 	}
 
 	ifReturns, err := tc.typeCheckBlock(ifNode.IfBranch.Node, sig, isLoop, false)
@@ -827,7 +1030,8 @@ func (tc *TypeChecker) typeCheckIfStatement(ifNode *parser.IfNode, sig *Function
 			return false, err
 		}
 		if elseIfCondType != shared.PRIMITIVE_BOOL {
-			return false, shared.NewError(elseIfBranch.Condition.GetLoc(), "else-if condition must be boolean, found '%s'", elseIfCondType)
+			return false, shared.NewError(elseIfBranch.Condition.GetLoc(),
+				"else-if condition must be boolean, found '%s'", elseIfCondType)
 		}
 
 		elseIfReturns, err := tc.typeCheckBlock(elseIfBranch.Node, sig, isLoop, false)
@@ -890,6 +1094,16 @@ func SetNodeType(n parser.ExpressionNode, t shared.Type) {
 		node.ExprType = t
 	case *parser.StructLiteralNode:
 		node.ExprType = t
+	case *parser.ArrayLiteralNode:
+		node.ExprType = t
+		if !t.IsArray() {
+			panic("SetNodeType argument for ArrayLiteralNode is not an array type")
+		}
+		arrt := t.(shared.Array)
+
+		for _, element := range node.Elements {
+			SetNodeType(element, arrt.Of)
+		}
 	case *parser.FunctionCallNode:
 		node.ExprType = t
 	case *parser.IfExprNode:

@@ -1,9 +1,14 @@
 package shared
 
+import (
+	"fmt"
+)
+
 type Type interface {
 	IsPrimitive() bool
 	IsStruct() bool
 	IsPointer() bool
+	IsArray() bool
 	Compare(t2 Type) bool
 	String() string
 }
@@ -50,7 +55,10 @@ func GetAlignOfType(t Type) int {
 		}
 		return maxAlign
 	}
-	return 8
+	if _, ok := t.(Array); ok {
+		return 8 // arrays are treated as pointers where the point to the length and then what immediately follows is the data
+	}
+	panic("unknown type alignment: " + t.String())
 }
 
 func GetSizeOfType(t Type) int {
@@ -91,7 +99,14 @@ func GetSizeOfType(t Type) int {
 	if _, ok := t.(Pointer); ok {
 		return 8
 	}
-	return 0
+	if ar, ok := t.(Array); ok {
+		elemSize := GetSizeOfType(ar.Of)
+		return 8 + elemSize*ar.Len
+	}
+	if t.Compare(PRIMITIVE_VOID) {
+		return 0
+	}
+	panic("unknown type size: " + t.String())
 }
 
 func IsNumericType(t Type) bool {
@@ -196,6 +211,15 @@ func CanCoerceTo(t1, t2 Type) bool {
 		return true
 	}
 
+	// array of untyped int <-> array of integer
+	if t1.IsArray() && t2.IsArray() {
+		at1 := t1.(Array)
+		at2 := t2.(Array)
+		if at1.Len == at2.Len || at1.Len == 0 || at2.Len == 0 {
+			return CanCoerceTo(at1.Of, at2.Of)
+		}
+	}
+
 	return false
 }
 
@@ -217,7 +241,8 @@ func CanCastTo(t1, t2 Type) bool {
 
 	// pointer <-> *void
 	if t1.IsPointer() && t2.IsPointer() {
-		if t1.(Pointer).To.Compare(PRIMITIVE_VOID) || t2.(Pointer).To.Compare(PRIMITIVE_VOID) {
+		if t1.(Pointer).To.Compare(PRIMITIVE_VOID) ||
+			t2.(Pointer).To.Compare(PRIMITIVE_VOID) {
 			return true
 		}
 	}
@@ -229,6 +254,15 @@ func CanCastTo(t1, t2 Type) bool {
 		}
 	} else if t2.IsPointer() {
 		if IsIntegerType(t1) || t1.Compare(PRIMITIVE_UNTYPED_INT) {
+			return true
+		}
+	}
+
+	// array <-> array of same type and length
+	if t1.IsArray() && t2.IsArray() {
+		at1 := t1.(Array)
+		at2 := t2.(Array)
+		if (at1.Len == at2.Len || at1.Len == 0 || at2.Len == 0) && CanCastTo(at1.Of, at2.Of) {
 			return true
 		}
 	}
@@ -264,6 +298,7 @@ const (
 func (pt Primitive) IsPrimitive() bool { return true }
 func (pt Primitive) IsStruct() bool    { return false }
 func (pt Primitive) IsPointer() bool   { return false }
+func (pt Primitive) IsArray() bool     { return false }
 func (pt Primitive) Compare(t2 Type) bool {
 	if !t2.IsPrimitive() {
 		return false
@@ -343,6 +378,7 @@ func (st *Struct) GetLayout() StructLayout {
 func (st Struct) IsPrimitive() bool { return false }
 func (st Struct) IsStruct() bool    { return true }
 func (st Struct) IsPointer() bool   { return false }
+func (st Struct) IsArray() bool     { return false }
 func (st1 Struct) Compare(t2 Type) bool {
 	if !t2.IsStruct() {
 		return false
@@ -365,6 +401,7 @@ func (st1 Struct) Compare(t2 Type) bool {
 	}
 	return true
 }
+
 func (st Struct) String() string {
 	s := "struct { "
 	for i, f := range st.Fields {
@@ -385,6 +422,7 @@ type Pointer struct {
 func (pt Pointer) IsPrimitive() bool { return false }
 func (pt Pointer) IsStruct() bool    { return false }
 func (pt Pointer) IsPointer() bool   { return true }
+func (pt Pointer) IsArray() bool     { return false }
 func (pt Pointer) Compare(t2 Type) bool {
 	if !t2.IsPointer() {
 		return false
@@ -394,6 +432,7 @@ func (pt Pointer) Compare(t2 Type) bool {
 	}
 	return pt.To.Compare(t2.(Pointer).To)
 }
+
 func (pt Pointer) String() string {
 	if pt.Const {
 		return "*" + pt.To.String() + "(const)"
@@ -414,4 +453,31 @@ func (tt TypeTable) Define(name string, t Type) bool {
 func (tt TypeTable) Lookup(name string) (Type, bool) {
 	t, ok := tt[name]
 	return t, ok
+}
+
+type Array struct {
+	Of  Type
+	Len int
+}
+
+func (at Array) IsPrimitive() bool { return false }
+func (at Array) IsStruct() bool    { return false }
+func (at Array) IsPointer() bool   { return false }
+func (at Array) IsArray() bool     { return true }
+func (at Array) Compare(t2 Type) bool {
+	if !t2.IsArray() {
+		return false
+	}
+	at2 := t2.(Array)
+	if at.Len != at2.Len {
+		return false
+	}
+	return at.Of.Compare(at2.Of)
+}
+
+func (at Array) String() string {
+	if at.Len == 0 {
+		return fmt.Sprintf("[%s]", at.Of.String())
+	}
+	return fmt.Sprintf("[%s, %d]", at.Of.String(), at.Len)
 }

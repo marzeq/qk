@@ -24,15 +24,33 @@ func (err Error) Error() string {
 		return err.message
 	}
 
-	line := strings.Split(string(f), "\n")[err.loc.LC.Line-1]
-	pointer := ""
-	if err.loc.LC.Col == 1 {
-		pointer = "^"
-	} else {
-		pointer = strings.Repeat(" ", max(0, err.loc.LC.Col-2)) + "^" + strings.Repeat(" ", len(line)-err.loc.LC.Col+1)
+	lines := strings.Split(string(f), "\n")
+	lineIdx := err.loc.LC.Line - 1
+	if lineIdx < 0 || lineIdx >= len(lines) {
+		return err.message
 	}
 
-	return fmt.Sprintf("%s:%d:%d\n%s\n%s\n\n%s", err.loc.FilePath, err.loc.LC.Line, err.loc.LC.Col, line, pointer, err.message)
+	start := max(0, lineIdx-2)
+	end := min(len(lines)-1, lineIdx+2)
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s:%d:%d\n", err.loc.FilePath, err.loc.LC.Line, err.loc.LC.Col)
+
+	const red = "\x1b[31m"
+	const reset = "\x1b[0m"
+
+	for i := start; i <= end; i++ {
+		ln := i + 1
+		if i == lineIdx {
+			fmt.Fprintf(&b, "%s%4d |%s %s  %s(col %d)%s\n",
+				red, ln, reset, lines[i], red, err.loc.LC.Col, reset)
+		} else {
+			fmt.Fprintf(&b, "%4d | %s\n", ln, lines[i])
+		}
+	}
+
+	fmt.Fprintf(&b, "\n%s", err.message)
+	return b.String()
 }
 
 type LineCol struct {
