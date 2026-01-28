@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"runtime"
 
-	"github.com/marzeq/quokka/parser"
-	"github.com/marzeq/quokka/shared"
-	"github.com/marzeq/quokka/tokeniser"
+	"github.com/marzeq/qk/parser"
+	"github.com/marzeq/qk/shared"
+	"github.com/marzeq/qk/tokeniser"
 )
 
 var (
@@ -529,7 +529,14 @@ func (tc *TypeChecker) typeCheckExpression(en parser.ExpressionNode, expectedTyp
 		}
 
 		if shared.CanCastTo(exTpe, tpe) {
-			exprNode.ExprType = tpe
+			if exTpe.IsArray() && exTpe.(shared.Array).Len > 0 {
+				tpe = shared.Array{
+					Of:  tpe.(shared.Array).Of,
+					Len: exTpe.(shared.Array).Len,
+				}
+				SetNodeType(exprNode.Operand, tpe)
+			}
+			SetNodeType(exprNode, tpe)
 			return tpe, nil
 		} else {
 			return shared.PRIMITIVE_VOID, shared.NewError(exprNode.Loc,

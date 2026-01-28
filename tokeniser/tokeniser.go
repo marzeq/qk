@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/marzeq/quokka/shared"
+	"github.com/marzeq/qk/shared"
 )
 
 type Tokeniser struct {

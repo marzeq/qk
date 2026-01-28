@@ -3,8 +3,8 @@ package parser
 import (
 	"strconv"
 
-	"github.com/marzeq/quokka/shared"
-	"github.com/marzeq/quokka/tokeniser"
+	"github.com/marzeq/qk/shared"
+	"github.com/marzeq/qk/tokeniser"
 )
 
 type (

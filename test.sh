@@ -23,7 +23,7 @@ generate_expected() {
     local expected_output="examples/expected_outputs/$(basename "${file%.qk}.ssa")"
     if [ ! -f "$expected_output" ] || [ "$force" == "1" ]; then
       echo "Generating expected output for $file"
-      go run main.go "$file" -irout "$expected_output"
+      go run ./cmd/qkc "$file" -irout "$expected_output"
       rm -f a.out
     else
       echo "Skipping $file, expected output already exists."
@@ -58,7 +58,7 @@ run_tests() {
       return 1
     fi
 
-    go run main.go "$file" -irout /tmp/test.ssa
+    go run ./cmd/qkc "$file" -irout /tmp/test.ssa
     if ! diff -q /tmp/test.ssa "$expected_output" > /dev/null; then
       echo "Test failed for $file"
       echo "Expected output:"

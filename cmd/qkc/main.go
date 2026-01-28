@@ -9,12 +9,12 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/marzeq/quokka/codegen"
-	"github.com/marzeq/quokka/modules"
-	"github.com/marzeq/quokka/parser"
-	"github.com/marzeq/quokka/shared"
-	"github.com/marzeq/quokka/tokeniser"
-	"github.com/marzeq/quokka/typechecker"
+	"github.com/marzeq/qk/codegen"
+	"github.com/marzeq/qk/modules"
+	"github.com/marzeq/qk/parser"
+	"github.com/marzeq/qk/shared"
+	"github.com/marzeq/qk/tokeniser"
+	"github.com/marzeq/qk/typechecker"
 )
 
 func _check(err error) {
@@ -140,7 +140,7 @@ func main() {
 
 	var tmpDir string
 	if buildDir == "" {
-		td, err := os.MkdirTemp("", "quokka_build_*")
+		td, err := os.MkdirTemp("", "qk_build_*")
 		_check(err)
 		tmpDir = td
 		defer os.RemoveAll(tmpDir)

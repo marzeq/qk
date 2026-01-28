@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/marzeq/quokka/parser"
-	"github.com/marzeq/quokka/shared"
-	"github.com/marzeq/quokka/tokeniser"
-	"github.com/marzeq/quokka/typechecker"
+	"github.com/marzeq/qk/parser"
+	"github.com/marzeq/qk/shared"
+	"github.com/marzeq/qk/tokeniser"
+	"github.com/marzeq/qk/typechecker"
 )
 
 var _ = runtime.GOOS

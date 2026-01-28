@@ -5,8 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/marzeq/quokka/parser"
-	"github.com/marzeq/quokka/tokeniser"
+	"github.com/marzeq/qk/parser"
+	"github.com/marzeq/qk/tokeniser"
 )
 
 type FileNode struct {
@@ -35,9 +35,9 @@ func NewDepGraph(path string, rn *parser.RootNode) (*DepGraph, error) {
 
 var moduleSearchPaths = []string{
 	".",
-	"/usr/share/quokka/lib",
-	"/usr/local/share/quokka/lib",
-	filepath.Join(os.Getenv("HOME"), ".local/share/quokka/lib"),
+	"/usr/share/qk/lib",
+	"/usr/local/share/qk/lib",
+	filepath.Join(os.Getenv("HOME"), ".local/share/qk/lib"),
 }
 
 func (g *DepGraph) Construct(path string, rn *parser.RootNode) error {

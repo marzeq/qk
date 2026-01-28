@@ -1,3 +1,3 @@
-module github.com/marzeq/quokka
+module github.com/marzeq/qk
 
 go 1.23.5

@@ -1,6 +1,6 @@
 package tokeniser
 
-import "github.com/marzeq/quokka/shared"
+import "github.com/marzeq/qk/shared"
 
 type Token struct {
 	Type  TokenType

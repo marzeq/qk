@@ -4,8 +4,8 @@ import (
 	"runtime"
 	"slices"
 
-	"github.com/marzeq/quokka/parser"
-	"github.com/marzeq/quokka/shared"
+	"github.com/marzeq/qk/parser"
+	"github.com/marzeq/qk/shared"
 )
 
 var _ = runtime.GOOS
