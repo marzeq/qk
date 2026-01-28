@@ -17,12 +17,16 @@ languages like Rust and Go, in many ways it is unique to this language.
 My end goal is to reach the same level of usability as C, where any project can feasibly be implemented in this language instead of C.
 
 However, I am not dumb, this is not a "C-killer" like other previously have claimed with their own (ekhm-ekhm V), because I am just a
-dumb kid with no prior background in compiler design, so I know my limitations.
+dumb kid with no prior background in compiler or language design, so I know my limitations.
 
-As of writing this, the language is still not nearly finished and I have already found the codebase to be very cumbersome to work with,
-so as soon as I reach a certain level of maturity with this language, I will probably abandon this and move on.
+Because my aim is to create a compiler, not design a language, it does not and probably will never have a formal specification or
+anything of that sort, and I will make up the language features as I go along. 
 
-## Cloning and building
+As of writing this, the compiler is still not nearly finished and I have already found the codebase to be very cumbersome to work with
+and I see many design flaws I have made along the way, so as soon as I reach a certain level of maturity with this language, I will
+either abandon this project or rewrite it from scratch with better design choices, inspired by the mistakes I have in this first attempt.
+
+## Building
 
 ```bash
 git clone git@github.com:marzeq/qk.git
@@ -47,6 +51,11 @@ There is a special branch in QBE called `winabi` and I plan to vendor-in that br
 - Standard POSIX build tools
 - (in the future mingw for Windows support)
 
+## Examples
+
+As I have previously mentioned, the language does not have a formal specification. However, there are some samples in the `examples/` directory
+that showcase some of the language features, and while I added them primairly for testing purposes, you can of course use them as reference too.
+
 ## Contributing
 
-No, this is not a "serious" project, plese don't use this.
+No, this is not a "serious" project, plese don't use or contribute to this.
