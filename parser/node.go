@@ -2,6 +2,7 @@ package parser
 
 import (
 	"github.com/marzeq/qk/shared"
+	"github.com/marzeq/qk/symbols"
 	"github.com/marzeq/qk/tokeniser"
 )
 
@@ -20,9 +21,10 @@ type RootNode struct {
 func (n RootNode) GetLoc() shared.Location { return n.Loc }
 
 type IdentifierNode struct {
-	Name string
-	Next *IdentifierNode
-	Loc  shared.Location
+	Name   string
+	Next   *IdentifierNode
+	Loc    shared.Location
+	Symbol *symbols.Symbol
 }
 
 func (n IdentifierNode) GetLoc() shared.Location { return n.Loc }
@@ -37,6 +39,7 @@ type ModuleAccessNode struct {
 	ModName string
 	Ident   *IdentifierNode
 	Loc     shared.Location
+	Symbol  *symbols.Symbol
 }
 
 func (n ModuleAccessNode) GetLoc() shared.Location { return n.Loc }
@@ -137,6 +140,7 @@ type StructLiteralNode struct {
 	Name   *ModuleAccessNode
 	Fields []shared.Pair[string, ExpressionNode] // field name, value
 	Loc    shared.Location
+	Symbol *symbols.Symbol
 }
 
 func (n StructLiteralNode) GetLoc() shared.Location { return n.Loc }
@@ -149,9 +153,10 @@ type ArrayLiteralNode struct {
 func (n ArrayLiteralNode) GetLoc() shared.Location { return n.Loc }
 
 type FunctionCallNode struct {
-	Name *ModuleAccessNode
-	Args []ExpressionNode
-	Loc  shared.Location
+	Name   *ModuleAccessNode
+	Args   []ExpressionNode
+	Loc    shared.Location
+	Symbol *symbols.Symbol
 }
 
 func (n FunctionCallNode) GetLoc() shared.Location { return n.Loc }
@@ -292,15 +297,17 @@ type FunctionDefNode struct {
 	Extern      bool
 	Pub         bool
 	Loc         shared.Location
+	Symbol      *symbols.Symbol
 }
 
 func (n FunctionDefNode) GetLoc() shared.Location { return n.Loc }
 
 type TypeAliasNode struct {
-	Name string
-	Type TypeNode
-	Pub  bool
-	Loc  shared.Location
+	Name   string
+	Type   TypeNode
+	Pub    bool
+	Loc    shared.Location
+	Symbol *symbols.Symbol
 }
 
 func (n TypeAliasNode) GetLoc() shared.Location { return n.Loc }
@@ -341,6 +348,7 @@ type DeclarationNode struct {
 	Type    TypeNode
 	Value   ExpressionNode
 	Loc     shared.Location
+	Symbol  *symbols.Symbol
 }
 
 func (n DeclarationNode) GetLoc() shared.Location { return n.Loc }
