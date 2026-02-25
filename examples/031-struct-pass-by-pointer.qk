@@ -1,6 +1,6 @@
 let printf(s: *char, ...) = extern("printf")
 
-struct Point = {
+let Point = type struct {
   x: i32
   y: i32
 }

@@ -1,7 +1,7 @@
 let printf(s: *char, ...) = extern("printf")
 let malloc(size: u64): *void = extern("malloc")
 
-struct Point = {
+let Point = type struct {
   x: i32
   y: i32
 }

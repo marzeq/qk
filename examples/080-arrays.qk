@@ -1,6 +1,6 @@
 import("std")
 
-struct A = {
+let A = type struct {
   arr: [[u64]]
 }
 
