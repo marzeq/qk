@@ -829,109 +829,192 @@ func (p *Parser) ParseIdent() (*IdentifierNode, error) {
 	return node, nil
 }
 
-func (p *Parser) ParseType() (*TypeNode, error) {
-	beginLoc := p.CurrLoc()
-
-	var base *TypeNode
-	for p.Match(tokeniser.TOKEN_TYPE_ASTERISK) {
-		p.Inc()
-		base = &TypeNode{
-			PointerTo: base,
-			Loc:       beginLoc,
-		}
-	}
-
-	attachPointers := func(t *TypeNode) *TypeNode {
-		if base == nil {
-			return t
-		}
-		curr := base
-		for curr.PointerTo != nil {
-			curr = curr.PointerTo
-		}
-		curr.PointerTo = t
-		return base
-	}
-
-	if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) {
-		kw := p.Consume().Value
-		return attachPointers(&TypeNode{
-			Name: kw,
-			Loc:  beginLoc,
-		}), nil
+func (p *Parser) ParseType() (TypeNode, error) {
+	if p.Match(tokeniser.TOKEN_TYPE_ASTERISK) {
+		return p.ParsePointerType()
 	}
 
 	if p.Match(tokeniser.TOKEN_TYPE_OPEN_SQUARE) {
+		return p.ParseArrayType()
+	}
+
+	if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == string(tokeniser.KEYWORD_STRUCT) {
+		return p.ParseStructType()
+	}
+
+	return p.ParseNamedType()
+}
+
+func (p *Parser) ParseStructType() (*StructTypeNode, error) {
+	beginLoc := p.CurrLoc()
+
+	if !p.Match(tokeniser.TOKEN_TYPE_KEYWORD) || p.Peek().Value != string(tokeniser.KEYWORD_STRUCT) {
+		return nil, shared.NewError(p.PrevLoc(), "expected 'struct' keyword")
+	}
+	p.Inc()
+
+	if !p.Expect(tokeniser.TOKEN_TYPE_OPEN_CURLY) {
+		return nil, shared.NewError(p.PrevLoc(), "expected '{'")
+	}
+
+	for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
 		p.Inc()
-		for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
-			p.Inc()
+	}
+
+	var fields []StructField
+	for !p.Match(tokeniser.TOKEN_TYPE_CLOSE_CURLY) {
+		fieldName, err := p.ParseIdent()
+		if err != nil {
+			return nil, err
+		}
+		if fieldName.Next != nil {
+			return nil, shared.NewError(fieldName.Next.Loc, "field names cannot be qualified")
 		}
 
-		elemType, err := p.ParseType()
+		if !p.Expect(tokeniser.TOKEN_TYPE_COLON) {
+			return nil, shared.NewError(p.PrevLoc(), "expected ':'")
+		}
+
+		fieldType, err := p.ParseType()
 		if err != nil {
 			return nil, err
 		}
 
+		fields = append(fields, StructField{
+			Name: fieldName.Name,
+			Type: fieldType,
+		})
+
+		if !p.Match(tokeniser.TOKEN_TYPE_COMMA, tokeniser.TOKEN_TYPE_NEWLINE) {
+			break
+		}
+		p.Inc()
+
 		for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
 			p.Inc()
 		}
+	}
 
-		l := 0
-		if p.Match(tokeniser.TOKEN_TYPE_COMMA) {
-			p.Inc()
-			for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
-				p.Inc()
-			}
-			sizeToken, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_NUMBER)
-			if !ok {
-				return nil, shared.NewError(p.PrevLoc(), "expected array size")
-			}
-			l, err = strconv.Atoi(sizeToken.Value)
-			if err != nil || l <= 0 {
-				return nil, shared.NewError(sizeToken.Loc,
-					"invalid array size '%s'", sizeToken.Value)
-			}
-		}
+	if !p.Expect(tokeniser.TOKEN_TYPE_CLOSE_CURLY) {
+		return nil, shared.NewError(p.PrevLoc(), "expected '}'")
+	}
 
+	return &StructTypeNode{
+		Fields: fields,
+		Loc:    beginLoc,
+	}, nil
+}
+
+func (p *Parser) ParseArrayType() (*ArrayTypeNode, error) {
+	beginLoc := p.CurrLoc()
+
+	if !p.Expect(tokeniser.TOKEN_TYPE_OPEN_SQUARE) {
+		return nil, shared.NewError(p.PrevLoc(), "expected '[' to start array type")
+	}
+
+	for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
+		p.Inc()
+	}
+
+	elementType, err := p.ParseType()
+	if err != nil {
+		return nil, err
+	}
+
+	for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
+		p.Inc()
+	}
+
+	if !p.Match(tokeniser.TOKEN_TYPE_COMMA) {
 		if !p.Expect(tokeniser.TOKEN_TYPE_CLOSE_SQUARE) {
-			return nil, shared.NewError(p.PrevLoc(), "expected ']'")
+			return nil, shared.NewError(p.PrevLoc(), "expected ']' to end array type")
 		}
-
-		tn := &TypeNode{
-			ArrayTo:  elemType,
-			ArrayLen: l,
-			Loc:      beginLoc,
-		}
-
-		return attachPointers(tn), nil
+		return &ArrayTypeNode{
+			ElementType: elementType,
+			Size:        -1,
+			Loc:         beginLoc,
+		}, nil
 	}
+	p.Inc()
 
-	firstIdent, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_IDENT)
-	if !ok {
-		return nil, shared.NewError(p.PrevLoc(), "expected type name, module name or asterisk")
-	}
-
-	modName := ""
-	if p.Match(tokeniser.TOKEN_TYPE_COLON) {
+	for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
 		p.Inc()
-		modName = firstIdent.Value
-		for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
-			p.Inc()
-		}
-		tn, err := p.ParseType()
-		if err != nil {
-			return nil, err
-		}
-		if base != nil && tn.PointerTo != nil {
-			return nil, shared.NewError(beginLoc,
-				"you must either put all asterisks before or after the module name")
-		}
-		tn.ModName = modName
-		return attachPointers(tn), nil
 	}
 
-	return attachPointers(&TypeNode{
-		Name: firstIdent.Value,
-		Loc:  beginLoc,
-	}), nil
+	sizeToken, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_NUMBER)
+	if !ok {
+		return nil, shared.NewError(p.PrevLoc(), "expected array size")
+	}
+
+	size, err := strconv.Atoi(sizeToken.Value)
+	if err != nil {
+		return nil, shared.NewError(sizeToken.Loc, "invalid array size: %s", sizeToken.Value)
+	}
+
+	for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
+		p.Inc()
+	}
+
+	if !p.Expect(tokeniser.TOKEN_TYPE_CLOSE_SQUARE) {
+		return nil, shared.NewError(p.PrevLoc(), "expected ']' to end array type")
+	}
+
+	return &ArrayTypeNode{
+		ElementType: elementType,
+		Size:        size,
+		Loc:         beginLoc,
+	}, nil
+}
+
+func (p *Parser) ParsePointerType() (*PointerTypeNode, error) {
+	beginLoc := p.CurrLoc()
+	if !p.Expect(tokeniser.TOKEN_TYPE_ASTERISK) {
+		return nil, shared.NewError(p.PrevLoc(), "expected '*' to start pointer type")
+	}
+
+	tpe, err := p.ParseType()
+	if err != nil {
+		return nil, err
+	}
+
+	return &PointerTypeNode{
+		BaseType: tpe,
+		Loc:      beginLoc,
+	}, nil
+}
+
+func (p *Parser) ParseNamedType() (*NamedTypeNode, error) {
+	beginLoc := p.CurrLoc()
+	ident, err := p.ParseIdent()
+	if err != nil {
+		return nil, err
+	}
+
+	if ident.Next != nil {
+		return nil, shared.NewError(ident.Next.Loc, "type name cannot be a qualified identifier")
+	}
+
+	if !p.Match(tokeniser.TOKEN_TYPE_COLON) {
+		return &NamedTypeNode{
+			ModName: "",
+			Name:    ident.Name,
+			Loc:     beginLoc,
+		}, nil
+	}
+	p.Inc()
+
+	modIdent, err := p.ParseIdent()
+	if err != nil {
+		return nil, err
+	}
+
+	if modIdent.Next != nil {
+		return nil, shared.NewError(modIdent.Next.Loc, "module name cannot be a qualified identifier")
+	}
+
+	return &NamedTypeNode{
+		ModName: modIdent.Name,
+		Name:    ident.Name,
+		Loc:     beginLoc,
+	}, nil
 }

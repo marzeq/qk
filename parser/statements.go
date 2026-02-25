@@ -57,9 +57,10 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 		p.Inc()
 	}
 
-	if !p.Expect(tokeniser.TOKEN_TYPE_KEYWORD) {
+	if !p.Match(tokeniser.TOKEN_TYPE_KEYWORD) || p.Peek().Value != string(tokeniser.KEYWORD_LET) {
 		return nil, shared.NewError(p.PrevLoc(), "expected 'let' keyword")
 	}
+	p.Inc()
 
 	name, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_IDENT)
 	if !ok {
@@ -199,72 +200,36 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 	}, nil
 }
 
-func (p *Parser) ParseStructDefinition() (*StructDefNode, error) {
+func (p *Parser) ParseTypeAlias() (*TypeAliasNode, error) {
 	beginLoc := p.CurrLoc()
-
-	if !p.Expect(tokeniser.TOKEN_TYPE_KEYWORD) {
-		return nil, shared.NewError(p.PrevLoc(), "expected 'struct' keyword")
+	if !p.Match(tokeniser.TOKEN_TYPE_KEYWORD) || p.Peek().Value != string(tokeniser.KEYWORD_LET) {
+		return nil, shared.NewError(p.PrevLoc(), "expected 'let' keyword")
 	}
+	p.Inc()
 
 	name, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_IDENT)
 	if !ok {
-		return nil, shared.NewError(p.PrevLoc(), "expected struct name")
+		return nil, shared.NewError(p.PrevLoc(), "expected type alias name")
 	}
 
 	if !p.Expect(tokeniser.TOKEN_TYPE_EQUALS) {
 		return nil, shared.NewError(p.PrevLoc(), "expected '='")
 	}
 
-	if !p.Expect(tokeniser.TOKEN_TYPE_OPEN_CURLY) {
-		return nil, shared.NewError(p.PrevLoc(), "expected '{'")
+	if !p.Match(tokeniser.TOKEN_TYPE_KEYWORD) || p.Peek().Value != string(tokeniser.KEYWORD_TYPE) {
+		return nil, shared.NewError(p.PrevLoc(), "expected 'type' keyword")
+	}
+	p.Inc()
+
+	tpe, err := p.ParseType()
+	if err != nil {
+		return nil, err
 	}
 
-	for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
-		p.Inc()
-	}
-
-	var fields []StructField
-	for !p.Match(tokeniser.TOKEN_TYPE_CLOSE_CURLY) {
-		fieldName, err := p.ParseIdent()
-		if err != nil {
-			return nil, err
-		}
-		if fieldName.Next != nil {
-			return nil, shared.NewError(fieldName.Next.Loc, "field names cannot be qualified")
-		}
-
-		if !p.Expect(tokeniser.TOKEN_TYPE_COLON) {
-			return nil, shared.NewError(p.PrevLoc(), "expected ':'")
-		}
-
-		fieldType, err := p.ParseType()
-		if err != nil {
-			return nil, err
-		}
-
-		fields = append(fields, StructField{
-			Name: fieldName.Name,
-			Type: fieldType,
-		})
-
-		if !p.Match(tokeniser.TOKEN_TYPE_COMMA, tokeniser.TOKEN_TYPE_NEWLINE) {
-			break
-		}
-		p.Inc()
-
-		for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
-			p.Inc()
-		}
-	}
-
-	if !p.Expect(tokeniser.TOKEN_TYPE_CLOSE_CURLY) {
-		return nil, shared.NewError(p.PrevLoc(), "expected '}'")
-	}
-
-	return &StructDefNode{
-		Name:   name.Value,
-		Fields: fields,
-		Loc:    beginLoc,
+	return &TypeAliasNode{
+		Name: name.Value,
+		Type: tpe,
+		Loc:  beginLoc,
 	}, nil
 }
 
@@ -347,13 +312,21 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 			if !p.Expect(tokeniser.TOKEN_TYPE_IDENT) {
 				return nil, false, shared.NewError(p.PrevLoc(), "expected name")
 			}
-			p.Dec()
-			isParen := p.Next().Type == tokeniser.TOKEN_TYPE_OPEN_PAREN
-			p.Dec()
-			if isParen {
+			if p.Match(tokeniser.TOKEN_TYPE_OPEN_PAREN) {
+				p.Dec().Dec()
 				node, err := p.ParseFunctionDefinition()
 				return node, true, err
 			}
+			if !p.Match(tokeniser.TOKEN_TYPE_EQUALS) {
+				return nil, false, shared.NewError(p.PrevLoc(), "expected '=' after identifier")
+			}
+			p.Inc()
+			if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == string(tokeniser.KEYWORD_TYPE) {
+				p.Dec().Dec().Dec()
+				node, err := p.ParseTypeAlias()
+				return node, true, err
+			}
+			p.Dec().Dec().Dec()
 			node, err := p.ParseDeclaration()
 			return node, true, err
 		case string(tokeniser.KEYWORD_VAR):
@@ -460,7 +433,7 @@ func (p *Parser) ParseDeclaration() (*DeclarationNode, error) {
 		return nil, shared.NewError(p.PrevLoc(), "expected name")
 	}
 
-	var tpe *TypeNode
+	var tpe TypeNode
 	if p.Match(tokeniser.TOKEN_TYPE_COLON) {
 		p.Inc()
 

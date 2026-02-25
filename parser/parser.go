@@ -105,7 +105,7 @@ func (p *Parser) Parse() (*RootNode, error) {
 		for p.Match(tokeniser.TOKEN_TYPE_NEWLINE, tokeniser.TOKEN_TYPE_SEMICOLON) {
 			p.Inc()
 		}
-		e := shared.NewError(p.CurrLoc(), "expected function definition, struct definition or import statement")
+		e := shared.NewError(p.CurrLoc(), "expected function definition, constant definition, type alias or import statement")
 		if !p.Match(tokeniser.TOKEN_TYPE_KEYWORD) {
 			return nil, e
 		}
@@ -113,43 +113,37 @@ func (p *Parser) Parse() (*RootNode, error) {
 		switch p.Peek().Value {
 		case string(tokeniser.KEYWORD_PUB):
 			p.Inc()
-			if p.Peek().Type != tokeniser.TOKEN_TYPE_KEYWORD {
+			if !p.Match(tokeniser.TOKEN_TYPE_KEYWORD) || p.Peek().Value != string(tokeniser.KEYWORD_LET) {
 				return nil, e
 			}
-			switch p.Peek().Value {
-			case
-				string(tokeniser.KEYWORD_LET),
-				string(tokeniser.KEYWORD_EXTERN):
-				fnDef, err := p.ParseFunctionDefinition()
-				if err != nil {
-					return nil, err
-				}
-				fnDef.Pub = true
-				rootNode.Body = append(rootNode.Body, fnDef)
-			case string(tokeniser.KEYWORD_STRUCT):
-				str, err := p.ParseStructDefinition()
-				if err != nil {
-					return nil, err
-				}
-				str.Pub = true
-				rootNode.Body = append(rootNode.Body, str)
+			stmt, _, err := p.ParseStatement()
+			if err != nil {
+				return nil, err
+			}
+
+			switch s := stmt.(type) {
+			case *FunctionDefNode:
+				s.Pub = true
+			case *DeclarationNode:
+				s.Pub = true
+			case *TypeAliasNode:
+				s.Pub = true
 			default:
 				return nil, e
 			}
-		case
-			string(tokeniser.KEYWORD_LET),
-			string(tokeniser.KEYWORD_EXTERN):
-			fnDef, err := p.ParseFunctionDefinition()
+
+			rootNode.Body = append(rootNode.Body, stmt)
+		case string(tokeniser.KEYWORD_LET):
+			stmt, _, err := p.ParseStatement()
 			if err != nil {
 				return nil, err
 			}
-			rootNode.Body = append(rootNode.Body, fnDef)
-		case string(tokeniser.KEYWORD_STRUCT):
-			str, err := p.ParseStructDefinition()
-			if err != nil {
-				return nil, err
+			switch stmt.(type) {
+			case *FunctionDefNode, *DeclarationNode, *TypeAliasNode:
+				rootNode.Body = append(rootNode.Body, stmt)
+			default:
+				return nil, e
 			}
-			rootNode.Body = append(rootNode.Body, str)
 		case string(tokeniser.KEYWORD_IMPORT):
 			imp, err := p.ParseImport()
 			if err != nil {

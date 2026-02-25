@@ -63,6 +63,7 @@ const (
 	KEYWORD_VAR      KeywordType = "var"
 	KEYWORD_EXTERN   KeywordType = "extern"
 	KEYWORD_STRUCT   KeywordType = "struct"
+	KEYWORD_TYPE     KeywordType = "type"
 	KEYWORD_IF       KeywordType = "if"
 	KEYWORD_ELSE     KeywordType = "else"
 	KEYWORD_GIVEN    KeywordType = "given"

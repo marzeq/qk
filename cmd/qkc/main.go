@@ -6,15 +6,10 @@ import (
 	"os"
 	"os/exec"
 	"path"
-	"slices"
-	"strings"
+	"runtime"
 
-	"github.com/marzeq/qk/codegen"
-	"github.com/marzeq/qk/modules"
 	"github.com/marzeq/qk/parser"
-	"github.com/marzeq/qk/shared"
 	"github.com/marzeq/qk/tokeniser"
-	"github.com/marzeq/qk/typechecker"
 )
 
 func _check(err error) {
@@ -129,25 +124,12 @@ func parseArgs() (
 }
 
 func main() {
-	outFile, linkerFlags, sources, irOutput, asmOutput, buildDir := parseArgs()
+	_, _, sources, _, _, _ := parseArgs()
 	if len(sources) != 1 {
 		fmt.Println("for now, only one source file is supported")
 		os.Exit(1)
 	}
 	srcFile := sources[0]
-	outBaseName := strings.TrimSuffix(path.Base(outFile), path.Ext(outFile))
-	pathExt := path.Ext(outFile)
-
-	var tmpDir string
-	if buildDir == "" {
-		td, err := os.MkdirTemp("", "qk_build_*")
-		_check(err)
-		tmpDir = td
-		defer os.RemoveAll(tmpDir)
-	} else {
-		tmpDir = buildDir
-		os.MkdirAll(tmpDir, 0o755)
-	}
 
 	t, err := tokeniser.NewTokeniserFromFile(srcFile)
 	_check(err)
@@ -159,119 +141,6 @@ func main() {
 	ast, err := p.Parse()
 	_check(err)
 
-	dg, err := modules.NewDepGraph(srcFile, ast)
-	_check(err)
-
-	files, err := dg.TopoSort()
-	_check(err)
-
-	ms := make(typechecker.ModulesSignatures)
-	moduleToFiles := make(map[string][]string)
-
-	for _, f := range files {
-		mod, err := ms.CollectSignaturesFromRootNode(dg.ASTs[f], typechecker.CollectImports(dg.ASTs[f]))
-		_check(err)
-		moduleToFiles[mod] = append(moduleToFiles[mod], f)
-	}
-
-	processedModules := map[string]struct{}{}
-
-	for mod, filesInMod := range moduleToFiles {
-		if _, ok := processedModules[mod]; ok {
-			continue
-		}
-
-		tc := typechecker.NewTypeChecker(mod, ms)
-
-		for _, f := range filesInMod {
-			ast, err := tc.TypeCheck(dg.ASTs[f])
-			_check(err)
-			dg.ASTs[f] = ast
-		}
-
-		processedModules[mod] = struct{}{}
-	}
-
-	ir := ""
-	var cnstId uint = 0
-	for _, f := range files {
-		mod := ""
-		for m, fs := range moduleToFiles {
-			if slices.Contains(fs, f) {
-				mod = m
-			}
-			if mod != "" {
-				break
-			}
-		}
-
-		cg := codegen.NewCodeGen(dg.ASTs[f], mod, ms, cnstId)
-		fileIr, cId, err := cg.EmitIR()
-		_check(err)
-		ir += fileIr + "\n"
-		cnstId += cId
-	}
-
-	switch pathExt {
-	case "":
-		mainSig, ok := ms.LookupFunction("", "main", "", nil, false)
-		if !ok {
-			fmt.Println("no main function found in the default module")
-			os.Exit(1)
-		}
-		if len(mainSig.ArgTypes) != 0 {
-			fmt.Println("main function must take no arguments")
-			os.Exit(1)
-		}
-		if !mainSig.RetType.Compare(shared.PRIMITIVE_VOID) {
-			fmt.Println("main function must return void")
-			os.Exit(1)
-		}
-		ir += "\nexport function w $main() {\n"
-		ir += "@start\n"
-		ir += "  call $_main()\n"
-		ir += "  ret 0\n"
-		ir += "}\n"
-	}
-
-	cc := []string{os.Getenv("CC")}
-	if cc[0] == "" {
-		cc = []string{"cc"}
-	}
-	if cc[0] == "zig cc" {
-		cc = []string{"zig", "cc"}
-	}
-
-	ssaPath := path.Join(tmpDir, outBaseName+".ssa")
-	_check(os.WriteFile(ssaPath, []byte(ir), 0o644))
-	if irOutput != "" {
-		_check(copyFile(ssaPath, irOutput))
-	}
-
-	sPath := path.Join(tmpDir, outBaseName+".s")
-	_check(runCmd("qbe", "-o", sPath, ssaPath))
-	if asmOutput != "" {
-		_check(copyFile(sPath, asmOutput))
-	}
-
-	oPath := path.Join(tmpDir, outBaseName+".o")
-	_check(runCmd(slices.Concat(cc, []string{"-c", "-o", oPath, sPath})...))
-
-	switch pathExt {
-	case ".o":
-		_check(copyFile(oPath, outFile))
-	case ".a":
-		_check(runCmd("ar", "rcs", outFile, oPath))
-	case ".so":
-		args := slices.Concat(cc, append([]string{"cc", "-shared", "-o", outFile, oPath}, linkerFlags...))
-		_check(runCmd(args...))
-	case "":
-		if outFile == "" {
-			outFile = "a.out"
-		}
-		args := slices.Concat(cc, append([]string{"-o", outFile, oPath}, linkerFlags...))
-		_check(runCmd(args...))
-	default:
-		fmt.Printf("unknown output file extension: %s\n", pathExt)
-	}
+	_ = ast
+	runtime.Breakpoint()
 }

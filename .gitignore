@@ -4,5 +4,6 @@ test
 *.so
 *.a
 test.qk
+example.qk
 a.out
-qk
+qkc
