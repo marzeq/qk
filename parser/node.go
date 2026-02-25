@@ -4,12 +4,14 @@ import (
 	"github.com/marzeq/qk/shared"
 	"github.com/marzeq/qk/symbols"
 	"github.com/marzeq/qk/tokeniser"
+	"github.com/marzeq/qk/types"
 )
 
 type (
 	Node           interface{ GetLoc() shared.Location }
 	ExpressionNode interface {
 		Node
+		_expression()
 	}
 )
 
@@ -25,6 +27,7 @@ type IdentifierNode struct {
 	Next   *IdentifierNode
 	Loc    shared.Location
 	Symbol *symbols.Symbol
+	Type   types.Type
 }
 
 func (n IdentifierNode) GetLoc() shared.Location { return n.Loc }
@@ -34,12 +37,14 @@ func (n IdentifierNode) String() string {
 	}
 	return n.Name
 }
+func (n IdentifierNode) _expression() {}
 
 type ModuleAccessNode struct {
 	ModName string
 	Ident   *IdentifierNode
 	Loc     shared.Location
 	Symbol  *symbols.Symbol
+	Type    types.Type
 }
 
 func (n ModuleAccessNode) GetLoc() shared.Location { return n.Loc }
@@ -49,6 +54,7 @@ func (n ModuleAccessNode) String() string {
 	}
 	return n.ModName + ":" + n.Ident.String()
 }
+func (n ModuleAccessNode) _expression() {}
 
 type NamedTypeNode struct {
 	ModName string
@@ -98,68 +104,86 @@ type TypeNode interface {
 type BoolLiteralNode struct {
 	Value string
 	Loc   shared.Location
+	Type  types.Type
 }
 
 func (n BoolLiteralNode) GetLoc() shared.Location { return n.Loc }
+func (n BoolLiteralNode) _expression()            {}
 
 type IntegerLiteralNode struct {
 	Value string
 	Loc   shared.Location
+	Type  types.Type
 }
 
 func (n IntegerLiteralNode) GetLoc() shared.Location { return n.Loc }
+func (n IntegerLiteralNode) _expression()            {}
 
 type FloatLiteralNode struct {
 	Value string
 	Loc   shared.Location
+	Type  types.Type
 }
 
 func (n FloatLiteralNode) GetLoc() shared.Location { return n.Loc }
+func (n FloatLiteralNode) _expression()            {}
 
 type StringLiteralNode struct {
 	Value string
 	Loc   shared.Location
+	Type  types.Type
 }
 
 func (n StringLiteralNode) GetLoc() shared.Location { return n.Loc }
+func (n StringLiteralNode) _expression()            {}
 
 type CharLiteralNode struct {
 	Value byte
 	Loc   shared.Location
+	Type  types.Type
 }
 
 func (n CharLiteralNode) GetLoc() shared.Location { return n.Loc }
+func (n CharLiteralNode) _expression()            {}
 
 type NilLiteralNode struct {
-	Loc shared.Location
+	Loc  shared.Location
+	Type types.Type
 }
 
 func (n NilLiteralNode) GetLoc() shared.Location { return n.Loc }
+func (n NilLiteralNode) _expression()            {}
 
 type StructLiteralNode struct {
 	Name   *ModuleAccessNode
 	Fields []shared.Pair[string, ExpressionNode] // field name, value
 	Loc    shared.Location
 	Symbol *symbols.Symbol
+	Type   types.Type
 }
 
 func (n StructLiteralNode) GetLoc() shared.Location { return n.Loc }
+func (n StructLiteralNode) _expression()            {}
 
 type ArrayLiteralNode struct {
 	Elements []ExpressionNode
 	Loc      shared.Location
+	Type     types.Type
 }
 
 func (n ArrayLiteralNode) GetLoc() shared.Location { return n.Loc }
+func (n ArrayLiteralNode) _expression()            {}
 
 type FunctionCallNode struct {
 	Name   *ModuleAccessNode
 	Args   []ExpressionNode
 	Loc    shared.Location
 	Symbol *symbols.Symbol
+	Type   types.Type
 }
 
 func (n FunctionCallNode) GetLoc() shared.Location { return n.Loc }
+func (n FunctionCallNode) _expression()            {}
 
 type IfExprBranch struct {
 	Condition ExpressionNode
@@ -171,17 +195,21 @@ type IfExprNode struct {
 	ElseIfBranches []IfExprBranch
 	ElseBranch     ExpressionNode
 	Loc            shared.Location
+	Type           types.Type
 }
 
 func (n IfExprNode) GetLoc() shared.Location { return n.Loc }
+func (n IfExprNode) _expression()            {}
 
 type GivenExprNode struct {
 	Block     *BlockNode
 	FinalExpr ExpressionNode
 	Loc       shared.Location
+	Type      types.Type
 }
 
 func (n GivenExprNode) GetLoc() shared.Location { return n.Loc }
+func (n GivenExprNode) _expression()            {}
 
 type UnaryOpType uint
 
@@ -214,17 +242,21 @@ type UnaryOpNode struct {
 	Op      UnaryOpType
 	Operand ExpressionNode
 	Loc     shared.Location
+	Type    types.Type
 }
 
 func (n UnaryOpNode) GetLoc() shared.Location { return n.Loc }
+func (n UnaryOpNode) _expression()            {}
 
 type IndexExprNode struct {
 	Subject ExpressionNode
 	Index   ExpressionNode
 	Loc     shared.Location
+	Type    types.Type
 }
 
 func (n IndexExprNode) GetLoc() shared.Location { return n.Loc }
+func (n IndexExprNode) _expression()            {}
 
 type BinaryOpType uint
 
@@ -249,24 +281,30 @@ type BinaryOpNode struct {
 	Operand1 ExpressionNode
 	Operand2 ExpressionNode
 	Loc      shared.Location
+	Type     types.Type
 }
 
 func (n BinaryOpNode) GetLoc() shared.Location { return n.Loc }
+func (n BinaryOpNode) _expression()            {}
 
 type CastNode struct {
 	ToType  TypeNode
 	Operand ExpressionNode
 	Loc     shared.Location
+	Type    types.Type
 }
 
 func (n CastNode) GetLoc() shared.Location { return n.Loc }
+func (n CastNode) _expression()            {}
 
 type SizeOfNode struct {
 	Operand TypeNode
 	Loc     shared.Location
+	Type    types.Type
 }
 
 func (n SizeOfNode) GetLoc() shared.Location { return n.Loc }
+func (n SizeOfNode) _expression()            {}
 
 type ImportNode struct {
 	Modules []string

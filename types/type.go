@@ -27,6 +27,8 @@ const (
 	PRIMITIVE_USZ PrimitiveType = "usz"
 
 	PRIMITIVE_VOID PrimitiveType = "void"
+
+	PRIMITIVE_CHAR PrimitiveType = "char"
 )
 
 func (p PrimitiveType) IsInteger() bool {
@@ -61,6 +63,11 @@ func (p PrimitiveType) CanCoerceTo(other Type) bool {
 	}
 
 	if p.IsNumeric() && otherPrimitive.IsNumeric() {
+		return true
+	}
+
+	if p.Equals(PRIMITIVE_CHAR) && otherPrimitive.Equals(PRIMITIVE_U8) ||
+		p.Equals(PRIMITIVE_U8) && otherPrimitive.Equals(PRIMITIVE_CHAR) {
 		return true
 	}
 
