@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/marzeq/qk/loader"
@@ -55,7 +54,6 @@ func main() {
 	check(err)
 
 	fmt.Println("semantic analysis completed successfully")
-	runtime.Breakpoint()
 }
 
 func parseFile(path string) *parser.RootNode {
