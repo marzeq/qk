@@ -58,7 +58,9 @@ func (a *Analyser) visitFunction(n *parser.FunctionDefNode) {
 		a.defineSymbol(paramSym, n)
 	}
 
-	a.visit(n.Body)
+	if n.Body != nil {
+		a.visit(n.Body)
+	}
 	a.current = prev
 }
 

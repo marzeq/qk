@@ -1,6 +1,6 @@
 let printf(s: *char, ...) = extern("printf")
 
-struct A = {
+let A = type struct {
   a: i32
   junk1: i32
   junk2: i32

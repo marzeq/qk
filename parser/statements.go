@@ -124,18 +124,14 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 		return nil, shared.NewError(p.PrevLoc(), "expected ')'")
 	}
 
-	retType := FunctionNodeType{
-		Type: nil,
-	}
+	var retType TypeNode
 	if p.Match(tokeniser.TOKEN_TYPE_COLON) {
 		p.Inc()
 		argType, err := p.ParseType()
 		if err != nil {
 			return nil, err
 		}
-		retType = FunctionNodeType{
-			Type: argType,
-		}
+		retType = argType
 	}
 
 	if !p.Expect(tokeniser.TOKEN_TYPE_EQUALS) {

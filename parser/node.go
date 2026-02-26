@@ -328,7 +328,7 @@ type FunctionNodeType struct {
 type FunctionDefNode struct {
 	Name        string
 	Args        []FunctionNodeType
-	RetType     FunctionNodeType
+	RetType     TypeNode
 	Body        Node
 	ExternFrom  string
 	HasVariadic bool

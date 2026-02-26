@@ -1,6 +1,10 @@
 package sema
 
-import "github.com/marzeq/qk/parser"
+import (
+	"github.com/marzeq/qk/parser"
+	"github.com/marzeq/qk/symbols"
+	"github.com/marzeq/qk/types"
+)
 
 func (a *Analyser) collectTopLevel(root *parser.RootNode) {
 	for _, node := range root.Body {
@@ -29,6 +33,91 @@ func (a *Analyser) resolveBodies(root *parser.RootNode) {
 	}
 
 	for _, node := range root.Body {
-		a.visit(node)
+		if fn, ok := node.(*parser.FunctionDefNode); ok {
+			a.visitFunction(fn)
+		}
+	}
+}
+
+func (a *Analyser) collectFunctionSignature(n *parser.FunctionDefNode) {
+	paramTypes := make([]types.Type, len(n.Args))
+
+	for i, arg := range n.Args {
+		paramTypes[i] = a.resolveTypeNode(arg.Type)
+	}
+
+	var retType types.Type
+	if n.RetType != nil {
+		retType = a.resolveTypeNode(n.RetType)
+	}
+
+	sig := &symbols.FunctionSignature{
+		Parameters: paramTypes,
+		ReturnType: retType,
+		Variadic:   n.HasVariadic,
+	}
+
+	sym := &symbols.Symbol{
+		Name:      n.Name,
+		Kind:      symbols.SymbolKindFunction,
+		Signature: sig,
+	}
+
+	if a.defineSymbol(sym, n) {
+		n.Symbol = sym
+	}
+}
+
+func (a *Analyser) collectTypeAlias(n *parser.TypeAliasNode) {
+	sym := &symbols.Symbol{
+		Name: n.Name,
+		Kind: symbols.SymbolKindType,
+	}
+
+	if !a.defineSymbol(sym, n) {
+		return
+	}
+
+	n.Symbol = sym
+
+	a.aliases[n.Name] = &aliasInfo{
+		node:  n,
+		state: aliasUnseen,
+	}
+}
+
+func (a *Analyser) collectGlobalVariable(n *parser.DeclarationNode) {
+	var varType types.Type
+
+	if n.Type != nil {
+		varType = a.resolveTypeNode(n.Type)
+	}
+
+	sym := &symbols.Symbol{
+		Name: n.Name,
+		Kind: symbols.SymbolKindVariable,
+		Type: varType,
+	}
+
+	if a.defineSymbol(sym, n) {
+		n.Symbol = sym
+	}
+}
+
+func (a *Analyser) collectImport(n *parser.ImportNode) {
+	for _, name := range n.Modules {
+		mod, ok := a.modules[name]
+		if !ok {
+			a.errorf(n, "unknown module %q", name)
+			continue
+		}
+
+		sym := &symbols.Symbol{
+			Name:   name,
+			Kind:   symbols.SymbolKindModule,
+			Module: mod,
+		}
+
+		a.defineSymbol(sym, n)
 	}
 }
