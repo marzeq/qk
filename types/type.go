@@ -5,6 +5,7 @@ import "github.com/marzeq/qk/shared"
 type Type interface {
 	Equals(Type) bool
 	CanCoerceTo(Type) bool
+	CanCastTo(Type) bool
 }
 
 type PrimitiveType string
@@ -45,6 +46,34 @@ func (p PrimitiveType) IsNumeric() bool {
 	return p.IsInteger() || p.IsFloat()
 }
 
+func IntegerRank(p PrimitiveType) int {
+	switch p {
+	case PRIMITIVE_I8, PRIMITIVE_U8:
+		return 1
+	case PRIMITIVE_I16, PRIMITIVE_U16:
+		return 2
+	case PRIMITIVE_I32, PRIMITIVE_U32:
+		return 3
+	case PRIMITIVE_I64, PRIMITIVE_U64:
+		return 4
+	case PRIMITIVE_ISZ, PRIMITIVE_USZ:
+		return 5
+	default:
+		return 0
+	}
+}
+
+func FloatRank(p PrimitiveType) int {
+	switch p {
+	case PRIMITIVE_F32:
+		return 1
+	case PRIMITIVE_F64:
+		return 2
+	default:
+		return 0
+	}
+}
+
 func (p PrimitiveType) Equals(other Type) bool {
 	if otherPrimitive, ok := other.(PrimitiveType); ok {
 		return p == otherPrimitive
@@ -62,13 +91,44 @@ func (p PrimitiveType) CanCoerceTo(other Type) bool {
 		return false
 	}
 
+	if p.IsInteger() && otherPrimitive.IsInteger() {
+		return IntegerRank(p) <= IntegerRank(otherPrimitive)
+	}
+
+	if p.IsInteger() && otherPrimitive.IsFloat() {
+		return true
+	}
+
+	if p.IsFloat() && otherPrimitive.IsFloat() {
+		return FloatRank(p) <= FloatRank(otherPrimitive)
+	}
+
+	return false
+}
+
+func (p PrimitiveType) CanCastTo(other Type) bool {
+	if p.Equals(other) {
+		return true
+	}
+
+	otherPrimitive, ok := other.(PrimitiveType)
+	if !ok {
+		return false
+	}
+
 	if p.IsNumeric() && otherPrimitive.IsNumeric() {
 		return true
 	}
 
-	if p.Equals(PRIMITIVE_CHAR) && otherPrimitive.Equals(PRIMITIVE_U8) ||
-		p.Equals(PRIMITIVE_U8) && otherPrimitive.Equals(PRIMITIVE_CHAR) {
+	if (p == PRIMITIVE_CHAR && otherPrimitive.IsInteger()) ||
+		(otherPrimitive == PRIMITIVE_CHAR && p.IsInteger()) {
 		return true
+	}
+
+	if p.IsInteger() {
+		if _, ok := other.(PointerType); ok {
+			return true
+		}
 	}
 
 	return false
@@ -105,6 +165,10 @@ func (s StructType) CanCoerceTo(other Type) bool {
 	return false
 }
 
+func (s StructType) CanCastTo(other Type) bool {
+	return s.Equals(other)
+}
+
 type PointerType struct {
 	Base Type
 }
@@ -130,6 +194,21 @@ func (p PointerType) CanCoerceTo(other Type) bool {
 		return true
 	}
 	return p.Base.CanCoerceTo(otherPointer.Base)
+}
+
+func (p PointerType) CanCastTo(other Type) bool {
+	if p.Equals(other) {
+		return true
+	}
+
+	switch t := other.(type) {
+	case PointerType:
+		return true
+	case PrimitiveType:
+		return t.IsInteger()
+	}
+
+	return false
 }
 
 type ArrayType struct {
@@ -165,6 +244,10 @@ func (a ArrayType) CanCoerceTo(other Type) bool {
 	}
 
 	return a.Base.CanCoerceTo(otherArray.Base)
+}
+
+func (a ArrayType) CanCastTo(other Type) bool {
+	return a.Equals(other)
 }
 
 type FunctionType struct {
@@ -210,6 +293,10 @@ func (f FunctionType) CanCoerceTo(other Type) bool {
 	return f.ReturnType.CanCoerceTo(otherFunction.ReturnType)
 }
 
+func (f FunctionType) CanCastTo(other Type) bool {
+	return f.Equals(other)
+}
+
 type ErrorType struct{}
 
 func (e ErrorType) Equals(other Type) bool {
@@ -218,5 +305,144 @@ func (e ErrorType) Equals(other Type) bool {
 }
 
 func (e ErrorType) CanCoerceTo(other Type) bool {
-	return e.Equals(other)
+	return true
+}
+
+func (e ErrorType) CanCastTo(other Type) bool {
+	return true
+}
+
+type UntypedInt struct{}
+
+func (u UntypedInt) Equals(other Type) bool {
+	_, ok := other.(UntypedInt)
+	return ok
+}
+
+func (u UntypedInt) CanCoerceTo(other Type) bool {
+	switch t := other.(type) {
+	case PrimitiveType:
+		return t.IsInteger() || t.IsFloat()
+	case UntypedInt:
+		return true
+	case UntypedFloat:
+		return true
+	default:
+		return false
+	}
+}
+
+type UntypedFloat struct{}
+
+func (u UntypedFloat) Equals(other Type) bool {
+	_, ok := other.(UntypedFloat)
+	return ok
+}
+
+func (u UntypedFloat) CanCoerceTo(other Type) bool {
+	switch t := other.(type) {
+	case PrimitiveType:
+		return t.IsFloat()
+	case UntypedFloat:
+		return true
+	default:
+		return false
+	}
+}
+
+func IsUntyped(t Type) bool {
+	switch t.(type) {
+	case UntypedInt, UntypedFloat:
+		return true
+	}
+	return false
+}
+
+func PromoteNumeric(a, b Type) Type {
+	if a.Equals(b) {
+		return a
+	}
+
+	if _, ok := a.(UntypedInt); ok {
+		return b
+	}
+	if _, ok := b.(UntypedInt); ok {
+		return a
+	}
+
+	if _, ok := a.(UntypedFloat); ok {
+		return b
+	}
+	if _, ok := b.(UntypedFloat); ok {
+		return a
+	}
+
+	pa, aok := a.(PrimitiveType)
+	pb, bok := b.(PrimitiveType)
+
+	if !aok || !bok {
+		return ErrorType{}
+	}
+
+	if pa.IsFloat() || pb.IsFloat() {
+		if pa == PRIMITIVE_F64 || pb == PRIMITIVE_F64 {
+			return PRIMITIVE_F64
+		}
+		return PRIMITIVE_F32
+	}
+
+	return WiderInteger(pa, pb)
+}
+
+func WiderInteger(a, b PrimitiveType) PrimitiveType {
+	rank := func(p PrimitiveType) int {
+		switch p {
+		case PRIMITIVE_I8, PRIMITIVE_U8:
+			return 1
+		case PRIMITIVE_I16, PRIMITIVE_U16:
+			return 2
+		case PRIMITIVE_I32, PRIMITIVE_U32:
+			return 3
+		case PRIMITIVE_I64, PRIMITIVE_U64:
+			return 4
+		case PRIMITIVE_ISZ, PRIMITIVE_USZ:
+			return 5
+		default:
+			return 0
+		}
+	}
+
+	if rank(a) >= rank(b) {
+		return a
+	}
+	return b
+}
+
+func DefaultUntyped(t Type) Type {
+	switch t.(type) {
+	case UntypedInt:
+		return PRIMITIVE_I32
+	case UntypedFloat:
+		return PRIMITIVE_F32
+	default:
+		return t
+	}
+}
+
+func (u UntypedInt) CanCastTo(other Type) bool {
+	switch t := other.(type) {
+	case PrimitiveType:
+		return t.IsNumeric()
+	default:
+		return false
+	}
+}
+
+func (u UntypedFloat) CanCastTo(other Type) bool {
+	switch t := other.(type) {
+	case PrimitiveType:
+		return t.IsFloat() || t.IsInteger()
+	default:
+		return false
+	}
 }
