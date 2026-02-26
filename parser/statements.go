@@ -304,27 +304,46 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 		kw := p.Peek().Value
 		switch kw {
 		case string(tokeniser.KEYWORD_LET):
-			p.Inc()
+			start := p.Pos()
+
+			p.Inc() // consume `let`
+
 			if !p.Expect(tokeniser.TOKEN_TYPE_IDENT) {
 				return nil, false, shared.NewError(p.PrevLoc(), "expected name")
 			}
-			if p.Match(tokeniser.TOKEN_TYPE_OPEN_PAREN) {
-				p.Dec().Dec()
+
+			switch {
+			case p.Match(tokeniser.TOKEN_TYPE_OPEN_PAREN):
+				// let fn(...) = ...
+				p.SetPos(start)
 				node, err := p.ParseFunctionDefinition()
 				return node, true, err
-			}
-			if !p.Match(tokeniser.TOKEN_TYPE_EQUALS) {
-				return nil, false, shared.NewError(p.PrevLoc(), "expected '=' after identifier")
-			}
-			p.Inc()
-			if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) && p.Peek().Value == string(tokeniser.KEYWORD_TYPE) {
-				p.Dec().Dec().Dec()
-				node, err := p.ParseTypeAlias()
+
+			case p.Match(tokeniser.TOKEN_TYPE_COLON):
+				// let x: T = ...
+				p.SetPos(start)
+				node, err := p.ParseDeclaration()
+				return node, true, err
+
+			case p.Match(tokeniser.TOKEN_TYPE_EQUALS):
+				p.Inc() // look past '='
+
+				if p.Match(tokeniser.TOKEN_TYPE_KEYWORD) &&
+					p.Peek().Value == string(tokeniser.KEYWORD_TYPE) {
+
+					// let A = type ...
+					p.SetPos(start)
+					node, err := p.ParseTypeAlias()
+					return node, true, err
+				}
+
+				// let x = ...
+				p.SetPos(start)
+				node, err := p.ParseDeclaration()
 				return node, true, err
 			}
-			p.Dec().Dec().Dec()
-			node, err := p.ParseDeclaration()
-			return node, true, err
+
+			return nil, false, shared.NewError(p.PrevLoc(), "invalid let statement")
 		case string(tokeniser.KEYWORD_VAR):
 			node, err := p.ParseDeclaration()
 			return node, true, err

@@ -19,6 +19,15 @@ func NewParser(tokens []tokeniser.Token) *Parser {
 	}
 }
 
+func (p *Parser) Pos() int {
+	return p.pos
+}
+
+func (p *Parser) SetPos(pos int) *Parser {
+	p.pos = pos
+	return p
+}
+
 func (p *Parser) Peek() tokeniser.Token {
 	if p.pos >= len(p.tokens) || p.pos < 0 {
 		return tokeniser.Token{Type: tokeniser.TOKEN_TYPE_EOF}
