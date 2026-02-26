@@ -1,6 +1,6 @@
 # qk
 
-This is my work in progress compiler targeting the [QBE backend](https://c9x.me/compile/) for a custom language I'm designing.
+This is my work in progress compiler for a custom language I'm designing.
 
 ## Rationale
 
@@ -37,24 +37,12 @@ go build ./cmd/qkc # or run 'go run ./cmd/qkc' directly
 ```
 ## Supported platforms
 
-The compiler is limited by QBE which supports:
-
-- Linux (x86-64, ARM64)
-- Apple (x86-64, ARM64)
-
-There is a special branch in QBE called `winabi` and I plan to vendor-in that branch to support Windows in the future, but not yet.
+- Codegen is not yet implemented on this branch. In the main branch we target QBE, so it's only X86-64 and ARM64, but here I plan to
+  finally switch over to LLVM, so in the future we should be able to support more platforms.
 
 ## Dependencies
 
 - Modern Go version
-- QBE
-- Standard POSIX build tools
-- (in the future mingw for Windows support)
-
-## Examples
-
-As I have previously mentioned, the language does not have a formal specification. However, there are some samples in the `examples/` directory
-that showcase some of the language features, and while I added them primairly for testing purposes, you can of course use them as reference too.
 
 ## Contributing
 
