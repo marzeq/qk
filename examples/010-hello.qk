@@ -1,5 +1,0 @@
-let printf(s: *char, ...) = extern("printf")
-
-let main() = {
-  printf("Hello from Quokka!\n")
-}
