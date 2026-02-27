@@ -108,9 +108,7 @@ func (w *debugWalker) walkExpr(expr parser.ExpressionNode) {
 		*parser.NilLiteralNode:
 
 	case *parser.CastNode:
-		if n.ToType != nil && types.IsUntyped(n.Operand.GetType()) { // allow this, this is compiler inserted
-			w.walkExpr(n.Operand)
-		}
+		w.walkExpr(n.Operand)
 		w.checkType(n.Type)
 
 	case *parser.UnaryOpNode:

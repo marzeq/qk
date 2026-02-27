@@ -110,10 +110,7 @@ func (v *Validator) finaliseDeclaration(n *parser.DeclarationNode) {
 		}
 
 		if !valueType.Equals(declared) {
-			n.Value = &parser.CastNode{
-				Operand: n.Value,
-				Type:    declared,
-			}
+			n.Value = v.createCast(n.Value, declared)
 		}
 
 		n.Symbol.Type = declared
@@ -144,10 +141,7 @@ func (v *Validator) validateAssignment(n *parser.AssignmentNode) {
 	}
 
 	if !rhsType.Equals(lhsType) {
-		n.Value = &parser.CastNode{
-			Operand: n.Value,
-			Type:    lhsType,
-		}
+		n.Value = v.createCast(n.Value, lhsType)
 	}
 }
 
@@ -203,10 +197,7 @@ func (v *Validator) validateArrayAssignment(n *parser.ArrayAssignmentNode) {
 	}
 
 	if !valueType.Equals(base) {
-		n.Value = &parser.CastNode{
-			Operand: n.Value,
-			Type:    base,
-		}
+		n.Value = v.createCast(n.Value, base)
 	}
 }
 
@@ -246,10 +237,7 @@ func (v *Validator) validateReturn(n *parser.ControlKeywordNode) {
 	}
 
 	if !valueType.Equals(expected) {
-		n.ReturnValue = &parser.CastNode{
-			Operand: n.ReturnValue,
-			Type:    expected,
-		}
+		n.ReturnValue = v.createCast(n.ReturnValue, expected)
 	}
 }
 
@@ -289,10 +277,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			}
 
 			if !argType.Equals(paramType) {
-				n.Args[i] = &parser.CastNode{
-					Operand: arg,
-					Type:    paramType,
-				}
+				n.Args[i] = v.createCast(arg, paramType)
 			}
 		}
 
@@ -457,10 +442,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 
 		for i, el := range n.Elements {
 			if !el.GetType().Equals(common) {
-				n.Elements[i] = &parser.CastNode{
-					Operand: el,
-					Type:    common,
-				}
+				n.Elements[i] = v.createCast(el, common)
 			}
 		}
 
@@ -480,5 +462,31 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 
 	if types.IsUntyped(node.GetType()) {
 		node.SetType(types.DefaultUntyped(node.GetType()))
+	}
+}
+
+func (v *Validator) createCast(node parser.ExpressionNode, target types.Type) parser.ExpressionNode {
+	if node.GetType().Equals(target) {
+		return node
+	}
+
+	switch n := node.(type) {
+	case *parser.IntegerLiteralNode:
+		def := types.DefaultUntyped(n.GetType())
+		if types.IsUntyped(n.GetType()) && target.Equals(def) {
+			n.SetType(def)
+		}
+		return n
+	case *parser.FloatLiteralNode:
+		def := types.DefaultUntyped(n.GetType())
+		if types.IsUntyped(n.GetType()) && target.Equals(def) {
+			n.SetType(def)
+		}
+		return n
+	}
+
+	return &parser.CastNode{
+		Operand: node,
+		Type:    target,
 	}
 }
