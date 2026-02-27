@@ -78,8 +78,8 @@ func (a *Analyser) visitBlock(n *parser.BlockNode) {
 func (a *Analyser) visitLocalDeclaration(n *parser.DeclarationNode) {
 	var varType types.Type
 
-	if n.Type != nil {
-		varType = a.resolveTypeNode(n.Type)
+	if n.TypeNode != nil {
+		varType = a.resolveTypeNode(n.TypeNode)
 	}
 
 	sym := &symbols.Symbol{
@@ -101,6 +101,9 @@ func (a *Analyser) visitExpression(expr parser.ExpressionNode) {
 
 	case *parser.IdentifierNode:
 		a.resolveIdentifier(e)
+
+	case *parser.ModuleAccessNode:
+		a.resolveModuleAccess(e)
 
 	case *parser.BinaryOpNode:
 		a.visitExpression(e.Operand1)
@@ -138,7 +141,6 @@ func (a *Analyser) visitExpression(expr parser.ExpressionNode) {
 		}
 
 	case *parser.CastNode:
-		a.resolveTypeNode(e.ToType)
 		a.visitExpression(e.Operand)
 
 	case *parser.SizeOfNode:

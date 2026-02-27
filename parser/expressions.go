@@ -401,11 +401,6 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 		if p.Match(tokeniser.TOKEN_TYPE_COLON) {
 			p.Inc()
 
-			if ident.Next != nil {
-				return nil, shared.NewError(ident.Loc,
-					"module name cannot be a qualified identifier")
-			}
-
 			for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
 				p.Inc()
 			}
@@ -805,26 +800,6 @@ func (p *Parser) ParseIdent() (*IdentifierNode, error) {
 		Name: firstIdent.Value,
 		Loc:  beginLoc,
 	}
-	currnode := node
-
-	for p.Match(tokeniser.TOKEN_TYPE_DOT) {
-		p.Inc()
-
-		for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
-			p.Inc()
-		}
-
-		loc := p.CurrLoc()
-		nextIdent, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_IDENT)
-		if !ok {
-			return nil, shared.NewError(p.PrevLoc(), "expected identifier")
-		}
-		currnode.Next = &IdentifierNode{
-			Name: nextIdent.Value,
-			Loc:  loc,
-		}
-		currnode = currnode.Next
-	}
 
 	return node, nil
 }
@@ -866,9 +841,6 @@ func (p *Parser) ParseStructType() (*StructTypeNode, error) {
 		fieldName, err := p.ParseIdent()
 		if err != nil {
 			return nil, err
-		}
-		if fieldName.Next != nil {
-			return nil, shared.NewError(fieldName.Next.Loc, "field names cannot be qualified")
 		}
 
 		if !p.Expect(tokeniser.TOKEN_TYPE_COLON) {
@@ -990,10 +962,6 @@ func (p *Parser) ParseNamedType() (*NamedTypeNode, error) {
 		return nil, err
 	}
 
-	if ident.Next != nil {
-		return nil, shared.NewError(ident.Next.Loc, "type name cannot be a qualified identifier")
-	}
-
 	if !p.Match(tokeniser.TOKEN_TYPE_COLON) {
 		return &NamedTypeNode{
 			ModName: "",
@@ -1006,10 +974,6 @@ func (p *Parser) ParseNamedType() (*NamedTypeNode, error) {
 	modIdent, err := p.ParseIdent()
 	if err != nil {
 		return nil, err
-	}
-
-	if modIdent.Next != nil {
-		return nil, shared.NewError(modIdent.Next.Loc, "module name cannot be a qualified identifier")
 	}
 
 	return &NamedTypeNode{

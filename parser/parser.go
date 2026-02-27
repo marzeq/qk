@@ -8,8 +8,9 @@ import (
 )
 
 type Parser struct {
-	pos    int
-	tokens []tokeniser.Token
+	pos      int
+	tokens   []tokeniser.Token
+	posStack []int
 }
 
 func NewParser(tokens []tokeniser.Token) *Parser {
@@ -19,13 +20,26 @@ func NewParser(tokens []tokeniser.Token) *Parser {
 	}
 }
 
-func (p *Parser) Pos() int {
-	return p.pos
+func (p *Parser) PushPos() {
+	p.posStack = append(p.posStack, p.pos)
 }
 
-func (p *Parser) SetPos(pos int) *Parser {
-	p.pos = pos
-	return p
+func (p *Parser) PopPos() {
+	if len(p.posStack) == 0 {
+		return
+	}
+
+	last := len(p.posStack) - 1
+	p.pos = p.posStack[last]
+	p.posStack = p.posStack[:last]
+}
+
+func (p *Parser) CommitPos() {
+	if len(p.posStack) == 0 {
+		return
+	}
+
+	p.posStack = p.posStack[:len(p.posStack)-1]
 }
 
 func (p *Parser) Peek() tokeniser.Token {

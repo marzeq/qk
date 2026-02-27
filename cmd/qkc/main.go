@@ -9,12 +9,14 @@ import (
 
 	"github.com/marzeq/qk/loader"
 	"github.com/marzeq/qk/parser"
+	"github.com/marzeq/qk/sema"
 	"github.com/marzeq/qk/tokeniser"
 )
 
 func main() {
 	base := flag.String("base", "", "base directory to search for source files")
 	exclude := flag.String("exclude", "", "comma-separated list of directories to exclude from search")
+	verbose := flag.Bool("verbose", false, "enable verbose output")
 
 	flag.Parse()
 
@@ -39,7 +41,8 @@ func main() {
 	var partials []*loader.PartialModuleInfo
 
 	for _, file := range files {
-		ast := parseFile(file)
+		ast, err := parseFile(file)
+		check(err)
 
 		info, err := loader.CollectModuleInfo(ast)
 		check(err)
@@ -47,27 +50,50 @@ func main() {
 		partials = append(partials, info)
 	}
 
+	if *verbose {
+		fmt.Println("parsed and collected modules")
+	}
+
 	modules, err := loader.BuildModules(partials)
 	check(err)
 
-	err = loader.RunSemanticPipeline(modules)
-	check(err)
+	analyser := sema.NewAnalyser()
 
-	fmt.Println("semantic analysis completed successfully")
+	errs := loader.RunSemanticPipeline(modules, analyser)
+	checkErrs(errs)
+
+	if *verbose {
+		fmt.Println("semantic analysis completed successfully")
+	}
+
+	attributor := analyser.NewAttributor()
+
+	for _, mod := range modules {
+		for _, root := range mod.Roots {
+			errs := attributor.AttributeModule(root)
+			checkErrs(errs)
+		}
+	}
+
+	if *verbose {
+		fmt.Println("type attribution completed successfully")
+	}
 }
 
-func parseFile(path string) *parser.RootNode {
+func parseFile(path string) (*parser.RootNode, error) {
 	t, err := tokeniser.NewTokeniserFromFile(path)
-	check(err)
+	if err != nil {
+		return nil, err
+	}
 
 	toks, err := t.Tokenise()
-	check(err)
+	if err != nil {
+		return nil, err
+	}
 
 	p := parser.NewParser(toks)
-	ast, err := p.Parse()
-	check(err)
 
-	return ast
+	return p.Parse()
 }
 
 func collectSourceFiles(paths []string, exclude []string) ([]string, error) {
@@ -145,6 +171,15 @@ func buildSearchPaths(base string) []string {
 func check(err error) {
 	if err != nil {
 		fmt.Println(err)
+		os.Exit(1)
+	}
+}
+
+func checkErrs(errs []error) {
+	if len(errs) > 0 {
+		for _, err := range errs {
+			fmt.Println(err)
+		}
 		os.Exit(1)
 	}
 }

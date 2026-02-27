@@ -95,9 +95,6 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 		if err != nil {
 			return nil, err
 		}
-		if arg.Next != nil {
-			return nil, shared.NewError(arg.Next.Loc, "argument names cannot be qualified")
-		}
 
 		if !p.Expect(tokeniser.TOKEN_TYPE_COLON) {
 			return nil, shared.NewError(p.PrevLoc(), "expected ':'")
@@ -161,7 +158,7 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 		return &FunctionDefNode{
 			Name:        name.Value,
 			Args:        args,
-			RetType:     retType,
+			RetTypeNode: retType,
 			ExternFrom:  externNameTok.Value,
 			HasVariadic: variadic,
 			Loc:         beginLoc,
@@ -187,12 +184,12 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 	}
 
 	return &FunctionDefNode{
-		Name:    name.Value,
-		Args:    args,
-		RetType: retType,
-		Body:    body,
-		Extern:  extern,
-		Loc:     beginLoc,
+		Name:        name.Value,
+		Args:        args,
+		RetTypeNode: retType,
+		Body:        body,
+		Extern:      extern,
+		Loc:         beginLoc,
 	}, nil
 }
 
@@ -304,8 +301,7 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 		kw := p.Peek().Value
 		switch kw {
 		case string(tokeniser.KEYWORD_LET):
-			start := p.Pos()
-
+			p.PushPos()
 			p.Inc() // consume `let`
 
 			if !p.Expect(tokeniser.TOKEN_TYPE_IDENT) {
@@ -315,13 +311,13 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 			switch {
 			case p.Match(tokeniser.TOKEN_TYPE_OPEN_PAREN):
 				// let fn(...) = ...
-				p.SetPos(start)
+				p.PopPos()
 				node, err := p.ParseFunctionDefinition()
 				return node, true, err
 
 			case p.Match(tokeniser.TOKEN_TYPE_COLON):
 				// let x: T = ...
-				p.SetPos(start)
+				p.PopPos()
 				node, err := p.ParseDeclaration()
 				return node, true, err
 
@@ -332,13 +328,13 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 					p.Peek().Value == string(tokeniser.KEYWORD_TYPE) {
 
 					// let A = type ...
-					p.SetPos(start)
+					p.PopPos()
 					node, err := p.ParseTypeAlias()
 					return node, true, err
 				}
 
 				// let x = ...
-				p.SetPos(start)
+				p.PopPos()
 				node, err := p.ParseDeclaration()
 				return node, true, err
 			}
@@ -372,11 +368,6 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 
 		if p.Match(tokeniser.TOKEN_TYPE_COLON) {
 			p.Inc()
-
-			if ident.Next != nil {
-				return nil, true, shared.NewError(ident.Loc,
-					"module name cannot be a qualified identifier")
-			}
 
 			for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
 				p.Inc()
@@ -473,11 +464,11 @@ func (p *Parser) ParseDeclaration() (*DeclarationNode, error) {
 	}
 
 	return &DeclarationNode{
-		Name:    ident.Value,
-		Type:    tpe,
-		Mutable: kw.Value == string(tokeniser.KEYWORD_VAR),
-		Value:   expr,
-		Loc:     beginLoc,
+		Name:     ident.Value,
+		TypeNode: tpe,
+		Mutable:  kw.Value == string(tokeniser.KEYWORD_VAR),
+		Value:    expr,
+		Loc:      beginLoc,
 	}, nil
 }
 

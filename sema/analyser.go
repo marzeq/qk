@@ -1,9 +1,8 @@
 package sema
 
 import (
-	"fmt"
-
 	"github.com/marzeq/qk/parser"
+	"github.com/marzeq/qk/shared"
 	"github.com/marzeq/qk/symbols"
 )
 
@@ -33,8 +32,7 @@ func (a *Analyser) Errors() []error {
 }
 
 func (a *Analyser) errorf(node parser.Node, format string, args ...any) {
-	msg := fmt.Sprintf(format, args...)
-	a.errors = append(a.errors, fmt.Errorf("%s: %s", node.GetLoc(), msg))
+	a.errors = append(a.errors, shared.NewError(node.GetLoc(), format, args...))
 }
 
 func (a *Analyser) AnalyseModule(root *parser.RootNode, name string) {

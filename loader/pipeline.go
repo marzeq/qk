@@ -1,23 +1,19 @@
 package loader
 
 import (
-	"fmt"
-
 	"github.com/marzeq/qk/sema"
 )
 
-func RunSemanticPipeline(mods map[string]*ModuleInfo) error {
+func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser) []error {
 	graph, err := BuildDependencyGraph(mods)
 	if err != nil {
-		return err
+		return []error{err}
 	}
 
 	order, err := TopoSort(graph)
 	if err != nil {
-		return err
+		return []error{err}
 	}
-
-	analyser := sema.NewAnalyser()
 
 	for _, name := range order {
 		info := mods[name]
@@ -28,10 +24,7 @@ func RunSemanticPipeline(mods map[string]*ModuleInfo) error {
 	}
 
 	if len(analyser.Errors()) > 0 {
-		for _, err := range analyser.Errors() {
-			fmt.Println(err)
-		}
-		return fmt.Errorf("semantic analysis failed")
+		return analyser.Errors()
 	}
 
 	return nil

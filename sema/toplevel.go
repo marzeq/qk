@@ -47,8 +47,8 @@ func (a *Analyser) collectFunctionSignature(n *parser.FunctionDefNode) {
 	}
 
 	var retType types.Type
-	if n.RetType != nil {
-		retType = a.resolveTypeNode(n.RetType)
+	if n.RetTypeNode != nil {
+		retType = a.resolveTypeNode(n.RetTypeNode)
 	}
 
 	sig := &symbols.FunctionSignature{
@@ -89,8 +89,8 @@ func (a *Analyser) collectTypeAlias(n *parser.TypeAliasNode) {
 func (a *Analyser) collectGlobalVariable(n *parser.DeclarationNode) {
 	var varType types.Type
 
-	if n.Type != nil {
-		varType = a.resolveTypeNode(n.Type)
+	if n.TypeNode != nil {
+		varType = a.resolveTypeNode(n.TypeNode)
 	}
 
 	sym := &symbols.Symbol{
