@@ -87,8 +87,12 @@ func (a *Attributor) attributeNode(node parser.Node) {
 				} else {
 					n.Symbol.Signature.ReturnType = types.PRIMITIVE_VOID
 				}
+
 			case parser.ExpressionNode:
 				n.Symbol.Signature.ReturnType = b.GetType()
+
+			case nil:
+
 			default:
 				panic(fmt.Sprintf("unexpected function body type: %T\n", n.Body))
 			}

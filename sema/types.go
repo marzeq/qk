@@ -39,12 +39,12 @@ func (a *Analyser) resolveTypeNode(n parser.TypeNode) types.Type {
 		return sym.TypeInfo
 
 	case *parser.PointerTypeNode:
-		return &types.PointerType{
+		return types.PointerType{
 			Base: a.resolveTypeNode(t.BaseType),
 		}
 
 	case *parser.ArrayTypeNode:
-		return &types.ArrayType{
+		return types.ArrayType{
 			Base: a.resolveTypeNode(t.ElementType),
 			Size: t.Size,
 		}
@@ -57,7 +57,7 @@ func (a *Analyser) resolveTypeNode(n parser.TypeNode) types.Type {
 				R: a.resolveTypeNode(f.Type),
 			})
 		}
-		return &types.StructType{Fields: fields}
+		return types.StructType{Fields: fields}
 	}
 
 	a.errorf(n, "unsupported type node")

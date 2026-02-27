@@ -1,6 +1,10 @@
 package types
 
-import "github.com/marzeq/qk/shared"
+import (
+	"strings"
+
+	"github.com/marzeq/qk/shared"
+)
 
 type Type interface {
 	Equals(Type) bool
@@ -188,15 +192,16 @@ func (s StructType) CanCastTo(other Type) bool {
 }
 
 func (s StructType) String() string {
-	result := "struct { "
+	var result strings.Builder
+	result.WriteString("struct { ")
 	for i, field := range s.Fields {
-		result += field.L + ": " + field.R.String()
+		result.WriteString(field.L + ": " + field.R.String())
 		if i < len(s.Fields)-1 {
-			result += ", "
+			result.WriteString(", ")
 		}
 	}
-	result += " }"
-	return result
+	result.WriteString(" }")
+	return result.String()
 }
 
 type PointerType struct {
@@ -339,15 +344,16 @@ func (f FunctionType) CanCastTo(other Type) bool {
 }
 
 func (f FunctionType) String() string {
-	result := "("
+	var result strings.Builder
+	result.WriteString("(")
 	for i, param := range f.Parameters {
-		result += param.String()
+		result.WriteString(param.String())
 		if i < len(f.Parameters)-1 {
-			result += ", "
+			result.WriteString(", ")
 		}
 	}
-	result += "): " + f.ReturnType.String()
-	return result
+	result.WriteString("): " + f.ReturnType.String())
+	return result.String()
 }
 
 type ErrorType struct{}

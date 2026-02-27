@@ -42,6 +42,11 @@ func (v *Validator) validateNode(node parser.Node) {
 
 		if n.Body != nil {
 			v.validateNode(n.Body)
+		} else {
+			if n.ExternFrom == "" {
+				v.errorf(n, "function declaration missing body or extern")
+				return
+			}
 		}
 
 		v.currentFunction = prev
@@ -78,6 +83,9 @@ func (v *Validator) validateNode(node parser.Node) {
 
 	case parser.ExpressionNode:
 		v.validateExpr(n)
+
+	case *parser.TypeAliasNode:
+		// pass
 
 	default:
 		panic(fmt.Sprintf("unhandled node type %T", n))
@@ -442,7 +450,8 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		*parser.StringLiteralNode,
 		*parser.CharLiteralNode,
 		*parser.NilLiteralNode,
-		*parser.IdentifierNode:
+		*parser.IdentifierNode,
+		*parser.SizeOfNode:
 		// nothing to validate
 
 	default:

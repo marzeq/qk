@@ -143,6 +143,9 @@ func (w *debugWalker) walkExpr(expr parser.ExpressionNode) {
 			w.walkExpr(n.ElseBranch)
 		}
 
+	case *parser.SizeOfNode:
+		w.checkType(n.Type)
+
 	default:
 		w.errors = append(w.errors, fmt.Sprintf("unhandled expression type %T", expr))
 	}
