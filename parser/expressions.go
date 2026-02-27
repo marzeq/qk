@@ -971,14 +971,14 @@ func (p *Parser) ParseNamedType() (*NamedTypeNode, error) {
 	}
 	p.Inc()
 
-	modIdent, err := p.ParseIdent()
+	realIdent, err := p.ParseIdent()
 	if err != nil {
 		return nil, err
 	}
 
 	return &NamedTypeNode{
-		ModName: modIdent.Name,
-		Name:    ident.Name,
+		ModName: ident.Name,
+		Name:    realIdent.Name,
 		Loc:     beginLoc,
 	}, nil
 }
