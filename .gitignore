@@ -3,7 +3,6 @@ test
 *.o
 *.so
 *.a
-test.qk
-example.qk
+/*.qk
 a.out
 /qkc

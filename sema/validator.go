@@ -36,6 +36,8 @@ func (v *Validator) validateNode(node parser.Node) {
 			v.validateNode(stmt)
 		}
 
+	case *parser.ImportNode, *parser.ModuleNode:
+
 	case *parser.FunctionDefNode:
 		prev := v.currentFunction
 		v.currentFunction = n.Symbol
