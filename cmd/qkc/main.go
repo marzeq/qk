@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,25 +14,59 @@ import (
 	"github.com/marzeq/qk/types"
 )
 
+type Args struct {
+	baseDir     string
+	excludeDirs []string
+	output      string
+	verbose     bool
+	debug       bool
+}
+
+func parseArgs() (Args, []error) {
+	args := Args{}
+	var errs []error
+
+	for _, arg := range os.Args[1:] {
+		if after, ok := strings.CutPrefix(arg, "-E="); ok {
+			if after != "" {
+				args.excludeDirs = append(args.excludeDirs, after)
+			} else {
+				errs = append(errs, fmt.Errorf("exclude directory must follow -E immediately without space"))
+			}
+		} else if after, ok := strings.CutPrefix(arg, "-o="); ok {
+			if after != "" {
+				args.output = after
+			} else {
+				errs = append(errs, fmt.Errorf("output file must follow -o immediately without space"))
+			}
+		} else if arg == "-v" {
+			args.verbose = true
+		} else if arg == "-d" {
+			args.debug = true
+		} else if strings.HasPrefix(arg, "-") {
+			errs = append(errs, fmt.Errorf("unknown flag: %s", arg))
+		} else {
+			if args.baseDir != "" {
+				errs = append(errs, fmt.Errorf("multiple base directories specified"))
+			}
+			args.baseDir = arg
+		}
+	}
+
+	return args, errs
+}
+
 func main() {
-	base := flag.String("base", "", "base directory to search for source files")
-	exclude := flag.String("exclude", "", "comma-separated list of directories to exclude from search")
-	verbose := flag.Bool("verbose", false, "enable verbose output")
-	debug := flag.Bool("debug", false, "enable debug checks after semantic analysis")
+	args, errs := parseArgs()
+	checkErrs(errs)
 
-	flag.Parse()
-
-	if *base == "" {
-		*base = resolveBaseDir()
-	}
-	var excludeDirs []string
-	if *exclude != "" {
-		excludeDirs = strings.Split(*exclude, ",")
+	if args.baseDir == "" {
+		args.baseDir = resolveBaseDir()
 	}
 
-	searchPaths := buildSearchPaths(*base)
+	searchPaths := buildSearchPaths(args.baseDir)
 
-	files, err := collectSourceFiles(searchPaths, excludeDirs)
+	files, err := collectSourceFiles(searchPaths, args.excludeDirs)
 	check(err)
 
 	if len(files) == 0 {
@@ -53,7 +86,7 @@ func main() {
 		partials = append(partials, info)
 	}
 
-	if *verbose {
+	if args.verbose {
 		fmt.Println("parsed and collected modules")
 	}
 
@@ -62,10 +95,10 @@ func main() {
 
 	analyser := sema.NewAnalyser()
 
-	errs := loader.RunSemanticPipeline(modules, analyser, *verbose, *debug)
+	errs = loader.RunSemanticPipeline(modules, analyser, args.verbose, args.debug)
 	checkErrs(errs)
 
-	if *verbose {
+	if args.verbose {
 		fmt.Println("semantic analysis completed successfully")
 	}
 
@@ -173,10 +206,10 @@ func resolveBaseDir() string {
 	return dir
 }
 
-func buildSearchPaths(base string) []string {
+func buildSearchPaths(baseDir string) []string {
 	var paths []string
 
-	paths = append(paths, base)
+	paths = append(paths, baseDir)
 
 	home, err := os.UserHomeDir()
 	if err == nil {
