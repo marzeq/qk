@@ -233,39 +233,54 @@ func (p *Parser) ParseImport() (*ImportNode, error) {
 		return nil, shared.NewError(p.PrevLoc(), "expected 'import' keyword")
 	}
 
-	if !p.Expect(tokeniser.TOKEN_TYPE_OPEN_PAREN) {
-		return nil, shared.NewError(p.PrevLoc(), "expected '('")
-	}
-
 	modules := []string{}
-	for {
-		for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
-			p.Inc()
-		}
 
-		strTok, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_STRING)
-		if !ok {
-			return nil, shared.NewError(p.PrevLoc(), "expected string literal")
-		}
-		modules = append(modules, strTok.Value)
+	if p.Match(tokeniser.TOKEN_TYPE_OPEN_PAREN) {
+		p.Inc()
 
-		for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
-			p.Inc()
-		}
-
-		if p.Match(tokeniser.TOKEN_TYPE_COMMA) {
-			p.Inc()
+		for {
 			for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
 				p.Inc()
 			}
-			continue
-		}
 
-		if p.Match(tokeniser.TOKEN_TYPE_CLOSE_PAREN) {
-			p.Inc()
-			break
+			if p.Match(tokeniser.TOKEN_TYPE_CLOSE_PAREN) {
+				p.Inc()
+				break
+			}
+
+			name, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_IDENT)
+			if !ok {
+				return nil, shared.NewError(p.PrevLoc(), "expected module name")
+			}
+			modules = append(modules, name.Value)
+
+			if p.Match(tokeniser.TOKEN_TYPE_COMMA) {
+				p.Inc()
+
+				for p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
+					p.Inc()
+				}
+				continue
+			}
+
+			if p.Match(tokeniser.TOKEN_TYPE_NEWLINE) {
+				p.Inc()
+				continue
+			}
+
+			if p.Match(tokeniser.TOKEN_TYPE_CLOSE_PAREN) {
+				p.Inc()
+				break
+			}
+
+			return nil, shared.NewError(p.PrevLoc(), "expected ',', newline, or ')'")
 		}
-		return nil, shared.NewError(p.PrevLoc(), "expected ',' or ')'")
+	} else {
+		name, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_IDENT)
+		if !ok {
+			return nil, shared.NewError(p.PrevLoc(), "expected module name")
+		}
+		modules = append(modules, name.Value)
 	}
 
 	return &ImportNode{
@@ -281,12 +296,9 @@ func (p *Parser) ParseModule() (*ModuleNode, error) {
 		return nil, shared.NewError(p.PrevLoc(), "expected 'module' keyword")
 	}
 
-	if !p.Expect(tokeniser.TOKEN_TYPE_EQUALS) {
-		return nil, shared.NewError(p.PrevLoc(), "expected '='")
-	}
-	nameTok, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_STRING)
+	nameTok, ok := p.ExpectGet(tokeniser.TOKEN_TYPE_IDENT)
 	if !ok {
-		return nil, shared.NewError(p.PrevLoc(), "expected module name as a string")
+		return nil, shared.NewError(p.PrevLoc(), "expected module name")
 	}
 	name := nameTok.Value
 
