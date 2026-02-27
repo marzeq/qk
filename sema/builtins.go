@@ -21,6 +21,10 @@ func (a *Analyser) predefineBuiltins() {
 
 	a.universe.Define(symbols.NewType(string(types.PRIMITIVE_ISZ), types.PRIMITIVE_ISZ))
 	a.universe.Define(symbols.NewType(string(types.PRIMITIVE_USZ), types.PRIMITIVE_USZ))
+
 	a.universe.Define(symbols.NewType(string(types.PRIMITIVE_VOID), types.PRIMITIVE_VOID))
+
 	a.universe.Define(symbols.NewType(string(types.PRIMITIVE_CHAR), types.PRIMITIVE_CHAR))
+
+	a.universe.Define(symbols.NewType(string(types.PRIMITIVE_BOOL), types.PRIMITIVE_BOOL))
 }
