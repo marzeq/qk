@@ -60,46 +60,11 @@ func main() {
 
 	analyser := sema.NewAnalyser()
 
-	errs := loader.RunSemanticPipeline(modules, analyser)
+	errs := loader.RunSemanticPipeline(modules, analyser, *verbose, *debug)
 	checkErrs(errs)
 
 	if *verbose {
 		fmt.Println("semantic analysis completed successfully")
-	}
-
-	attributor := analyser.NewAttributor()
-
-	for _, mod := range modules {
-		for _, root := range mod.Roots {
-			errs := attributor.AttributeModule(root)
-			checkErrs(errs)
-		}
-	}
-
-	if *verbose {
-		fmt.Println("type attribution completed successfully")
-	}
-
-	validator := analyser.NewValidator()
-
-	for _, mod := range modules {
-		for _, root := range mod.Roots {
-			errs := validator.ValidateModule(root)
-			checkErrs(errs)
-		}
-	}
-
-	if *debug {
-		for _, mod := range modules {
-			for _, root := range mod.Roots {
-				analyser.DebugCheck(root)
-			}
-		}
-		fmt.Println("semantic analysis debug checks passed successfully")
-	}
-
-	if *verbose {
-		fmt.Println("validation completed successfully")
 	}
 }
 

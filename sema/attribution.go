@@ -22,13 +22,12 @@ func (a *Attributor) errorf(node parser.Node, format string, args ...any) {
 	a.errors = append(a.errors, shared.NewError(node.GetLoc(), format, args...))
 }
 
-func (a *Attributor) AttributeModule(root *parser.RootNode) []error {
+func (a *Attributor) AttributeModule(root *parser.RootNode) {
 	a.attributeNode(root)
+}
 
-	if len(a.errors) > 0 {
-		return a.errors
-	}
-	return nil
+func (a *Attributor) Errors() []error {
+	return a.errors
 }
 
 func (a *Attributor) attributeNode(node parser.Node) {
@@ -159,6 +158,14 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 	case *parser.IdentifierNode:
 		if n.Symbol == nil || n.Symbol.Type == nil {
 			a.errorf(n, "undefined identifier: %s", n.Name)
+			n.SetType(types.ErrorType{})
+		} else {
+			n.SetType(n.Symbol.Type)
+		}
+
+	case *parser.ModuleAccessNode:
+		if n.Symbol == nil || n.Symbol.Type == nil {
+			a.errorf(n, "undefined identifier: %s:%s", n.ModName, n.Ident)
 			n.SetType(types.ErrorType{})
 		} else {
 			n.SetType(n.Symbol.Type)

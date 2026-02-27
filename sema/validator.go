@@ -23,8 +23,11 @@ func (v *Validator) errorf(node parser.Node, format string, args ...any) {
 	v.errors = append(v.errors, shared.NewError(node.GetLoc(), format, args...))
 }
 
-func (v *Validator) ValidateModule(root *parser.RootNode) []error {
+func (v *Validator) ValidateModule(root *parser.RootNode) {
 	v.validateNode(root)
+}
+
+func (v *Validator) Errors() []error {
 	return v.errors
 }
 
@@ -455,6 +458,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		*parser.CharLiteralNode,
 		*parser.NilLiteralNode,
 		*parser.IdentifierNode,
+		*parser.ModuleAccessNode,
 		*parser.SizeOfNode:
 		// nothing to validate
 
