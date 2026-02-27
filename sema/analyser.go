@@ -7,11 +7,12 @@ import (
 )
 
 type Analyser struct {
-	universe *symbols.Scope
-	current  *symbols.Scope
-	modules  map[string]*symbols.Module
-	aliases  map[string]*aliasInfo
-	errors   []error
+	universe   *symbols.Scope
+	current    *symbols.Scope
+	modules    map[string]*symbols.Module
+	aliases    map[string]*aliasInfo
+	errors     []error
+	currentMod string
 }
 
 func NewAnalyser() *Analyser {
@@ -45,6 +46,7 @@ func (a *Analyser) AnalyseModule(root *parser.RootNode, name string) {
 	a.modules[name] = mod
 
 	a.current = modScope
+	a.currentMod = name
 
 	a.collectTopLevel(root)
 	a.resolveBodies(root)

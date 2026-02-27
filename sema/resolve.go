@@ -37,6 +37,11 @@ func (a *Analyser) resolveModuleAccess(n *parser.ModuleAccessNode) (*symbols.Sym
 		return nil, false
 	}
 
+	if !sym.Public && n.ModName != a.currentMod {
+		a.errorf(n, "symbol %q is not public in module %q", sym.Name, n.ModName)
+		return nil, false
+	}
+
 	n.Symbol = sym
 	return sym, true
 }

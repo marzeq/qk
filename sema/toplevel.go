@@ -61,6 +61,7 @@ func (a *Analyser) collectFunctionSignature(n *parser.FunctionDefNode) {
 		Name:      n.Name,
 		Kind:      symbols.SymbolKindFunction,
 		Signature: sig,
+		Public:    n.Pub,
 	}
 
 	if a.defineSymbol(sym, n) {
@@ -70,8 +71,9 @@ func (a *Analyser) collectFunctionSignature(n *parser.FunctionDefNode) {
 
 func (a *Analyser) collectTypeAlias(n *parser.TypeAliasNode) {
 	sym := &symbols.Symbol{
-		Name: n.Name,
-		Kind: symbols.SymbolKindType,
+		Name:   n.Name,
+		Kind:   symbols.SymbolKindType,
+		Public: n.Pub,
 	}
 
 	if !a.defineSymbol(sym, n) {
@@ -94,9 +96,10 @@ func (a *Analyser) collectGlobalVariable(n *parser.DeclarationNode) {
 	}
 
 	sym := &symbols.Symbol{
-		Name: n.Name,
-		Kind: symbols.SymbolKindVariable,
-		Type: varType,
+		Name:   n.Name,
+		Kind:   symbols.SymbolKindVariable,
+		Type:   varType,
+		Public: n.Pub,
 	}
 
 	if a.defineSymbol(sym, n) {

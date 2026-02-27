@@ -17,6 +17,7 @@ type Symbol struct {
 	Name    string
 	Kind    SymbolKind
 	Mutable bool
+	Public  bool
 
 	Type      types.Type         // for SymbolKindVariable
 	Signature *FunctionSignature // for SymbolKindFunction
