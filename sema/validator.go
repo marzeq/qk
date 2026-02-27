@@ -120,6 +120,10 @@ func (v *Validator) finaliseDeclaration(n *parser.DeclarationNode) {
 }
 
 func (v *Validator) validateAssignment(n *parser.AssignmentNode) {
+	if !v.validateLValue(n.Assignee) {
+		return
+	}
+
 	v.validateExpr(n.Assignee)
 	v.validateExpr(n.Value)
 
@@ -137,6 +141,32 @@ func (v *Validator) validateAssignment(n *parser.AssignmentNode) {
 			Type:    lhsType,
 		}
 	}
+}
+
+func (v *Validator) validateLValue(expr parser.ExpressionNode) bool {
+	switch e := expr.(type) {
+
+	case *parser.IdentifierNode:
+		if !e.Symbol.Mutable {
+			v.errorf(e, "cannot assign to immutable symbol")
+			return false
+		}
+
+	case *parser.UnaryOpNode:
+		if e.Op == parser.UNARY_OP_DEREFERENCE {
+			v.validateExpr(e.Operand)
+			return true
+		}
+		v.errorf(expr, "invalid assignment target")
+		return false
+
+	default:
+
+		v.errorf(expr, "invalid assignment target!")
+		return false
+	}
+
+	return true
 }
 
 func (v *Validator) validateArrayAssignment(n *parser.ArrayAssignmentNode) {

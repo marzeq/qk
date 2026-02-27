@@ -27,13 +27,17 @@ type IdentifierNode struct {
 	Name   string
 	Loc    shared.Location
 	Symbol *symbols.Symbol
-	Type   types.Type
 }
 
 func (n IdentifierNode) GetLoc() shared.Location { return n.Loc }
 func (n IdentifierNode) String() string          { return n.Name }
-func (n *IdentifierNode) SetType(t types.Type)   { n.Type = t }
-func (n *IdentifierNode) GetType() types.Type    { return n.Type }
+func (n *IdentifierNode) SetType(t types.Type)   {}
+func (n *IdentifierNode) GetType() types.Type {
+	if n.Symbol == nil {
+		panic("identifier node has no symbol")
+	}
+	return n.Symbol.Type
+}
 
 type ModuleAccessNode struct {
 	ModName string
@@ -184,12 +188,20 @@ type FunctionCallNode struct {
 	Args   []ExpressionNode
 	Loc    shared.Location
 	Symbol *symbols.Symbol
-	Type   types.Type
 }
 
 func (n FunctionCallNode) GetLoc() shared.Location { return n.Loc }
-func (n *FunctionCallNode) SetType(t types.Type)   { n.Type = t }
-func (n *FunctionCallNode) GetType() types.Type    { return n.Type }
+func (n *FunctionCallNode) SetType(t types.Type)   {}
+func (n *FunctionCallNode) GetType() types.Type {
+	if n.Symbol == nil || n.Symbol.Kind != symbols.SymbolKindFunction ||
+		n.Symbol.Signature == nil {
+		panic("invalid function call node")
+	}
+	if n.Symbol.Signature.ReturnType == nil {
+		return types.PRIMITIVE_VOID
+	}
+	return n.Symbol.Signature.ReturnType
+}
 
 type IfExprBranch struct {
 	Condition ExpressionNode

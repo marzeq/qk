@@ -14,8 +14,9 @@ const (
 )
 
 type Symbol struct {
-	Name string
-	Kind SymbolKind
+	Name    string
+	Kind    SymbolKind
+	Mutable bool
 
 	Type      types.Type         // for SymbolKindVariable
 	Signature *FunctionSignature // for SymbolKindFunction

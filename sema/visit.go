@@ -51,9 +51,10 @@ func (a *Analyser) visitFunction(n *parser.FunctionDefNode) {
 
 	for i, arg := range n.Args {
 		paramSym := &symbols.Symbol{
-			Name: arg.Name,
-			Kind: symbols.SymbolKindVariable,
-			Type: n.Symbol.Signature.Parameters[i],
+			Name:    arg.Name,
+			Kind:    symbols.SymbolKindVariable,
+			Type:    n.Symbol.Signature.Parameters[i],
+			Mutable: arg.Mutable,
 		}
 		a.defineSymbol(paramSym, n)
 	}
@@ -83,9 +84,10 @@ func (a *Analyser) visitLocalDeclaration(n *parser.DeclarationNode) {
 	}
 
 	sym := &symbols.Symbol{
-		Name: n.Name,
-		Kind: symbols.SymbolKindVariable,
-		Type: varType,
+		Name:    n.Name,
+		Kind:    symbols.SymbolKindVariable,
+		Type:    varType,
+		Mutable: n.Mutable,
 	}
 
 	a.defineSymbol(sym, n)
