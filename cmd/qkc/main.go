@@ -17,6 +17,7 @@ func main() {
 	base := flag.String("base", "", "base directory to search for source files")
 	exclude := flag.String("exclude", "", "comma-separated list of directories to exclude from search")
 	verbose := flag.Bool("verbose", false, "enable verbose output")
+	debug := flag.Bool("debug", false, "enable debug checks after semantic analysis")
 
 	flag.Parse()
 
@@ -77,6 +78,28 @@ func main() {
 
 	if *verbose {
 		fmt.Println("type attribution completed successfully")
+	}
+
+	validator := analyser.NewValidator()
+
+	for _, mod := range modules {
+		for _, root := range mod.Roots {
+			errs := validator.ValidateModule(root)
+			checkErrs(errs)
+		}
+	}
+
+	if *debug {
+		for _, mod := range modules {
+			for _, root := range mod.Roots {
+				analyser.DebugCheck(root)
+			}
+		}
+		fmt.Println("semantic analysis debug checks passed successfully")
+	}
+
+	if *verbose {
+		fmt.Println("validation completed successfully")
 	}
 }
 

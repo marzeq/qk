@@ -405,7 +405,7 @@ type DeclarationNode struct {
 func (n DeclarationNode) GetLoc() shared.Location { return n.Loc }
 
 type AssignmentNode struct {
-	Assignee Node
+	Assignee ExpressionNode
 	Value    ExpressionNode
 	Loc      shared.Location
 }

@@ -284,6 +284,25 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 				a.errorf(n, "logical not operator requires a boolean operand")
 				n.SetType(types.ErrorType{})
 			}
+		case parser.UNARY_OP_REFERENCE:
+			n.SetType(types.PointerType{
+				Base: n.Operand.GetType(),
+			})
+		case parser.UNARY_OP_DEREFERENCE:
+			if ptr, ok := n.Operand.GetType().(types.PointerType); ok {
+				n.SetType(ptr.Base)
+			} else {
+				a.errorf(n, "cannot dereference non-pointer type")
+				n.SetType(types.ErrorType{})
+			}
+		case parser.UNARY_OP_ARRAY_LEN:
+			switch n.Operand.GetType().(type) {
+			case types.ArrayType:
+				n.SetType(types.PRIMITIVE_USZ)
+			default:
+				a.errorf(n, "array length operator requires an array operand")
+				n.SetType(types.ErrorType{})
+			}
 		default:
 			panic("unhandled unary operator")
 		}
