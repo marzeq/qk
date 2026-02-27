@@ -370,7 +370,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			parser.BINARY_OP_NOT_EQUAL:
 
 			if !t1.CanCoerceTo(t2) && !t2.CanCoerceTo(t1) {
-				v.errorf(n, "incompatible types for comparison")
+				v.errorf(n, "incompatible types for comparison: %v and %v", t1, t2)
 			}
 
 		case parser.BINARY_OP_LESS,

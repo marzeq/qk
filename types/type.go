@@ -105,7 +105,17 @@ func (p PrimitiveType) CanCoerceTo(other Type) bool {
 	}
 
 	if IsInteger(p) && IsInteger(otherPrimitive) {
-		return IntegerRank(p) <= IntegerRank(otherPrimitive)
+		if p == PRIMITIVE_ISZ && IsSigned(otherPrimitive) || otherPrimitive == PRIMITIVE_USZ {
+			return true
+		}
+
+		if IsSigned(p) && IsSigned(otherPrimitive) {
+			return IntegerRank(p) <= IntegerRank(otherPrimitive)
+		}
+		if IsUnsigned(p) && IsUnsigned(otherPrimitive) {
+			return IntegerRank(p) <= IntegerRank(otherPrimitive)
+		}
+		return false
 	}
 
 	if IsInteger(p) && IsFloat(otherPrimitive) {
@@ -248,6 +258,11 @@ func (p PointerType) CanCastTo(other Type) bool {
 
 func (p PointerType) String() string {
 	return "*" + p.Base.String()
+}
+
+func IsPointer(t Type) bool {
+	_, ok := t.(PointerType)
+	return ok
 }
 
 type ArrayType struct {
@@ -480,28 +495,38 @@ func PromoteNumeric(a, b Type) Type {
 		return PRIMITIVE_F32
 	}
 
-	return WiderInteger(pa, pb)
+	return PromoteIntegers(pa, pb)
 }
 
-func WiderInteger(a, b PrimitiveType) PrimitiveType {
-	rank := func(p PrimitiveType) int {
-		switch p {
-		case PRIMITIVE_I8, PRIMITIVE_U8:
-			return 1
-		case PRIMITIVE_I16, PRIMITIVE_U16:
-			return 2
-		case PRIMITIVE_I32, PRIMITIVE_U32:
-			return 3
-		case PRIMITIVE_I64, PRIMITIVE_U64:
-			return 4
-		case PRIMITIVE_ISZ, PRIMITIVE_USZ:
-			return 5
-		default:
-			return 0
-		}
+func PromoteIntegers(a, b PrimitiveType) Type {
+	if IsSigned(a) && IsSigned(b) {
+		return widerSigned(a, b)
 	}
 
-	if rank(a) >= rank(b) {
+	if IsUnsigned(a) && IsUnsigned(b) {
+		return widerUnsigned(a, b)
+	}
+
+	return ErrorType{}
+}
+
+func widerSigned(a, b PrimitiveType) PrimitiveType {
+	if !IsSigned(a) || !IsSigned(b) {
+		panic("widerSigned called with non-signed types")
+	}
+
+	if IntegerRank(a) >= IntegerRank(b) {
+		return a
+	}
+	return b
+}
+
+func widerUnsigned(a, b PrimitiveType) PrimitiveType {
+	if !IsUnsigned(a) || !IsUnsigned(b) {
+		panic("widerUnsigned called with non-unsigned types")
+	}
+
+	if IntegerRank(a) >= IntegerRank(b) {
 		return a
 	}
 	return b

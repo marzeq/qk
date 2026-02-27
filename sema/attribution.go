@@ -72,7 +72,11 @@ func (a *Attributor) attributeNode(node parser.Node) {
 						}
 
 						if types.IsNumeric(current) && types.IsNumeric(t) {
-							current = types.PromoteNumeric(current, t)
+							got := types.PromoteNumeric(current, t)
+							if current.Equals(types.ErrorType{}) {
+								a.errorf(returnNode, "inconsistent return types: %v and %v", got, t)
+							}
+							current = got
 							continue
 						}
 
@@ -202,7 +206,11 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		if len(typs) > 0 {
 			currentType := typs[0]
 			for _, t := range typs[1:] {
-				currentType = types.PromoteNumeric(currentType, t)
+				got := types.PromoteNumeric(currentType, t)
+				if currentType.Equals(types.ErrorType{}) {
+					a.errorf(n, "inconsistent array element types: %v and %v", got, t)
+				}
+				currentType = got
 			}
 			n.SetType(types.ArrayType{
 				Base: currentType,
@@ -335,7 +343,13 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		switch n.Op {
 		case parser.BINARY_OP_ADD, parser.BINARY_OP_SUBTRACT, parser.BINARY_OP_MULTIPLY, parser.BINARY_OP_DIVIDE, parser.BINARY_OP_MODULO:
 			if types.IsNumeric(t1) && types.IsNumeric(t2) {
-				n.SetType(types.PromoteNumeric(t1, t2))
+				got := types.PromoteNumeric(t1, t2)
+				if got.Equals(types.ErrorType{}) {
+					a.errorf(n, "incompatible types for binary operator: %v and %v", t1, t2)
+					n.SetType(types.ErrorType{})
+				} else {
+					n.SetType(got)
+				}
 			} else {
 				a.errorf(n, "arithmetic operators require numeric operands")
 				n.SetType(types.ErrorType{})
@@ -344,6 +358,8 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 			if types.IsNumeric(t1) && types.IsNumeric(t2) {
 				n.SetType(types.PRIMITIVE_BOOL)
 			} else if t1.Equals(t2) {
+				n.SetType(types.PRIMITIVE_BOOL)
+			} else if types.IsPointer(t1) && types.IsPointer(t2) {
 				n.SetType(types.PRIMITIVE_BOOL)
 			} else {
 				a.errorf(n, "comparison operators require operands of the same type or both numeric types")

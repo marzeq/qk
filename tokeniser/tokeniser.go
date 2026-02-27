@@ -185,6 +185,21 @@ func (t *Tokeniser) IgnoreComment() {
 	}
 }
 
+func (t *Tokeniser) IgnoreMultilineComment() {
+	t.Inc().Inc()
+
+	for {
+		if t.Peek() == '*' && t.Next() == '/' {
+			t.Inc().Inc()
+			return
+		}
+		if t.Peek() == 0 {
+			return
+		}
+		t.Inc()
+	}
+}
+
 func (t *Tokeniser) GetLoc() shared.Location {
 	return shared.Location{
 		FilePath: t.fileOrigin,
@@ -361,9 +376,7 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 			}
 			continue
 		case '-':
-			if t.Next() == '-' {
-				t.IgnoreComment()
-			} else if IsNum(t.Next()) {
+			if IsNum(t.Next()) {
 				pos := t.GetLoc()
 				n, err := t.ReadNumber()
 				if err != nil {
@@ -392,7 +405,11 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 			}
 			continue
 		case '/':
-			if t.Next() == '=' {
+			if t.Next() == '/' {
+				t.IgnoreComment()
+			} else if t.Next() == '*' {
+				t.IgnoreMultilineComment()
+			} else if t.Next() == '=' {
 				t.AddToken(TOKEN_TYPE_DIV_BY, t.GetLoc())
 				t.Inc().Inc()
 			} else {
