@@ -188,7 +188,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 
 	case *parser.StructLiteralNode:
 		if n.Symbol != nil {
-			n.SetType(n.Symbol.Type)
+			n.SetType(n.Symbol.TypeInfo)
 		} else {
 			a.errorf(n, "undefined struct type")
 			n.SetType(types.ErrorType{})

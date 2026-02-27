@@ -425,21 +425,41 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			v.validateExpr(n.ElseBranch)
 		}
 
-	case *parser.ArrayLiteralNode:
-		base := n.GetType().(types.ArrayType).Base
+	case *parser.GivenExprNode:
+		v.validateNode(n.Block)
+		v.validateExpr(n.FinalExpr)
 
-		for i, el := range n.Elements {
+	case *parser.ArrayLiteralNode:
+		var common types.Type = nil
+
+		for _, el := range n.Elements {
 			v.validateExpr(el)
 
-			if !el.GetType().CanCoerceTo(base) {
-				v.errorf(n, "array element type mismatch")
-				continue
+			if common == nil {
+				common = el.GetType()
+			} else {
+				common = types.PromoteNumeric(common, el.GetType())
+				if _, isErr := common.(types.ErrorType); isErr {
+					v.errorf(n, "array element type mismatch")
+					return
+				}
 			}
+		}
 
-			if !el.GetType().Equals(base) {
+		if types.IsUntyped(common) {
+			common = types.DefaultUntyped(common)
+		}
+
+		n.Type = types.ArrayType{
+			Base: common,
+			Size: len(n.Elements),
+		}
+
+		for i, el := range n.Elements {
+			if !el.GetType().Equals(common) {
 				n.Elements[i] = &parser.CastNode{
 					Operand: el,
-					Type:    base,
+					Type:    common,
 				}
 			}
 		}

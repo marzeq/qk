@@ -108,7 +108,9 @@ func (w *debugWalker) walkExpr(expr parser.ExpressionNode) {
 		*parser.NilLiteralNode:
 
 	case *parser.CastNode:
-		w.walkExpr(n.Operand)
+		if n.ToType != nil && types.IsUntyped(n.Operand.GetType()) { // allow this, this is compiler inserted
+			w.walkExpr(n.Operand)
+		}
 		w.checkType(n.Type)
 
 	case *parser.UnaryOpNode:
@@ -145,6 +147,14 @@ func (w *debugWalker) walkExpr(expr parser.ExpressionNode) {
 
 	case *parser.SizeOfNode:
 		w.checkType(n.Type)
+
+	case *parser.StructLiteralNode:
+		for _, field := range n.Fields {
+			w.walkExpr(field.R)
+		}
+	case *parser.GivenExprNode:
+		w.walkNode(n.Block)
+		w.walkExpr(n.FinalExpr)
 
 	default:
 		w.errors = append(w.errors, fmt.Sprintf("unhandled expression type %T", expr))
