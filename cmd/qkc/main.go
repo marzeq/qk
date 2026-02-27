@@ -10,7 +10,9 @@ import (
 	"github.com/marzeq/qk/loader"
 	"github.com/marzeq/qk/parser"
 	"github.com/marzeq/qk/sema"
+	"github.com/marzeq/qk/shared"
 	"github.com/marzeq/qk/tokeniser"
+	"github.com/marzeq/qk/types"
 )
 
 func main() {
@@ -65,6 +67,40 @@ func main() {
 
 	if *verbose {
 		fmt.Println("semantic analysis completed successfully")
+	}
+
+	if _, ok := modules["main"]; !ok {
+		fmt.Println("main module not found")
+		os.Exit(1)
+	}
+
+	foundMain := false
+	mainModule := modules["main"]
+	for _, root := range mainModule.Roots {
+		for _, stmt := range root.Body {
+			switch fn := stmt.(type) {
+			case *parser.FunctionDefNode:
+				if fn.Name == "main" {
+					if len(fn.Args) != 0 {
+						fmt.Println(shared.NewError(fn.Loc, "main function must not have arguments"))
+						os.Exit(1)
+					}
+					if fn.Body == nil {
+						fmt.Println(shared.NewError(fn.Loc, "main function must have a body"))
+						os.Exit(1)
+					}
+					if fn.Symbol.Signature.ReturnType != types.PRIMITIVE_VOID {
+						fmt.Println(shared.NewError(fn.Loc, "main function must return void"))
+					}
+					foundMain = true
+					break
+				}
+			}
+		}
+	}
+	if !foundMain {
+		fmt.Println("main function not found in main module")
+		os.Exit(1)
 	}
 }
 

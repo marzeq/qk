@@ -355,6 +355,9 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 		case string(tokeniser.KEYWORD_VAR):
 			node, err := p.ParseDeclaration()
 			return node, true, err
+		case string(tokeniser.KEYWORD_EXTERN):
+			node, err := p.ParseFunctionDefinition()
+			return node, true, err
 		case
 			string(tokeniser.KEYWORD_RETURN),
 			string(tokeniser.KEYWORD_BREAK),

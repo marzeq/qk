@@ -136,7 +136,7 @@ func (p *Parser) Parse() (*RootNode, error) {
 		switch p.Peek().Value {
 		case string(tokeniser.KEYWORD_PUB):
 			p.Inc()
-			if !p.Match(tokeniser.TOKEN_TYPE_KEYWORD) || p.Peek().Value != string(tokeniser.KEYWORD_LET) {
+			if !p.Match(tokeniser.TOKEN_TYPE_KEYWORD) || p.Peek().Value != string(tokeniser.KEYWORD_LET) && p.Peek().Value != string(tokeniser.KEYWORD_EXTERN) {
 				return nil, e
 			}
 			stmt, _, err := p.ParseStatement()
@@ -167,6 +167,13 @@ func (p *Parser) Parse() (*RootNode, error) {
 			default:
 				return nil, e
 			}
+		case string(tokeniser.KEYWORD_EXTERN):
+			stmt, _, err := p.ParseStatement()
+			if err != nil {
+				return nil, err
+			}
+			rootNode.Body = append(rootNode.Body, stmt)
+
 		case string(tokeniser.KEYWORD_IMPORT):
 			imp, err := p.ParseImport()
 			if err != nil {
