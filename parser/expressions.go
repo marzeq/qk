@@ -144,7 +144,6 @@ func (p *Parser) ParseUnary() (ExpressionNode, error) {
 		tokeniser.TokenMinus,
 		tokeniser.TokenAsterisk,
 		tokeniser.TokenAmpersand,
-		tokeniser.TokenOpenSquare,
 	) {
 		op := p.Consume()
 
@@ -156,8 +155,6 @@ func (p *Parser) ParseUnary() (ExpressionNode, error) {
 			val = UnaryOpDereference
 		case tokeniser.TokenAmpersand:
 			val = UnaryOpReference
-		case tokeniser.TokenOpenSquare:
-			val = UnaryOpArrayLen
 		}
 
 		for p.Match(tokeniser.TokenNewline) {
@@ -167,12 +164,6 @@ func (p *Parser) ParseUnary() (ExpressionNode, error) {
 		expr, err := p.ParseUnary()
 		if err != nil {
 			return nil, err
-		}
-
-		if op.Type == tokeniser.TokenOpenSquare {
-			if !p.Expect(tokeniser.TokenCloseSquare) {
-				return nil, shared.NewError(p.PrevLoc(), "expected ']'")
-			}
 		}
 
 		return &UnaryOpNode{
@@ -195,6 +186,15 @@ func (p *Parser) ParsePostfix() (ExpressionNode, error) {
 
 	for p.Match(tokeniser.TokenOpenSquare) {
 		p.Inc()
+		if p.Match(tokeniser.TokenCloseSquare) {
+			expr = &UnaryOpNode{
+				Op:      UnaryOpArrayLen,
+				Operand: expr,
+				Loc:     beginLoc,
+			}
+			p.Inc()
+			continue
+		}
 
 		for p.Match(tokeniser.TokenNewline) {
 			p.Inc()
@@ -449,6 +449,10 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 	}
 
 	if p.Match(tokeniser.TokenOpenCurly) {
+		return p.ParseStructLiteral(nil)
+	}
+
+	if p.Match(tokeniser.TokenOpenSquare) {
 		return p.ParseArrayLiteral()
 	}
 
@@ -760,8 +764,8 @@ func (p *Parser) ParseStructLiteral(name *ModuleAccessNode) (*StructLiteralNode,
 
 func (p *Parser) ParseArrayLiteral() (*ArrayLiteralNode, error) {
 	beginLoc := p.CurrLoc()
-	if !p.Expect(tokeniser.TokenOpenCurly) {
-		return nil, shared.NewError(p.PrevLoc(), "expected '{' to start array literal")
+	if !p.Expect(tokeniser.TokenOpenSquare) {
+		return nil, shared.NewError(p.PrevLoc(), "expected '[' to start array literal")
 	}
 	var elements []ExpressionNode
 	for {
@@ -781,8 +785,8 @@ func (p *Parser) ParseArrayLiteral() (*ArrayLiteralNode, error) {
 			p.Inc()
 		}
 	}
-	if !p.Expect(tokeniser.TokenCloseCurly) {
-		return nil, shared.NewError(p.PrevLoc(), "expected '}' to end array literal")
+	if !p.Expect(tokeniser.TokenCloseSquare) {
+		return nil, shared.NewError(p.PrevLoc(), "expected ']' to end array literal")
 	}
 	return &ArrayLiteralNode{
 		Elements: elements,

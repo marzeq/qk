@@ -83,11 +83,11 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 		mutable := false
 		if p.Match(tokeniser.TokenKeyword) {
 			kw := p.Consume().Value
-			if kw == string(tokeniser.KeywordVar) {
+			if kw == string(tokeniser.KeywordMut) {
 				mutable = true
 			} else {
 				return nil, shared.NewError(p.CurrLoc(),
-					"expected either 'var' or argument name")
+					"expected either 'mut' or argument name")
 			}
 		}
 
@@ -316,6 +316,12 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 			p.PushPos()
 			p.Inc() // consume `let`
 
+			if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordMut) {
+				p.PopPos()
+				node, err := p.ParseDeclaration()
+				return node, true, err
+			}
+
 			if !p.Expect(tokeniser.TokenIdentifier) {
 				return nil, false, shared.NewError(p.PrevLoc(), "expected name")
 			}
@@ -352,9 +358,6 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 			}
 
 			return nil, false, shared.NewError(p.PrevLoc(), "invalid let statement")
-		case string(tokeniser.KeywordVar):
-			node, err := p.ParseDeclaration()
-			return node, true, err
 		case string(tokeniser.KeywordExtern):
 			node, err := p.ParseFunctionDefinition()
 			return node, true, err
@@ -444,9 +447,14 @@ func (p *Parser) ParseDeclaration() (*DeclarationNode, error) {
 	beginLoc := p.CurrLoc()
 
 	kw, ok := p.ExpectGet(tokeniser.TokenKeyword)
-	if !ok || (kw.Value != string(tokeniser.KeywordLet) &&
-		kw.Value != string(tokeniser.KeywordVar)) {
-		return nil, shared.NewError(p.PrevLoc(), "expected `let` or `var` keyword")
+	if !ok || kw.Value != string(tokeniser.KeywordLet) {
+		return nil, shared.NewError(p.PrevLoc(), "expected `let` keyword")
+	}
+
+	mutable := false
+	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordMut) {
+		p.Inc()
+		mutable = true
 	}
 
 	ident, ok := p.ExpectGet(tokeniser.TokenIdentifier)
@@ -481,7 +489,7 @@ func (p *Parser) ParseDeclaration() (*DeclarationNode, error) {
 	return &DeclarationNode{
 		Name:     ident.Value,
 		TypeNode: tpe,
-		Mutable:  kw.Value == string(tokeniser.KeywordVar),
+		Mutable:  mutable,
 		Value:    expr,
 		Loc:      beginLoc,
 	}, nil
