@@ -14,55 +14,9 @@ import (
 	"github.com/marzeq/qk/types"
 )
 
-type Args struct {
-	baseDir     string
-	excludeDirs []string
-	output      string
-	verbose     bool
-	debug       bool
-}
-
-func parseArgs() (Args, []error) {
-	args := Args{}
-	var errs []error
-
-	for _, arg := range os.Args[1:] {
-		if after, ok := strings.CutPrefix(arg, "-E="); ok {
-			if after != "" {
-				args.excludeDirs = append(args.excludeDirs, after)
-			} else {
-				errs = append(errs, fmt.Errorf("exclude directory must follow -E immediately without space"))
-			}
-		} else if after, ok := strings.CutPrefix(arg, "-o="); ok {
-			if after != "" {
-				args.output = after
-			} else {
-				errs = append(errs, fmt.Errorf("output file must follow -o immediately without space"))
-			}
-		} else if arg == "-v" {
-			args.verbose = true
-		} else if arg == "-d" {
-			args.debug = true
-		} else if strings.HasPrefix(arg, "-") {
-			errs = append(errs, fmt.Errorf("unknown flag: %s", arg))
-		} else {
-			if args.baseDir != "" {
-				errs = append(errs, fmt.Errorf("multiple base directories specified"))
-			}
-			args.baseDir = arg
-		}
-	}
-
-	return args, errs
-}
-
 func main() {
-	args, errs := parseArgs()
-	checkErrs(errs)
-
-	if args.baseDir == "" {
-		args.baseDir = resolveBaseDir()
-	}
+	args, err := parseArgs()
+	check(err)
 
 	searchPaths := buildSearchPaths(args.baseDir)
 
@@ -95,7 +49,7 @@ func main() {
 
 	analyser := sema.NewAnalyser()
 
-	errs = loader.RunSemanticPipeline(modules, analyser, args.verbose, args.debug)
+	errs := loader.RunSemanticPipeline(modules, analyser, args.verbose, args.debug)
 	checkErrs(errs)
 
 	if args.verbose {
@@ -198,12 +152,6 @@ func collectSourceFiles(paths []string, exclude []string) ([]string, error) {
 	}
 
 	return files, nil
-}
-
-func resolveBaseDir() string {
-	dir, err := os.Getwd()
-	check(err)
-	return dir
 }
 
 func buildSearchPaths(baseDir string) []string {
