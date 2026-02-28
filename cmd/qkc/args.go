@@ -11,6 +11,7 @@ type Args struct {
 	baseDir     string
 	excludeDirs []string
 	output      string
+	optLevel    int
 	verbose     bool
 	debug       bool
 }
@@ -27,7 +28,7 @@ func parseArgs() (*Args, error) {
 
 func (p *ArgParser) IsShorthand(shorthands ...string) bool {
 	for _, s := range shorthands {
-		if strings.HasPrefix(p.Args[p.Pos], "-"+s) {
+		if p.Args[p.Pos] == "-"+s {
 			return true
 		}
 	}
@@ -36,11 +37,17 @@ func (p *ArgParser) IsShorthand(shorthands ...string) bool {
 
 func (p *ArgParser) IsFlag(flags ...string) bool {
 	for _, s := range flags {
-		if strings.HasPrefix(p.Args[p.Pos], "--"+s) {
+		if p.Args[p.Pos] == "--"+s {
 			return true
 		}
 	}
 	return false
+}
+
+func (p *ArgParser) ConsumeShorthandCombined() string { // for flags like -E<value> returns <value>
+	flag := p.Args[p.Pos]
+	p.Skip()
+	return flag[2:]
 }
 
 func (p *ArgParser) ConsumeFlagSeparate() (string, error) { // for flags like -E <value> returns <value> or --exclude <value> returns <value>
@@ -71,6 +78,8 @@ func (p *ArgParser) HasNext() bool {
 func (p *ArgParser) Parse() (*Args, error) {
 	args := &Args{}
 
+	args.optLevel = -1
+
 	for p.HasNext() {
 		if p.IsShorthand("E") || p.IsFlag("exclude") {
 			value, err := p.ConsumeFlagSeparate()
@@ -84,6 +93,26 @@ func (p *ArgParser) Parse() (*Args, error) {
 				return nil, err
 			}
 			args.output = value
+		} else if p.IsShorthand("O") {
+			if args.optLevel != -1 {
+				return nil, fmt.Errorf("optimization level specified multiple times")
+			}
+			value := p.ConsumeShorthandCombined()
+			if value == "" {
+				return nil, fmt.Errorf("expected value after -O, but got none")
+			}
+			switch value {
+			case "0":
+				args.optLevel = 0
+			case "1":
+				args.optLevel = 1
+			case "2":
+				args.optLevel = 2
+			case "3":
+				args.optLevel = 3
+			default:
+				return nil, fmt.Errorf("invalid optimization level: %s", value)
+			}
 		} else if p.IsShorthand("v") || p.IsFlag("verbose") {
 			args.verbose = true
 			p.Skip()
@@ -101,7 +130,7 @@ func (p *ArgParser) Parse() (*Args, error) {
 		}
 	}
 
-	err := validateArgs(args)
+	err := finaliseArgs(args)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +138,7 @@ func (p *ArgParser) Parse() (*Args, error) {
 	return args, nil
 }
 
-func validateArgs(args *Args) error {
+func finaliseArgs(args *Args) error {
 	if args.baseDir == "" {
 		cwd, err := os.Getwd()
 		if err != nil {
@@ -138,6 +167,10 @@ func validateArgs(args *Args) error {
 			return fmt.Errorf("failed to get absolute path of exclude directory: %v", err)
 		}
 		args.excludeDirs[i] = abs
+	}
+
+	if args.optLevel == -1 {
+		args.optLevel = 2 // default optimization level
 	}
 
 	return nil
