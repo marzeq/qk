@@ -32,13 +32,6 @@ func CollectModuleInfo(root *parser.RootNode) (*PartialModuleInfo, error) {
 
 		case *parser.ImportNode:
 			imports = append(imports, n.Modules...)
-
-		default:
-			return &PartialModuleInfo{
-				Name:    name,
-				Imports: imports,
-				Root:    root,
-			}, nil
 		}
 	}
 
