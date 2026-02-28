@@ -198,7 +198,7 @@ func (n *FunctionCallNode) GetType() types.Type {
 		panic("invalid function call node")
 	}
 	if n.Symbol.Signature.ReturnType == nil {
-		return types.PRIMITIVE_VOID
+		return types.PrimitiveVoid
 	}
 	return n.Symbol.Signature.ReturnType
 }
@@ -231,27 +231,27 @@ func (n GivenExprNode) GetLoc() shared.Location { return n.Loc }
 func (n *GivenExprNode) SetType(t types.Type)   { n.Type = t }
 func (n *GivenExprNode) GetType() types.Type    { return n.Type }
 
-type UnaryOpType uint
+type UnaryOpKind uint
 
 const (
-	UNARY_OP_LOGICAL_NOT UnaryOpType = iota
-	UNARY_OP_NEGATE
-	UNARY_OP_REFERENCE
-	UNARY_OP_DEREFERENCE
-	UNARY_OP_ARRAY_LEN
+	UnaryOpLogicalNot UnaryOpKind = iota
+	UnaryOpNegate
+	UnaryOpReference
+	UnaryOpDereference
+	UnaryOpArrayLen
 )
 
-func (u UnaryOpType) String() string {
+func (u UnaryOpKind) String() string {
 	switch u {
-	case UNARY_OP_LOGICAL_NOT:
+	case UnaryOpLogicalNot:
 		return "not"
-	case UNARY_OP_NEGATE:
+	case UnaryOpNegate:
 		return "-"
-	case UNARY_OP_REFERENCE:
+	case UnaryOpReference:
 		return "&"
-	case UNARY_OP_DEREFERENCE:
+	case UnaryOpDereference:
 		return "*"
-	case UNARY_OP_ARRAY_LEN:
+	case UnaryOpArrayLen:
 		return "[]"
 	default:
 		return "unknown"
@@ -259,7 +259,7 @@ func (u UnaryOpType) String() string {
 }
 
 type UnaryOpNode struct {
-	Op      UnaryOpType
+	Op      UnaryOpKind
 	Operand ExpressionNode
 	Loc     shared.Location
 	Type    types.Type
@@ -280,26 +280,26 @@ func (n IndexExprNode) GetLoc() shared.Location { return n.Loc }
 func (n *IndexExprNode) SetType(t types.Type)   { n.Type = t }
 func (n *IndexExprNode) GetType() types.Type    { return n.Type }
 
-type BinaryOpType uint
+type BinaryOpKind uint
 
 const (
-	BINARY_OP_LOGICAL_OR BinaryOpType = iota
-	BINARY_OP_LOGICAL_AND
-	BINARY_OP_EQUAL
-	BINARY_OP_NOT_EQUAL
-	BINARY_OP_LESS
-	BINARY_OP_LESS_EQUAL
-	BINARY_OP_GREATER
-	BINARY_OP_GREATER_EQUAL
-	BINARY_OP_ADD
-	BINARY_OP_SUBTRACT
-	BINARY_OP_MULTIPLY
-	BINARY_OP_DIVIDE
-	BINARY_OP_MODULO
+	BinaryOpLogicalOr BinaryOpKind = iota
+	BinaryOpLogicalAnd
+	BinaryOpEqual
+	BinaryOpNotEqual
+	BinaryOpLess
+	BinaryOpLessEqual
+	BinaryOpGreater
+	BinaryOpGreaterEqual
+	BinaryOpAdd
+	BinaryOpSubtract
+	BinaryOpMultiply
+	BinaryOpDivide
+	BinaryOpModulo
 )
 
 type BinaryOpNode struct {
-	Op       BinaryOpType
+	Op       BinaryOpKind
 	Operand1 ExpressionNode
 	Operand2 ExpressionNode
 	Loc      shared.Location
@@ -397,7 +397,7 @@ type ForNode struct {
 func (n ForNode) GetLoc() shared.Location { return n.Loc }
 
 type ControlKeywordNode struct {
-	Keyword     tokeniser.KeywordType
+	Keyword     tokeniser.KeywordKind
 	ReturnValue ExpressionNode // only for "return"
 	Loc         shared.Location
 }

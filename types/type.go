@@ -16,35 +16,35 @@ type Type interface {
 type PrimitiveType string
 
 const (
-	PRIMITIVE_I8  PrimitiveType = "i8"
-	PRIMITIVE_I16 PrimitiveType = "i16"
-	PRIMITIVE_I32 PrimitiveType = "i32"
-	PRIMITIVE_I64 PrimitiveType = "i64"
+	PrimitiveI8  PrimitiveType = "i8"
+	PrimitiveI16 PrimitiveType = "i16"
+	PrimitiveI32 PrimitiveType = "i32"
+	PrimitiveI64 PrimitiveType = "i64"
 
-	PRIMITIVE_U8  PrimitiveType = "u8"
-	PRIMITIVE_U16 PrimitiveType = "u16"
-	PRIMITIVE_U32 PrimitiveType = "u32"
-	PRIMITIVE_U64 PrimitiveType = "u64"
+	PrimitiveU8  PrimitiveType = "u8"
+	PrimitiveU16 PrimitiveType = "u16"
+	PrimitiveU32 PrimitiveType = "u32"
+	PrimitiveU64 PrimitiveType = "u64"
 
-	PRIMITIVE_F32 PrimitiveType = "f32"
-	PRIMITIVE_F64 PrimitiveType = "f64"
+	PrimitiveF32 PrimitiveType = "f32"
+	PrimitiveF64 PrimitiveType = "f64"
 
-	PRIMITIVE_ISZ PrimitiveType = "isz"
-	PRIMITIVE_USZ PrimitiveType = "usz"
+	PrimitiveIsz PrimitiveType = "isz"
+	PrimitiveUsz PrimitiveType = "usz"
 
-	PRIMITIVE_VOID PrimitiveType = "void"
+	PrimitiveVoid PrimitiveType = "void"
 
-	PRIMITIVE_CHAR PrimitiveType = "char"
+	PrimitiveChar PrimitiveType = "char"
 
-	PRIMITIVE_BOOL PrimitiveType = "bool"
+	PrimitiveBool PrimitiveType = "bool"
 )
 
 func IsSigned(t Type) bool {
-	return t == PRIMITIVE_I8 || t == PRIMITIVE_I16 || t == PRIMITIVE_I32 || t == PRIMITIVE_I64 || t == PRIMITIVE_ISZ
+	return t == PrimitiveI8 || t == PrimitiveI16 || t == PrimitiveI32 || t == PrimitiveI64 || t == PrimitiveIsz
 }
 
 func IsUnsigned(t Type) bool {
-	return t == PRIMITIVE_U8 || t == PRIMITIVE_U16 || t == PRIMITIVE_U32 || t == PRIMITIVE_U64 || t == PRIMITIVE_USZ
+	return t == PrimitiveU8 || t == PrimitiveU16 || t == PrimitiveU32 || t == PrimitiveU64 || t == PrimitiveUsz
 }
 
 func IsInteger(t Type) bool {
@@ -52,7 +52,7 @@ func IsInteger(t Type) bool {
 }
 
 func IsFloat(t Type) bool {
-	return t == PRIMITIVE_F32 || t == PRIMITIVE_F64 || t.Equals(UntypedFloat{})
+	return t == PrimitiveF32 || t == PrimitiveF64 || t.Equals(UntypedFloat{})
 }
 
 func IsNumeric(t Type) bool {
@@ -61,15 +61,15 @@ func IsNumeric(t Type) bool {
 
 func IntegerRank(p PrimitiveType) int {
 	switch p {
-	case PRIMITIVE_I8, PRIMITIVE_U8:
+	case PrimitiveI8, PrimitiveU8:
 		return 1
-	case PRIMITIVE_I16, PRIMITIVE_U16:
+	case PrimitiveI16, PrimitiveU16:
 		return 2
-	case PRIMITIVE_I32, PRIMITIVE_U32:
+	case PrimitiveI32, PrimitiveU32:
 		return 3
-	case PRIMITIVE_I64, PRIMITIVE_U64:
+	case PrimitiveI64, PrimitiveU64:
 		return 4
-	case PRIMITIVE_ISZ, PRIMITIVE_USZ:
+	case PrimitiveIsz, PrimitiveUsz:
 		return 5
 	default:
 		return 0
@@ -78,9 +78,9 @@ func IntegerRank(p PrimitiveType) int {
 
 func FloatRank(p PrimitiveType) int {
 	switch p {
-	case PRIMITIVE_F32:
+	case PrimitiveF32:
 		return 1
-	case PRIMITIVE_F64:
+	case PrimitiveF64:
 		return 2
 	default:
 		return 0
@@ -105,7 +105,7 @@ func (p PrimitiveType) CanCoerceTo(other Type) bool {
 	}
 
 	if IsInteger(p) && IsInteger(otherPrimitive) {
-		if p == PRIMITIVE_ISZ && IsSigned(otherPrimitive) || otherPrimitive == PRIMITIVE_USZ {
+		if p == PrimitiveIsz && IsSigned(otherPrimitive) || otherPrimitive == PrimitiveUsz {
 			return true
 		}
 
@@ -139,8 +139,8 @@ func (p PrimitiveType) CanCastTo(other Type) bool {
 		return false
 	}
 
-	if p.Equals(PRIMITIVE_BOOL) && IsInteger(otherPrimitive) ||
-		IsInteger(p) && otherPrimitive.Equals(PRIMITIVE_BOOL) {
+	if p.Equals(PrimitiveBool) && IsInteger(otherPrimitive) ||
+		IsInteger(p) && otherPrimitive.Equals(PrimitiveBool) {
 		return true
 	}
 
@@ -148,8 +148,8 @@ func (p PrimitiveType) CanCastTo(other Type) bool {
 		return true
 	}
 
-	if (p == PRIMITIVE_CHAR && IsInteger(otherPrimitive)) ||
-		(otherPrimitive == PRIMITIVE_CHAR && IsInteger(p)) {
+	if (p == PrimitiveChar && IsInteger(otherPrimitive)) ||
+		(otherPrimitive == PrimitiveChar && IsInteger(p)) {
 		return true
 	}
 
@@ -235,7 +235,7 @@ func (p PointerType) CanCoerceTo(other Type) bool {
 		return false
 	}
 
-	if p.Base.Equals(PRIMITIVE_VOID) || otherPointer.Base.Equals(PRIMITIVE_VOID) {
+	if p.Base.Equals(PrimitiveVoid) || otherPointer.Base.Equals(PrimitiveVoid) {
 		return true
 	}
 	return p.Base.CanCoerceTo(otherPointer.Base)
@@ -413,7 +413,7 @@ func (u UntypedInt) CanCoerceTo(other Type) bool {
 func (u UntypedInt) CanCastTo(other Type) bool {
 	switch t := other.(type) {
 	case PrimitiveType:
-		return IsNumeric(t) || t.Equals(PRIMITIVE_BOOL)
+		return IsNumeric(t) || t.Equals(PrimitiveBool)
 	default:
 		return false
 	}
@@ -489,10 +489,10 @@ func PromoteNumeric(a, b Type) Type {
 	}
 
 	if IsFloat(pa) || IsFloat(pb) {
-		if pa == PRIMITIVE_F64 || pb == PRIMITIVE_F64 {
-			return PRIMITIVE_F64
+		if pa == PrimitiveF64 || pb == PrimitiveF64 {
+			return PrimitiveF64
 		}
-		return PRIMITIVE_F32
+		return PrimitiveF32
 	}
 
 	return PromoteIntegers(pa, pb)
@@ -535,9 +535,9 @@ func widerUnsigned(a, b PrimitiveType) PrimitiveType {
 func DefaultUntyped(t Type) Type {
 	switch t.(type) {
 	case UntypedInt:
-		return PRIMITIVE_I32
+		return PrimitiveI32
 	case UntypedFloat:
-		return PRIMITIVE_F32
+		return PrimitiveF32
 	default:
 		return t
 	}

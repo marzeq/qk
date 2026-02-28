@@ -44,7 +44,7 @@ func (p *Parser) CommitPos() {
 
 func (p *Parser) Peek() tokeniser.Token {
 	if p.pos >= len(p.tokens) || p.pos < 0 {
-		return tokeniser.Token{Type: tokeniser.TOKEN_TYPE_EOF}
+		return tokeniser.Token{Type: tokeniser.TokenEof}
 	}
 
 	return p.tokens[p.pos]
@@ -54,7 +54,7 @@ func (p *Parser) Next() tokeniser.Token {
 	pos := p.pos + 1
 
 	if pos >= len(p.tokens) || pos < 0 {
-		return tokeniser.Token{Type: tokeniser.TOKEN_TYPE_EOF}
+		return tokeniser.Token{Type: tokeniser.TokenEof}
 	}
 
 	return p.tokens[pos]
@@ -89,7 +89,7 @@ func (p *Parser) Consume() tokeniser.Token {
 	return c
 }
 
-func (p *Parser) Expect(expected tokeniser.TokenType) bool {
+func (p *Parser) Expect(expected tokeniser.TokenKind) bool {
 	tok := p.Consume()
 
 	ret := tok.Type == expected
@@ -97,7 +97,7 @@ func (p *Parser) Expect(expected tokeniser.TokenType) bool {
 	return ret
 }
 
-func (p *Parser) ExpectGet(expected tokeniser.TokenType) (*tokeniser.Token, bool) {
+func (p *Parser) ExpectGet(expected tokeniser.TokenKind) (*tokeniser.Token, bool) {
 	tok := p.Consume()
 
 	if tok.Type != expected {
@@ -107,7 +107,7 @@ func (p *Parser) ExpectGet(expected tokeniser.TokenType) (*tokeniser.Token, bool
 	return &tok, true
 }
 
-func (p *Parser) Match(ttypes ...tokeniser.TokenType) bool {
+func (p *Parser) Match(ttypes ...tokeniser.TokenKind) bool {
 	ptype := p.Peek().Type
 
 	return slices.Contains(ttypes, ptype)
@@ -124,19 +124,19 @@ func (p *Parser) Parse() (*RootNode, error) {
 			FilePath: eofTok.Loc.FilePath,
 		},
 	}
-	for !p.Match(tokeniser.TOKEN_TYPE_EOF) {
-		for p.Match(tokeniser.TOKEN_TYPE_NEWLINE, tokeniser.TOKEN_TYPE_SEMICOLON) {
+	for !p.Match(tokeniser.TokenEof) {
+		for p.Match(tokeniser.TokenNewline, tokeniser.TokenSemicolon) {
 			p.Inc()
 		}
 		e := shared.NewError(p.CurrLoc(), "expected function definition, constant definition, type alias or import statement")
-		if !p.Match(tokeniser.TOKEN_TYPE_KEYWORD) {
+		if !p.Match(tokeniser.TokenKeyword) {
 			return nil, e
 		}
 
 		switch p.Peek().Value {
-		case string(tokeniser.KEYWORD_PUB):
+		case string(tokeniser.KeywordPub):
 			p.Inc()
-			if !p.Match(tokeniser.TOKEN_TYPE_KEYWORD) || p.Peek().Value != string(tokeniser.KEYWORD_LET) && p.Peek().Value != string(tokeniser.KEYWORD_EXTERN) {
+			if !p.Match(tokeniser.TokenKeyword) || p.Peek().Value != string(tokeniser.KeywordLet) && p.Peek().Value != string(tokeniser.KeywordExtern) {
 				return nil, e
 			}
 			stmt, _, err := p.ParseStatement()
@@ -156,7 +156,7 @@ func (p *Parser) Parse() (*RootNode, error) {
 			}
 
 			rootNode.Body = append(rootNode.Body, stmt)
-		case string(tokeniser.KEYWORD_LET):
+		case string(tokeniser.KeywordLet):
 			stmt, _, err := p.ParseStatement()
 			if err != nil {
 				return nil, err
@@ -167,20 +167,20 @@ func (p *Parser) Parse() (*RootNode, error) {
 			default:
 				return nil, e
 			}
-		case string(tokeniser.KEYWORD_EXTERN):
+		case string(tokeniser.KeywordExtern):
 			stmt, _, err := p.ParseStatement()
 			if err != nil {
 				return nil, err
 			}
 			rootNode.Body = append(rootNode.Body, stmt)
 
-		case string(tokeniser.KEYWORD_IMPORT):
+		case string(tokeniser.KeywordImport):
 			imp, err := p.ParseImport()
 			if err != nil {
 				return nil, err
 			}
 			rootNode.Body = append(rootNode.Body, imp)
-		case string(tokeniser.KEYWORD_MODULE):
+		case string(tokeniser.KeywordModule):
 			mod, err := p.ParseModule()
 			if err != nil {
 				return nil, err
@@ -190,15 +190,15 @@ func (p *Parser) Parse() (*RootNode, error) {
 			return nil, e
 		}
 
-		if p.Match(tokeniser.TOKEN_TYPE_EOF) {
+		if p.Match(tokeniser.TokenEof) {
 			break
 		}
 
-		if !p.Match(tokeniser.TOKEN_TYPE_NEWLINE, tokeniser.TOKEN_TYPE_SEMICOLON) {
+		if !p.Match(tokeniser.TokenNewline, tokeniser.TokenSemicolon) {
 			return nil, shared.NewError(p.CurrLoc(), "expected ';' or '\\n'")
 		}
 
-		for p.Match(tokeniser.TOKEN_TYPE_NEWLINE, tokeniser.TOKEN_TYPE_SEMICOLON) {
+		for p.Match(tokeniser.TokenNewline, tokeniser.TokenSemicolon) {
 			p.Inc()
 		}
 	}

@@ -122,7 +122,7 @@ func main() {
 						fmt.Println(shared.NewError(fn.Loc, "main function must have a body"))
 						os.Exit(1)
 					}
-					if fn.Symbol.Signature.ReturnType != types.PRIMITIVE_VOID {
+					if fn.Symbol.Signature.ReturnType != types.PrimitiveVoid {
 						fmt.Println(shared.NewError(fn.Loc, "main function must return void"))
 					}
 					foundMain = true

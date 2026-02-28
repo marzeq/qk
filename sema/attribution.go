@@ -57,7 +57,7 @@ func (a *Attributor) attributeNode(node parser.Node) {
 
 					first := returnNodes[0]
 					if first.ReturnValue == nil {
-						current = types.PRIMITIVE_VOID
+						current = types.PrimitiveVoid
 					} else {
 						current = first.ReturnValue.GetType()
 					}
@@ -65,7 +65,7 @@ func (a *Attributor) attributeNode(node parser.Node) {
 					for _, returnNode := range returnNodes[1:] {
 						var t types.Type
 						if returnNode.ReturnValue == nil {
-							t = types.PRIMITIVE_VOID
+							t = types.PrimitiveVoid
 						} else {
 							t = returnNode.ReturnValue.GetType()
 						}
@@ -88,7 +88,7 @@ func (a *Attributor) attributeNode(node parser.Node) {
 
 					n.Symbol.Signature.ReturnType = current
 				} else {
-					n.Symbol.Signature.ReturnType = types.PRIMITIVE_VOID
+					n.Symbol.Signature.ReturnType = types.PrimitiveVoid
 				}
 
 			case parser.ExpressionNode:
@@ -178,19 +178,19 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		n.SetType(types.UntypedFloat{})
 
 	case *parser.BoolLiteralNode:
-		n.SetType(types.PRIMITIVE_BOOL)
+		n.SetType(types.PrimitiveBool)
 
 	case *parser.StringLiteralNode:
 		n.SetType(types.PointerType{
-			Base: types.PRIMITIVE_CHAR,
+			Base: types.PrimitiveChar,
 		})
 
 	case *parser.CharLiteralNode:
-		n.SetType(types.PRIMITIVE_CHAR)
+		n.SetType(types.PrimitiveChar)
 
 	case *parser.NilLiteralNode:
 		n.SetType(types.PointerType{
-			Base: types.PRIMITIVE_VOID,
+			Base: types.PrimitiveVoid,
 		})
 
 	case *parser.StructLiteralNode:
@@ -225,7 +225,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 			})
 		} else {
 			n.SetType(types.ArrayType{
-				Base: types.PRIMITIVE_VOID,
+				Base: types.PrimitiveVoid,
 				Size: 0,
 			})
 		}
@@ -234,7 +234,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		if n.Symbol.Signature.ReturnType != nil {
 			n.SetType(n.Symbol.Signature.ReturnType)
 		} else {
-			n.SetType(types.PRIMITIVE_VOID)
+			n.SetType(types.PrimitiveVoid)
 		}
 
 		for _, arg := range n.Args {
@@ -292,32 +292,32 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 	case *parser.UnaryOpNode:
 		a.attributeExpr(n.Operand)
 		switch n.Op {
-		case parser.UNARY_OP_NEGATE:
+		case parser.UnaryOpNegate:
 			if types.IsSigned(n.Operand.GetType()) || types.IsFloat(n.Operand.GetType()) {
 				n.SetType(n.Operand.GetType())
 			}
-		case parser.UNARY_OP_LOGICAL_NOT:
-			if n.Operand.GetType().Equals(types.PRIMITIVE_BOOL) {
-				n.SetType(types.PRIMITIVE_BOOL)
+		case parser.UnaryOpLogicalNot:
+			if n.Operand.GetType().Equals(types.PrimitiveBool) {
+				n.SetType(types.PrimitiveBool)
 			} else {
 				a.errorf(n, "logical not operator requires a boolean operand")
 				n.SetType(types.ErrorType{})
 			}
-		case parser.UNARY_OP_REFERENCE:
+		case parser.UnaryOpReference:
 			n.SetType(types.PointerType{
 				Base: n.Operand.GetType(),
 			})
-		case parser.UNARY_OP_DEREFERENCE:
+		case parser.UnaryOpDereference:
 			if ptr, ok := n.Operand.GetType().(types.PointerType); ok {
 				n.SetType(ptr.Base)
 			} else {
 				a.errorf(n, "cannot dereference non-pointer type")
 				n.SetType(types.ErrorType{})
 			}
-		case parser.UNARY_OP_ARRAY_LEN:
+		case parser.UnaryOpArrayLen:
 			switch n.Operand.GetType().(type) {
 			case types.ArrayType:
-				n.SetType(types.PRIMITIVE_USZ)
+				n.SetType(types.PrimitiveUsz)
 			default:
 				a.errorf(n, "array length operator requires an array operand")
 				n.SetType(types.ErrorType{})
@@ -348,7 +348,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		t2 := n.Operand2.GetType()
 
 		switch n.Op {
-		case parser.BINARY_OP_ADD, parser.BINARY_OP_SUBTRACT, parser.BINARY_OP_MULTIPLY, parser.BINARY_OP_DIVIDE, parser.BINARY_OP_MODULO:
+		case parser.BinaryOpAdd, parser.BinaryOpSubtract, parser.BinaryOpMultiply, parser.BinaryOpDivide, parser.BinaryOpModulo:
 			if types.IsNumeric(t1) && types.IsNumeric(t2) {
 				got := types.PromoteNumeric(t1, t2)
 				if got.Equals(types.ErrorType{}) {
@@ -361,20 +361,20 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 				a.errorf(n, "arithmetic operators require numeric operands")
 				n.SetType(types.ErrorType{})
 			}
-		case parser.BINARY_OP_EQUAL, parser.BINARY_OP_NOT_EQUAL, parser.BINARY_OP_LESS, parser.BINARY_OP_LESS_EQUAL, parser.BINARY_OP_GREATER, parser.BINARY_OP_GREATER_EQUAL:
+		case parser.BinaryOpEqual, parser.BinaryOpNotEqual, parser.BinaryOpLess, parser.BinaryOpLessEqual, parser.BinaryOpGreater, parser.BinaryOpGreaterEqual:
 			if types.IsNumeric(t1) && types.IsNumeric(t2) {
-				n.SetType(types.PRIMITIVE_BOOL)
+				n.SetType(types.PrimitiveBool)
 			} else if t1.Equals(t2) {
-				n.SetType(types.PRIMITIVE_BOOL)
+				n.SetType(types.PrimitiveBool)
 			} else if types.IsPointer(t1) && types.IsPointer(t2) {
-				n.SetType(types.PRIMITIVE_BOOL)
+				n.SetType(types.PrimitiveBool)
 			} else {
 				a.errorf(n, "comparison operators require operands of the same type or both numeric types")
 				n.SetType(types.ErrorType{})
 			}
-		case parser.BINARY_OP_LOGICAL_AND, parser.BINARY_OP_LOGICAL_OR:
-			if t1.Equals(types.PRIMITIVE_BOOL) && t2.Equals(types.PRIMITIVE_BOOL) {
-				n.SetType(types.PRIMITIVE_BOOL)
+		case parser.BinaryOpLogicalAnd, parser.BinaryOpLogicalOr:
+			if t1.Equals(types.PrimitiveBool) && t2.Equals(types.PrimitiveBool) {
+				n.SetType(types.PrimitiveBool)
 			} else {
 				a.errorf(n, "logical operators require boolean operands")
 				n.SetType(types.ErrorType{})
@@ -389,7 +389,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		n.SetType(target)
 
 	case *parser.SizeOfNode:
-		n.SetType(types.PRIMITIVE_USZ)
+		n.SetType(types.PrimitiveUsz)
 
 	default:
 		panic(fmt.Sprintf("unexpected expression type: %T\n", node))
@@ -406,7 +406,7 @@ func collectFunctionReturnNodes(body []parser.Node) []*parser.ControlKeywordNode
 	for _, stmt := range body {
 		switch n := stmt.(type) {
 		case *parser.ControlKeywordNode:
-			if n.Keyword == tokeniser.KEYWORD_RETURN {
+			if n.Keyword == tokeniser.KeywordReturn {
 				returnNodes = append(returnNodes, n)
 			}
 		case *parser.IfNode:

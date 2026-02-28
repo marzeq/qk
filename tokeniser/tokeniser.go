@@ -210,7 +210,7 @@ func (t *Tokeniser) GetLoc() shared.Location {
 	}
 }
 
-func (t *Tokeniser) AddToken(ttype TokenType, loc shared.Location, _value ...string) {
+func (t *Tokeniser) AddToken(ttype TokenKind, loc shared.Location, _value ...string) {
 	value := ""
 	if len(_value) > 0 {
 		value = _value[0]
@@ -220,29 +220,29 @@ func (t *Tokeniser) AddToken(ttype TokenType, loc shared.Location, _value ...str
 }
 
 var keywords = map[string]struct{}{
-	string(KEYWORD_LET):      {},
-	string(KEYWORD_VAR):      {},
-	string(KEYWORD_EXTERN):   {},
-	string(KEYWORD_STRUCT):   {},
-	string(KEYWORD_TYPE):     {},
-	string(KEYWORD_IF):       {},
-	string(KEYWORD_ELSE):     {},
-	string(KEYWORD_GIVEN):    {},
-	string(KEYWORD_FOR):      {},
-	string(KEYWORD_BREAK):    {},
-	string(KEYWORD_CONTINUE): {},
-	string(KEYWORD_RETURN):   {},
-	string(KEYWORD_IMPORT):   {},
-	string(KEYWORD_MODULE):   {},
-	string(KEYWORD_PUB):      {},
-	string(KEYWORD_AND):      {},
-	string(KEYWORD_OR):       {},
-	string(KEYWORD_NOT):      {},
-	string(KEYWORD_TRUE):     {},
-	string(KEYWORD_FALSE):    {},
-	string(KEYWORD_NIL):      {},
-	string(KEYWORD_AS):       {},
-	string(KEYWORD_SIZEOF):   {},
+	string(KeywordLet):      {},
+	string(KeywordVar):      {},
+	string(KeywordExtern):   {},
+	string(KeywordStruct):   {},
+	string(KeywordType):     {},
+	string(KeywordIf):       {},
+	string(KeywordElse):     {},
+	string(KeywordGiven):    {},
+	string(KeywordFor):      {},
+	string(KeywordBreak):    {},
+	string(KeywordContinue): {},
+	string(KeywordReturn):   {},
+	string(KeywordImport):   {},
+	string(KeywordModule):   {},
+	string(KeywordPub):      {},
+	string(KeywordAnd):      {},
+	string(KeywordOr):       {},
+	string(KeywordNot):      {},
+	string(KeywordTrue):     {},
+	string(KeywordFalse):    {},
+	string(KeywordNil):      {},
+	string(KeywordAs):       {},
+	string(KeywordSizeof):   {},
 }
 
 func IsKeyword(w string) bool {
@@ -255,7 +255,7 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 		c := t.Peek()
 
 		if c == 0 {
-			t.AddToken(TOKEN_TYPE_EOF, t.GetLoc())
+			t.AddToken(TokenEof, t.GetLoc())
 			return t.tokens, nil
 		}
 
@@ -269,9 +269,9 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 			w := t.ReadWord()
 
 			if IsKeyword(w) {
-				t.AddToken(TOKEN_TYPE_KEYWORD, pos, w)
+				t.AddToken(TokenKeyword, pos, w)
 			} else {
-				t.AddToken(TOKEN_TYPE_IDENT, pos, w)
+				t.AddToken(TokenIdentifier, pos, w)
 			}
 			continue
 		}
@@ -283,7 +283,7 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 				return nil, err
 			}
 
-			t.AddToken(TOKEN_TYPE_NUMBER, pos, n)
+			t.AddToken(TokenNumber, pos, n)
 			continue
 		}
 
@@ -295,7 +295,7 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 				return nil, err
 			}
 
-			t.AddToken(TOKEN_TYPE_STRING, pos, s)
+			t.AddToken(TokenString, pos, s)
 			continue
 		case '\\':
 			if t.Next() == '\n' {
@@ -303,75 +303,75 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 			}
 			continue
 		case '\n':
-			t.AddToken(TOKEN_TYPE_NEWLINE, t.GetLoc())
+			t.AddToken(TokenNewline, t.GetLoc())
 			t.Inc()
 			continue
 		case '(':
-			t.AddToken(TOKEN_TYPE_OPEN_PAREN, t.GetLoc())
+			t.AddToken(TokenOpenParen, t.GetLoc())
 			t.Inc()
 			continue
 		case ')':
-			t.AddToken(TOKEN_TYPE_CLOSE_PAREN, t.GetLoc())
+			t.AddToken(TokenCloseParen, t.GetLoc())
 			t.Inc()
 			continue
 		case '{':
-			t.AddToken(TOKEN_TYPE_OPEN_CURLY, t.GetLoc())
+			t.AddToken(TokenOpenCurly, t.GetLoc())
 			t.Inc()
 			continue
 		case '}':
-			t.AddToken(TOKEN_TYPE_CLOSE_CURLY, t.GetLoc())
+			t.AddToken(TokenCloseCurly, t.GetLoc())
 			t.Inc()
 			continue
 		case '[':
-			t.AddToken(TOKEN_TYPE_OPEN_SQUARE, t.GetLoc())
+			t.AddToken(TokenOpenSquare, t.GetLoc())
 			t.Inc()
 			continue
 		case ']':
-			t.AddToken(TOKEN_TYPE_CLOSE_SQUARE, t.GetLoc())
+			t.AddToken(TokenCloseSquare, t.GetLoc())
 			t.Inc()
 			continue
 		case '=':
 			if t.Next() == '=' {
-				t.AddToken(TOKEN_TYPE_EQUALS_EQUALS, t.GetLoc())
+				t.AddToken(TokenEqualsEquals, t.GetLoc())
 				t.Inc().Inc()
 			} else {
-				t.AddToken(TOKEN_TYPE_EQUALS, t.GetLoc())
+				t.AddToken(TokenEquals, t.GetLoc())
 				t.Inc()
 			}
 			continue
 		case '!':
 			if t.Next() == '=' {
-				t.AddToken(TOKEN_TYPE_NOT_EQUALS, t.GetLoc())
+				t.AddToken(TokenNotEquals, t.GetLoc())
 				t.Inc().Inc()
 			} else {
-				t.AddToken(TOKEN_TYPE_EXCLAM, t.GetLoc())
+				t.AddToken(TokenExclam, t.GetLoc())
 				t.Inc()
 			}
 			continue
 		case '<':
 			if t.Next() == '=' {
-				t.AddToken(TOKEN_TYPE_LESS_EQUALS, t.GetLoc())
+				t.AddToken(TokenLessEquals, t.GetLoc())
 				t.Inc().Inc()
 			} else {
-				t.AddToken(TOKEN_TYPE_LESS, t.GetLoc())
+				t.AddToken(TokenLess, t.GetLoc())
 				t.Inc()
 			}
 			continue
 		case '>':
 			if t.Next() == '=' {
-				t.AddToken(TOKEN_TYPE_GREATER_EQUALS, t.GetLoc())
+				t.AddToken(TokenGreaterEquals, t.GetLoc())
 				t.Inc().Inc()
 			} else {
-				t.AddToken(TOKEN_TYPE_GREATER, t.GetLoc())
+				t.AddToken(TokenGreater, t.GetLoc())
 				t.Inc()
 			}
 			continue
 		case '+':
 			if t.Next() == '=' {
-				t.AddToken(TOKEN_TYPE_INC_BY, t.GetLoc())
+				t.AddToken(TokenIncBy, t.GetLoc())
 				t.Inc().Inc()
 			} else {
-				t.AddToken(TOKEN_TYPE_PLUS, t.GetLoc())
+				t.AddToken(TokenPlus, t.GetLoc())
 				t.Inc()
 			}
 			continue
@@ -383,24 +383,24 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 					return nil, err
 				}
 
-				t.AddToken(TOKEN_TYPE_NUMBER, pos, n)
+				t.AddToken(TokenNumber, pos, n)
 			} else if t.Next() == '=' {
-				t.AddToken(TOKEN_TYPE_DEC_BY, t.GetLoc())
+				t.AddToken(TokenDecBy, t.GetLoc())
 				t.Inc().Inc()
 			} else if t.Next() == '>' {
-				t.AddToken(TOKEN_TYPE_ARROW, t.GetLoc())
+				t.AddToken(TokenArrow, t.GetLoc())
 				t.Inc().Inc()
 			} else {
-				t.AddToken(TOKEN_TYPE_MINUS, t.GetLoc())
+				t.AddToken(TokenMinus, t.GetLoc())
 				t.Inc()
 			}
 			continue
 		case '*':
 			if t.Next() == '=' {
-				t.AddToken(TOKEN_TYPE_MUL_BY, t.GetLoc())
+				t.AddToken(TokenMulBy, t.GetLoc())
 				t.Inc().Inc()
 			} else {
-				t.AddToken(TOKEN_TYPE_ASTERISK, t.GetLoc())
+				t.AddToken(TokenAsterisk, t.GetLoc())
 				t.Inc()
 			}
 			continue
@@ -410,36 +410,36 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 			} else if t.Next() == '*' {
 				t.IgnoreMultilineComment()
 			} else if t.Next() == '=' {
-				t.AddToken(TOKEN_TYPE_DIV_BY, t.GetLoc())
+				t.AddToken(TokenDivBy, t.GetLoc())
 				t.Inc().Inc()
 			} else {
-				t.AddToken(TOKEN_TYPE_SLASH, t.GetLoc())
+				t.AddToken(TokenSlash, t.GetLoc())
 				t.Inc()
 			}
 			continue
 		case '%':
 			if t.Next() == '=' {
-				t.AddToken(TOKEN_TYPE_MOD_BY, t.GetLoc())
+				t.AddToken(TokenModBy, t.GetLoc())
 				t.Inc().Inc()
 			} else {
-				t.AddToken(TOKEN_TYPE_PERCENT, t.GetLoc())
+				t.AddToken(TokenPercent, t.GetLoc())
 				t.Inc()
 			}
 			continue
 		case '&':
-			t.AddToken(TOKEN_TYPE_AMPERSAND, t.GetLoc())
+			t.AddToken(TokenAmpersand, t.GetLoc())
 			t.Inc()
 			continue
 		case ';':
-			t.AddToken(TOKEN_TYPE_SEMICOLON, t.GetLoc())
+			t.AddToken(TokenSemicolon, t.GetLoc())
 			t.Inc()
 			continue
 		case ',':
-			t.AddToken(TOKEN_TYPE_COMMA, t.GetLoc())
+			t.AddToken(TokenComma, t.GetLoc())
 			t.Inc()
 			continue
 		case ':':
-			t.AddToken(TOKEN_TYPE_COLON, t.GetLoc())
+			t.AddToken(TokenColon, t.GetLoc())
 			t.Inc()
 			continue
 		case '.':
@@ -449,15 +449,15 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 				nextloc := t.GetLoc()
 				if t.Next() == '.' {
 					t.Inc().Inc()
-					t.AddToken(TOKEN_TYPE_3DOTS, loc)
+					t.AddToken(Token3Dots, loc)
 					continue
 				}
-				t.AddToken(TOKEN_TYPE_DOT, loc)
-				t.AddToken(TOKEN_TYPE_DOT, nextloc)
+				t.AddToken(TokenDot, loc)
+				t.AddToken(TokenDot, nextloc)
 				continue
 			}
 
-			t.AddToken(TOKEN_TYPE_DOT, t.GetLoc())
+			t.AddToken(TokenDot, t.GetLoc())
 			t.Inc()
 			continue
 		case '\'':
@@ -473,7 +473,7 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 			if t.Consume() != '\'' {
 				return nil, shared.NewError(loc, "Expected ' to end char literal")
 			}
-			t.AddToken(TOKEN_TYPE_CHAR, loc, ch)
+			t.AddToken(TokenChar, loc, ch)
 			continue
 		}
 

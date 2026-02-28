@@ -160,7 +160,7 @@ func (v *Validator) validateLValue(expr parser.ExpressionNode) bool {
 		}
 
 	case *parser.UnaryOpNode:
-		if e.Op == parser.UNARY_OP_DEREFERENCE {
+		if e.Op == parser.UnaryOpDereference {
 			v.validateExpr(e.Operand)
 			return true
 		}
@@ -208,7 +208,7 @@ func (v *Validator) validateArrayAssignment(n *parser.ArrayAssignmentNode) {
 
 func (v *Validator) validateIf(n *parser.IfNode) {
 	v.validateExpr(n.IfBranch.Condition)
-	if !n.IfBranch.Condition.GetType().Equals(types.PRIMITIVE_BOOL) {
+	if !n.IfBranch.Condition.GetType().Equals(types.PrimitiveBool) {
 		v.errorf(n, "if condition must be bool")
 	}
 
@@ -216,7 +216,7 @@ func (v *Validator) validateIf(n *parser.IfNode) {
 
 	for _, elif := range n.ElseIfBranches {
 		v.validateExpr(elif.Condition)
-		if !elif.Condition.GetType().Equals(types.PRIMITIVE_BOOL) {
+		if !elif.Condition.GetType().Equals(types.PrimitiveBool) {
 			v.errorf(n, "elseif condition must be bool")
 		}
 		v.validateNode(elif.Node)
@@ -300,24 +300,24 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 
 		switch n.Op {
 
-		case parser.UNARY_OP_LOGICAL_NOT:
-			if !operandType.Equals(types.PRIMITIVE_BOOL) {
+		case parser.UnaryOpLogicalNot:
+			if !operandType.Equals(types.PrimitiveBool) {
 				v.errorf(n, "operator not requires bool")
 			}
 
-		case parser.UNARY_OP_NEGATE:
+		case parser.UnaryOpNegate:
 			if !types.IsNumeric(operandType) {
 				v.errorf(n, "operator - requires numeric type")
 			}
 
-		case parser.UNARY_OP_REFERENCE:
+		case parser.UnaryOpReference:
 
-		case parser.UNARY_OP_DEREFERENCE:
+		case parser.UnaryOpDereference:
 			if _, ok := operandType.(types.PointerType); !ok {
 				v.errorf(n, "cannot dereference non-pointer type")
 			}
 
-		case parser.UNARY_OP_ARRAY_LEN:
+		case parser.UnaryOpArrayLen:
 			switch operandType.(type) {
 			case types.ArrayType:
 				// OK
@@ -338,35 +338,35 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 
 		switch n.Op {
 
-		case parser.BINARY_OP_ADD,
-			parser.BINARY_OP_SUBTRACT,
-			parser.BINARY_OP_MULTIPLY,
-			parser.BINARY_OP_DIVIDE,
-			parser.BINARY_OP_MODULO:
+		case parser.BinaryOpAdd,
+			parser.BinaryOpSubtract,
+			parser.BinaryOpMultiply,
+			parser.BinaryOpDivide,
+			parser.BinaryOpModulo:
 
 			if !types.IsNumeric(t1) || !types.IsNumeric(t2) {
 				v.errorf(n, "arithmetic operators require numeric operands")
 			}
 
-		case parser.BINARY_OP_LOGICAL_AND,
-			parser.BINARY_OP_LOGICAL_OR:
+		case parser.BinaryOpLogicalAnd,
+			parser.BinaryOpLogicalOr:
 
-			if !t1.Equals(types.PRIMITIVE_BOOL) ||
-				!t2.Equals(types.PRIMITIVE_BOOL) {
+			if !t1.Equals(types.PrimitiveBool) ||
+				!t2.Equals(types.PrimitiveBool) {
 				v.errorf(n, "logical operators require bool operands")
 			}
 
-		case parser.BINARY_OP_EQUAL,
-			parser.BINARY_OP_NOT_EQUAL:
+		case parser.BinaryOpEqual,
+			parser.BinaryOpNotEqual:
 
 			if !t1.CanCoerceTo(t2) && !t2.CanCoerceTo(t1) {
 				v.errorf(n, "incompatible types for comparison: %v and %v", t1, t2)
 			}
 
-		case parser.BINARY_OP_LESS,
-			parser.BINARY_OP_LESS_EQUAL,
-			parser.BINARY_OP_GREATER,
-			parser.BINARY_OP_GREATER_EQUAL:
+		case parser.BinaryOpLess,
+			parser.BinaryOpLessEqual,
+			parser.BinaryOpGreater,
+			parser.BinaryOpGreaterEqual:
 
 			if !types.IsNumeric(t1) || !types.IsNumeric(t2) {
 				v.errorf(n, "ordering operators require numeric operands")
@@ -395,7 +395,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 	case *parser.IfExprNode:
 		v.validateExpr(n.IfBranch.Condition)
 
-		if !n.IfBranch.Condition.GetType().Equals(types.PRIMITIVE_BOOL) {
+		if !n.IfBranch.Condition.GetType().Equals(types.PrimitiveBool) {
 			v.errorf(n, "if expression condition must be bool")
 		}
 
@@ -404,7 +404,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		for _, elif := range n.ElseIfBranches {
 			v.validateExpr(elif.Condition)
 
-			if !elif.Condition.GetType().Equals(types.PRIMITIVE_BOOL) {
+			if !elif.Condition.GetType().Equals(types.PrimitiveBool) {
 				v.errorf(n, "elseif condition must be bool")
 			}
 
