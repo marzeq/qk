@@ -194,14 +194,21 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		})
 
 	case *parser.StructLiteralNode:
+		for _, field := range n.Fields {
+			a.attributeExpr(field.R)
+		}
+
 		if n.Symbol != nil {
 			n.SetType(n.Symbol.TypeInfo)
 		} else {
-			a.errorf(n, "undefined struct type")
-			n.SetType(types.ErrorType{})
-		}
-		for _, field := range n.Fields {
-			a.attributeExpr(field.R)
+			for _, field := range n.Fields {
+				ft := field.R.GetType()
+				if types.IsUntyped(ft) {
+					field.R.SetType(types.DefaultUntyped(ft))
+				}
+			}
+
+			n.SetType(determineAnonymousStructLiteralType(n.Fields))
 		}
 
 	case *parser.ArrayLiteralNode:
@@ -425,4 +432,20 @@ func collectFunctionReturnNodes(body []parser.Node) []*parser.ControlKeywordNode
 	}
 
 	return returnNodes
+}
+
+func determineAnonymousStructLiteralType(fields []shared.Pair[string, parser.ExpressionNode]) types.Type {
+	fieldTypes := []shared.Pair[string, types.Type]{}
+
+	for _, field := range fields {
+		fieldTypes = append(fieldTypes, shared.Pair[string, types.Type]{
+			L: field.L,
+			R: field.R.GetType(),
+		})
+	}
+
+	return types.StructType{
+		Fields:  fieldTypes,
+		Ordered: false,
+	}
 }

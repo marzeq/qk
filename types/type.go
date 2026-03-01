@@ -1,6 +1,7 @@
 package types
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/marzeq/qk/shared"
@@ -167,7 +168,8 @@ func (p PrimitiveType) String() string {
 }
 
 type StructType struct {
-	Fields []shared.Pair[string, Type]
+	Fields  []shared.Pair[string, Type]
+	Ordered bool
 }
 
 func (s StructType) Equals(other Type) bool {
@@ -191,14 +193,46 @@ func (s StructType) Equals(other Type) bool {
 }
 
 func (s StructType) CanCoerceTo(other Type) bool {
-	if s.Equals(other) {
-		return true
+	otherStruct, ok := other.(StructType)
+	if !ok {
+		return false
 	}
-	return false
+
+	if s.Ordered != otherStruct.Ordered {
+		return s.Equals(other)
+	}
+
+	var orderedStruct StructType
+	var unorderedStruct StructType
+	if s.Ordered {
+		orderedStruct = s
+		unorderedStruct = otherStruct
+	} else {
+		orderedStruct = otherStruct
+		unorderedStruct = s
+	}
+
+	for _, orderedField := range orderedStruct.Fields {
+		found := false
+		for _, unorderedField := range unorderedStruct.Fields {
+			if orderedField.L == unorderedField.L {
+				if !orderedField.R.CanCoerceTo(unorderedField.R) {
+					return false
+				}
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (s StructType) CanCastTo(other Type) bool {
-	return s.Equals(other)
+	return s.CanCoerceTo(other)
 }
 
 func (s StructType) String() string {
@@ -308,7 +342,7 @@ func (a ArrayType) String() string {
 	if a.Size == -1 {
 		return "[" + a.Base.String() + "]"
 	}
-	return "[" + a.Base.String() + ", " + string(a.Size) + "]"
+	return "[" + a.Base.String() + ", " + strconv.Itoa(a.Size) + "]"
 }
 
 type FunctionType struct {

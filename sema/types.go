@@ -57,7 +57,10 @@ func (a *Analyser) resolveTypeNode(n parser.TypeNode) types.Type {
 				R: a.resolveTypeNode(f.Type),
 			})
 		}
-		return types.StructType{Fields: fields}
+		return types.StructType{
+			Fields:  fields,
+			Ordered: true,
+		}
 	}
 
 	a.errorf(n, "unsupported type node")

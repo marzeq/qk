@@ -65,17 +65,19 @@ func (a *Analyser) resolveFunctionCall(n *parser.FunctionCallNode) {
 }
 
 func (a *Analyser) visitStructLiteral(n *parser.StructLiteralNode) {
-	sym, ok := a.resolveModuleAccess(n.Name)
-	if !ok {
-		return
-	}
+	if n.Name != nil {
+		sym, ok := a.resolveModuleAccess(n.Name)
+		if !ok {
+			return
+		}
 
-	if sym.Kind != symbols.SymbolKindType {
-		a.errorf(n, "%q is not a type", sym.Name)
-		return
-	}
+		if sym.Kind != symbols.SymbolKindType {
+			a.errorf(n, "%q is not a type", sym.Name)
+			return
+		}
 
-	n.Symbol = sym
+		n.Symbol = sym
+	}
 
 	for _, field := range n.Fields {
 		a.visitExpression(field.R)

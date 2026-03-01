@@ -451,6 +451,11 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			}
 		}
 
+	case *parser.StructLiteralNode:
+		for _, field := range n.Fields {
+			v.validateExpr(field.R)
+		}
+
 	case *parser.IntegerLiteralNode,
 		*parser.FloatLiteralNode,
 		*parser.BoolLiteralNode,
