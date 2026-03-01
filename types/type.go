@@ -1,7 +1,6 @@
 package types
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -169,8 +168,8 @@ func (p PrimitiveType) String() string {
 }
 
 type StructType struct {
-	Fields  []shared.Pair[string, Type]
-	Ordered bool
+	Fields    []shared.Pair[string, Type]
+	Anonymous bool
 }
 
 func (s StructType) Equals(other Type) bool {
@@ -194,31 +193,34 @@ func (s StructType) Equals(other Type) bool {
 }
 
 func (s StructType) CanCoerceTo(other Type) bool {
-	fmt.Printf("Checking if %s can coerce to %s\n", s.String(), other.String())
 	otherStruct, ok := other.(StructType)
 	if !ok {
 		return false
 	}
 
-	if s.Ordered && otherStruct.Ordered || !s.Ordered && !otherStruct.Ordered {
+	if s.Anonymous && otherStruct.Anonymous || !s.Anonymous && !otherStruct.Anonymous {
 		return s.Equals(other)
 	}
 
-	var orderedStruct StructType
-	var unorderedStruct StructType
-	if s.Ordered {
-		orderedStruct = s
-		unorderedStruct = otherStruct
-	} else {
-		orderedStruct = otherStruct
-		unorderedStruct = s
+	if s.Anonymous {
+		return false
 	}
 
-	for _, orderedField := range orderedStruct.Fields {
+	var concrete StructType
+	var anonymous StructType
+	if s.Anonymous {
+		concrete = s
+		anonymous = otherStruct
+	} else {
+		concrete = otherStruct
+		anonymous = s
+	}
+
+	for _, concreteField := range concrete.Fields {
 		found := false
-		for _, unorderedField := range unorderedStruct.Fields {
-			if orderedField.L == unorderedField.L {
-				if !unorderedField.R.CanCoerceTo(orderedField.R) {
+		for _, anonymousField := range anonymous.Fields {
+			if concreteField.L == anonymousField.L {
+				if !anonymousField.R.CanCoerceTo(concreteField.R) {
 					return false
 				}
 				found = true
@@ -239,7 +241,7 @@ func (s StructType) CanCastTo(other Type) bool {
 
 func (s StructType) String() string {
 	var result strings.Builder
-	if !s.Ordered {
+	if !s.Anonymous {
 		result.WriteString("<unordered>")
 	}
 	result.WriteString("struct { ")

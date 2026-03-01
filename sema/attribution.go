@@ -112,7 +112,12 @@ func (a *Attributor) attributeNode(node parser.Node) {
 		}
 
 		if n.Value != nil && n.Symbol.Type == nil {
-			n.Symbol.Type = n.Value.GetType()
+			if st, ok := n.Value.GetType().(types.StructType); ok && !st.Anonymous {
+				a.errorf(n, "cannot assign an anonymous struct literal to a variable without an explicit type")
+				n.Symbol.Type = types.ErrorType{}
+			} else {
+				n.Symbol.Type = n.Value.GetType()
+			}
 		}
 
 	case *parser.AssignmentNode:
@@ -445,7 +450,7 @@ func determineAnonymousStructLiteralType(fields []shared.Pair[string, parser.Exp
 	}
 
 	return types.StructType{
-		Fields:  fieldTypes,
-		Ordered: false,
+		Fields:    fieldTypes,
+		Anonymous: false,
 	}
 }

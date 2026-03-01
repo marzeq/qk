@@ -58,8 +58,8 @@ func (a *Analyser) resolveTypeNode(n parser.TypeNode) types.Type {
 			})
 		}
 		return types.StructType{
-			Fields:  fields,
-			Ordered: true,
+			Fields:    fields,
+			Anonymous: true,
 		}
 	}
 
