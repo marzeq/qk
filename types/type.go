@@ -1,6 +1,7 @@
 package types
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -193,12 +194,13 @@ func (s StructType) Equals(other Type) bool {
 }
 
 func (s StructType) CanCoerceTo(other Type) bool {
+	fmt.Printf("Checking if %s can coerce to %s\n", s.String(), other.String())
 	otherStruct, ok := other.(StructType)
 	if !ok {
 		return false
 	}
 
-	if s.Ordered != otherStruct.Ordered {
+	if s.Ordered && otherStruct.Ordered || !s.Ordered && !otherStruct.Ordered {
 		return s.Equals(other)
 	}
 
@@ -216,7 +218,7 @@ func (s StructType) CanCoerceTo(other Type) bool {
 		found := false
 		for _, unorderedField := range unorderedStruct.Fields {
 			if orderedField.L == unorderedField.L {
-				if !orderedField.R.CanCoerceTo(unorderedField.R) {
+				if !unorderedField.R.CanCoerceTo(orderedField.R) {
 					return false
 				}
 				found = true
@@ -237,6 +239,9 @@ func (s StructType) CanCastTo(other Type) bool {
 
 func (s StructType) String() string {
 	var result strings.Builder
+	if !s.Ordered {
+		result.WriteString("<unordered>")
+	}
 	result.WriteString("struct { ")
 	for i, field := range s.Fields {
 		result.WriteString(field.L + ": " + field.R.String())
