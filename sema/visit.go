@@ -21,8 +21,8 @@ func (a *Analyser) visit(node parser.Node) {
 	case *parser.AssignmentNode:
 		a.visitAssignment(n)
 
-	case *parser.ArrayAssignmentNode:
-		a.visitArrayAssignment(n)
+	case *parser.IndexAssignmentNode:
+		a.visitIndexAssignment(n)
 
 	case *parser.IfNode:
 		a.visitIf(n)
@@ -137,7 +137,7 @@ func (a *Analyser) visitExpression(expr parser.ExpressionNode) {
 	case *parser.StructLiteralNode:
 		a.visitStructLiteral(e)
 
-	case *parser.ArrayLiteralNode:
+	case *parser.SliceLiteralNode:
 		for _, el := range e.Elements {
 			a.visitExpression(el)
 		}
@@ -159,7 +159,7 @@ func (a *Analyser) visitAssignment(n *parser.AssignmentNode) {
 	a.visitExpression(n.Value)
 }
 
-func (a *Analyser) visitArrayAssignment(n *parser.ArrayAssignmentNode) {
+func (a *Analyser) visitIndexAssignment(n *parser.IndexAssignmentNode) {
 	a.visitExpression(n.Assignee)
 	a.visitExpression(n.Index)
 	a.visitExpression(n.Value)

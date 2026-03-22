@@ -72,8 +72,8 @@ func (v *Validator) validateNode(node parser.Node) {
 	case *parser.AssignmentNode:
 		v.validateAssignment(n)
 
-	case *parser.ArrayAssignmentNode:
-		v.validateArrayAssignment(n)
+	case *parser.IndexAssignmentNode:
+		v.validateIndexAssignment(n)
 
 	case *parser.IfNode:
 		v.validateIf(n)
@@ -176,7 +176,7 @@ func (v *Validator) validateLValue(expr parser.ExpressionNode) bool {
 	return true
 }
 
-func (v *Validator) validateArrayAssignment(n *parser.ArrayAssignmentNode) {
+func (v *Validator) validateIndexAssignment(n *parser.IndexAssignmentNode) {
 	v.validateExpr(n.Assignee)
 	v.validateExpr(n.Index)
 	v.validateExpr(n.Value)
@@ -185,12 +185,12 @@ func (v *Validator) validateArrayAssignment(n *parser.ArrayAssignmentNode) {
 
 	var base types.Type
 	switch t := containerType.(type) {
-	case types.ArrayType:
+	case types.SliceType:
 		base = t.Base
 	case types.PointerType:
 		base = t.Base
 	default:
-		v.errorf(n, "cannot index into non-array type")
+		v.errorf(n, "cannot index into non-slice type")
 		return
 	}
 
@@ -317,12 +317,12 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 				v.errorf(n, "cannot dereference non-pointer type")
 			}
 
-		case parser.UnaryOpArrayLen:
+		case parser.UnaryOpSliceLen:
 			switch operandType.(type) {
-			case types.ArrayType:
+			case types.SliceType:
 				// OK
 			default:
-				v.errorf(n, "[] operator requires array or pointer")
+				v.errorf(n, "[] operator requires slice or pointer")
 			}
 
 		default:
@@ -386,10 +386,10 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		}
 
 		switch n.Subject.GetType().(type) {
-		case types.ArrayType, types.PointerType:
+		case types.SliceType, types.PointerType:
 			// OK
 		default:
-			v.errorf(n, "cannot index into non-array type")
+			v.errorf(n, "cannot index into non-slice type")
 		}
 
 	case *parser.IfExprNode:
@@ -419,7 +419,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		v.validateNode(n.Block)
 		v.validateExpr(n.FinalExpr)
 
-	case *parser.ArrayLiteralNode:
+	case *parser.SliceLiteralNode:
 		var common types.Type = nil
 
 		for _, el := range n.Elements {
@@ -430,7 +430,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			} else {
 				common = types.PromoteNumeric(common, el.GetType())
 				if _, isErr := common.(types.ErrorType); isErr {
-					v.errorf(n, "array element type mismatch")
+					v.errorf(n, "slice element type mismatch")
 					return
 				}
 			}
@@ -440,7 +440,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			common = types.DefaultUntyped(common)
 		}
 
-		n.Type = types.ArrayType{
+		n.Type = types.SliceType{
 			Base: common,
 			Size: len(n.Elements),
 		}

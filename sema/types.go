@@ -43,8 +43,8 @@ func (a *Analyser) resolveTypeNode(n parser.TypeNode) types.Type {
 			Base: a.resolveTypeNode(t.BaseType),
 		}
 
-	case *parser.ArrayTypeNode:
-		return types.ArrayType{
+	case *parser.SliceTypeNode:
+		return types.SliceType{
 			Base: a.resolveTypeNode(t.ElementType),
 			Size: t.Size,
 		}
@@ -58,8 +58,7 @@ func (a *Analyser) resolveTypeNode(n parser.TypeNode) types.Type {
 			})
 		}
 		return types.StructType{
-			Fields:    fields,
-			Anonymous: true,
+			Fields: fields,
 		}
 	}
 

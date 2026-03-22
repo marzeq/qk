@@ -422,7 +422,7 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 			node, err := p.ParseFunctionCall(modAN)
 			return node, true, err
 		} else if p.Match(tokeniser.TokenOpenSquare) {
-			node, err := p.ParseArrayAssignment(ident)
+			node, err := p.ParseIndexAssignment(ident)
 			return node, true, err
 		}
 
@@ -546,7 +546,7 @@ func (p *Parser) ParsePointerAssignment() (*AssignmentNode, error) {
 	}, err
 }
 
-func (p *Parser) ParseArrayAssignment(ident *IdentifierNode) (*ArrayAssignmentNode, error) {
+func (p *Parser) ParseIndexAssignment(ident *IdentifierNode) (*IndexAssignmentNode, error) {
 	if !p.Expect(tokeniser.TokenOpenSquare) {
 		return nil, shared.NewError(p.PrevLoc(), "expected '['")
 	}
@@ -567,7 +567,7 @@ func (p *Parser) ParseArrayAssignment(ident *IdentifierNode) (*ArrayAssignmentNo
 	if err != nil {
 		return nil, err
 	}
-	return &ArrayAssignmentNode{
+	return &IndexAssignmentNode{
 		Assignee: ident,
 		Index:    indexExpr,
 		Value:    valueExpr,

@@ -188,7 +188,7 @@ func (p *Parser) ParsePostfix() (ExpressionNode, error) {
 		p.Inc()
 		if p.Match(tokeniser.TokenCloseSquare) {
 			expr = &UnaryOpNode{
-				Op:      UnaryOpArrayLen,
+				Op:      UnaryOpSliceLen,
 				Operand: expr,
 				Loc:     beginLoc,
 			}
@@ -453,7 +453,7 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 	}
 
 	if p.Match(tokeniser.TokenOpenSquare) {
-		return p.ParseArrayLiteral()
+		return p.ParseSliceLiteral()
 	}
 
 	if p.Match(tokeniser.TokenKeyword) {
@@ -762,10 +762,10 @@ func (p *Parser) ParseStructLiteral(name *ModuleAccessNode) (*StructLiteralNode,
 	return node, nil
 }
 
-func (p *Parser) ParseArrayLiteral() (*ArrayLiteralNode, error) {
+func (p *Parser) ParseSliceLiteral() (*SliceLiteralNode, error) {
 	beginLoc := p.CurrLoc()
 	if !p.Expect(tokeniser.TokenOpenSquare) {
-		return nil, shared.NewError(p.PrevLoc(), "expected '[' to start array literal")
+		return nil, shared.NewError(p.PrevLoc(), "expected '[' to start slice literal")
 	}
 	var elements []ExpressionNode
 	for {
@@ -786,9 +786,9 @@ func (p *Parser) ParseArrayLiteral() (*ArrayLiteralNode, error) {
 		}
 	}
 	if !p.Expect(tokeniser.TokenCloseSquare) {
-		return nil, shared.NewError(p.PrevLoc(), "expected ']' to end array literal")
+		return nil, shared.NewError(p.PrevLoc(), "expected ']' to end slice literal")
 	}
-	return &ArrayLiteralNode{
+	return &SliceLiteralNode{
 		Elements: elements,
 		Loc:      beginLoc,
 	}, nil
@@ -814,7 +814,7 @@ func (p *Parser) ParseType() (TypeNode, error) {
 	}
 
 	if p.Match(tokeniser.TokenOpenSquare) {
-		return p.ParseArrayType()
+		return p.ParseSliceType()
 	}
 
 	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordStruct) {
@@ -881,11 +881,11 @@ func (p *Parser) ParseStructType() (*StructTypeNode, error) {
 	}, nil
 }
 
-func (p *Parser) ParseArrayType() (*ArrayTypeNode, error) {
+func (p *Parser) ParseSliceType() (*SliceTypeNode, error) {
 	beginLoc := p.CurrLoc()
 
 	if !p.Expect(tokeniser.TokenOpenSquare) {
-		return nil, shared.NewError(p.PrevLoc(), "expected '[' to start array type")
+		return nil, shared.NewError(p.PrevLoc(), "expected '[' to start slice type")
 	}
 
 	for p.Match(tokeniser.TokenNewline) {
@@ -903,9 +903,9 @@ func (p *Parser) ParseArrayType() (*ArrayTypeNode, error) {
 
 	if !p.Match(tokeniser.TokenComma) {
 		if !p.Expect(tokeniser.TokenCloseSquare) {
-			return nil, shared.NewError(p.PrevLoc(), "expected ']' to end array type")
+			return nil, shared.NewError(p.PrevLoc(), "expected ']' to end slice type")
 		}
-		return &ArrayTypeNode{
+		return &SliceTypeNode{
 			ElementType: elementType,
 			Size:        -1,
 			Loc:         beginLoc,
@@ -919,12 +919,12 @@ func (p *Parser) ParseArrayType() (*ArrayTypeNode, error) {
 
 	sizeToken, ok := p.ExpectGet(tokeniser.TokenNumber)
 	if !ok {
-		return nil, shared.NewError(p.PrevLoc(), "expected array size")
+		return nil, shared.NewError(p.PrevLoc(), "expected slice size")
 	}
 
 	size, err := strconv.Atoi(sizeToken.Value)
 	if err != nil {
-		return nil, shared.NewError(sizeToken.Loc, "invalid array size: %s", sizeToken.Value)
+		return nil, shared.NewError(sizeToken.Loc, "invalid slice size: %s", sizeToken.Value)
 	}
 
 	for p.Match(tokeniser.TokenNewline) {
@@ -932,10 +932,10 @@ func (p *Parser) ParseArrayType() (*ArrayTypeNode, error) {
 	}
 
 	if !p.Expect(tokeniser.TokenCloseSquare) {
-		return nil, shared.NewError(p.PrevLoc(), "expected ']' to end array type")
+		return nil, shared.NewError(p.PrevLoc(), "expected ']' to end slice type")
 	}
 
-	return &ArrayTypeNode{
+	return &SliceTypeNode{
 		ElementType: elementType,
 		Size:        size,
 		Loc:         beginLoc,

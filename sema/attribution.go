@@ -112,18 +112,13 @@ func (a *Attributor) attributeNode(node parser.Node) {
 		}
 
 		if n.Value != nil && n.Symbol.Type == nil {
-			if st, ok := n.Value.GetType().(types.StructType); ok && !st.Anonymous {
-				a.errorf(n, "cannot assign an anonymous struct literal to a variable without an explicit type")
-				n.Symbol.Type = types.ErrorType{}
-			} else {
-				n.Symbol.Type = n.Value.GetType()
-			}
+			n.Symbol.Type = n.Value.GetType()
 		}
 
 	case *parser.AssignmentNode:
 		a.attributeExpr(n.Value)
 
-	case *parser.ArrayAssignmentNode:
+	case *parser.IndexAssignmentNode:
 		a.attributeExpr(n.Assignee)
 		a.attributeExpr(n.Value)
 		a.attributeExpr(n.Index)
@@ -199,24 +194,17 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		})
 
 	case *parser.StructLiteralNode:
-		for _, field := range n.Fields {
-			a.attributeExpr(field.R)
-		}
-
 		if n.Symbol != nil {
 			n.SetType(n.Symbol.TypeInfo)
-		} else {
-			for _, field := range n.Fields {
-				ft := field.R.GetType()
-				if types.IsUntyped(ft) {
-					field.R.SetType(types.DefaultUntyped(ft))
-				}
-			}
 
-			n.SetType(determineAnonymousStructLiteralType(n.Fields))
+			for _, field := range n.Fields {
+				a.attributeExpr(field.R)
+			}
+		} else {
+			panic("todo for anonymous struct literals")
 		}
 
-	case *parser.ArrayLiteralNode:
+	case *parser.SliceLiteralNode:
 		typs := []types.Type{}
 		for _, elem := range n.Elements {
 			a.attributeExpr(elem)
@@ -227,16 +215,16 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 			for _, t := range typs[1:] {
 				got := types.PromoteNumeric(currentType, t)
 				if currentType.Equals(types.ErrorType{}) {
-					a.errorf(n, "inconsistent array element types: %v and %v", got, t)
+					a.errorf(n, "inconsistent slice element types: %v and %v", got, t)
 				}
 				currentType = got
 			}
-			n.SetType(types.ArrayType{
+			n.SetType(types.SliceType{
 				Base: currentType,
 				Size: len(n.Elements),
 			})
 		} else {
-			n.SetType(types.ArrayType{
+			n.SetType(types.SliceType{
 				Base: types.PrimitiveVoid,
 				Size: 0,
 			})
@@ -326,12 +314,12 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 				a.errorf(n, "cannot dereference non-pointer type")
 				n.SetType(types.ErrorType{})
 			}
-		case parser.UnaryOpArrayLen:
+		case parser.UnaryOpSliceLen:
 			switch n.Operand.GetType().(type) {
-			case types.ArrayType:
+			case types.SliceType:
 				n.SetType(types.PrimitiveUsz)
 			default:
-				a.errorf(n, "array length operator requires an array operand")
+				a.errorf(n, "slice length operator requires a slice operand")
 				n.SetType(types.ErrorType{})
 			}
 		default:
@@ -343,7 +331,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		a.attributeExpr(n.Index)
 
 		switch t := n.Subject.GetType().(type) {
-		case types.ArrayType:
+		case types.SliceType:
 			n.SetType(t.Base)
 		case types.PointerType:
 			n.SetType(t.Base)
@@ -437,20 +425,4 @@ func collectFunctionReturnNodes(body []parser.Node) []*parser.ControlKeywordNode
 	}
 
 	return returnNodes
-}
-
-func determineAnonymousStructLiteralType(fields []shared.Pair[string, parser.ExpressionNode]) types.Type {
-	fieldTypes := []shared.Pair[string, types.Type]{}
-
-	for _, field := range fields {
-		fieldTypes = append(fieldTypes, shared.Pair[string, types.Type]{
-			L: field.L,
-			R: field.R.GetType(),
-		})
-	}
-
-	return types.StructType{
-		Fields:    fieldTypes,
-		Anonymous: false,
-	}
 }

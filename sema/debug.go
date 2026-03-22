@@ -59,7 +59,7 @@ func (w *debugWalker) walkNode(node parser.Node) {
 		w.walkExpr(n.Assignee)
 		w.walkExpr(n.Value)
 
-	case *parser.ArrayAssignmentNode:
+	case *parser.IndexAssignmentNode:
 		w.walkExpr(n.Assignee)
 		w.walkExpr(n.Index)
 		w.walkExpr(n.Value)
@@ -129,7 +129,7 @@ func (w *debugWalker) walkExpr(expr parser.ExpressionNode) {
 		w.walkExpr(n.Subject)
 		w.walkExpr(n.Index)
 
-	case *parser.ArrayLiteralNode:
+	case *parser.SliceLiteralNode:
 		for _, el := range n.Elements {
 			w.walkExpr(el)
 		}
@@ -169,7 +169,7 @@ func (w *debugWalker) checkType(t types.Type) {
 	case types.ErrorType:
 		w.errors = append(w.errors, "ErrorType remains after validation")
 
-	case types.ArrayType:
+	case types.SliceType:
 		w.checkType(tt.Base)
 
 	case types.PointerType:

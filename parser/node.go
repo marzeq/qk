@@ -79,14 +79,14 @@ type StructTypeNode struct {
 func (n StructTypeNode) GetLoc() shared.Location { return n.Loc }
 func (n StructTypeNode) _type()                  {}
 
-type ArrayTypeNode struct {
+type SliceTypeNode struct {
 	ElementType TypeNode
 	Size        int
 	Loc         shared.Location
 }
 
-func (n ArrayTypeNode) GetLoc() shared.Location { return n.Loc }
-func (n ArrayTypeNode) _type()                  {}
+func (n SliceTypeNode) GetLoc() shared.Location { return n.Loc }
+func (n SliceTypeNode) _type()                  {}
 
 type PointerTypeNode struct {
 	BaseType TypeNode
@@ -173,15 +173,15 @@ func (n StructLiteralNode) GetLoc() shared.Location { return n.Loc }
 func (n *StructLiteralNode) SetType(t types.Type)   { n.Type = t }
 func (n *StructLiteralNode) GetType() types.Type    { return n.Type }
 
-type ArrayLiteralNode struct {
+type SliceLiteralNode struct {
 	Elements []ExpressionNode
 	Loc      shared.Location
 	Type     types.Type
 }
 
-func (n ArrayLiteralNode) GetLoc() shared.Location { return n.Loc }
-func (n *ArrayLiteralNode) SetType(t types.Type)   { n.Type = t }
-func (n *ArrayLiteralNode) GetType() types.Type    { return n.Type }
+func (n SliceLiteralNode) GetLoc() shared.Location { return n.Loc }
+func (n *SliceLiteralNode) SetType(t types.Type)   { n.Type = t }
+func (n *SliceLiteralNode) GetType() types.Type    { return n.Type }
 
 type FunctionCallNode struct {
 	Name   *ModuleAccessNode
@@ -238,7 +238,7 @@ const (
 	UnaryOpNegate
 	UnaryOpReference
 	UnaryOpDereference
-	UnaryOpArrayLen
+	UnaryOpSliceLen
 )
 
 func (u UnaryOpKind) String() string {
@@ -251,7 +251,7 @@ func (u UnaryOpKind) String() string {
 		return "&"
 	case UnaryOpDereference:
 		return "*"
-	case UnaryOpArrayLen:
+	case UnaryOpSliceLen:
 		return "[]"
 	default:
 		return "unknown"
@@ -424,14 +424,14 @@ type AssignmentNode struct {
 
 func (n AssignmentNode) GetLoc() shared.Location { return n.Loc }
 
-type ArrayAssignmentNode struct {
+type IndexAssignmentNode struct {
 	Assignee ExpressionNode
 	Index    ExpressionNode
 	Value    ExpressionNode
 	Loc      shared.Location
 }
 
-func (n ArrayAssignmentNode) GetLoc() shared.Location { return n.Loc }
+func (n IndexAssignmentNode) GetLoc() shared.Location { return n.Loc }
 
 type BlockNode struct {
 	Body []Node

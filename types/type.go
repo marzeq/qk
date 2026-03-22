@@ -168,8 +168,7 @@ func (p PrimitiveType) String() string {
 }
 
 type StructType struct {
-	Fields    []shared.Pair[string, Type]
-	Anonymous bool
+	Fields []shared.Pair[string, Type]
 }
 
 func (s StructType) Equals(other Type) bool {
@@ -193,46 +192,7 @@ func (s StructType) Equals(other Type) bool {
 }
 
 func (s StructType) CanCoerceTo(other Type) bool {
-	otherStruct, ok := other.(StructType)
-	if !ok {
-		return false
-	}
-
-	if s.Anonymous && otherStruct.Anonymous || !s.Anonymous && !otherStruct.Anonymous {
-		return s.Equals(other)
-	}
-
-	if s.Anonymous {
-		return false
-	}
-
-	var concrete StructType
-	var anonymous StructType
-	if s.Anonymous {
-		concrete = s
-		anonymous = otherStruct
-	} else {
-		concrete = otherStruct
-		anonymous = s
-	}
-
-	for _, concreteField := range concrete.Fields {
-		found := false
-		for _, anonymousField := range anonymous.Fields {
-			if concreteField.L == anonymousField.L {
-				if !anonymousField.R.CanCoerceTo(concreteField.R) {
-					return false
-				}
-				found = true
-				break
-			}
-		}
-		if !found {
-			return false
-		}
-	}
-
-	return true
+	return s.Equals(other)
 }
 
 func (s StructType) CanCastTo(other Type) bool {
@@ -241,9 +201,6 @@ func (s StructType) CanCastTo(other Type) bool {
 
 func (s StructType) String() string {
 	var result strings.Builder
-	if !s.Anonymous {
-		result.WriteString("<unordered>")
-	}
 	result.WriteString("struct { ")
 	for i, field := range s.Fields {
 		result.WriteString(field.L + ": " + field.R.String())
@@ -306,46 +263,46 @@ func IsPointer(t Type) bool {
 	return ok
 }
 
-type ArrayType struct {
+type SliceType struct {
 	Base Type
 	Size int
 }
 
-func (a ArrayType) Equals(other Type) bool {
-	otherArray, ok := other.(ArrayType)
+func (a SliceType) Equals(other Type) bool {
+	otherSlice, ok := other.(SliceType)
 	if !ok {
 		return false
 	}
 
-	if a.Size != otherArray.Size {
+	if a.Size != otherSlice.Size {
 		return false
 	}
 
-	return a.Base.Equals(otherArray.Base)
+	return a.Base.Equals(otherSlice.Base)
 }
 
-func (a ArrayType) CanCoerceTo(other Type) bool {
+func (a SliceType) CanCoerceTo(other Type) bool {
 	if a.Equals(other) {
 		return true
 	}
 
-	otherArray, ok := other.(ArrayType)
+	otherSlice, ok := other.(SliceType)
 	if !ok {
 		return false
 	}
 
-	if a.Size != otherArray.Size {
+	if a.Size != otherSlice.Size && a.Size != -1 && otherSlice.Size != -1 {
 		return false
 	}
 
-	return a.Base.CanCoerceTo(otherArray.Base)
+	return a.Base.CanCoerceTo(otherSlice.Base)
 }
 
-func (a ArrayType) CanCastTo(other Type) bool {
+func (a SliceType) CanCastTo(other Type) bool {
 	return a.Equals(other)
 }
 
-func (a ArrayType) String() string {
+func (a SliceType) String() string {
 	if a.Size == -1 {
 		return "[" + a.Base.String() + "]"
 	}
