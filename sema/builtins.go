@@ -27,4 +27,8 @@ func (a *Analyser) predefineBuiltins() {
 	a.universe.Define(symbols.NewType(string(types.PrimitiveChar), types.PrimitiveChar))
 
 	a.universe.Define(symbols.NewType(string(types.PrimitiveBool), types.PrimitiveBool))
+
+	a.universe.Define(symbols.NewType("string", types.SliceType{
+		Base: types.PrimitiveChar,
+	}))
 }

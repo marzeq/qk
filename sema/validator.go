@@ -102,25 +102,17 @@ func (v *Validator) finaliseDeclaration(n *parser.DeclarationNode) {
 		return
 	}
 
-	v.validateExpr(n.Value)
-
-	valueType := n.Value.GetType()
-
 	if n.TypeNode != nil {
 		declared := v.analyser.resolveTypeNode(n.TypeNode)
-
-		if !valueType.CanCoerceTo(declared) {
-			v.errorf(n, "cannot assign %v to %v", valueType, declared)
-			return
-		}
-
-		if !valueType.Equals(declared) {
-			n.Value = v.createCast(n.Value, declared)
-		}
+		n.Value = v.validateExprWithExpected(n.Value, declared)
 
 		n.Symbol.Type = declared
 		return
 	}
+
+	v.validateExpr(n.Value)
+
+	valueType := n.Value.GetType()
 
 	if types.IsUntyped(valueType) {
 		valueType = types.DefaultUntyped(valueType)
@@ -135,19 +127,9 @@ func (v *Validator) validateAssignment(n *parser.AssignmentNode) {
 	}
 
 	v.validateExpr(n.Assignee)
-	v.validateExpr(n.Value)
 
 	lhsType := n.Assignee.GetType()
-	rhsType := n.Value.GetType()
-
-	if !rhsType.CanCoerceTo(lhsType) {
-		v.errorf(n, "cannot assign %v to %v", rhsType, lhsType)
-		return
-	}
-
-	if !rhsType.Equals(lhsType) {
-		n.Value = v.createCast(n.Value, lhsType)
-	}
+	n.Value = v.validateExprWithExpected(n.Value, lhsType)
 }
 
 func (v *Validator) validateLValue(expr parser.ExpressionNode) bool {
@@ -179,7 +161,6 @@ func (v *Validator) validateLValue(expr parser.ExpressionNode) bool {
 func (v *Validator) validateIndexAssignment(n *parser.IndexAssignmentNode) {
 	v.validateExpr(n.Assignee)
 	v.validateExpr(n.Index)
-	v.validateExpr(n.Value)
 
 	containerType := n.Assignee.GetType()
 
@@ -194,16 +175,7 @@ func (v *Validator) validateIndexAssignment(n *parser.IndexAssignmentNode) {
 		return
 	}
 
-	valueType := n.Value.GetType()
-
-	if !valueType.CanCoerceTo(base) {
-		v.errorf(n, "cannot assign %v to %v", valueType, base)
-		return
-	}
-
-	if !valueType.Equals(base) {
-		n.Value = v.createCast(n.Value, base)
-	}
+	n.Value = v.validateExprWithExpected(n.Value, base)
 }
 
 func (v *Validator) validateIf(n *parser.IfNode) {
@@ -233,17 +205,7 @@ func (v *Validator) validateReturn(n *parser.ControlKeywordNode) {
 		return
 	}
 	expected := v.currentFunction.Signature.ReturnType
-
-	valueType := n.ReturnValue.GetType()
-
-	if !valueType.CanCoerceTo(expected) {
-		v.errorf(n, "invalid return type")
-		return
-	}
-
-	if !valueType.Equals(expected) {
-		n.ReturnValue = v.createCast(n.ReturnValue, expected)
-	}
+	n.ReturnValue = v.validateExprWithExpected(n.ReturnValue, expected)
 }
 
 func (v *Validator) validateExpr(node parser.ExpressionNode) {
@@ -267,23 +229,13 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		}
 
 		for i, arg := range n.Args {
-			v.validateExpr(arg)
-
 			if i >= len(sig.Parameters) {
+				v.validateExpr(arg)
 				continue
 			}
 
 			paramType := sig.Parameters[i]
-			argType := arg.GetType()
-
-			if !argType.CanCoerceTo(paramType) {
-				v.errorf(n, "cannot pass %v to %v", argType, paramType)
-				continue
-			}
-
-			if !argType.Equals(paramType) {
-				n.Args[i] = v.createCast(arg, paramType)
-			}
+			n.Args[i] = v.validateExprWithExpected(arg, paramType)
 		}
 
 	case *parser.CastNode:
@@ -422,6 +374,14 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 	case *parser.SliceLiteralNode:
 		var common types.Type = nil
 
+		if len(n.Elements) == 0 {
+			n.Type = types.SliceType{
+				Base: types.PrimitiveVoid,
+				Size: 0,
+			}
+			break
+		}
+
 		for _, el := range n.Elements {
 			v.validateExpr(el)
 
@@ -452,9 +412,22 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		}
 
 	case *parser.StructLiteralNode:
-		for _, field := range n.Fields {
-			v.validateExpr(field.R)
+		if n.Symbol != nil {
+			v.validateStructLiteralWithExpected(n, n.Symbol.TypeInfo)
+			break
 		}
+
+		fields := make([]shared.Pair[string, types.Type], 0, len(n.Fields))
+		for i, field := range n.Fields {
+			v.validateExpr(field.R)
+			n.Fields[i].R = field.R
+			fields = append(fields, shared.Pair[string, types.Type]{
+				L: field.L,
+				R: field.R.GetType(),
+			})
+		}
+
+		n.SetType(types.StructType{Fields: fields})
 
 	case *parser.IntegerLiteralNode,
 		*parser.FloatLiteralNode,
@@ -483,16 +456,10 @@ func (v *Validator) createCast(node parser.ExpressionNode, target types.Type) pa
 
 	switch n := node.(type) {
 	case *parser.IntegerLiteralNode:
-		def := types.DefaultUntyped(n.GetType())
-		if types.IsUntyped(n.GetType()) && target.Equals(def) {
-			n.SetType(def)
-		}
+		n.SetType(target)
 		return n
 	case *parser.FloatLiteralNode:
-		def := types.DefaultUntyped(n.GetType())
-		if types.IsUntyped(n.GetType()) && target.Equals(def) {
-			n.SetType(def)
-		}
+		n.SetType(target)
 		return n
 	}
 
@@ -500,4 +467,105 @@ func (v *Validator) createCast(node parser.ExpressionNode, target types.Type) pa
 		Operand: node,
 		Type:    target,
 	}
+}
+
+func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expected types.Type) parser.ExpressionNode {
+	switch n := node.(type) {
+	case *parser.IntegerLiteralNode:
+		n.SetType(types.UntypedInt{})
+	case *parser.FloatLiteralNode:
+		n.SetType(types.UntypedFloat{})
+	}
+
+	if n, ok := node.(*parser.StructLiteralNode); ok {
+		v.validateStructLiteralWithExpected(n, expected)
+		return n
+	}
+
+	if n, ok := node.(*parser.SliceLiteralNode); ok {
+		v.validateSliceLiteralWithExpected(n, expected)
+		return n
+	}
+
+	v.validateExpr(node)
+
+	got := node.GetType()
+	if !got.CanCoerceTo(expected) {
+		v.errorf(node, "cannot assign %v to %v", got, expected)
+		return node
+	}
+
+	if !got.Equals(expected) {
+		return v.createCast(node, expected)
+	}
+
+	return node
+}
+
+func (v *Validator) validateSliceLiteralWithExpected(n *parser.SliceLiteralNode, expected types.Type) {
+	sliceType, ok := expected.(types.SliceType)
+	if !ok {
+		v.validateExpr(n)
+		got := n.GetType()
+		if !got.CanCoerceTo(expected) {
+			v.errorf(n, "cannot assign %v to %v", got, expected)
+			return
+		}
+		if !got.Equals(expected) {
+			n.SetType(expected)
+		}
+		return
+	}
+
+	if sliceType.Size != -1 && len(n.Elements) != sliceType.Size {
+		v.errorf(n, "cannot assign [%v, %d] to [%v, %d]", sliceType.Base, len(n.Elements), sliceType.Base, sliceType.Size)
+	}
+
+	for i, element := range n.Elements {
+		n.Elements[i] = v.validateExprWithExpected(element, sliceType.Base)
+	}
+
+	n.SetType(types.SliceType{
+		Base: sliceType.Base,
+		Size: len(n.Elements),
+	})
+}
+
+func (v *Validator) validateStructLiteralWithExpected(n *parser.StructLiteralNode, expected types.Type) {
+	structType, ok := expected.(types.StructType)
+	if !ok {
+		v.errorf(n, "cannot use struct literal for non-struct type %v", expected)
+		n.SetType(types.ErrorType{})
+		return
+	}
+
+	fieldTypes := make(map[string]types.Type, len(structType.Fields))
+	for _, field := range structType.Fields {
+		fieldTypes[field.L] = field.R
+	}
+
+	seen := make(map[string]struct{}, len(n.Fields))
+	for i, field := range n.Fields {
+		expectedFieldType, exists := fieldTypes[field.L]
+		if !exists {
+			v.errorf(n, "unknown field %q in struct literal", field.L)
+			continue
+		}
+
+		if _, dup := seen[field.L]; dup {
+			v.errorf(n, "duplicate field %q in struct literal", field.L)
+			continue
+		}
+		seen[field.L] = struct{}{}
+
+		n.Fields[i].R = v.validateExprWithExpected(field.R, expectedFieldType)
+	}
+
+	for _, field := range structType.Fields {
+		if _, ok := seen[field.L]; !ok {
+			v.errorf(n, "missing field %q in struct literal", field.L)
+		}
+	}
+
+	n.SetType(structType)
 }

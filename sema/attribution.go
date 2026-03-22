@@ -181,8 +181,9 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		n.SetType(types.PrimitiveBool)
 
 	case *parser.StringLiteralNode:
-		n.SetType(types.PointerType{
+		n.SetType(types.SliceType{
 			Base: types.PrimitiveChar,
+			Size: len(n.Value),
 		})
 
 	case *parser.CharLiteralNode:
@@ -194,14 +195,21 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		})
 
 	case *parser.StructLiteralNode:
+		for _, field := range n.Fields {
+			a.attributeExpr(field.R)
+		}
+
 		if n.Symbol != nil {
 			n.SetType(n.Symbol.TypeInfo)
-
-			for _, field := range n.Fields {
-				a.attributeExpr(field.R)
-			}
 		} else {
-			panic("todo for anonymous struct literals")
+			fields := make([]shared.Pair[string, types.Type], 0, len(n.Fields))
+			for _, field := range n.Fields {
+				fields = append(fields, shared.Pair[string, types.Type]{
+					L: field.L,
+					R: field.R.GetType(),
+				})
+			}
+			n.SetType(types.StructType{Fields: fields})
 		}
 
 	case *parser.SliceLiteralNode:
@@ -214,7 +222,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 			currentType := typs[0]
 			for _, t := range typs[1:] {
 				got := types.PromoteNumeric(currentType, t)
-				if currentType.Equals(types.ErrorType{}) {
+				if got.Equals(types.ErrorType{}) {
 					a.errorf(n, "inconsistent slice element types: %v and %v", got, t)
 				}
 				currentType = got
