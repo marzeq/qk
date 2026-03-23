@@ -44,6 +44,10 @@ go build ./cmd/qkc # or run 'go run ./cmd/qkc' directly
 
 - Modern Go version
 
+## Language grammar
+
+- See `docs/grammar.md` for an EBNF grammar and parser-accurate syntax notes.
+
 ## Contributing
 
 No, this is not a "serious" project, plese don't use or contribute to this.
