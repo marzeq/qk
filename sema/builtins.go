@@ -30,5 +30,6 @@ func (a *Analyser) predefineBuiltins() {
 
 	a.universe.Define(symbols.NewType("string", types.SliceType{
 		Base: types.PrimitiveChar,
+		Size: -1,
 	}))
 }
