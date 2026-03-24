@@ -2,6 +2,7 @@ package sema
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/marzeq/qk/parser"
 	"github.com/marzeq/qk/shared"
@@ -164,9 +165,23 @@ func (v *Validator) validateIndexAssignment(n *parser.IndexAssignmentNode) {
 
 	containerType := n.Assignee.GetType()
 
+	indexType := n.Index.GetType()
+	if !types.IsInteger(indexType) {
+		v.errorf(n, "index must be integer")
+		return
+	}
+
 	var base types.Type
 	switch t := containerType.(type) {
 	case types.SliceType:
+		if t.Size != -1 {
+			if idxLit, ok := n.Index.(*parser.IntegerLiteralNode); ok {
+				idx, _ := strconv.Atoi(idxLit.Value)
+				if idx < 0 || idx >= t.Size {
+					v.errorf(n, "index %d out of bounds for slice of size %d", idx, t.Size)
+				}
+			}
+		}
 		base = t.Base
 	case types.PointerType:
 		base = t.Base
@@ -338,7 +353,21 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		}
 
 		switch n.Subject.GetType().(type) {
-		case types.SliceType, types.PointerType:
+		case types.SliceType:
+			if t, ok := n.Subject.GetType().(types.SliceType); ok {
+				if t.Size != -1 {
+					if idxLit, ok := n.Index.(*parser.IntegerLiteralNode); ok {
+						idx, _ := strconv.Atoi(idxLit.Value)
+						if idx < 0 || idx >= t.Size {
+							v.errorf(n, "index %d out of bounds for slice of size %d", idx, t.Size)
+						}
+					}
+				}
+			} else {
+				panic("unreachable")
+			}
+
+		case types.PointerType:
 			// OK
 		default:
 			v.errorf(n, "cannot index into non-slice type")
