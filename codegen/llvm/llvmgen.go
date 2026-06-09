@@ -119,10 +119,7 @@ func (e *Emitter) EmitFunction(out *strings.Builder, fn *ir.Function) {
 }
 
 func (e *Emitter) EmitBlock(out *strings.Builder, block *ir.Block) {
-	label := block.Name
-	if label == "" {
-		label = fmt.Sprintf("b%d", block.ID)
-	}
+	label := e.blockLabel(block.ID, block.Name)
 	fmt.Fprintf(out, "%s:\n", label)
 
 	for _, instr := range block.Instr {
@@ -298,7 +295,25 @@ func (e *Emitter) SlotIDEmit(id ir.SlotID) string {
 }
 
 func (e *Emitter) BlockIDEmit(id ir.BlockID) string {
-	return fmt.Sprintf("%%b%d", id)
+	return "%" + e.blockLabel(id, "")
+}
+
+func (e *Emitter) blockLabel(id ir.BlockID, fallbackName string) string {
+	if e.currentFn != nil {
+		for _, block := range e.currentFn.Blocks {
+			if block.ID != id {
+				continue
+			}
+			if block.Name != "" {
+				return block.Name
+			}
+			break
+		}
+	}
+	if fallbackName != "" {
+		return fallbackName
+	}
+	return fmt.Sprintf("b%d", id)
 }
 
 func (e *Emitter) InstrEmit(out *strings.Builder, instr ir.Instr) {

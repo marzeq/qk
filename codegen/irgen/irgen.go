@@ -272,6 +272,8 @@ func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
 		return ir.BoolConstOperand(n.Value == string(tokeniser.KeywordTrue))
 	case *parser.IdentifierNode:
 		return g.generateIdentifierExpr(n)
+	case *parser.IfExprNode:
+		return g.generateIfExpr(n)
 	case *parser.BinaryOpNode:
 		return g.generateBinaryExpr(n)
 	case *parser.StructLiteralNode:
@@ -385,6 +387,72 @@ func (g *Generator) generateFieldAccessExpr(node *parser.FieldAccessNode) ir.Ope
 	return ir.ValueOperand(dst, node.GetType())
 }
 
+func (g *Generator) generateIfExpr(node *parser.IfExprNode) ir.Operand {
+	resultType := node.GetType()
+	tmpSlot := g.currentFunction.NewSlot(resultType, "ifexpr.tmp")
+	g.Emit(ir.Alloca{Slot: tmpSlot})
+
+	mergeBlock := g.currentFunction.NewBlock("ifexpr.merge")
+	thenBlock := g.currentFunction.NewBlock("ifexpr.then")
+
+	elseTarget := mergeBlock
+	if len(node.ElseIfBranches) > 0 || node.ElseBranch != nil {
+		elseTarget = g.currentFunction.NewBlock("ifexpr.else")
+	}
+
+	cond := g.GenerateExpr(node.IfBranch.Condition)
+	condVal := g.currentFunction.NewValueOfType(types.PrimitiveBool)
+	g.Emit(ir.CmpNe{Dest: condVal, Left: cond, Right: ir.BoolConstOperand(false)})
+	g.Emit(ir.Branch{Cond: ir.ValueOperand(condVal, types.PrimitiveBool), Then: thenBlock.ID, Else: elseTarget.ID})
+
+	g.currentBlock = thenBlock
+	thenVal := g.GenerateExpr(node.IfBranch.Node)
+	g.Emit(ir.Store{Slot: tmpSlot, Value: thenVal})
+	if !g.currentBlockHasTerminator() {
+		g.Emit(ir.Jump{Target: mergeBlock.ID})
+	}
+
+	if elseTarget != mergeBlock {
+		g.currentBlock = elseTarget
+
+		for i, elif := range node.ElseIfBranches {
+			thenB := g.currentFunction.NewBlock(fmt.Sprintf("ifexpr.elseif.then.%d", i))
+
+			next := mergeBlock
+			if i < len(node.ElseIfBranches)-1 || node.ElseBranch != nil {
+				next = g.currentFunction.NewBlock(fmt.Sprintf("ifexpr.elseif.next.%d", i))
+			}
+
+			c := g.GenerateExpr(elif.Condition)
+			cval := g.currentFunction.NewValueOfType(types.PrimitiveBool)
+			g.Emit(ir.CmpNe{Dest: cval, Left: c, Right: ir.BoolConstOperand(false)})
+			g.Emit(ir.Branch{Cond: ir.ValueOperand(cval, types.PrimitiveBool), Then: thenB.ID, Else: next.ID})
+
+			g.currentBlock = thenB
+			v := g.GenerateExpr(elif.Node)
+			g.Emit(ir.Store{Slot: tmpSlot, Value: v})
+			if !g.currentBlockHasTerminator() {
+				g.Emit(ir.Jump{Target: mergeBlock.ID})
+			}
+
+			g.currentBlock = next
+		}
+
+		if node.ElseBranch != nil {
+			v := g.GenerateExpr(node.ElseBranch)
+			g.Emit(ir.Store{Slot: tmpSlot, Value: v})
+			if !g.currentBlockHasTerminator() {
+				g.Emit(ir.Jump{Target: mergeBlock.ID})
+			}
+		}
+	}
+
+	g.currentBlock = mergeBlock
+	dst := g.currentFunction.NewValueOfType(resultType)
+	g.Emit(ir.Load{Dest: dst, Slot: tmpSlot})
+	return ir.ValueOperand(dst, resultType)
+}
+
 func (g *Generator) generateAddressOfExpr(expr parser.ExpressionNode) ir.Operand {
 	if ident, ok := expr.(*parser.IdentifierNode); ok {
 		if ident.Symbol == nil {
@@ -422,7 +490,6 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 	if node.Symbol != nil {
 		name = node.Symbol.Name
 
-		// Keep true extern symbols unmangled; mangle regular module functions.
 		if !node.Symbol.Extern && node.Symbol.ExternFrom == "" {
 			callModule := g.ModuleName
 			if node.Name != nil && node.Name.ModName != "" {
@@ -529,6 +596,18 @@ func (g *Generator) generateBinaryExpr(node *parser.BinaryOpNode) ir.Operand {
 		g.Emit(ir.Mul{Dest: dst, Left: left, Right: right})
 	case parser.BinaryOpDivide:
 		g.Emit(ir.Div{Dest: dst, Left: left, Right: right})
+	case parser.BinaryOpEqual:
+		g.Emit(ir.CmpEq{Dest: dst, Left: left, Right: right})
+	case parser.BinaryOpNotEqual:
+		g.Emit(ir.CmpNe{Dest: dst, Left: left, Right: right})
+	case parser.BinaryOpLess:
+		g.Emit(ir.CmpLt{Dest: dst, Left: left, Right: right})
+	case parser.BinaryOpLessEqual:
+		g.Emit(ir.CmpLe{Dest: dst, Left: left, Right: right})
+	case parser.BinaryOpGreater:
+		g.Emit(ir.CmpGt{Dest: dst, Left: left, Right: right})
+	case parser.BinaryOpGreaterEqual:
+		g.Emit(ir.CmpGe{Dest: dst, Left: left, Right: right})
 	default:
 		panic("todo")
 	}
