@@ -104,7 +104,7 @@ func main() {
 			}
 		}
 	}
-	if !foundMain {
+	if !foundMain && args.outputType == OutputExecutable {
 		fmt.Println("main function not found in main module")
 		os.Exit(1)
 	}
