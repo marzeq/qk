@@ -49,11 +49,20 @@ func main() {
 
 	analyser := sema.NewAnalyser()
 
-	errs := loader.RunSemanticPipeline(modules, analyser, args.verbose, args.debug)
+	order, errs := loader.ComputeModuleOrder(modules)
+	checkErrs(errs)
+
+	errs = loader.RunSemanticPipeline(modules, analyser, order, args.verbose, args.debug)
 	checkErrs(errs)
 
 	if args.verbose {
 		fmt.Println("semantic analysis completed successfully")
+	}
+
+	if args.dumpIR {
+		irModules, errs := loader.GenerateIRModules(modules, order, args.verbose)
+		checkErrs(errs)
+		dumpIRModules(irModules)
 	}
 
 	if _, ok := modules["main"]; !ok {

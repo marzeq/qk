@@ -14,6 +14,7 @@ type Args struct {
 	optLevel    int
 	verbose     bool
 	debug       bool
+	dumpIR      bool
 }
 
 type ArgParser struct {
@@ -118,6 +119,9 @@ func (p *ArgParser) Parse() (*Args, error) {
 			p.Skip()
 		} else if p.IsShorthand("d") || p.IsFlag("debug") {
 			args.debug = true
+			p.Skip()
+		} else if p.IsFlag("dump-ir") {
+			args.dumpIR = true
 			p.Skip()
 		} else if !strings.HasPrefix(p.Args[p.Pos], "-") {
 			if args.baseDir != "" {
