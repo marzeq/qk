@@ -47,6 +47,7 @@ go build ./cmd/qkc # or run 'go run ./cmd/qkc' directly
 ## Dependencies
 
 - Modern Go version
+- clang toolchain in your PATH
 
 ## LLVM backend & Compiler CLI
 
