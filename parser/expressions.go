@@ -180,47 +180,69 @@ func (p *Parser) ParsePostfix() (ExpressionNode, error) {
 	beginLoc := p.CurrLoc()
 
 	expr, err := p.ParseTerm()
+
 	if err != nil {
 		return nil, err
 	}
 
-	for p.Match(tokeniser.TokenOpenSquare) {
-		p.Inc()
-		if p.Match(tokeniser.TokenCloseSquare) {
-			expr = &UnaryOpNode{
-				Op:      UnaryOpSliceLen,
-				Operand: expr,
+	for {
+		switch {
+		case p.Match(tokeniser.TokenOpenSquare):
+			p.Inc()
+			if p.Match(tokeniser.TokenCloseSquare) {
+				expr = &UnaryOpNode{
+					Op:      UnaryOpSliceLen,
+					Operand: expr,
+					Loc:     beginLoc,
+				}
+				p.Inc()
+				continue
+			}
+
+			for p.Match(tokeniser.TokenNewline) {
+				p.Inc()
+			}
+
+			index, err := p.ParseExpression()
+			if err != nil {
+				return nil, err
+			}
+
+			for p.Match(tokeniser.TokenNewline) {
+				p.Inc()
+			}
+
+			if !p.Expect(tokeniser.TokenCloseSquare) {
+				return nil, shared.NewError(p.PrevLoc(), "expected ']'")
+			}
+
+			expr = &IndexExprNode{
+				Subject: expr,
+				Index:   index,
 				Loc:     beginLoc,
 			}
+		case p.Match(tokeniser.TokenDot):
 			p.Inc()
-			continue
-		}
 
-		for p.Match(tokeniser.TokenNewline) {
-			p.Inc()
-		}
+			for p.Match(tokeniser.TokenNewline) {
+				p.Inc()
+			}
 
-		index, err := p.ParseExpression()
-		if err != nil {
-			return nil, err
-		}
+			field, err := p.ParseIdent()
+			if err != nil {
+				return nil, err
+			}
 
-		for p.Match(tokeniser.TokenNewline) {
-			p.Inc()
-		}
-
-		if !p.Expect(tokeniser.TokenCloseSquare) {
-			return nil, shared.NewError(p.PrevLoc(), "expected ']'")
-		}
-
-		expr = &IndexExprNode{
-			Subject: expr,
-			Index:   index,
-			Loc:     beginLoc,
+			expr = &FieldAccessNode{
+				Subject: expr,
+				Field:   field,
+				Loc:     beginLoc,
+			}
+		default:
+			return expr, nil
 		}
 	}
 
-	return expr, nil
 }
 
 func (p *Parser) ParseComparison() (ExpressionNode, error) {

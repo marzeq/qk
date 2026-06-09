@@ -129,6 +129,9 @@ func (w *debugWalker) walkExpr(expr parser.ExpressionNode) {
 		w.walkExpr(n.Subject)
 		w.walkExpr(n.Index)
 
+	case *parser.FieldAccessNode:
+		w.walkExpr(n.Subject)
+
 	case *parser.SliceLiteralNode:
 		for _, el := range n.Elements {
 			w.walkExpr(el)

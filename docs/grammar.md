@@ -164,13 +164,16 @@ unary          = ( "-" | "*" | "&" ), opt_newlines, unary
                | postfix ;
 
 postfix        = term,
-                 { "[", ( "]" | opt_newlines, expression, opt_newlines, "]" ) } ;
+                 {
+                   "[" ( "]" | opt_newlines, expression, opt_newlines, "]" )
+                   | "(" [ arg_list ] ")"
+                   | ".", opt_newlines, identifier
+                 } ;
 
 term           = "(", opt_newlines, expression, opt_newlines, ")"
                | if_expr
                | given_expr
                | sizeof_expr
-               | function_call
                | struct_literal
                | slice_literal
                | module_access
@@ -195,7 +198,6 @@ block_expr     = "{", opt_newlines, expression, opt_newlines, "}" ;
 
 sizeof_expr    = "sizeof", opt_newlines, type_expr ;
 
-function_call  = module_access, "(", [ arg_list ], ")" ;
 arg_list       = expression, { ",", opt_newlines, expression } ;
 
 module_access  = identifier, [ ":", opt_newlines, identifier ] ;

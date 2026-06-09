@@ -3,6 +3,7 @@ package sema
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/marzeq/qk/parser"
 	"github.com/marzeq/qk/shared"
@@ -373,6 +374,27 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			v.errorf(n, "cannot index into non-slice type")
 		}
 
+	case *parser.FieldAccessNode:
+		v.validateExpr(n.Subject)
+		subjectType := n.Subject.GetType()
+		structType, ok := subjectType.(types.StructType)
+		if !ok {
+			v.errorf(n, "cannot access field of non-struct type")
+			return
+		}
+		fieldIndex := -1
+		for i, field := range structType.Fields {
+			if field.L == n.Field.Name {
+				fieldIndex = i
+				break
+			}
+		}
+		if fieldIndex == -1 {
+			v.errorf(n, "struct type has no field %q", n.Field)
+			return
+		}
+		n.SetType(structType.Fields[fieldIndex].R)
+
 	case *parser.IfExprNode:
 		v.validateExpr(n.IfBranch.Condition)
 
@@ -590,10 +612,14 @@ func (v *Validator) validateStructLiteralWithExpected(n *parser.StructLiteralNod
 		n.Fields[i].R = v.validateExprWithExpected(field.R, expectedFieldType)
 	}
 
+	missingFields := []string{}
 	for _, field := range structType.Fields {
 		if _, ok := seen[field.L]; !ok {
-			v.errorf(n, "missing field %q in struct literal", field.L)
+			missingFields = append(missingFields, field.L)
 		}
+	}
+	if len(missingFields) > 0 {
+		v.errorf(n, "missing fields in struct literal: %v", strings.Join(missingFields, ", "))
 	}
 
 	n.SetType(structType)

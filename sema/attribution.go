@@ -348,6 +348,27 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 			n.SetType(types.ErrorType{})
 		}
 
+	case *parser.FieldAccessNode:
+		a.attributeExpr(n.Subject)
+		switch t := n.Subject.GetType().(type) {
+		case types.StructType:
+			found := false
+			for _, field := range t.Fields {
+				if field.L == n.Field.Name {
+					n.SetType(field.R)
+					found = true
+					break
+				}
+			}
+			if !found {
+				a.errorf(n, "struct type %v does not have a field named %s", t, n.Field)
+				n.SetType(types.ErrorType{})
+			}
+		default:
+			a.errorf(n, "cannot access field of type %v", n.Subject.GetType())
+			n.SetType(types.ErrorType{})
+		}
+
 	case *parser.BinaryOpNode:
 		a.attributeExpr(n.Operand1)
 		a.attributeExpr(n.Operand2)

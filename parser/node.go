@@ -57,6 +57,18 @@ func (n ModuleAccessNode) String() string {
 func (n *ModuleAccessNode) SetType(t types.Type) { n.Type = t }
 func (n *ModuleAccessNode) GetType() types.Type  { return n.Type }
 
+type FieldAccessNode struct {
+	Subject ExpressionNode
+	Field   *IdentifierNode
+
+	Loc  shared.Location
+	Type types.Type
+}
+
+func (n FieldAccessNode) GetLoc() shared.Location { return n.Loc }
+func (n *FieldAccessNode) SetType(t types.Type)   { n.Type = t }
+func (n *FieldAccessNode) GetType() types.Type    { return n.Type }
+
 type NamedTypeNode struct {
 	ModName string
 	Name    string

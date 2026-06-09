@@ -121,6 +121,9 @@ func (a *Analyser) visitExpression(expr parser.ExpressionNode) {
 		a.visitExpression(e.Subject)
 		a.visitExpression(e.Index)
 
+	case *parser.FieldAccessNode:
+		a.visitExpression(e.Subject)
+
 	case *parser.IfExprNode:
 		a.visitExpression(e.IfBranch.Condition)
 		a.visitExpression(e.IfBranch.Node)
@@ -151,6 +154,16 @@ func (a *Analyser) visitExpression(expr parser.ExpressionNode) {
 	case *parser.GivenExprNode:
 		a.visitBlock(e.Block)
 		a.visitExpression(e.FinalExpr)
+
+	case *parser.IntegerLiteralNode,
+		*parser.FloatLiteralNode,
+		*parser.StringLiteralNode,
+		*parser.BoolLiteralNode,
+		*parser.CharLiteralNode,
+		*parser.NilLiteralNode:
+
+	default:
+		panic("unsupported expression type")
 	}
 }
 
