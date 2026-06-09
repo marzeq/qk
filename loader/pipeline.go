@@ -23,7 +23,6 @@ func ComputeModuleOrder(mods map[string]*ModuleInfo) ([]string, []error) {
 }
 
 func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, order []string, verbose, debug bool) []error {
-
 	for _, name := range order {
 		info := mods[name]
 
@@ -102,6 +101,9 @@ func GenerateIRModules(mods map[string]*ModuleInfo, order []string, verbose bool
 			gen := &irgen.Generator{}
 			modIR := gen.Generate(root)
 			out.Functions = append(out.Functions, modIR.Functions...)
+			if len(modIR.Externs) > 0 {
+				out.Externs = append(out.Externs, modIR.Externs...)
+			}
 		}
 
 		irMods[name] = out

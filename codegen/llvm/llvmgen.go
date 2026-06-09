@@ -14,12 +14,41 @@ type Emitter struct {
 	SlotTypes  map[ir.SlotID]types.Type
 	ModuleName string
 	currentFn  *ir.Function
+	externMap  map[string]string // qk name -> actual external symbol name for functions with body extern("...")
 }
 
 func (e *Emitter) EmitModule(out *strings.Builder, m *ir.Module) {
 
 	if e.ModuleName != "" {
 		fmt.Fprintf(out, "; module %s\n\n", e.ModuleName)
+	}
+
+	e.externMap = make(map[string]string)
+	for i, ex := range m.Externs {
+		if i > 0 {
+			out.WriteString("\n")
+		}
+		llvmName := ex.Name
+		if ex.From != "" {
+			llvmName = ex.From
+			fmt.Fprintf(out, "; extern from %s\n", ex.From)
+		}
+		e.externMap[ex.Name] = llvmName
+
+		fmt.Fprintf(out, "declare %s @%s(", e.TypeEmit(ex.Signature.ReturnType), llvmName)
+		for j, p := range ex.Signature.ParamTypes {
+			if j > 0 {
+				out.WriteString(", ")
+			}
+			out.WriteString(e.TypeEmit(p))
+		}
+		if ex.Signature.Variadic {
+			if len(ex.Signature.ParamTypes) > 0 {
+				out.WriteString(", ")
+			}
+			out.WriteString("...")
+		}
+		out.WriteString(")\n")
 	}
 
 	for i, fn := range m.Functions {
@@ -39,8 +68,12 @@ func (e *Emitter) EmitFunction(out *strings.Builder, fn *ir.Function) {
 	if e.isLLVMMainFunction(fn) {
 		returnType = types.PrimitiveI32
 	}
+	linkage := "internal"
+	if fn.Extern || e.isLLVMMainFunction(fn) {
+		linkage = "external"
+	}
 
-	fmt.Fprintf(out, "define %s @%s(", e.TypeEmit(returnType), fn.Name)
+	fmt.Fprintf(out, "define %s %s @%s(", linkage, e.TypeEmit(returnType), fn.Name)
 	paramTypes := fn.Signature.ParamTypes
 	if len(paramTypes) == 0 && len(fn.Parameters) > 0 {
 		paramTypes = make([]types.Type, len(fn.Parameters))
@@ -75,7 +108,6 @@ func (e *Emitter) EmitFunction(out *strings.Builder, fn *ir.Function) {
 }
 
 func (e *Emitter) EmitBlock(out *strings.Builder, block *ir.Block) {
-
 	label := block.Name
 	if label == "" {
 		label = fmt.Sprintf("b%d", block.ID)
@@ -422,12 +454,19 @@ func (e *Emitter) FieldAddressEmit(out *strings.Builder, f ir.FieldAddress) {
 }
 
 func (e *Emitter) CallEmit(out *strings.Builder, c ir.Call) {
+	fnName := c.Name
+	if e.externMap != nil {
+		if mapped, ok := e.externMap[c.Name]; ok && mapped != "" {
+			fnName = mapped
+		}
+	}
+
 	if c.Signature.ReturnType.Equals(types.PrimitiveVoid) {
 		out.WriteString("call void @")
-		out.WriteString(c.Name)
+		out.WriteString(fnName)
 		out.WriteString("(")
 	} else {
-		fmt.Fprintf(out, "%s = call %s @%s(", e.ValueIDEmit(c.Dest), e.TypeEmit(c.Signature.ReturnType), c.Name)
+		fmt.Fprintf(out, "%s = call %s @%s(", e.ValueIDEmit(c.Dest), e.TypeEmit(c.Signature.ReturnType), fnName)
 	}
 	for i, arg := range c.Args {
 		if i > 0 {

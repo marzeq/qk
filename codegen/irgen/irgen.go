@@ -58,7 +58,10 @@ func (g *Generator) Generate(root *parser.RootNode) *ir.Module {
 		if !ok {
 			continue
 		}
-		if fn.Extern {
+		if fn.Extern || fn.ExternFrom != "" {
+			sig := g.buildFunctionSignature(fn)
+			name := fn.Name
+			g.Module.AddExtern(ir.ExternDecl{Name: name, Signature: sig, From: fn.ExternFrom})
 			continue
 		}
 		g.GenerateFunction(fn)
@@ -68,7 +71,7 @@ func (g *Generator) Generate(root *parser.RootNode) *ir.Module {
 }
 
 func (g *Generator) GenerateFunction(fn *parser.FunctionDefNode) {
-	irFn := ir.NewFunction(fn.Name)
+	irFn := ir.NewFunction(fn.Name, fn.Extern)
 	irFn.Signature = g.buildFunctionSignature(fn)
 	g.Module.AddFunction(irFn)
 

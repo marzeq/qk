@@ -74,6 +74,7 @@ type FunctionSignature struct {
 
 type Function struct {
 	Name       string
+	Extern     bool
 	Signature  FunctionSignature
 	Parameters []Parameter
 	Slots      []Slot
@@ -87,10 +88,11 @@ type Function struct {
 	nextBlock BlockID
 }
 
-func NewFunction(name string) *Function {
+func NewFunction(name string, extern bool) *Function {
 	return &Function{
 		Name:   name,
 		Values: make(map[ValueID]types.Type),
+		Extern: extern,
 	}
 }
 
@@ -134,6 +136,7 @@ func (f *Function) AddParameter(name string, ty types.Type, slot SlotID) {
 
 type Module struct {
 	Functions []*Function
+	Externs   []ExternDecl
 }
 
 func (m *Module) AddFunction(fn *Function) {
@@ -147,13 +150,8 @@ type ExternDecl struct {
 }
 
 func (m *Module) AddExtern(e ExternDecl) {
-	// lazily create slice
 	m.Externs = append(m.Externs, e)
 }
-
-// Externs are module-level external function declarations
-type Externs []ExternDecl
-
 
 type Instr interface {
 	isInstr()
