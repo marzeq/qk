@@ -65,7 +65,7 @@ func main() {
 	irModules, errs := loader.GenerateIRModules(modules, order, args.verbose)
 	checkErrs(errs)
 
-	llvmOutputs := buildLLVMModules(irModules, order)
+	llvmOutputs := buildLLVMModules(irModules, order, args.outputType == OutputExecutable)
 
 	if args.dumpIR {
 		dumpIRModules(irModules)
@@ -121,7 +121,7 @@ func main() {
 
 	objFiles, err := compileLLVMModules(buildDir, order, args.optLevel, args.verbose, args.target, args.sysroot, args.ClangArgs)
 	check(err)
-	err = linkObjects(objFiles, args.output, args.static, args.verbose, args.target, args.sysroot, args.LinkArgs)
+	err = linkObjects(objFiles, args.output, args.outputType, args.static, args.verbose, args.target, args.sysroot, args.LinkArgs)
 	check(err)
 
 	if args.keepBuildDir {
@@ -227,7 +227,7 @@ func checkErrs(errs []error) {
 	}
 }
 
-func buildLLVMModules(mods map[string]*ir.Module, order []string) map[string]string {
+func buildLLVMModules(mods map[string]*ir.Module, order []string, isExecutable bool) map[string]string {
 	outputs := make(map[string]string, len(mods))
 
 	for _, name := range order {
@@ -236,7 +236,7 @@ func buildLLVMModules(mods map[string]*ir.Module, order []string) map[string]str
 			continue
 		}
 
-		emitter := &llvm.Emitter{ModuleName: name}
+		emitter := &llvm.Emitter{ModuleName: name, Executable: isExecutable}
 		var output strings.Builder
 		emitter.EmitModule(&output, mod)
 		outputs[name] = output.String()
@@ -283,7 +283,7 @@ func emitLLVMFiles(mods map[string]string, order []string) (string, error) {
 	return buildDir, nil
 }
 
-func compileLLVMModules(buildDir string, order []string, optLevel int, verbose bool, target string, sysroot string, extraClangArgs []string) ([]string, error) {
+func compileLLVMModules(buildDir string, order []string, optLevel OptimisationLevel, verbose bool, target string, sysroot string, extraClangArgs []string) ([]string, error) {
 	objFiles := make([]string, 0, len(order))
 
 	for _, name := range order {
@@ -296,7 +296,7 @@ func compileLLVMModules(buildDir string, order []string, optLevel int, verbose b
 		}
 
 		objPath := filepath.Join(buildDir, safeModuleFileName(name)+".o")
-		clangArgs := []string{"-c", llPath, "-o", objPath, fmt.Sprintf("-O%d", optLevel)}
+		clangArgs := []string{"-c", llPath, "-o", objPath, fmt.Sprintf("-O%s", optLevel)}
 		if target != "" {
 			clangArgs = append([]string{"-target", target}, clangArgs...)
 		}
@@ -326,8 +326,8 @@ func compileLLVMModules(buildDir string, order []string, optLevel int, verbose b
 	return objFiles, nil
 }
 
-func linkObjects(objFiles []string, output string, static, verbose bool, target string, sysroot string, extraLinkArgs []string) error {
-	args, err := buildLinkArgs(objFiles, output, static, target, sysroot, extraLinkArgs)
+func linkObjects(objFiles []string, output string, outputType OutputType, static, verbose bool, target string, sysroot string, extraLinkArgs []string) error {
+	args, err := buildLinkArgs(objFiles, output, outputType, static, target, sysroot, extraLinkArgs)
 	if err != nil {
 		return err
 	}
@@ -344,18 +344,20 @@ func linkObjects(objFiles []string, output string, static, verbose bool, target 
 	return nil
 }
 
-func buildLinkArgs(objFiles []string, output string, static bool, target string, sysroot string, extraLinkArgs []string) ([]string, error) {
+func buildLinkArgs(objFiles []string, output string, outputType OutputType, static bool, target string, sysroot string, extraLinkArgs []string) ([]string, error) {
 	args := append([]string{}, objFiles...)
 
-	ext := strings.ToLower(filepath.Ext(output))
-	switch ext {
-	case ".o":
+	switch outputType {
+	case OutputExecutable:
+	case OutputObject:
 		args = append(args, "-r")
-	case ".so":
+	case OutputSharedLib:
 		if static {
-			return nil, fmt.Errorf("cannot use --static with .so output")
+			return nil, fmt.Errorf("cannot use --static with shared lib output")
 		}
 		args = append(args, "-shared", "-fPIC")
+	default:
+		return nil, fmt.Errorf("unknown output type")
 	}
 
 	if static {

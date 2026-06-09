@@ -8,11 +8,31 @@ import (
 	"strings"
 )
 
+type OutputType int
+
+const (
+	OutputUnspecified OutputType = iota
+	OutputExecutable
+	OutputObject
+	OutputSharedLib
+)
+
+type OptimisationLevel string
+
+const (
+	OptLevel0    OptimisationLevel = "0"
+	OptLevel1    OptimisationLevel = "1"
+	OptLevel2    OptimisationLevel = "2"
+	OptLevel3    OptimisationLevel = "3"
+	OptLevelSize OptimisationLevel = "s"
+	OptLevelFast OptimisationLevel = "fast"
+)
+
 type Args struct {
 	baseDir      string
 	excludeDirs  []string
 	output       string
-	optLevel     int
+	optLevel     OptimisationLevel
 	verbose      bool
 	debug        bool
 	dumpIR       bool
@@ -21,12 +41,13 @@ type Args struct {
 	static       bool
 	target       string
 	sysroot      string
+	outputType   OutputType
 	ClangArgs    []string
 	LinkArgs     []string
 }
 
 func parseArgs() (*Args, error) {
-	a := &Args{optLevel: -1}
+	a := &Args{optLevel: OptLevel2, outputType: OutputUnspecified}
 	args := os.Args[1:]
 	i := 0
 
@@ -34,7 +55,7 @@ func parseArgs() (*Args, error) {
 		tok := args[i]
 
 		switch {
-		case tok == "-E" || tok == "--exclude":
+		case tok == "-E":
 			i++
 			if i >= len(args) {
 				return nil, fmt.Errorf("expected value after %s", tok)
@@ -42,7 +63,7 @@ func parseArgs() (*Args, error) {
 			a.excludeDirs = append(a.excludeDirs, args[i])
 			i++
 
-		case tok == "-o" || tok == "--output":
+		case tok == "-o":
 			i++
 			if i >= len(args) {
 				return nil, fmt.Errorf("expected value after %s", tok)
@@ -50,69 +71,80 @@ func parseArgs() (*Args, error) {
 			a.output = args[i]
 			i++
 
-		case len(tok) >= 2 && tok[0:2] == "-O":
-			// allow -O3 or -O 3
-			if tok == "-O" {
-				i++
-				if i >= len(args) {
-					return nil, fmt.Errorf("expected value after -O")
-				}
-				tok = args[i]
-				i++
-			} else {
-				i++
-				tok = tok[2:]
+		case tok == "-t":
+			i++
+			if i >= len(args) {
+				return nil, fmt.Errorf("expected value after %s", tok)
 			}
-			lvl, err := strconv.Atoi(tok)
-			if err != nil || lvl < 0 || lvl > 3 {
-				return nil, fmt.Errorf("invalid optimization level: %s", tok)
+			switch args[i] {
+			case "exe", "executable", ".exe":
+				a.outputType = OutputExecutable
+			case "obj", "object", ".o":
+				a.outputType = OutputObject
+			case "so", "shared", "sharedlib", ".so", ".dll", ".dylib":
+				a.outputType = OutputSharedLib
+			default:
+				return nil, fmt.Errorf("unknown output type: %s", args[i])
 			}
-			if a.optLevel != -1 {
-				return nil, fmt.Errorf("optimization level specified multiple times")
-			}
-			a.optLevel = lvl
+			i++
 
-		case tok == "-v" || tok == "--verbose":
+		case len(tok) >= 2 && tok[0:2] == "-O":
+			i++
+			tok = tok[2:]
+			if tok == "" {
+				return nil, fmt.Errorf("expected value after -O")
+			}
+			if tok == "s" {
+				a.optLevel = OptLevelSize
+			} else if tok == "fast" {
+				a.optLevel = OptLevelFast
+			} else if _, err := strconv.Atoi(tok); err == nil {
+				a.optLevel = OptimisationLevel(tok)
+			} else {
+				return nil, fmt.Errorf("invalid optimisation level: %s", tok)
+			}
+
+		case tok == "-v":
 			a.verbose = true
 			i++
 
-		case tok == "-d" || tok == "--debug":
+		case tok == "-d":
 			a.debug = true
 			i++
 
-		case tok == "--dump-ir":
+		case tok == "-dump-ir":
 			a.dumpIR = true
 			i++
 
-		case tok == "--dump-llvm":
+		case tok == "-dump-llvm":
 			a.dumpLLVM = true
 			i++
 
-		case tok == "--keep-build-dir":
+		case tok == "-keep-build-dir":
 			a.keepBuildDir = true
 			i++
 
-		case tok == "--static":
+		case tok == "-static":
 			a.static = true
 			i++
 
-		case tok == "--target":
+		case tok == "-target":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("expected value after --target")
+				return nil, fmt.Errorf("expected value after -target")
 			}
 			a.target = args[i]
 			i++
 
-		case tok == "--sysroot":
+		case tok == "-sysroot":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("expected value after --sysroot")
+				return nil, fmt.Errorf("expected value after -sysroot")
 			}
 			a.sysroot = args[i]
 			i++
 
-		case tok == "--clang-arg" || tok == "--clang-args":
+		case tok == "-C":
 			i++
 			if i >= len(args) {
 				return nil, fmt.Errorf("expected value after %s", tok)
@@ -121,7 +153,7 @@ func parseArgs() (*Args, error) {
 			a.ClangArgs = append(a.ClangArgs, parts...)
 			i++
 
-		case tok == "--link-arg" || tok == "--link-args":
+		case tok == "-L":
 			i++
 			if i >= len(args) {
 				return nil, fmt.Errorf("expected value after %s", tok)
@@ -129,6 +161,20 @@ func parseArgs() (*Args, error) {
 			parts := strings.Fields(args[i])
 			a.LinkArgs = append(a.LinkArgs, parts...)
 			i++
+
+		case tok == "-h" || tok == "--help":
+			fmt.Printf("Usage: %s [options] <baseDir>\n", os.Args[0])
+			fmt.Println("Options:")
+			fmt.Println("  -E <dir>           Exclude directory from source file search (can specify multiple times)")
+			fmt.Println("  -o <file>          Output file name")
+			fmt.Println("  -t <type>          Output type (exe, obj, so)")
+			fmt.Println("  -O<level>          Optimisation level (0, 1, 2, 3, s, fast)")
+			fmt.Println("  -static            Link with static libraries")
+			fmt.Println("  -target <triple>   Target triple for code generation")
+			fmt.Println("  -sysroot <path>    Sysroot path for target")
+			fmt.Println("  -C <args>          Additional arguments to pass to clang when building module object files")
+			fmt.Println("  -L <args>          Additional arguments to pass to linker")
+			os.Exit(0)
 
 		default:
 			if tok[0] == '-' {
@@ -174,14 +220,6 @@ func finaliseArgs(args *Args) error {
 		args.excludeDirs[i] = abs
 	}
 
-	if args.optLevel == -1 {
-		args.optLevel = 2
-	}
-
-	if args.output == "" {
-		args.output = "main"
-	}
-
 	if args.sysroot != "" {
 		if _, err := os.Stat(args.sysroot); os.IsNotExist(err) {
 			return fmt.Errorf("sysroot path does not exist: %s", args.sysroot)
@@ -191,6 +229,35 @@ func finaliseArgs(args *Args) error {
 			return fmt.Errorf("failed to get absolute path of sysroot: %v", err)
 		}
 		args.sysroot = abs
+	}
+
+	if args.output == "" {
+		switch args.outputType {
+		case OutputUnspecified:
+			args.output = "main"
+			args.outputType = OutputExecutable
+		case OutputExecutable:
+			args.output = "main"
+		case OutputObject:
+			args.output = "main.o"
+		case OutputSharedLib:
+			args.output = "libmain.so"
+		}
+	} else {
+		switch args.outputType {
+		case OutputUnspecified:
+			ext := filepath.Ext(args.output)
+			switch ext {
+			case ".o":
+				args.outputType = OutputObject
+			case ".so", ".dll", ".dylib":
+				args.outputType = OutputSharedLib
+			case "", ".exe":
+				args.outputType = OutputExecutable
+			default:
+				return fmt.Errorf("cannot infer output type from extension: %s", ext)
+			}
+		}
 	}
 
 	return nil

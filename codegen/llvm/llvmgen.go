@@ -13,6 +13,7 @@ type Emitter struct {
 	Variables  map[ir.SlotID]*symbols.Symbol
 	SlotTypes  map[ir.SlotID]types.Type
 	ModuleName string
+	Executable bool
 	currentFn  *ir.Function
 	externMap  map[string]string // qk name -> actual external symbol name for functions with body extern("...")
 	stringMap  map[string]string // literal value -> global name
@@ -581,6 +582,9 @@ func (e *Emitter) ReturnEmit(out *strings.Builder, r ir.Return) {
 }
 
 func (e *Emitter) isLLVMMainFunction(fn *ir.Function) bool {
+	if !e.Executable {
+		return false
+	}
 	if fn == nil {
 		return false
 	}
