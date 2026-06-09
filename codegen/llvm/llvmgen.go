@@ -158,6 +158,17 @@ func (e *Emitter) pointerBaseType(ty types.Type) types.Type {
 }
 
 func (e *Emitter) structFieldIndex(ty types.Type, field string) int {
+	if _, ok := ty.(types.SliceType); ok {
+		switch field {
+		case "0":
+			return 0
+		case "1":
+			return 1
+		default:
+			panic("slice field index not found")
+		}
+	}
+
 	st, ok := ty.(types.StructType)
 	if !ok {
 		panic("expected struct type")

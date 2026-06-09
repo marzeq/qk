@@ -17,6 +17,7 @@ type Args struct {
 	dumpIR       bool
 	dumpLLVM     bool
 	keepBuildDir bool
+	static       bool
 }
 
 type ArgParser struct {
@@ -96,11 +97,20 @@ func (p *ArgParser) Parse() (*Args, error) {
 				return nil, err
 			}
 			args.output = value
-		} else if p.IsShorthand("O") {
+		} else if strings.HasPrefix(p.Args[p.Pos], "-O") {
 			if args.optLevel != -1 {
 				return nil, fmt.Errorf("optimization level specified multiple times")
 			}
-			value := p.ConsumeShorthandCombined()
+			value := strings.TrimPrefix(p.Args[p.Pos], "-O")
+			if value == "" {
+				if !p.Skip() || !p.HasNext() {
+					return nil, fmt.Errorf("expected value after -O, but got none")
+				}
+				value = p.Args[p.Pos]
+				p.Skip()
+			} else {
+				p.Skip()
+			}
 			if value == "" {
 				return nil, fmt.Errorf("expected value after -O, but got none")
 			}
@@ -130,6 +140,9 @@ func (p *ArgParser) Parse() (*Args, error) {
 			p.Skip()
 		} else if p.IsFlag("keep-build-dir") {
 			args.keepBuildDir = true
+			p.Skip()
+		} else if p.IsFlag("static") {
+			args.static = true
 			p.Skip()
 		} else if !strings.HasPrefix(p.Args[p.Pos], "-") {
 			if args.baseDir != "" {

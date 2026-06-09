@@ -119,10 +119,10 @@ func main() {
 		fmt.Printf("emitted LLVM files to %s\n", buildDir)
 	}
 
-	objFiles, err := compileLLVMModules(buildDir, order, args.optLevel, args.output, args.verbose)
+	objFiles, err := compileLLVMModules(buildDir, order, args.optLevel, args.output, args.static, args.verbose)
 	check(err)
 
-	err = linkObjects(objFiles, args.output, args.verbose)
+	err = linkObjects(objFiles, args.output, args.static, args.verbose)
 	check(err)
 
 	if args.verbose {
@@ -288,7 +288,7 @@ func emitLLVMFiles(mods map[string]string, order []string) (string, error) {
 	return buildDir, nil
 }
 
-func compileLLVMModules(buildDir string, order []string, optLevel int, output string, verbose bool) ([]string, error) {
+func compileLLVMModules(buildDir string, order []string, optLevel int, output string, static bool, verbose bool) ([]string, error) {
 	objFiles := make([]string, 0, len(order))
 	sharedOutput := strings.EqualFold(filepath.Ext(output), ".so")
 
@@ -325,8 +325,11 @@ func compileLLVMModules(buildDir string, order []string, optLevel int, output st
 	return objFiles, nil
 }
 
-func linkObjects(objFiles []string, output string, verbose bool) error {
-	args := buildLinkArgs(objFiles, output)
+func linkObjects(objFiles []string, output string, static bool, verbose bool) error {
+	args, err := buildLinkArgs(objFiles, output, static)
+	if err != nil {
+		return err
+	}
 
 	cmd := exec.Command("clang", args...)
 	out, err := cmd.CombinedOutput()
@@ -341,7 +344,7 @@ func linkObjects(objFiles []string, output string, verbose bool) error {
 	return nil
 }
 
-func buildLinkArgs(objFiles []string, output string) []string {
+func buildLinkArgs(objFiles []string, output string, static bool) ([]string, error) {
 	args := append([]string{}, objFiles...)
 
 	ext := strings.ToLower(filepath.Ext(output))
@@ -349,11 +352,18 @@ func buildLinkArgs(objFiles []string, output string) []string {
 	case ".o":
 		args = append(args, "-r")
 	case ".so":
+		if static {
+			return nil, fmt.Errorf("cannot use --static with .so output")
+		}
 		args = append(args, "-shared")
 	}
 
+	if static {
+		args = append(args, "-static")
+	}
+
 	args = append(args, "-o", output)
-	return args
+	return args, nil
 }
 
 func safeModuleFileName(name string) string {

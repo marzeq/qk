@@ -283,10 +283,40 @@ func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
 	case *parser.CastNode:
 		return g.generateCastExpr(n)
 	case *parser.StringLiteralNode:
-		panic("string literals must be cast to pointer before IR lowering")
+		return g.generateStringLiteralExpr(n)
 	default:
 		panic("todo")
 	}
+}
+
+func (g *Generator) generateStringLiteralExpr(node *parser.StringLiteralNode) ir.Operand {
+	sliceType, ok := node.GetType().(types.SliceType)
+	if !ok {
+		panic("string literal must have slice type")
+	}
+
+	tmpSlot := g.currentFunction.NewSlot(sliceType, "")
+	g.Emit(ir.Alloca{Slot: tmpSlot})
+
+	stringPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: types.PrimitiveChar})
+	g.Emit(ir.StringConst{Dest: stringPtrID, Value: node.Value})
+	stringPtr := ir.ValueOperand(stringPtrID, types.PointerType{Base: types.PrimitiveChar})
+
+	slicePtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: sliceType})
+	g.Emit(ir.AddressOf{Dest: slicePtrID, Slot: tmpSlot})
+	slicePtr := ir.ValueOperand(slicePtrID, types.PointerType{Base: sliceType})
+
+	basePtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: types.PrimitiveChar})
+	g.Emit(ir.FieldAddress{Dest: basePtrID, Base: slicePtr, Field: "0"})
+	g.Emit(ir.StorePtr{Ptr: ir.ValueOperand(basePtrID, types.PointerType{Base: types.PrimitiveChar}), Value: stringPtr})
+
+	lenPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: types.PrimitiveUsz})
+	g.Emit(ir.FieldAddress{Dest: lenPtrID, Base: slicePtr, Field: "1"})
+	g.Emit(ir.StorePtr{Ptr: ir.ValueOperand(lenPtrID, types.PointerType{Base: types.PrimitiveUsz}), Value: ir.IntConstOperand(fmt.Sprintf("%d", sliceType.Size), types.PrimitiveUsz)})
+
+	loaded := g.currentFunction.NewValueOfType(sliceType)
+	g.Emit(ir.Load{Dest: loaded, Slot: tmpSlot})
+	return ir.ValueOperand(loaded, sliceType)
 }
 
 func (g *Generator) generateCastExpr(node *parser.CastNode) ir.Operand {
