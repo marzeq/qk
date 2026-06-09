@@ -179,7 +179,7 @@ func finaliseArgs(args *Args) error {
 	}
 
 	if args.output == "" {
-		args.output = "a.out"
+		args.output = "main"
 	}
 
 	if args.sysroot != "" {

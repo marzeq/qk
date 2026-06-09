@@ -73,7 +73,7 @@ go run ./cmd/qkc --target aarch64-unknown-linux-gnu --sysroot /path/to/aarch64-s
 
 Flags of interest
 
-- `-o <path>` / `--output <path>`: output file name (default `a.out`).
+- `-o <path>` / `--output <path>`: output file name (default `main`).
 - `-O<level>` or `-O <level>`: optimization level (0..3), default `-O2`.
 - `--target <triple>`: pass a target triple to clang (useful for cross-compiling).
 - `--sysroot <path>`: pass a sysroot to clang/linker for cross-linking.
