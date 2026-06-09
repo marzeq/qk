@@ -2,276 +2,406 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
-	"path"
-	"slices"
+	"path/filepath"
 	"strings"
 
-	"github.com/marzeq/qk/codegen"
-	"github.com/marzeq/qk/modules"
+	"github.com/marzeq/qk/codegen/llvm"
+	"github.com/marzeq/qk/ir"
+	"github.com/marzeq/qk/loader"
 	"github.com/marzeq/qk/parser"
+	"github.com/marzeq/qk/sema"
 	"github.com/marzeq/qk/shared"
 	"github.com/marzeq/qk/tokeniser"
-	"github.com/marzeq/qk/typechecker"
+	"github.com/marzeq/qk/types"
 )
 
-func _check(err error) {
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-}
-
-func usage() {
-	prog := path.Base(os.Args[0])
-	fmt.Printf("Usage: %s -o <output file> [-lf ...] <src files>\n", prog)
-}
-
-func runCmd(args ...string) error {
-	if len(args) == 0 {
-		return nil
-	}
-	cmd := exec.Command(args[0], args[1:]...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
-}
-
-func copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-
-	out, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		_ = out.Close()
-	}()
-
-	_, err = io.Copy(out, in)
-	if err != nil {
-		return err
-	}
-
-	return out.Sync()
-}
-
-func parseArgs() (
-	outfile string,
-	linkerFlags []string,
-	sources []string,
-	irOutput string,
-	asmOutput string,
-	buildDir string,
-) {
-	args := os.Args[1:]
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		if len(arg) > 2 && arg[0] == '-' && arg[1] == '-' {
-			arg = arg[1:]
-		}
-		switch arg {
-		case "-o", "-output", "-out":
-			if i+1 >= len(args) {
-				fmt.Println("missing argument for output file")
-				os.Exit(1)
-			}
-			outfile = args[i+1]
-			i++
-		case "-lf", "-lflags", "-linkerflags":
-			if i+1 >= len(args) {
-				fmt.Println("missing argument for linker flags")
-			}
-			linkerFlags = append(linkerFlags, args[i+1])
-			i++
-		case "-h", "-help":
-			usage()
-			os.Exit(0)
-		// flags for debugging, do not document
-		case "-iro", "-irout", "-iroutput":
-			if i+1 >= len(args) {
-				fmt.Println("missing argument for ir output file")
-			}
-			irOutput = args[i+1]
-			i++
-		case "-asmo", "-asmout", "-asmoutput":
-			if i+1 >= len(args) {
-				fmt.Println("missing argument for asm output file")
-			}
-			asmOutput = args[i+1]
-			i++
-		case "-bd", "-builddir":
-			if i+1 >= len(args) {
-				fmt.Println("missing argument for build dir")
-			}
-			buildDir = args[i+1]
-			i++
-		default:
-			if len(arg) > 0 && arg[0] == '-' {
-				fmt.Printf("unknown argument: %s\n", arg)
-				os.Exit(1)
-			}
-			sources = append(sources, args[i])
-		}
-	}
-
-	if len(sources) == 0 {
-		usage()
-		os.Exit(1)
-	}
-	return
-}
-
 func main() {
-	outFile, linkerFlags, sources, irOutput, asmOutput, buildDir := parseArgs()
-	if len(sources) != 1 {
-		fmt.Println("for now, only one source file is supported")
+	args, err := parseArgs()
+	check(err)
+
+	searchPaths := buildSearchPaths(args.baseDir)
+
+	files, err := collectSourceFiles(searchPaths, args.excludeDirs)
+	check(err)
+
+	if len(files) == 0 {
+		fmt.Println("no source files found")
 		os.Exit(1)
 	}
-	srcFile := sources[0]
-	outBaseName := strings.TrimSuffix(path.Base(outFile), path.Ext(outFile))
-	pathExt := path.Ext(outFile)
 
-	var tmpDir string
-	if buildDir == "" {
-		td, err := os.MkdirTemp("", "qk_build_*")
-		_check(err)
-		tmpDir = td
-		defer os.RemoveAll(tmpDir)
-	} else {
-		tmpDir = buildDir
-		os.MkdirAll(tmpDir, 0o755)
+	var partials []*loader.PartialModuleInfo
+
+	for _, file := range files {
+		ast, err := parseFile(file)
+		check(err)
+
+		info, err := loader.CollectModuleInfo(ast)
+		check(err)
+
+		partials = append(partials, info)
 	}
 
-	t, err := tokeniser.NewTokeniserFromFile(srcFile)
-	_check(err)
+	if args.verbose {
+		fmt.Println("parsed and collected modules")
+	}
+
+	modules, err := loader.BuildModules(partials)
+	check(err)
+
+	analyser := sema.NewAnalyser()
+
+	order, errs := loader.ComputeModuleOrder(modules)
+	checkErrs(errs)
+
+	errs = loader.RunSemanticPipeline(modules, analyser, order, args.verbose, args.debug)
+	checkErrs(errs)
+
+	if args.verbose {
+		fmt.Println("semantic analysis completed successfully")
+	}
+
+	irModules, errs := loader.GenerateIRModules(modules, order, args.verbose)
+	checkErrs(errs)
+
+	llvmOutputs := buildLLVMModules(irModules, order)
+
+	if args.dumpIR {
+		dumpIRModules(irModules)
+	}
+
+	if args.dumpLLVM {
+		dumpLLVMModules(llvmOutputs, order)
+	}
+
+	if _, ok := modules["main"]; !ok {
+		fmt.Println("main module not found")
+		os.Exit(1)
+	}
+
+	foundMain := false
+	mainModule := modules["main"]
+	for _, root := range mainModule.Roots {
+		for _, stmt := range root.Body {
+			switch fn := stmt.(type) {
+			case *parser.FunctionDefNode:
+				if fn.Name == "main" {
+					if len(fn.Args) != 0 {
+						fmt.Println(shared.NewError(fn.Loc, "main function must not have arguments"))
+						os.Exit(1)
+					}
+					if fn.Body == nil {
+						fmt.Println(shared.NewError(fn.Loc, "main function must have a body"))
+						os.Exit(1)
+					}
+					if fn.Symbol.Signature.ReturnType != types.PrimitiveVoid {
+						fmt.Println(shared.NewError(fn.Loc, "main function must return void"))
+					}
+					foundMain = true
+					break
+				}
+			}
+		}
+	}
+	if !foundMain {
+		fmt.Println("main function not found in main module")
+		os.Exit(1)
+	}
+
+	buildDir, err := emitLLVMFiles(llvmOutputs, order)
+	check(err)
+	if !args.keepBuildDir {
+		defer os.RemoveAll(buildDir)
+	}
+
+	if args.verbose {
+		fmt.Printf("emitted LLVM files to %s\n", buildDir)
+	}
+
+	objFiles, err := compileLLVMModules(buildDir, order, args.optLevel, args.verbose, args.target, args.sysroot, args.ClangArgs)
+	check(err)
+	err = linkObjects(objFiles, args.output, args.static, args.verbose, args.target, args.sysroot, args.LinkArgs)
+	check(err)
+
+	if args.keepBuildDir {
+		fmt.Printf("kept build directory: %s\n", buildDir)
+	}
+}
+
+func parseFile(path string) (*parser.RootNode, error) {
+	t, err := tokeniser.NewTokeniserFromFile(path)
+	if err != nil {
+		return nil, err
+	}
 
 	toks, err := t.Tokenise()
-	_check(err)
-
-	p := parser.NewParser(toks)
-	ast, err := p.Parse()
-	_check(err)
-
-	dg, err := modules.NewDepGraph(srcFile, ast)
-	_check(err)
-
-	files, err := dg.TopoSort()
-	_check(err)
-
-	ms := make(typechecker.ModulesSignatures)
-	moduleToFiles := make(map[string][]string)
-
-	for _, f := range files {
-		mod, err := ms.CollectSignaturesFromRootNode(dg.ASTs[f], typechecker.CollectImports(dg.ASTs[f]))
-		_check(err)
-		moduleToFiles[mod] = append(moduleToFiles[mod], f)
+	if err != nil {
+		return nil, err
 	}
 
-	processedModules := map[string]struct{}{}
+	p := parser.NewParser(toks)
 
-	for mod, filesInMod := range moduleToFiles {
-		if _, ok := processedModules[mod]; ok {
+	return p.Parse()
+}
+
+func collectSourceFiles(paths []string, exclude []string) ([]string, error) {
+	seen := map[string]struct{}{}
+	excluded := map[string]struct{}{}
+
+	for _, e := range exclude {
+		abs, _ := filepath.Abs(e)
+		excluded[abs] = struct{}{}
+	}
+
+	var files []string
+
+	for _, root := range paths {
+		info, err := os.Stat(root)
+		if err != nil || !info.IsDir() {
 			continue
 		}
 
-		tc := typechecker.NewTypeChecker(mod, ms)
+		filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
 
-		for _, f := range filesInMod {
-			ast, err := tc.TypeCheck(dg.ASTs[f])
-			_check(err)
-			dg.ASTs[f] = ast
-		}
+			abs, _ := filepath.Abs(path)
 
-		processedModules[mod] = struct{}{}
+			for ex := range excluded {
+				if strings.HasPrefix(abs, ex) {
+					if d.IsDir() {
+						return filepath.SkipDir
+					}
+					return nil
+				}
+			}
+
+			if !d.IsDir() && filepath.Ext(path) == ".qk" {
+				if _, ok := seen[abs]; !ok {
+					seen[abs] = struct{}{}
+					files = append(files, abs)
+				}
+			}
+
+			return nil
+		})
 	}
 
-	ir := ""
-	var cnstId uint = 0
-	for _, f := range files {
-		mod := ""
-		for m, fs := range moduleToFiles {
-			if slices.Contains(fs, f) {
-				mod = m
-			}
-			if mod != "" {
-				break
-			}
-		}
+	return files, nil
+}
 
-		cg := codegen.NewCodeGen(dg.ASTs[f], mod, ms, cnstId)
-		fileIr, cId, err := cg.EmitIR()
-		_check(err)
-		ir += fileIr + "\n"
-		cnstId += cId
+func buildSearchPaths(baseDir string) []string {
+	var paths []string
+
+	paths = append(paths, baseDir)
+
+	home, err := os.UserHomeDir()
+	if err == nil {
+		paths = append(paths,
+			filepath.Join(home, ".local", "share", "qk", "std"),
+		)
 	}
 
-	switch pathExt {
-	case "":
-		mainSig, ok := ms.LookupFunction("", "main", "", nil, false)
+	paths = append(paths, filepath.Join("/usr", "local", "lib", "qk"))
+
+	paths = append(paths, filepath.Join("/usr", "lib", "qk"))
+
+	return paths
+}
+
+func check(err error) {
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+}
+
+func checkErrs(errs []error) {
+	if len(errs) > 0 {
+		for _, err := range errs {
+			fmt.Println(err)
+		}
+		os.Exit(1)
+	}
+}
+
+func buildLLVMModules(mods map[string]*ir.Module, order []string) map[string]string {
+	outputs := make(map[string]string, len(mods))
+
+	for _, name := range order {
+		mod := mods[name]
+		if mod == nil {
+			continue
+		}
+
+		emitter := &llvm.Emitter{ModuleName: name}
+		var output strings.Builder
+		emitter.EmitModule(&output, mod)
+		outputs[name] = output.String()
+	}
+
+	return outputs
+}
+
+func dumpLLVMModules(mods map[string]string, order []string) {
+	for i, name := range order {
+		output, ok := mods[name]
 		if !ok {
-			fmt.Println("no main function found in the default module")
-			os.Exit(1)
+			continue
 		}
-		if len(mainSig.ArgTypes) != 0 {
-			fmt.Println("main function must take no arguments")
-			os.Exit(1)
+
+		if i > 0 {
+			fmt.Println()
 		}
-		if !mainSig.RetType.Compare(shared.PRIMITIVE_VOID) {
-			fmt.Println("main function must return void")
-			os.Exit(1)
+		fmt.Print(output)
+		if !strings.HasSuffix(output, "\n") {
+			fmt.Println()
 		}
-		ir += "\nexport function w $main() {\n"
-		ir += "@start\n"
-		ir += "  call $_main()\n"
-		ir += "  ret 0\n"
-		ir += "}\n"
+	}
+}
+
+func emitLLVMFiles(mods map[string]string, order []string) (string, error) {
+	buildDir, err := os.MkdirTemp("/tmp", "qk-build-")
+	if err != nil {
+		return "", err
 	}
 
-	cc := []string{os.Getenv("CC")}
-	if cc[0] == "" {
-		cc = []string{"cc"}
-	}
-	if cc[0] == "zig cc" {
-		cc = []string{"zig", "cc"}
-	}
+	for _, name := range order {
+		output, ok := mods[name]
+		if !ok {
+			continue
+		}
 
-	ssaPath := path.Join(tmpDir, outBaseName+".ssa")
-	_check(os.WriteFile(ssaPath, []byte(ir), 0o644))
-	if irOutput != "" {
-		_check(copyFile(ssaPath, irOutput))
+		llPath := filepath.Join(buildDir, safeModuleFileName(name)+".ll")
+		if err := os.WriteFile(llPath, []byte(output), 0o644); err != nil {
+			return "", err
+		}
 	}
 
-	sPath := path.Join(tmpDir, outBaseName+".s")
-	_check(runCmd("qbe", "-o", sPath, ssaPath))
-	if asmOutput != "" {
-		_check(copyFile(sPath, asmOutput))
+	return buildDir, nil
+}
+
+func compileLLVMModules(buildDir string, order []string, optLevel int, verbose bool, target string, sysroot string, extraClangArgs []string) ([]string, error) {
+	objFiles := make([]string, 0, len(order))
+
+	for _, name := range order {
+		llPath := filepath.Join(buildDir, safeModuleFileName(name)+".ll")
+		if _, err := os.Stat(llPath); err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, err
+		}
+
+		objPath := filepath.Join(buildDir, safeModuleFileName(name)+".o")
+		clangArgs := []string{"-c", llPath, "-o", objPath, fmt.Sprintf("-O%d", optLevel)}
+		if target != "" {
+			clangArgs = append([]string{"-target", target}, clangArgs...)
+		}
+		if sysroot != "" {
+			clangArgs = append(clangArgs, "--sysroot="+sysroot)
+		}
+		if len(extraClangArgs) > 0 {
+			clangArgs = append(clangArgs, extraClangArgs...)
+		}
+
+		if verbose {
+			fmt.Printf("> clang %s\n", strings.Join(clangArgs, " "))
+		}
+		cmd := exec.Command("clang", clangArgs...)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return nil, fmt.Errorf("clang failed for module %q: %w\n%s", name, err, string(out))
+		}
+
+		objFiles = append(objFiles, objPath)
 	}
 
-	oPath := path.Join(tmpDir, outBaseName+".o")
-	_check(runCmd(slices.Concat(cc, []string{"-c", "-o", oPath, sPath})...))
+	if len(objFiles) == 0 {
+		return nil, fmt.Errorf("no object files were produced")
+	}
 
-	switch pathExt {
+	return objFiles, nil
+}
+
+func linkObjects(objFiles []string, output string, static, verbose bool, target string, sysroot string, extraLinkArgs []string) error {
+	args, err := buildLinkArgs(objFiles, output, static, target, sysroot, extraLinkArgs)
+	if err != nil {
+		return err
+	}
+
+	if verbose {
+		fmt.Printf("> clang %s\n", strings.Join(args, " "))
+	}
+	cmd := exec.Command("clang", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("linking failed: %w\n%s", err, string(out))
+	}
+
+	return nil
+}
+
+func buildLinkArgs(objFiles []string, output string, static bool, target string, sysroot string, extraLinkArgs []string) ([]string, error) {
+	args := append([]string{}, objFiles...)
+
+	ext := strings.ToLower(filepath.Ext(output))
+	switch ext {
 	case ".o":
-		_check(copyFile(oPath, outFile))
-	case ".a":
-		_check(runCmd("ar", "rcs", outFile, oPath))
+		args = append(args, "-r")
 	case ".so":
-		args := slices.Concat(cc, append([]string{"cc", "-shared", "-o", outFile, oPath}, linkerFlags...))
-		_check(runCmd(args...))
-	case "":
-		if outFile == "" {
-			outFile = "a.out"
+		if static {
+			return nil, fmt.Errorf("cannot use --static with .so output")
 		}
-		args := slices.Concat(cc, append([]string{"-o", outFile, oPath}, linkerFlags...))
-		_check(runCmd(args...))
-	default:
-		fmt.Printf("unknown output file extension: %s\n", pathExt)
+		args = append(args, "-shared", "-fPIC")
 	}
+
+	if static {
+		args = append(args, "-static")
+	}
+
+	if sysroot != "" {
+		args = append([]string{"--sysroot=" + sysroot}, args...)
+	}
+
+	if target != "" {
+		args = append([]string{"-target", target}, args...)
+	}
+
+	if len(extraLinkArgs) > 0 {
+		args = append(args, extraLinkArgs...)
+	}
+
+	args = append(args, "-o", output)
+	args = append(args, "-fuse-ld=lld")
+
+	return args, nil
+}
+
+func safeModuleFileName(name string) string {
+	if name == "" {
+		return "module"
+	}
+
+	var b strings.Builder
+	b.Grow(len(name))
+	for i, r := range name {
+		valid := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || r == '_' || (r >= '0' && r <= '9')
+		if !valid {
+			b.WriteByte('_')
+			continue
+		}
+		if i == 0 && r >= '0' && r <= '9' {
+			b.WriteByte('_')
+		}
+		b.WriteRune(r)
+	}
+
+	if b.Len() == 0 {
+		return "module"
+	}
+
+	return b.String()
 }

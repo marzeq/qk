@@ -3,6 +3,9 @@ test
 *.o
 *.so
 *.a
-test.qk
+/*.qk
 a.out
-qk
+/qkc
+*.ll
+*.ir
+/main

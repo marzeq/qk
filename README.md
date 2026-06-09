@@ -1,6 +1,6 @@
 # qk
 
-This is my work in progress compiler targeting the [QBE backend](https://c9x.me/compile/) for a custom language I'm designing.
+This is my work in progress compiler for a custom language I'm designing.
 
 ## Rationale
 
@@ -37,24 +37,59 @@ go build ./cmd/qkc # or run 'go run ./cmd/qkc' directly
 ```
 ## Supported platforms
 
-The compiler is limited by QBE which supports:
+- This branch includes a working LLVM textual backend and a native build pipeline that emits per-module LLVM `.ll`,
+  compiles them with `clang` and links a final executable. The happy-path (compile -> clang -> link) is implemented and
+  used for development and testing.
 
-- Linux (x86-64, ARM64)
-- Apple (x86-64, ARM64)
-
-There is a special branch in QBE called `winabi` and I plan to vendor-in that branch to support Windows in the future, but not yet.
+  The backend is portable: targets supported depend on the available clang toolchain and sysroots on your system (for example
+  `x86_64` and `aarch64`). Cross-compilation requires a matching toolchain or a sysroot; see the CLI notes below.
 
 ## Dependencies
 
 - Modern Go version
-- QBE
-- Standard POSIX build tools
-- (in the future mingw for Windows support)
 
-## Examples
+## LLVM backend & Compiler CLI
 
-As I have previously mentioned, the language does not have a formal specification. However, there are some samples in the `examples/` directory
-that showcase some of the language features, and while I added them primairly for testing purposes, you can of course use them as reference too.
+- The project ships a working LLVM-based codegen and a small compiler front-end binary: `cmd/qkc`.
+- Basic workflow: the compiler lowers source files to LLVM textual IR (`.ll`) per-module, then runs `clang -c` to produce
+  object files and finally links them into a single executable with `clang`.
+
+Usage examples
+
+- Build the current workspace and produce an executable named `main`:
+
+```bash
+go run ./cmd/qkc -v -O3 -o main .
+```
+
+- Cross-compile for ARM64 (requires ARM sysroot/toolchain):
+
+```bash
+go run ./cmd/qkc --target aarch64-unknown-linux-gnu --sysroot /path/to/aarch64-sysroot -O3 -o main .
+```
+
+Flags of interest
+
+- `-o <path>` / `--output <path>`: output file name (default `a.out`).
+- `-O<level>` or `-O <level>`: optimization level (0..3), default `-O2`.
+- `--target <triple>`: pass a target triple to clang (useful for cross-compiling).
+- `--sysroot <path>`: pass a sysroot to clang/linker for cross-linking.
+- `--clang-arg <args>` / `--clang-args <args>`: forward extra args to clang during compilation (LL file -> object).
+- `--link-arg <args>` / `--link-args <args>`: forward extra args to clang during linking.
+- `--dump-ir`: print the textual IR emitted for each module to stdout.
+- `--dump-llvm`: print the final LLVM text emitted (same as dump-ir but for the combined output).
+- `--keep-build-dir`: do not remove the temporary build directory containing `.ll` and `.o` files.
+- `--static`: pass `-static` to the final linker (when appropriate).
+
+Notes
+
+- Cross-linking requires the target runtime objects (crt*.o) and libraries (libgcc, libc) to be available in the
+  specified sysroot or installed toolchain; otherwise linking will fail.
+
+
+## Language grammar
+
+- See `docs/grammar.md` for an EBNF grammar and parser-accurate syntax notes.
 
 ## Contributing
 

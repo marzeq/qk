@@ -63,6 +63,10 @@ type Location struct {
 	FilePath string
 }
 
+func (l Location) String() string {
+	return fmt.Sprintf("%s:%d:%d", l.FilePath, l.LC.Line, l.LC.Col)
+}
+
 type Pair[T1 any, T2 any] struct {
 	L T1
 	R T2

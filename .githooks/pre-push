@@ -1,8 +1,15 @@
 #!/bin/sh
 
-exec 1>&2
+# exec 1>&2
+#
+# if ! ./test.sh run; then
+#   echo "Tests failed. Push aborted."
+#   exit 1
+# fi
+#
+# exit 0
 
-if ! ./test.sh run; then
+if ! go test ./...; then
   echo "Tests failed. Push aborted."
   exit 1
 fi

@@ -3,163 +3,164 @@ package tokeniser
 import "github.com/marzeq/qk/shared"
 
 type Token struct {
-	Type  TokenType
+	Type  TokenKind
 	Value string
 	Loc   shared.Location
 }
-type TokenType uint
+type TokenKind uint
 
 const (
-	TOKEN_TYPE_EOF TokenType = iota
-	TOKEN_TYPE_NEWLINE
+	TokenEof TokenKind = iota
+	TokenNewline
 
-	TOKEN_TYPE_KEYWORD
-	TOKEN_TYPE_IDENT
-	TOKEN_TYPE_NUMBER
-	TOKEN_TYPE_STRING
-	TOKEN_TYPE_CHAR
+	TokenKeyword
+	TokenIdentifier
+	TokenNumber
+	TokenString
+	TokenChar
 
-	TOKEN_TYPE_OPEN_PAREN
-	TOKEN_TYPE_CLOSE_PAREN
-	TOKEN_TYPE_OPEN_CURLY
-	TOKEN_TYPE_CLOSE_CURLY
-	TOKEN_TYPE_OPEN_SQUARE
-	TOKEN_TYPE_CLOSE_SQUARE
+	TokenOpenParen
+	TokenCloseParen
+	TokenOpenCurly
+	TokenCloseCurly
+	TokenOpenSquare
+	TokenCloseSquare
 
-	TOKEN_TYPE_EQUALS
-	TOKEN_TYPE_EQUALS_EQUALS
-	TOKEN_TYPE_NOT_EQUALS
-	TOKEN_TYPE_LESS
-	TOKEN_TYPE_GREATER
-	TOKEN_TYPE_LESS_EQUALS
-	TOKEN_TYPE_GREATER_EQUALS
+	TokenEquals
+	TokenEqualsEquals
+	TokenNotEquals
+	TokenLess
+	TokenGreater
+	TokenLessEquals
+	TokenGreaterEquals
 
-	TOKEN_TYPE_PLUS
-	TOKEN_TYPE_MINUS
-	TOKEN_TYPE_ASTERISK
-	TOKEN_TYPE_SLASH
-	TOKEN_TYPE_PERCENT
-	TOKEN_TYPE_AMPERSAND
+	TokenPlus
+	TokenMinus
+	TokenAsterisk
+	TokenSlash
+	TokenPercent
+	TokenAmpersand
 
-	TOKEN_TYPE_INC_BY
-	TOKEN_TYPE_DEC_BY
-	TOKEN_TYPE_MUL_BY
-	TOKEN_TYPE_DIV_BY
-	TOKEN_TYPE_MOD_BY
+	TokenIncBy
+	TokenDecBy
+	TokenMulBy
+	TokenDivBy
+	TokenModBy
 
-	TOKEN_TYPE_SEMICOLON
-	TOKEN_TYPE_COMMA
-	TOKEN_TYPE_EXCLAM
-	TOKEN_TYPE_COLON
-	TOKEN_TYPE_DOT
-	TOKEN_TYPE_3DOTS
-	TOKEN_TYPE_ARROW
+	TokenSemicolon
+	TokenComma
+	TokenExclam
+	TokenColon
+	TokenDot
+	Token3Dots
+	TokenArrow
 )
 
-type KeywordType string
+type KeywordKind string
 
 const (
-	KEYWORD_LET      KeywordType = "let"
-	KEYWORD_VAR      KeywordType = "var"
-	KEYWORD_EXTERN   KeywordType = "extern"
-	KEYWORD_STRUCT   KeywordType = "struct"
-	KEYWORD_IF       KeywordType = "if"
-	KEYWORD_ELSE     KeywordType = "else"
-	KEYWORD_GIVEN    KeywordType = "given"
-	KEYWORD_FOR      KeywordType = "for"
-	KEYWORD_BREAK    KeywordType = "break"
-	KEYWORD_CONTINUE KeywordType = "continue"
-	KEYWORD_RETURN   KeywordType = "return"
-	KEYWORD_IMPORT   KeywordType = "import"
-	KEYWORD_MODULE   KeywordType = "module"
-	KEYWORD_PUB      KeywordType = "pub"
-	KEYWORD_AND      KeywordType = "and"
-	KEYWORD_OR       KeywordType = "or"
-	KEYWORD_NOT      KeywordType = "not"
-	KEYWORD_TRUE     KeywordType = "true"
-	KEYWORD_FALSE    KeywordType = "false"
-	KEYWORD_NIL      KeywordType = "nil"
-	KEYWORD_AS       KeywordType = "as"
-	KEYWORD_SIZEOF   KeywordType = "sizeof"
+	KeywordLet      KeywordKind = "let"
+	KeywordMut      KeywordKind = "mut"
+	KeywordExtern   KeywordKind = "extern"
+	KeywordStruct   KeywordKind = "struct"
+	KeywordType     KeywordKind = "type"
+	KeywordIf       KeywordKind = "if"
+	KeywordElse     KeywordKind = "else"
+	KeywordGiven    KeywordKind = "given"
+	KeywordFor      KeywordKind = "for"
+	KeywordBreak    KeywordKind = "break"
+	KeywordContinue KeywordKind = "continue"
+	KeywordReturn   KeywordKind = "return"
+	KeywordImport   KeywordKind = "import"
+	KeywordModule   KeywordKind = "module"
+	KeywordPub      KeywordKind = "pub"
+	KeywordAnd      KeywordKind = "and"
+	KeywordOr       KeywordKind = "or"
+	KeywordNot      KeywordKind = "not"
+	KeywordTrue     KeywordKind = "true"
+	KeywordFalse    KeywordKind = "false"
+	KeywordNil      KeywordKind = "nil"
+	KeywordAs       KeywordKind = "as"
+	KeywordSizeof   KeywordKind = "sizeof"
 )
 
 func (t Token) String() string {
 	switch t.Type {
-	case TOKEN_TYPE_EOF:
+	case TokenEof:
 		return "<eof>"
-	case TOKEN_TYPE_NEWLINE:
+	case TokenNewline:
 		return "\\n"
-	case TOKEN_TYPE_KEYWORD:
+	case TokenKeyword:
 		return "kw(" + t.Value + ")"
-	case TOKEN_TYPE_IDENT:
+	case TokenIdentifier:
 		return "ident(" + t.Value + ")"
-	case TOKEN_TYPE_NUMBER:
+	case TokenNumber:
 		return "num(" + t.Value + ")"
-	case TOKEN_TYPE_STRING:
+	case TokenString:
 		return "str(" + t.Value + ")"
-	case TOKEN_TYPE_CHAR:
+	case TokenChar:
 		return "ch(" + t.Value + ")"
-	case TOKEN_TYPE_OPEN_PAREN:
+	case TokenOpenParen:
 		return "("
-	case TOKEN_TYPE_CLOSE_PAREN:
+	case TokenCloseParen:
 		return ")"
-	case TOKEN_TYPE_OPEN_CURLY:
+	case TokenOpenCurly:
 		return "{"
-	case TOKEN_TYPE_CLOSE_CURLY:
+	case TokenCloseCurly:
 		return "}"
-	case TOKEN_TYPE_OPEN_SQUARE:
+	case TokenOpenSquare:
 		return "["
-	case TOKEN_TYPE_CLOSE_SQUARE:
+	case TokenCloseSquare:
 		return "]"
-	case TOKEN_TYPE_EQUALS:
+	case TokenEquals:
 		return "="
-	case TOKEN_TYPE_EQUALS_EQUALS:
+	case TokenEqualsEquals:
 		return "=="
-	case TOKEN_TYPE_NOT_EQUALS:
+	case TokenNotEquals:
 		return "!="
-	case TOKEN_TYPE_LESS:
+	case TokenLess:
 		return "<"
-	case TOKEN_TYPE_GREATER:
+	case TokenGreater:
 		return ">"
-	case TOKEN_TYPE_LESS_EQUALS:
+	case TokenLessEquals:
 		return "<="
-	case TOKEN_TYPE_GREATER_EQUALS:
+	case TokenGreaterEquals:
 		return ">="
-	case TOKEN_TYPE_PLUS:
+	case TokenPlus:
 		return "+"
-	case TOKEN_TYPE_MINUS:
+	case TokenMinus:
 		return "-"
-	case TOKEN_TYPE_ASTERISK:
+	case TokenAsterisk:
 		return "*"
-	case TOKEN_TYPE_SLASH:
+	case TokenSlash:
 		return "/"
-	case TOKEN_TYPE_PERCENT:
+	case TokenPercent:
 		return "%"
-	case TOKEN_TYPE_AMPERSAND:
+	case TokenAmpersand:
 		return "&"
-	case TOKEN_TYPE_INC_BY:
+	case TokenIncBy:
 		return "+="
-	case TOKEN_TYPE_DEC_BY:
+	case TokenDecBy:
 		return "-="
-	case TOKEN_TYPE_MUL_BY:
+	case TokenMulBy:
 		return "*="
-	case TOKEN_TYPE_DIV_BY:
+	case TokenDivBy:
 		return "/="
-	case TOKEN_TYPE_MOD_BY:
+	case TokenModBy:
 		return "%="
-	case TOKEN_TYPE_SEMICOLON:
+	case TokenSemicolon:
 		return ";"
-	case TOKEN_TYPE_COMMA:
+	case TokenComma:
 		return ","
-	case TOKEN_TYPE_EXCLAM:
+	case TokenExclam:
 		return "!"
-	case TOKEN_TYPE_COLON:
+	case TokenColon:
 		return ":"
-	case TOKEN_TYPE_DOT:
+	case TokenDot:
 		return "."
-	case TOKEN_TYPE_3DOTS:
+	case Token3Dots:
 		return "..."
-	case TOKEN_TYPE_ARROW:
+	case TokenArrow:
 		return "->"
 	default:
 		return "{UNKNOWN}"

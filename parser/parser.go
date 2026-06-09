@@ -8,8 +8,9 @@ import (
 )
 
 type Parser struct {
-	pos    int
-	tokens []tokeniser.Token
+	pos      int
+	tokens   []tokeniser.Token
+	posStack []int
 }
 
 func NewParser(tokens []tokeniser.Token) *Parser {
@@ -19,9 +20,31 @@ func NewParser(tokens []tokeniser.Token) *Parser {
 	}
 }
 
+func (p *Parser) PushPos() {
+	p.posStack = append(p.posStack, p.pos)
+}
+
+func (p *Parser) PopPos() {
+	if len(p.posStack) == 0 {
+		return
+	}
+
+	last := len(p.posStack) - 1
+	p.pos = p.posStack[last]
+	p.posStack = p.posStack[:last]
+}
+
+func (p *Parser) CommitPos() {
+	if len(p.posStack) == 0 {
+		return
+	}
+
+	p.posStack = p.posStack[:len(p.posStack)-1]
+}
+
 func (p *Parser) Peek() tokeniser.Token {
 	if p.pos >= len(p.tokens) || p.pos < 0 {
-		return tokeniser.Token{Type: tokeniser.TOKEN_TYPE_EOF}
+		return tokeniser.Token{Type: tokeniser.TokenEof}
 	}
 
 	return p.tokens[p.pos]
@@ -31,7 +54,7 @@ func (p *Parser) Next() tokeniser.Token {
 	pos := p.pos + 1
 
 	if pos >= len(p.tokens) || pos < 0 {
-		return tokeniser.Token{Type: tokeniser.TOKEN_TYPE_EOF}
+		return tokeniser.Token{Type: tokeniser.TokenEof}
 	}
 
 	return p.tokens[pos]
@@ -66,7 +89,7 @@ func (p *Parser) Consume() tokeniser.Token {
 	return c
 }
 
-func (p *Parser) Expect(expected tokeniser.TokenType) bool {
+func (p *Parser) Expect(expected tokeniser.TokenKind) bool {
 	tok := p.Consume()
 
 	ret := tok.Type == expected
@@ -74,7 +97,7 @@ func (p *Parser) Expect(expected tokeniser.TokenType) bool {
 	return ret
 }
 
-func (p *Parser) ExpectGet(expected tokeniser.TokenType) (*tokeniser.Token, bool) {
+func (p *Parser) ExpectGet(expected tokeniser.TokenKind) (*tokeniser.Token, bool) {
 	tok := p.Consume()
 
 	if tok.Type != expected {
@@ -84,7 +107,7 @@ func (p *Parser) ExpectGet(expected tokeniser.TokenType) (*tokeniser.Token, bool
 	return &tok, true
 }
 
-func (p *Parser) Match(ttypes ...tokeniser.TokenType) bool {
+func (p *Parser) Match(ttypes ...tokeniser.TokenKind) bool {
 	ptype := p.Peek().Type
 
 	return slices.Contains(ttypes, ptype)
@@ -101,62 +124,63 @@ func (p *Parser) Parse() (*RootNode, error) {
 			FilePath: eofTok.Loc.FilePath,
 		},
 	}
-	for !p.Match(tokeniser.TOKEN_TYPE_EOF) {
-		for p.Match(tokeniser.TOKEN_TYPE_NEWLINE, tokeniser.TOKEN_TYPE_SEMICOLON) {
+	for !p.Match(tokeniser.TokenEof) {
+		for p.Match(tokeniser.TokenNewline, tokeniser.TokenSemicolon) {
 			p.Inc()
 		}
-		e := shared.NewError(p.CurrLoc(), "expected function definition, struct definition or import statement")
-		if !p.Match(tokeniser.TOKEN_TYPE_KEYWORD) {
+		e := shared.NewError(p.CurrLoc(), "expected function definition, constant definition, type alias or import statement")
+		if !p.Match(tokeniser.TokenKeyword) {
 			return nil, e
 		}
 
 		switch p.Peek().Value {
-		case string(tokeniser.KEYWORD_PUB):
+		case string(tokeniser.KeywordPub):
 			p.Inc()
-			if p.Peek().Type != tokeniser.TOKEN_TYPE_KEYWORD {
+			if !p.Match(tokeniser.TokenKeyword) || p.Peek().Value != string(tokeniser.KeywordLet) && p.Peek().Value != string(tokeniser.KeywordExtern) {
 				return nil, e
 			}
-			switch p.Peek().Value {
-			case
-				string(tokeniser.KEYWORD_LET),
-				string(tokeniser.KEYWORD_EXTERN):
-				fnDef, err := p.ParseFunctionDefinition()
-				if err != nil {
-					return nil, err
-				}
-				fnDef.Pub = true
-				rootNode.Body = append(rootNode.Body, fnDef)
-			case string(tokeniser.KEYWORD_STRUCT):
-				str, err := p.ParseStructDefinition()
-				if err != nil {
-					return nil, err
-				}
-				str.Pub = true
-				rootNode.Body = append(rootNode.Body, str)
+			stmt, _, err := p.ParseStatement()
+			if err != nil {
+				return nil, err
+			}
+
+			switch s := stmt.(type) {
+			case *FunctionDefNode:
+				s.Pub = true
+			case *DeclarationNode:
+				s.Pub = true
+			case *TypeAliasNode:
+				s.Pub = true
 			default:
 				return nil, e
 			}
-		case
-			string(tokeniser.KEYWORD_LET),
-			string(tokeniser.KEYWORD_EXTERN):
-			fnDef, err := p.ParseFunctionDefinition()
+
+			rootNode.Body = append(rootNode.Body, stmt)
+		case string(tokeniser.KeywordLet):
+			stmt, _, err := p.ParseStatement()
 			if err != nil {
 				return nil, err
 			}
-			rootNode.Body = append(rootNode.Body, fnDef)
-		case string(tokeniser.KEYWORD_STRUCT):
-			str, err := p.ParseStructDefinition()
+			switch stmt.(type) {
+			case *FunctionDefNode, *DeclarationNode, *TypeAliasNode:
+				rootNode.Body = append(rootNode.Body, stmt)
+			default:
+				return nil, e
+			}
+		case string(tokeniser.KeywordExtern):
+			stmt, _, err := p.ParseStatement()
 			if err != nil {
 				return nil, err
 			}
-			rootNode.Body = append(rootNode.Body, str)
-		case string(tokeniser.KEYWORD_IMPORT):
+			rootNode.Body = append(rootNode.Body, stmt)
+
+		case string(tokeniser.KeywordImport):
 			imp, err := p.ParseImport()
 			if err != nil {
 				return nil, err
 			}
 			rootNode.Body = append(rootNode.Body, imp)
-		case string(tokeniser.KEYWORD_MODULE):
+		case string(tokeniser.KeywordModule):
 			mod, err := p.ParseModule()
 			if err != nil {
 				return nil, err
@@ -166,15 +190,15 @@ func (p *Parser) Parse() (*RootNode, error) {
 			return nil, e
 		}
 
-		if p.Match(tokeniser.TOKEN_TYPE_EOF) {
+		if p.Match(tokeniser.TokenEof) {
 			break
 		}
 
-		if !p.Match(tokeniser.TOKEN_TYPE_NEWLINE, tokeniser.TOKEN_TYPE_SEMICOLON) {
+		if !p.Match(tokeniser.TokenNewline, tokeniser.TokenSemicolon) {
 			return nil, shared.NewError(p.CurrLoc(), "expected ';' or '\\n'")
 		}
 
-		for p.Match(tokeniser.TOKEN_TYPE_NEWLINE, tokeniser.TOKEN_TYPE_SEMICOLON) {
+		for p.Match(tokeniser.TokenNewline, tokeniser.TokenSemicolon) {
 			p.Inc()
 		}
 	}
