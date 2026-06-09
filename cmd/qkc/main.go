@@ -119,15 +119,11 @@ func main() {
 		fmt.Printf("emitted LLVM files to %s\n", buildDir)
 	}
 
-	objFiles, err := compileLLVMModules(buildDir, order, args.optLevel, args.output, args.static, args.verbose)
+	objFiles, err := compileLLVMModules(buildDir, order, args.optLevel, args.verbose, args.target, args.sysroot)
 	check(err)
 
-	err = linkObjects(objFiles, args.output, args.static, args.verbose)
+	err = linkObjects(objFiles, args.output, args.static, args.verbose, args.target, args.sysroot)
 	check(err)
-
-	if args.verbose {
-		fmt.Printf("linked executable: %s\n", args.output)
-	}
 
 	if args.keepBuildDir {
 		fmt.Printf("kept build directory: %s\n", buildDir)
@@ -288,9 +284,8 @@ func emitLLVMFiles(mods map[string]string, order []string) (string, error) {
 	return buildDir, nil
 }
 
-func compileLLVMModules(buildDir string, order []string, optLevel int, output string, static bool, verbose bool) ([]string, error) {
+func compileLLVMModules(buildDir string, order []string, optLevel int, verbose bool, target string, sysroot string) ([]string, error) {
 	objFiles := make([]string, 0, len(order))
-	sharedOutput := strings.EqualFold(filepath.Ext(output), ".so")
 
 	for _, name := range order {
 		llPath := filepath.Join(buildDir, safeModuleFileName(name)+".ll")
@@ -303,16 +298,19 @@ func compileLLVMModules(buildDir string, order []string, optLevel int, output st
 
 		objPath := filepath.Join(buildDir, safeModuleFileName(name)+".o")
 		clangArgs := []string{"-c", llPath, "-o", objPath, fmt.Sprintf("-O%d", optLevel)}
-		if sharedOutput {
-			clangArgs = append(clangArgs, "-fPIC")
+		if target != "" {
+			clangArgs = append([]string{"-target", target}, clangArgs...)
+		}
+		if sysroot != "" {
+			clangArgs = append(clangArgs, "--sysroot="+sysroot)
+		}
+		if verbose {
+			fmt.Printf("> clang %s\n", strings.Join(clangArgs, " "))
 		}
 		cmd := exec.Command("clang", clangArgs...)
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			return nil, fmt.Errorf("clang failed for module %q: %w\n%s", name, err, string(out))
-		}
-		if verbose {
-			fmt.Printf("compiled %s -> %s\n", llPath, objPath)
 		}
 
 		objFiles = append(objFiles, objPath)
@@ -325,26 +323,25 @@ func compileLLVMModules(buildDir string, order []string, optLevel int, output st
 	return objFiles, nil
 }
 
-func linkObjects(objFiles []string, output string, static bool, verbose bool) error {
-	args, err := buildLinkArgs(objFiles, output, static)
+func linkObjects(objFiles []string, output string, static, verbose bool, target string, sysroot string) error {
+	args, err := buildLinkArgs(objFiles, output, static, target, sysroot)
 	if err != nil {
 		return err
 	}
 
+	if verbose {
+		fmt.Printf("> clang %s\n", strings.Join(args, " "))
+	}
 	cmd := exec.Command("clang", args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("linking failed: %w\n%s", err, string(out))
 	}
 
-	if verbose {
-		fmt.Printf("linked %d object files\n", len(objFiles))
-	}
-
 	return nil
 }
 
-func buildLinkArgs(objFiles []string, output string, static bool) ([]string, error) {
+func buildLinkArgs(objFiles []string, output string, static bool, target string, sysroot string) ([]string, error) {
 	args := append([]string{}, objFiles...)
 
 	ext := strings.ToLower(filepath.Ext(output))
@@ -355,14 +352,24 @@ func buildLinkArgs(objFiles []string, output string, static bool) ([]string, err
 		if static {
 			return nil, fmt.Errorf("cannot use --static with .so output")
 		}
-		args = append(args, "-shared")
+		args = append(args, "-shared", "-fPIC")
 	}
 
 	if static {
 		args = append(args, "-static")
 	}
 
+	if sysroot != "" {
+		args = append([]string{"--sysroot=" + sysroot}, args...)
+	}
+
+	if target != "" {
+		args = append([]string{"-target", target}, args...)
+	}
+
 	args = append(args, "-o", output)
+	args = append(args, "-fuse-ld=lld")
+
 	return args, nil
 }
 

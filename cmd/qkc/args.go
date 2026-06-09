@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
+	"strconv"
 )
 
 type Args struct {
@@ -18,149 +18,113 @@ type Args struct {
 	dumpLLVM     bool
 	keepBuildDir bool
 	static       bool
-}
-
-type ArgParser struct {
-	Args []string
-	Pos  int
+	target       string
+	sysroot      string
 }
 
 func parseArgs() (*Args, error) {
-	p := &ArgParser{Args: os.Args[1:], Pos: 0}
-	return p.Parse()
-}
+	a := &Args{optLevel: -1}
+	args := os.Args[1:]
+	i := 0
 
-func (p *ArgParser) IsShorthand(shorthands ...string) bool {
-	for _, s := range shorthands {
-		if p.Args[p.Pos] == "-"+s {
-			return true
-		}
-	}
-	return false
-}
+	for i < len(args) {
+		tok := args[i]
 
-func (p *ArgParser) IsFlag(flags ...string) bool {
-	for _, s := range flags {
-		if p.Args[p.Pos] == "--"+s {
-			return true
-		}
-	}
-	return false
-}
-
-func (p *ArgParser) ConsumeShorthandCombined() string { // for flags like -E<value> returns <value>
-	flag := p.Args[p.Pos]
-	p.Skip()
-	return flag[2:]
-}
-
-func (p *ArgParser) ConsumeFlagSeparate() (string, error) { // for flags like -E <value> returns <value> or --exclude <value> returns <value>
-	flag := p.Args[p.Pos]
-	if !p.Skip() {
-		return "", fmt.Errorf("expected value after flag %s, but got end of arguments", flag)
-	}
-	ret := p.Args[p.Pos]
-	if strings.HasPrefix(ret, "-") {
-		return "", fmt.Errorf("expected value after flag %s, but got another flag: %s", flag, ret)
-	}
-	p.Skip()
-	return ret, nil
-}
-
-func (p *ArgParser) Skip() bool {
-	if p.HasNext() {
-		p.Pos++
-		return true
-	}
-	return false
-}
-
-func (p *ArgParser) HasNext() bool {
-	return p.Pos < len(p.Args)
-}
-
-func (p *ArgParser) Parse() (*Args, error) {
-	args := &Args{}
-
-	args.optLevel = -1
-
-	for p.HasNext() {
-		if p.IsShorthand("E") || p.IsFlag("exclude") {
-			value, err := p.ConsumeFlagSeparate()
-			if err != nil {
-				return nil, err
+		switch {
+		case tok == "-E" || tok == "--exclude":
+			i++
+			if i >= len(args) {
+				return nil, fmt.Errorf("expected value after %s", tok)
 			}
-			args.excludeDirs = append(args.excludeDirs, value)
-		} else if p.IsShorthand("o") || p.IsFlag("output") {
-			value, err := p.ConsumeFlagSeparate()
-			if err != nil {
-				return nil, err
+			a.excludeDirs = append(a.excludeDirs, args[i])
+			i++
+
+		case tok == "-o" || tok == "--output":
+			i++
+			if i >= len(args) {
+				return nil, fmt.Errorf("expected value after %s", tok)
 			}
-			args.output = value
-		} else if strings.HasPrefix(p.Args[p.Pos], "-O") {
-			if args.optLevel != -1 {
+			a.output = args[i]
+			i++
+
+		case len(tok) >= 2 && tok[0:2] == "-O":
+			// allow -O3 or -O 3
+			if tok == "-O" {
+				i++
+				if i >= len(args) {
+					return nil, fmt.Errorf("expected value after -O")
+				}
+				tok = args[i]
+				i++
+			} else {
+				i++
+				tok = tok[2:]
+			}
+			lvl, err := strconv.Atoi(tok)
+			if err != nil || lvl < 0 || lvl > 3 {
+				return nil, fmt.Errorf("invalid optimization level: %s", tok)
+			}
+			if a.optLevel != -1 {
 				return nil, fmt.Errorf("optimization level specified multiple times")
 			}
-			value := strings.TrimPrefix(p.Args[p.Pos], "-O")
-			if value == "" {
-				if !p.Skip() || !p.HasNext() {
-					return nil, fmt.Errorf("expected value after -O, but got none")
-				}
-				value = p.Args[p.Pos]
-				p.Skip()
-			} else {
-				p.Skip()
+			a.optLevel = lvl
+
+		case tok == "-v" || tok == "--verbose":
+			a.verbose = true
+			i++
+
+		case tok == "-d" || tok == "--debug":
+			a.debug = true
+			i++
+
+		case tok == "--dump-ir":
+			a.dumpIR = true
+			i++
+
+		case tok == "--dump-llvm":
+			a.dumpLLVM = true
+			i++
+
+		case tok == "--keep-build-dir":
+			a.keepBuildDir = true
+			i++
+
+		case tok == "--static":
+			a.static = true
+			i++
+
+		case tok == "--target":
+			i++
+			if i >= len(args) {
+				return nil, fmt.Errorf("expected value after --target")
 			}
-			if value == "" {
-				return nil, fmt.Errorf("expected value after -O, but got none")
+			a.target = args[i]
+			i++
+
+		case tok == "--sysroot":
+			i++
+			if i >= len(args) {
+				return nil, fmt.Errorf("expected value after --sysroot")
 			}
-			switch value {
-			case "0":
-				args.optLevel = 0
-			case "1":
-				args.optLevel = 1
-			case "2":
-				args.optLevel = 2
-			case "3":
-				args.optLevel = 3
-			default:
-				return nil, fmt.Errorf("invalid optimization level: %s", value)
+			a.sysroot = args[i]
+			i++
+
+		default:
+			if tok[0] == '-' {
+				return nil, fmt.Errorf("unknown argument: %s", tok)
 			}
-		} else if p.IsShorthand("v") || p.IsFlag("verbose") {
-			args.verbose = true
-			p.Skip()
-		} else if p.IsShorthand("d") || p.IsFlag("debug") {
-			args.debug = true
-			p.Skip()
-		} else if p.IsFlag("dump-ir") {
-			args.dumpIR = true
-			p.Skip()
-		} else if p.IsFlag("dump-llvm") {
-			args.dumpLLVM = true
-			p.Skip()
-		} else if p.IsFlag("keep-build-dir") {
-			args.keepBuildDir = true
-			p.Skip()
-		} else if p.IsFlag("static") {
-			args.static = true
-			p.Skip()
-		} else if !strings.HasPrefix(p.Args[p.Pos], "-") {
-			if args.baseDir != "" {
+			if a.baseDir != "" {
 				return nil, fmt.Errorf("multiple base directories specified")
 			}
-			args.baseDir = p.Args[p.Pos]
-			p.Skip()
-		} else {
-			return nil, fmt.Errorf("unknown argument: %s", p.Args[p.Pos])
+			a.baseDir = tok
+			i++
 		}
 	}
 
-	err := finaliseArgs(args)
-	if err != nil {
+	if err := finaliseArgs(a); err != nil {
 		return nil, err
 	}
-
-	return args, nil
+	return a, nil
 }
 
 func finaliseArgs(args *Args) error {
@@ -186,7 +150,6 @@ func finaliseArgs(args *Args) error {
 		if _, err := os.Stat(e); os.IsNotExist(err) {
 			return fmt.Errorf("exclude path does not exist: %s", e)
 		}
-
 		abs, err := filepath.Abs(e)
 		if err != nil {
 			return fmt.Errorf("failed to get absolute path of exclude directory: %v", err)
@@ -195,11 +158,22 @@ func finaliseArgs(args *Args) error {
 	}
 
 	if args.optLevel == -1 {
-		args.optLevel = 2 // default optimization level
+		args.optLevel = 2
 	}
 
 	if args.output == "" {
 		args.output = "a.out"
+	}
+
+	if args.sysroot != "" {
+		if _, err := os.Stat(args.sysroot); os.IsNotExist(err) {
+			return fmt.Errorf("sysroot path does not exist: %s", args.sysroot)
+		}
+		abs, err := filepath.Abs(args.sysroot)
+		if err != nil {
+			return fmt.Errorf("failed to get absolute path of sysroot: %v", err)
+		}
+		args.sysroot = abs
 	}
 
 	return nil
