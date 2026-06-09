@@ -8,14 +8,15 @@ import (
 )
 
 type Args struct {
-	baseDir     string
-	excludeDirs []string
-	output      string
-	optLevel    int
-	verbose     bool
-	debug       bool
-	dumpIR      bool
-	dumpLLVM    bool
+	baseDir      string
+	excludeDirs  []string
+	output       string
+	optLevel     int
+	verbose      bool
+	debug        bool
+	dumpIR       bool
+	dumpLLVM     bool
+	keepBuildDir bool
 }
 
 type ArgParser struct {
@@ -127,6 +128,9 @@ func (p *ArgParser) Parse() (*Args, error) {
 		} else if p.IsFlag("dump-llvm") {
 			args.dumpLLVM = true
 			p.Skip()
+		} else if p.IsFlag("keep-build-dir") {
+			args.keepBuildDir = true
+			p.Skip()
 		} else if !strings.HasPrefix(p.Args[p.Pos], "-") {
 			if args.baseDir != "" {
 				return nil, fmt.Errorf("multiple base directories specified")
@@ -179,6 +183,10 @@ func finaliseArgs(args *Args) error {
 
 	if args.optLevel == -1 {
 		args.optLevel = 2 // default optimization level
+	}
+
+	if args.output == "" {
+		args.output = "a.out"
 	}
 
 	return nil

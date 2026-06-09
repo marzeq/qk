@@ -113,6 +113,8 @@ func formatInstr(inst ir.Instr) string {
 			to = i.To.String()
 		}
 		return fmt.Sprintf("v%d = cast %s to %s", i.Dest, formatOperand(i.From), to)
+	case ir.StringConst:
+		return fmt.Sprintf("v%d = strconst %q", i.Dest, i.Value)
 	default:
 		return fmt.Sprintf("<unknown %T>", i)
 	}

@@ -14,10 +14,12 @@ const (
 )
 
 type Symbol struct {
-	Name    string
-	Kind    SymbolKind
-	Mutable bool
-	Public  bool
+	Name       string
+	Kind       SymbolKind
+	Mutable    bool
+	Public     bool
+	Extern     bool
+	ExternFrom string
 
 	Type      types.Type         // for SymbolKindVariable
 	Signature *FunctionSignature // for SymbolKindFunction

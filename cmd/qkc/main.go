@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -106,6 +107,30 @@ func main() {
 	if !foundMain {
 		fmt.Println("main function not found in main module")
 		os.Exit(1)
+	}
+
+	buildDir, err := emitLLVMFiles(llvmOutputs, order)
+	check(err)
+	if !args.keepBuildDir {
+		defer os.RemoveAll(buildDir)
+	}
+
+	if args.verbose {
+		fmt.Printf("emitted LLVM files to %s\n", buildDir)
+	}
+
+	objFiles, err := compileLLVMModules(buildDir, order, args.optLevel, args.output, args.verbose)
+	check(err)
+
+	err = linkObjects(objFiles, args.output, args.verbose)
+	check(err)
+
+	if args.verbose {
+		fmt.Printf("linked executable: %s\n", args.output)
+	}
+
+	if args.keepBuildDir {
+		fmt.Printf("kept build directory: %s\n", buildDir)
 	}
 }
 
@@ -240,4 +265,119 @@ func dumpLLVMModules(mods map[string]string, order []string) {
 			fmt.Println()
 		}
 	}
+}
+
+func emitLLVMFiles(mods map[string]string, order []string) (string, error) {
+	buildDir, err := os.MkdirTemp("/tmp", "qk-build-")
+	if err != nil {
+		return "", err
+	}
+
+	for _, name := range order {
+		output, ok := mods[name]
+		if !ok {
+			continue
+		}
+
+		llPath := filepath.Join(buildDir, safeModuleFileName(name)+".ll")
+		if err := os.WriteFile(llPath, []byte(output), 0o644); err != nil {
+			return "", err
+		}
+	}
+
+	return buildDir, nil
+}
+
+func compileLLVMModules(buildDir string, order []string, optLevel int, output string, verbose bool) ([]string, error) {
+	objFiles := make([]string, 0, len(order))
+	sharedOutput := strings.EqualFold(filepath.Ext(output), ".so")
+
+	for _, name := range order {
+		llPath := filepath.Join(buildDir, safeModuleFileName(name)+".ll")
+		if _, err := os.Stat(llPath); err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, err
+		}
+
+		objPath := filepath.Join(buildDir, safeModuleFileName(name)+".o")
+		clangArgs := []string{"-c", llPath, "-o", objPath, fmt.Sprintf("-O%d", optLevel)}
+		if sharedOutput {
+			clangArgs = append(clangArgs, "-fPIC")
+		}
+		cmd := exec.Command("clang", clangArgs...)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return nil, fmt.Errorf("clang failed for module %q: %w\n%s", name, err, string(out))
+		}
+		if verbose {
+			fmt.Printf("compiled %s -> %s\n", llPath, objPath)
+		}
+
+		objFiles = append(objFiles, objPath)
+	}
+
+	if len(objFiles) == 0 {
+		return nil, fmt.Errorf("no object files were produced")
+	}
+
+	return objFiles, nil
+}
+
+func linkObjects(objFiles []string, output string, verbose bool) error {
+	args := buildLinkArgs(objFiles, output)
+
+	cmd := exec.Command("clang", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("linking failed: %w\n%s", err, string(out))
+	}
+
+	if verbose {
+		fmt.Printf("linked %d object files\n", len(objFiles))
+	}
+
+	return nil
+}
+
+func buildLinkArgs(objFiles []string, output string) []string {
+	args := append([]string{}, objFiles...)
+
+	ext := strings.ToLower(filepath.Ext(output))
+	switch ext {
+	case ".o":
+		args = append(args, "-r")
+	case ".so":
+		args = append(args, "-shared")
+	}
+
+	args = append(args, "-o", output)
+	return args
+}
+
+func safeModuleFileName(name string) string {
+	if name == "" {
+		return "module"
+	}
+
+	var b strings.Builder
+	b.Grow(len(name))
+	for i, r := range name {
+		valid := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || r == '_' || (r >= '0' && r <= '9')
+		if !valid {
+			b.WriteByte('_')
+			continue
+		}
+		if i == 0 && r >= '0' && r <= '9' {
+			b.WriteByte('_')
+		}
+		b.WriteRune(r)
+	}
+
+	if b.Len() == 0 {
+		return "module"
+	}
+
+	return b.String()
 }

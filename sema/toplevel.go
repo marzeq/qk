@@ -58,10 +58,12 @@ func (a *Analyser) collectFunctionSignature(n *parser.FunctionDefNode) {
 	}
 
 	sym := &symbols.Symbol{
-		Name:      n.Name,
-		Kind:      symbols.SymbolKindFunction,
-		Signature: sig,
-		Public:    n.Pub,
+		Name:       n.Name,
+		Kind:       symbols.SymbolKindFunction,
+		Signature:  sig,
+		Public:     n.Pub,
+		Extern:     n.Extern,
+		ExternFrom: n.ExternFrom,
 	}
 
 	if a.defineSymbol(sym, n) {

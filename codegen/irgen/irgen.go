@@ -2,6 +2,7 @@ package irgen
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/marzeq/qk/ir"
 	"github.com/marzeq/qk/parser"
@@ -33,7 +34,8 @@ func (e *Env) Lookup(sym *symbols.Symbol) (ir.SlotID, bool) {
 }
 
 type Generator struct {
-	Module *ir.Module
+	Module     *ir.Module
+	ModuleName string
 
 	currentFunction *ir.Function
 	currentBlock    *ir.Block
@@ -58,7 +60,7 @@ func (g *Generator) Generate(root *parser.RootNode) *ir.Module {
 		if !ok {
 			continue
 		}
-		if fn.Extern || fn.ExternFrom != "" {
+		if fn.ExternFrom != "" {
 			sig := g.buildFunctionSignature(fn)
 			name := fn.Name
 			g.Module.AddExtern(ir.ExternDecl{Name: name, Signature: sig, From: fn.ExternFrom})
@@ -71,7 +73,11 @@ func (g *Generator) Generate(root *parser.RootNode) *ir.Module {
 }
 
 func (g *Generator) GenerateFunction(fn *parser.FunctionDefNode) {
-	irFn := ir.NewFunction(fn.Name, fn.Extern)
+	name := fn.Name
+	if !fn.Extern && !g.isProgramEntryFunction(fn.Name) {
+		name = g.mangleFunctionName(g.ModuleName, fn.Name)
+	}
+	irFn := ir.NewFunction(name, fn.Extern)
 	irFn.Signature = g.buildFunctionSignature(fn)
 	g.Module.AddFunction(irFn)
 
@@ -274,9 +280,34 @@ func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
 		return g.generateFunctionCallExpr(n)
 	case *parser.FieldAccessNode:
 		return g.generateFieldAccessExpr(n)
+	case *parser.CastNode:
+		return g.generateCastExpr(n)
+	case *parser.StringLiteralNode:
+		panic("string literals must be cast to pointer before IR lowering")
 	default:
 		panic("todo")
 	}
+}
+
+func (g *Generator) generateCastExpr(node *parser.CastNode) ir.Operand {
+	targetType := node.GetType()
+
+	if str, ok := node.Operand.(*parser.StringLiteralNode); ok {
+		if _, ok := targetType.(types.PointerType); ok {
+			dst := g.currentFunction.NewValueOfType(targetType)
+			g.Emit(ir.StringConst{Dest: dst, Value: str.Value})
+			return ir.ValueOperand(dst, targetType)
+		}
+	}
+
+	from := g.GenerateExpr(node.Operand)
+	if from.Type.Equals(targetType) {
+		return from
+	}
+
+	dst := g.currentFunction.NewValueOfType(targetType)
+	g.Emit(ir.Cast{Dest: dst, From: from, To: targetType})
+	return ir.ValueOperand(dst, targetType)
 }
 
 func (g *Generator) generateStructLiteralExpr(node *parser.StructLiteralNode) ir.Operand {
@@ -360,6 +391,19 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 	name := node.Name.String()
 	if node.Symbol != nil {
 		name = node.Symbol.Name
+
+		// Keep true extern symbols unmangled; mangle regular module functions.
+		if !node.Symbol.Extern && node.Symbol.ExternFrom == "" {
+			callModule := g.ModuleName
+			if node.Name != nil && node.Name.ModName != "" {
+				callModule = node.Name.ModName
+			}
+			if callModule == "main" && node.Symbol.Name == "main" {
+				name = node.Symbol.Name
+			} else {
+				name = g.mangleFunctionName(callModule, node.Symbol.Name)
+			}
+		}
 	}
 
 	if node.GetType().Equals(types.PrimitiveVoid) {
@@ -374,6 +418,40 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 	dst := g.currentFunction.NewValueOfType(node.GetType())
 	g.Emit(ir.Call{Dest: dst, Name: name, Args: args, Signature: callSig})
 	return ir.ValueOperand(dst, node.GetType())
+}
+
+func (g *Generator) mangleFunctionName(moduleName, fnName string) string {
+	mod := sanitizeName(moduleName)
+	fn := sanitizeName(fnName)
+	if mod == "" {
+		return "__qk_" + fn
+	}
+	return "__qk_" + mod + "_" + fn
+}
+
+func (g *Generator) isProgramEntryFunction(fnName string) bool {
+	return g.ModuleName == "main" && fnName == "main"
+}
+
+func sanitizeName(name string) string {
+	if name == "" {
+		return ""
+	}
+
+	var b strings.Builder
+	b.Grow(len(name))
+	for i, r := range name {
+		valid := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || r == '_' || (r >= '0' && r <= '9')
+		if !valid {
+			b.WriteByte('_')
+			continue
+		}
+		if i == 0 && r >= '0' && r <= '9' {
+			b.WriteByte('_')
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 func (g *Generator) buildCallSignature(node *parser.FunctionCallNode) ir.FunctionSignature {

@@ -15,6 +15,8 @@ type Emitter struct {
 	ModuleName string
 	currentFn  *ir.Function
 	externMap  map[string]string // qk name -> actual external symbol name for functions with body extern("...")
+	stringMap  map[string]string // literal value -> global name
+	stringDefs []string
 }
 
 func (e *Emitter) EmitModule(out *strings.Builder, m *ir.Module) {
@@ -24,6 +26,15 @@ func (e *Emitter) EmitModule(out *strings.Builder, m *ir.Module) {
 	}
 
 	e.externMap = make(map[string]string)
+	e.stringMap = make(map[string]string)
+	e.stringDefs = e.collectStringDefs(m)
+	for _, def := range e.stringDefs {
+		out.WriteString(def)
+		out.WriteString("\n")
+	}
+	if len(e.stringDefs) > 0 {
+		out.WriteString("\n")
+	}
 	for i, ex := range m.Externs {
 		if i > 0 {
 			out.WriteString("\n")
@@ -325,9 +336,54 @@ func (e *Emitter) InstrEmit(out *strings.Builder, instr ir.Instr) {
 		e.ReturnEmit(out, instr)
 	case ir.Cast:
 		e.CastEmit(out, instr)
+	case ir.StringConst:
+		e.StringConstEmit(out, instr)
 	default:
 		panic("unreachable")
 	}
+}
+
+func (e *Emitter) collectStringDefs(m *ir.Module) []string {
+	defs := []string{}
+	for _, fn := range m.Functions {
+		for _, block := range fn.Blocks {
+			for _, instr := range block.Instr {
+				s, ok := instr.(ir.StringConst)
+				if !ok {
+					continue
+				}
+				if _, exists := e.stringMap[s.Value]; exists {
+					continue
+				}
+
+				global := fmt.Sprintf("@.str.%d", len(e.stringMap))
+				e.stringMap[s.Value] = global
+
+				encoded := encodeLLVMString(s.Value)
+				length := len(s.Value) + 1
+				defs = append(defs, fmt.Sprintf("%s = private unnamed_addr constant [%d x i8] c\"%s\", align 1", global, length, encoded))
+			}
+		}
+	}
+	return defs
+}
+
+func encodeLLVMString(value string) string {
+	var b strings.Builder
+	for i := 0; i < len(value); i++ {
+		fmt.Fprintf(&b, "\\%02X", value[i])
+	}
+	b.WriteString("\\00")
+	return b.String()
+}
+
+func (e *Emitter) StringConstEmit(out *strings.Builder, s ir.StringConst) {
+	global, ok := e.stringMap[s.Value]
+	if !ok {
+		panic("missing string constant definition")
+	}
+	length := len(s.Value) + 1
+	fmt.Fprintf(out, "%s = getelementptr inbounds [%d x i8], ptr %s, i64 0, i64 0", e.ValueIDEmit(s.Dest), length, global)
 }
 
 func (e *Emitter) AddEmit(out *strings.Builder, a ir.Add) {
@@ -510,6 +566,15 @@ func (e *Emitter) CastEmit(out *strings.Builder, c ir.Cast) {
 	to := c.To
 	fromPrim, fromOK := from.(types.PrimitiveType)
 	toPrim, toOK := to.(types.PrimitiveType)
+
+	if fromSlice, ok := from.(types.SliceType); ok {
+		if toPtr, ok := to.(types.PointerType); ok {
+			if toPtr.Base.Equals(types.PrimitiveVoid) || fromSlice.Base.Equals(toPtr.Base) {
+				fmt.Fprintf(out, "%s = extractvalue %s %s, 0", e.ValueIDEmit(c.Dest), e.TypeEmit(from), e.OperandEmit(c.From))
+				return
+			}
+		}
+	}
 
 	if from.Equals(to) {
 		fmt.Fprintf(out, "%s = bitcast %s %s to %s", e.ValueIDEmit(c.Dest), e.TypeEmit(from), e.OperandEmit(c.From), e.TypeEmit(to))

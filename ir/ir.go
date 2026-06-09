@@ -312,3 +312,10 @@ type Cast struct {
 }
 
 func (Cast) isInstr() {}
+
+type StringConst struct {
+	Dest  ValueID
+	Value string
+}
+
+func (StringConst) isInstr() {}
