@@ -117,7 +117,6 @@ func parseArgs() (*Args, error) {
 			if i >= len(args) {
 				return nil, fmt.Errorf("expected value after %s", tok)
 			}
-			// allow quoted multiple args; split into fields
 			parts := strings.Fields(args[i])
 			a.ClangArgs = append(a.ClangArgs, parts...)
 			i++
@@ -151,11 +150,7 @@ func parseArgs() (*Args, error) {
 
 func finaliseArgs(args *Args) error {
 	if args.baseDir == "" {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return err
-		}
-		args.baseDir = cwd
+		return fmt.Errorf("no base directory specified")
 	}
 
 	if _, err := os.Stat(args.baseDir); os.IsNotExist(err) {
