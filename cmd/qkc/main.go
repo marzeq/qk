@@ -119,10 +119,9 @@ func main() {
 		fmt.Printf("emitted LLVM files to %s\n", buildDir)
 	}
 
-	objFiles, err := compileLLVMModules(buildDir, order, args.optLevel, args.verbose, args.target, args.sysroot)
+	objFiles, err := compileLLVMModules(buildDir, order, args.optLevel, args.verbose, args.target, args.sysroot, args.ClangArgs)
 	check(err)
-
-	err = linkObjects(objFiles, args.output, args.static, args.verbose, args.target, args.sysroot)
+	err = linkObjects(objFiles, args.output, args.static, args.verbose, args.target, args.sysroot, args.LinkArgs)
 	check(err)
 
 	if args.keepBuildDir {
@@ -284,7 +283,7 @@ func emitLLVMFiles(mods map[string]string, order []string) (string, error) {
 	return buildDir, nil
 }
 
-func compileLLVMModules(buildDir string, order []string, optLevel int, verbose bool, target string, sysroot string) ([]string, error) {
+func compileLLVMModules(buildDir string, order []string, optLevel int, verbose bool, target string, sysroot string, extraClangArgs []string) ([]string, error) {
 	objFiles := make([]string, 0, len(order))
 
 	for _, name := range order {
@@ -304,6 +303,10 @@ func compileLLVMModules(buildDir string, order []string, optLevel int, verbose b
 		if sysroot != "" {
 			clangArgs = append(clangArgs, "--sysroot="+sysroot)
 		}
+		if len(extraClangArgs) > 0 {
+			clangArgs = append(clangArgs, extraClangArgs...)
+		}
+
 		if verbose {
 			fmt.Printf("> clang %s\n", strings.Join(clangArgs, " "))
 		}
@@ -323,8 +326,8 @@ func compileLLVMModules(buildDir string, order []string, optLevel int, verbose b
 	return objFiles, nil
 }
 
-func linkObjects(objFiles []string, output string, static, verbose bool, target string, sysroot string) error {
-	args, err := buildLinkArgs(objFiles, output, static, target, sysroot)
+func linkObjects(objFiles []string, output string, static, verbose bool, target string, sysroot string, extraLinkArgs []string) error {
+	args, err := buildLinkArgs(objFiles, output, static, target, sysroot, extraLinkArgs)
 	if err != nil {
 		return err
 	}
@@ -341,7 +344,7 @@ func linkObjects(objFiles []string, output string, static, verbose bool, target 
 	return nil
 }
 
-func buildLinkArgs(objFiles []string, output string, static bool, target string, sysroot string) ([]string, error) {
+func buildLinkArgs(objFiles []string, output string, static bool, target string, sysroot string, extraLinkArgs []string) ([]string, error) {
 	args := append([]string{}, objFiles...)
 
 	ext := strings.ToLower(filepath.Ext(output))
@@ -365,6 +368,10 @@ func buildLinkArgs(objFiles []string, output string, static bool, target string,
 
 	if target != "" {
 		args = append([]string{"-target", target}, args...)
+	}
+
+	if len(extraLinkArgs) > 0 {
+		args = append(args, extraLinkArgs...)
 	}
 
 	args = append(args, "-o", output)

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 type Args struct {
@@ -20,6 +21,8 @@ type Args struct {
 	static       bool
 	target       string
 	sysroot      string
+	ClangArgs    []string
+	LinkArgs     []string
 }
 
 func parseArgs() (*Args, error) {
@@ -107,6 +110,25 @@ func parseArgs() (*Args, error) {
 				return nil, fmt.Errorf("expected value after --sysroot")
 			}
 			a.sysroot = args[i]
+			i++
+
+		case tok == "--clang-arg" || tok == "--clang-args":
+			i++
+			if i >= len(args) {
+				return nil, fmt.Errorf("expected value after %s", tok)
+			}
+			// allow quoted multiple args; split into fields
+			parts := strings.Fields(args[i])
+			a.ClangArgs = append(a.ClangArgs, parts...)
+			i++
+
+		case tok == "--link-arg" || tok == "--link-args":
+			i++
+			if i >= len(args) {
+				return nil, fmt.Errorf("expected value after %s", tok)
+			}
+			parts := strings.Fields(args[i])
+			a.LinkArgs = append(a.LinkArgs, parts...)
 			i++
 
 		default:
