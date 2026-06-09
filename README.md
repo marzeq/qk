@@ -22,9 +22,11 @@ dumb kid with no prior background in compiler or language design, so I know my l
 Because my aim is to create a compiler, not design a language, it does not and probably will never have a formal specification or
 anything of that sort, and I will make up the language features as I go along. 
 
-As of writing this, the compiler is still not nearly finished and I have already found the codebase to be very cumbersome to work with
+~~As of writing this, the compiler is still not nearly finished and I have already found the codebase to be very cumbersome to work with
 and I see many design flaws I have made along the way, so as soon as I reach a certain level of maturity with this language, I will
-either abandon this project or rewrite it from scratch with better design choices, inspired by the mistakes I have in this first attempt.
+either abandon this project or rewrite it from scratch with better design choices, inspired by the mistakes I have in this first attempt.~~
+
+Good news, I have merged the typechecker-codegen-rewrite branch and we now have a partially working LLVM backend. This codebase is finally workable again and I am happy with the design choices I have made, so I will continue to work on this project and add more features to the language and the compiler.
 
 ## Building
 
@@ -77,8 +79,6 @@ Flags of interest
 - `--sysroot <path>`: pass a sysroot to clang/linker for cross-linking.
 - `--clang-arg <args>` / `--clang-args <args>`: forward extra args to clang during compilation (LL file -> object).
 - `--link-arg <args>` / `--link-args <args>`: forward extra args to clang during linking.
-- `--dump-ir`: print the textual IR emitted for each module to stdout.
-- `--dump-llvm`: print the final LLVM text emitted (same as dump-ir but for the combined output).
 - `--keep-build-dir`: do not remove the temporary build directory containing `.ll` and `.o` files.
 - `--static`: pass `-static` to the final linker (when appropriate).
 
