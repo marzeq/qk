@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/marzeq/qk/codegen/llvm"
+	"github.com/marzeq/qk/ir"
 	"github.com/marzeq/qk/loader"
 	"github.com/marzeq/qk/parser"
 	"github.com/marzeq/qk/sema"
@@ -59,10 +61,17 @@ func main() {
 		fmt.Println("semantic analysis completed successfully")
 	}
 
+	irModules, errs := loader.GenerateIRModules(modules, order, args.verbose)
+	checkErrs(errs)
+
+	llvmOutputs := buildLLVMModules(irModules, order)
+
 	if args.dumpIR {
-		irModules, errs := loader.GenerateIRModules(modules, order, args.verbose)
-		checkErrs(errs)
 		dumpIRModules(irModules)
+	}
+
+	if args.dumpLLVM {
+		dumpLLVMModules(llvmOutputs, order)
 	}
 
 	if _, ok := modules["main"]; !ok {
@@ -195,5 +204,40 @@ func checkErrs(errs []error) {
 			fmt.Println(err)
 		}
 		os.Exit(1)
+	}
+}
+
+func buildLLVMModules(mods map[string]*ir.Module, order []string) map[string]string {
+	outputs := make(map[string]string, len(mods))
+
+	for _, name := range order {
+		mod := mods[name]
+		if mod == nil {
+			continue
+		}
+
+		emitter := &llvm.Emitter{ModuleName: name}
+		var output strings.Builder
+		emitter.EmitModule(&output, mod)
+		outputs[name] = output.String()
+	}
+
+	return outputs
+}
+
+func dumpLLVMModules(mods map[string]string, order []string) {
+	for i, name := range order {
+		output, ok := mods[name]
+		if !ok {
+			continue
+		}
+
+		if i > 0 {
+			fmt.Println()
+		}
+		fmt.Print(output)
+		if !strings.HasSuffix(output, "\n") {
+			fmt.Println()
+		}
 	}
 }

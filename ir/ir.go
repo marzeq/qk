@@ -172,25 +172,6 @@ type Div struct {
 
 func (Div) isInstr() {}
 
-type CompareKind uint8
-
-const (
-	CompareOpEq CompareKind = iota
-	CompareOpNe
-	CompareOpLt
-	CompareOpLe
-	CompareOpGt
-	CompareOpGe
-)
-
-type Compare struct {
-	Dest        ValueID
-	Kind        CompareKind
-	Left, Right Operand
-}
-
-func (Compare) isInstr() {}
-
 type CmpEq struct {
 	Dest        ValueID
 	Left, Right Operand
@@ -290,13 +271,6 @@ type Call struct {
 }
 
 func (Call) isInstr() {}
-
-type Param struct {
-	Dest  ValueID
-	Index int
-}
-
-func (Param) isInstr() {}
 
 type Jump struct {
 	Target BlockID

@@ -120,7 +120,6 @@ func (g *Generator) emitFunctionParams(fn *parser.FunctionDefNode) {
 		g.Emit(ir.Alloca{Slot: slot})
 
 		incoming := g.currentFunction.NewValueOfType(arg.Symbol.Type)
-		g.Emit(ir.Param{Dest: incoming, Index: i})
 		g.Emit(ir.Store{Slot: slot, Value: ir.ValueOperand(incoming, arg.Symbol.Type)})
 	}
 }
@@ -435,9 +434,8 @@ func (g *Generator) generateIf(node *parser.IfNode) {
 
 	cond := g.GenerateExpr(node.IfBranch.Condition)
 	condVal := g.currentFunction.NewValueOfType(types.PrimitiveBool)
-	g.Emit(ir.Compare{
+	g.Emit(ir.CmpNe{
 		Dest:  condVal,
-		Kind:  ir.CompareOpNe,
 		Left:  cond,
 		Right: ir.BoolConstOperand(false),
 	})
@@ -475,9 +473,8 @@ func (g *Generator) generateElseChain(node *parser.IfNode, startElse *ir.Block, 
 
 		cond := g.GenerateExpr(elif.Condition)
 		condVal := g.currentFunction.NewValueOfType(types.PrimitiveBool)
-		g.Emit(ir.Compare{
+		g.Emit(ir.CmpNe{
 			Dest:  condVal,
-			Kind:  ir.CompareOpNe,
 			Left:  cond,
 			Right: ir.BoolConstOperand(false),
 		})

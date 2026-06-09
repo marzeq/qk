@@ -15,6 +15,7 @@ type Args struct {
 	verbose     bool
 	debug       bool
 	dumpIR      bool
+	dumpLLVM    bool
 }
 
 type ArgParser struct {
@@ -122,6 +123,9 @@ func (p *ArgParser) Parse() (*Args, error) {
 			p.Skip()
 		} else if p.IsFlag("dump-ir") {
 			args.dumpIR = true
+			p.Skip()
+		} else if p.IsFlag("dump-llvm") {
+			args.dumpLLVM = true
 			p.Skip()
 		} else if !strings.HasPrefix(p.Args[p.Pos], "-") {
 			if args.baseDir != "" {

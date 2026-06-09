@@ -6,3 +6,5 @@ test
 /*.qk
 a.out
 /qkc
+*.ll
+*.ir

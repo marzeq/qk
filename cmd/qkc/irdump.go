@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/marzeq/qk/ir"
 	"github.com/marzeq/qk/types"
@@ -58,8 +59,6 @@ func formatInstr(inst ir.Instr) string {
 		return fmt.Sprintf("v%d = mul %s, %s", i.Dest, formatOperand(i.Left), formatOperand(i.Right))
 	case ir.Div:
 		return fmt.Sprintf("v%d = div %s, %s", i.Dest, formatOperand(i.Left), formatOperand(i.Right))
-	case ir.Compare:
-		return fmt.Sprintf("v%d = cmp %s %s, %s", i.Dest, formatCompareKind(i.Kind), formatOperand(i.Left), formatOperand(i.Right))
 	case ir.CmpEq:
 		return fmt.Sprintf("v%d = cmpeq %s, %s", i.Dest, formatOperand(i.Left), formatOperand(i.Right))
 	case ir.CmpNe:
@@ -87,20 +86,18 @@ func formatInstr(inst ir.Instr) string {
 	case ir.FieldAddress:
 		return fmt.Sprintf("v%d = fieldaddr %s, .%s", i.Dest, formatOperand(i.Base), i.Field)
 	case ir.Call:
-		args := ""
+		args := strings.Builder{}
 		for idx, arg := range i.Args {
 			if idx > 0 {
-				args += ", "
+				args.WriteString(", ")
 			}
-			args += formatOperand(arg)
+			args.WriteString(formatOperand(arg))
 		}
 		sig := formatSignatureParams(i.Signature.ParamTypes) + " -> " + formatType(i.Signature.ReturnType)
 		if i.Dest == 0 {
-			return fmt.Sprintf("call %s(%s) ; sig %s", i.Name, args, sig)
+			return fmt.Sprintf("call %s(%s) ; sig %s", i.Name, args.String(), sig)
 		}
-		return fmt.Sprintf("v%d = call %s(%s) ; sig %s", i.Dest, i.Name, args, sig)
-	case ir.Param:
-		return fmt.Sprintf("v%d = param %d", i.Dest, i.Index)
+		return fmt.Sprintf("v%d = call %s(%s) ; sig %s", i.Dest, i.Name, args.String(), sig)
 	case ir.Jump:
 		return fmt.Sprintf("jmp b%d", i.Target)
 	case ir.Branch:
@@ -157,32 +154,14 @@ func formatSignatureParams(params []types.Type) string {
 	if len(params) == 0 {
 		return "()"
 	}
-	out := "("
+	out := strings.Builder{}
+	out.WriteString("(")
 	for i, p := range params {
 		if i > 0 {
-			out += ", "
+			out.WriteString(", ")
 		}
-		out += formatType(p)
+		out.WriteString(formatType(p))
 	}
-	out += ")"
-	return out
-}
-
-func formatCompareKind(kind ir.CompareKind) string {
-	switch kind {
-	case ir.CompareOpEq:
-		return "eq"
-	case ir.CompareOpNe:
-		return "ne"
-	case ir.CompareOpLt:
-		return "lt"
-	case ir.CompareOpLe:
-		return "le"
-	case ir.CompareOpGt:
-		return "gt"
-	case ir.CompareOpGe:
-		return "ge"
-	default:
-		return "unknown"
-	}
+	out.WriteString(")")
+	return out.String()
 }
