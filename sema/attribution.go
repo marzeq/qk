@@ -48,6 +48,10 @@ func (a *Attributor) attributeNode(node parser.Node) {
 			a.attributeNode(n.Body)
 		}
 
+		if n.ExternFrom != "" && n.RetTypeNode == nil {
+			a.errorf(n, "extern function must have a return type annotation")
+		}
+
 		if n.Symbol.Signature.ReturnType == nil {
 			switch b := n.Body.(type) {
 			case *parser.BlockNode:

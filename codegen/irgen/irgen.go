@@ -177,6 +177,8 @@ func (g *Generator) GenerateNode(node parser.Node) {
 		g.generateControlKeyword(n)
 	case *parser.IfNode:
 		g.generateIf(n)
+	case *parser.FunctionCallNode:
+		g.generateFunctionCallExpr(n)
 	default:
 		panic("todo")
 	}

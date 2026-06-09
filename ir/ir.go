@@ -140,6 +140,21 @@ func (m *Module) AddFunction(fn *Function) {
 	m.Functions = append(m.Functions, fn)
 }
 
+type ExternDecl struct {
+	Name      string
+	Signature FunctionSignature
+	From      string
+}
+
+func (m *Module) AddExtern(e ExternDecl) {
+	// lazily create slice
+	m.Externs = append(m.Externs, e)
+}
+
+// Externs are module-level external function declarations
+type Externs []ExternDecl
+
+
 type Instr interface {
 	isInstr()
 }
