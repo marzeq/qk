@@ -200,7 +200,7 @@ func buildSearchPaths(baseDir string) []string {
 	home, err := os.UserHomeDir()
 	if err == nil {
 		paths = append(paths,
-			filepath.Join(home, ".local", "share", "qk", "std"),
+			filepath.Join(home, ".local", "share", "qk"),
 		)
 	}
 
