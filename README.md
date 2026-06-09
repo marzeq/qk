@@ -59,6 +59,39 @@ Use the `-h`/`--help` flag for a full list of options:
 qkc -h
 ```
 
+### Examples
+
+Compiling current directory:
+
+```bash
+qkc .
+```
+
+Specifying an output file:
+
+```bash
+qkc -o my_program .
+```
+
+Building a shared library:
+
+```bash
+qkc -o libfoo.so .
+```
+
+Building an object file to build a static library:
+
+```bash
+qkc -o foo.o .
+ar rcs libfoo.a foo.o
+```
+
+Cross compiling for arm64 Linux (assuming you have a compatible sysroot) with optimizations:
+
+```bash
+qkc -target aarch64-unknown-linux-gnu -sysroot $(aarch64-linux-gnu-gcc -print-sysroot) -O3 .
+```
+
 Notes
 
 - Cross-linking requires the target runtime objects (crt*.o) and libraries (libgcc, libc) to be available in the
