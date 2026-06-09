@@ -32,6 +32,7 @@ type Args struct {
 	baseDir      string
 	excludeDirs  []string
 	output       string
+	mainModule   string
 	optLevel     OptimisationLevel
 	verbose      bool
 	debug        bool
@@ -42,12 +43,12 @@ type Args struct {
 	target       string
 	sysroot      string
 	outputType   OutputType
-	ClangArgs    []string
-	LinkArgs     []string
+	clangArgs    []string
+	linkArgs     []string
 }
 
 func parseArgs() (*Args, error) {
-	a := &Args{optLevel: OptLevel2, outputType: OutputUnspecified}
+	a := &Args{optLevel: OptLevel2, outputType: OutputUnspecified, mainModule: "main"}
 	args := os.Args[1:]
 	i := 0
 
@@ -86,6 +87,14 @@ func parseArgs() (*Args, error) {
 			default:
 				return nil, fmt.Errorf("unknown output type: %s", args[i])
 			}
+			i++
+
+		case tok == "-m":
+			i++
+			if i >= len(args) {
+				return nil, fmt.Errorf("expected value after %s", tok)
+			}
+			a.mainModule = args[i]
 			i++
 
 		case len(tok) >= 2 && tok[0:2] == "-O":
@@ -150,7 +159,7 @@ func parseArgs() (*Args, error) {
 				return nil, fmt.Errorf("expected value after %s", tok)
 			}
 			parts := strings.Fields(args[i])
-			a.ClangArgs = append(a.ClangArgs, parts...)
+			a.clangArgs = append(a.clangArgs, parts...)
 			i++
 
 		case tok == "-L":
@@ -159,7 +168,7 @@ func parseArgs() (*Args, error) {
 				return nil, fmt.Errorf("expected value after %s", tok)
 			}
 			parts := strings.Fields(args[i])
-			a.LinkArgs = append(a.LinkArgs, parts...)
+			a.linkArgs = append(a.linkArgs, parts...)
 			i++
 
 		case tok == "-h" || tok == "--help":
@@ -167,6 +176,7 @@ func parseArgs() (*Args, error) {
 			fmt.Println("Options:")
 			fmt.Println("  -E <dir>           Exclude directory from source file search (can specify multiple times)")
 			fmt.Println("  -o <file>          Output file name")
+			fmt.Println("  -m <module>        Main module name (default: main)")
 			fmt.Println("  -t <type>          Output type (exe, obj, so)")
 			fmt.Println("  -O<level>          Optimisation level (0, 1, 2, 3, s, fast)")
 			fmt.Println("  -static            Link with static libraries")
@@ -234,14 +244,14 @@ func finaliseArgs(args *Args) error {
 	if args.output == "" {
 		switch args.outputType {
 		case OutputUnspecified:
-			args.output = "main"
+			args.output = args.mainModule
 			args.outputType = OutputExecutable
 		case OutputExecutable:
-			args.output = "main"
+			args.output = args.mainModule
 		case OutputObject:
-			args.output = "main.o"
+			args.output = args.mainModule + ".o"
 		case OutputSharedLib:
-			args.output = "libmain.so"
+			args.output = "lib" + args.mainModule + ".so"
 		}
 	} else {
 		switch args.outputType {

@@ -96,7 +96,7 @@ func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, o
 	return nil
 }
 
-func GenerateIRModules(mods map[string]*ModuleInfo, order []string, verbose bool) (map[string]*ir.Module, []error) {
+func GenerateIRModules(mods map[string]*ModuleInfo, mainModule string, order []string, verbose bool) (map[string]*ir.Module, []error) {
 	irMods := map[string]*ir.Module{}
 
 	for _, name := range order {
@@ -104,7 +104,7 @@ func GenerateIRModules(mods map[string]*ModuleInfo, order []string, verbose bool
 		out := &ir.Module{}
 
 		for _, root := range info.Roots {
-			gen := &irgen.Generator{ModuleName: name}
+			gen := &irgen.Generator{ModuleName: name, MainModule: mainModule}
 			modIR := gen.Generate(root)
 			out.Functions = append(out.Functions, modIR.Functions...)
 			if len(modIR.Externs) > 0 {

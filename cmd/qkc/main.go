@@ -27,8 +27,7 @@ func main() {
 	check(err)
 
 	if len(files) == 0 {
-		fmt.Println("no source files found")
-		os.Exit(1)
+		fatal("no source files found")
 	}
 
 	var partials []*loader.PartialModuleInfo
@@ -62,10 +61,10 @@ func main() {
 		fmt.Println("semantic analysis completed successfully")
 	}
 
-	irModules, errs := loader.GenerateIRModules(modules, order, args.verbose)
+	irModules, errs := loader.GenerateIRModules(modules, args.mainModule, order, args.verbose)
 	checkErrs(errs)
 
-	llvmOutputs := buildLLVMModules(irModules, order, args.outputType == OutputExecutable)
+	llvmOutputs := buildLLVMModules(irModules, args.mainModule, order, args.outputType == OutputExecutable)
 
 	if args.dumpIR {
 		dumpIRModules(irModules)
@@ -75,28 +74,25 @@ func main() {
 		dumpLLVMModules(llvmOutputs, order)
 	}
 
-	if _, ok := modules["main"]; !ok {
-		fmt.Println("main module not found")
-		os.Exit(1)
+	if _, ok := modules[args.mainModule]; !ok {
+		fatal("main module (%s) not found", args.mainModule)
 	}
 
 	foundMain := false
-	mainModule := modules["main"]
+	mainModule := modules[args.mainModule]
 	for _, root := range mainModule.Roots {
 		for _, stmt := range root.Body {
 			switch fn := stmt.(type) {
 			case *parser.FunctionDefNode:
 				if fn.Name == "main" {
 					if len(fn.Args) != 0 {
-						fmt.Println(shared.NewError(fn.Loc, "main function must not have arguments"))
-						os.Exit(1)
+						fatal("%v", shared.NewError(fn.Loc, "main function must not have arguments"))
 					}
 					if fn.Body == nil {
-						fmt.Println(shared.NewError(fn.Loc, "main function must have a body"))
-						os.Exit(1)
+						fatal("%v", shared.NewError(fn.Loc, "main function must have a body"))
 					}
 					if fn.Symbol.Signature.ReturnType != types.PrimitiveVoid {
-						fmt.Println(shared.NewError(fn.Loc, "main function must return void"))
+						fatal("%v", shared.NewError(fn.Loc, "main function must return void"))
 					}
 					foundMain = true
 					break
@@ -105,8 +101,7 @@ func main() {
 		}
 	}
 	if !foundMain && args.outputType == OutputExecutable {
-		fmt.Println("main function not found in main module")
-		os.Exit(1)
+		fatal("main function not found in main module (%s)", args.mainModule)
 	}
 
 	buildDir, err := emitLLVMFiles(llvmOutputs, order)
@@ -119,9 +114,30 @@ func main() {
 		fmt.Printf("emitted LLVM files to %s\n", buildDir)
 	}
 
-	objFiles, err := compileLLVMModules(buildDir, order, args.optLevel, args.verbose, args.target, args.sysroot, args.ClangArgs)
+	objFiles, err := compileLLVMModules(buildDir, order, args.optLevel, args.verbose, args.target, args.sysroot, args.clangArgs)
 	check(err)
-	err = linkObjects(objFiles, args.output, args.outputType, args.static, args.verbose, args.target, args.sysroot, args.LinkArgs)
+
+	stat, err := os.Stat(args.output)
+
+	switch {
+	case os.IsNotExist(err):
+	// output file doesn't exist -> good
+
+	case err != nil:
+		fatal("failed to stat %q: %v", args.output, err)
+
+	case stat.IsDir():
+		fatal("output file %s is an existing directory", args.output)
+
+	default:
+		if err := os.Remove(args.output); err != nil {
+			fatal("failed to remove existing output file %q: %v", args.output, err)
+		}
+	}
+
+	os.Remove(args.output)
+
+	err = linkObjects(objFiles, args.output, args.outputType, args.static, args.verbose, args.target, args.sysroot, args.linkArgs)
 	check(err)
 
 	if args.keepBuildDir {
@@ -227,7 +243,12 @@ func checkErrs(errs []error) {
 	}
 }
 
-func buildLLVMModules(mods map[string]*ir.Module, order []string, isExecutable bool) map[string]string {
+func fatal(format string, args ...any) {
+	fmt.Printf(format+"\n", args...)
+	os.Exit(1)
+}
+
+func buildLLVMModules(mods map[string]*ir.Module, mainModule string, order []string, isExecutable bool) map[string]string {
 	outputs := make(map[string]string, len(mods))
 
 	for _, name := range order {
@@ -236,7 +257,7 @@ func buildLLVMModules(mods map[string]*ir.Module, order []string, isExecutable b
 			continue
 		}
 
-		emitter := &llvm.Emitter{ModuleName: name, Executable: isExecutable}
+		emitter := &llvm.Emitter{ModuleName: name, Executable: isExecutable, MainModule: mainModule}
 		var output strings.Builder
 		emitter.EmitModule(&output, mod)
 		outputs[name] = output.String()

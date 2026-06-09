@@ -36,6 +36,7 @@ func (e *Env) Lookup(sym *symbols.Symbol) (ir.SlotID, bool) {
 type Generator struct {
 	Module     *ir.Module
 	ModuleName string
+	MainModule string
 
 	currentFunction *ir.Function
 	currentBlock    *ir.Block
@@ -495,7 +496,7 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 			if node.Name != nil && node.Name.ModName != "" {
 				callModule = node.Name.ModName
 			}
-			if callModule == "main" && node.Symbol.Name == "main" {
+			if g.isProgramEntryFunction(node.Symbol.Name) {
 				name = node.Symbol.Name
 			} else {
 				name = g.mangleFunctionName(callModule, node.Symbol.Name)
@@ -527,7 +528,7 @@ func (g *Generator) mangleFunctionName(moduleName, fnName string) string {
 }
 
 func (g *Generator) isProgramEntryFunction(fnName string) bool {
-	return g.ModuleName == "main" && fnName == "main"
+	return g.ModuleName == g.MainModule && fnName == "main"
 }
 
 func sanitizeName(name string) string {

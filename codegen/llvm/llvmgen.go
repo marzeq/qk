@@ -12,6 +12,7 @@ import (
 type Emitter struct {
 	Variables  map[ir.SlotID]*symbols.Symbol
 	SlotTypes  map[ir.SlotID]types.Type
+	MainModule string
 	ModuleName string
 	Executable bool
 	currentFn  *ir.Function
@@ -588,7 +589,7 @@ func (e *Emitter) isLLVMMainFunction(fn *ir.Function) bool {
 	if fn == nil {
 		return false
 	}
-	return e.ModuleName == "main" && fn.Name == "main"
+	return e.ModuleName == e.MainModule && fn.Name == "main"
 }
 
 func (e *Emitter) CastEmit(out *strings.Builder, c ir.Cast) {
