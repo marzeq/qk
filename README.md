@@ -2,54 +2,44 @@
 
 This is my work in progress compiler for a custom language I'm designing.
 
-## Rationale
+## My rationale
 
-As this is my first compiler project, I wanted to keep things simple and not implement complex language features.
-
-As a result of that, the language is simple and fairly similar to C in levels of complexitly.
-However, because it has been designed from the ground up, it decided to include some modern features that
-are not present in C but are easy enough to implement for a beginner such as myself.
-
-Because of restricting myself to simple language features, where I took the most
-liberty with the design is probably the syntax, which while it is somewhat inspired by
-languages like Rust and Go, in many ways it is unique to this language.
-
-My end goal is to reach the same level of usability as C, where any project can feasibly be implemented in this language instead of C.
-
-However, I am not dumb, this is not a "C-killer" like other previously have claimed with their own (ekhm-ekhm V), because I am just a
-dumb kid with no prior background in compiler or language design, so I know my limitations.
-
-Because my aim is to create a compiler, not design a language, it does not and probably will never have a formal specification or
-anything of that sort, and I will make up the language features as I go along. 
-
-~~As of writing this, the compiler is still not nearly finished and I have already found the codebase to be very cumbersome to work with
-and I see many design flaws I have made along the way, so as soon as I reach a certain level of maturity with this language, I will
-either abandon this project or rewrite it from scratch with better design choices, inspired by the mistakes I have in this first attempt.~~
-
-Good news, I have merged the typechecker-codegen-rewrite branch and we now have a partially working LLVM backend. This codebase is finally workable again and I am happy with the design choices I have made, so I will continue to work on this project and add more features to the language and the compiler.
+See [below](#rationale).
 
 ## Building
 
 ```bash
 git clone git@github.com:marzeq/qk.git
 cd qk
-git config core.hooksPath .githooks # if you plan to contribue (so in reality, this is a note to self)
+git config core.hooksPath .githooks # if you plan to contribute
 
 go build ./cmd/qkc # or run 'go run ./cmd/qkc' directly
 ```
 ## Supported platforms
 
-- This branch includes a working LLVM textual backend and a native build pipeline that emits per-module LLVM `.ll`,
-  compiles them with `clang` and links a final executable. The happy-path (compile -> clang -> link) is implemented and
-  used for development and testing.
+### For the compiler itself
 
-  The backend is portable: targets supported depend on the available clang toolchain and sysroots on your system (for example
-  `x86_64` and `aarch64`). Cross-compilation requires a matching toolchain or a sysroot; see the CLI notes below.
+Definitely not Windows, as I make many *NIX assumptions in the code.
+
+All other *nixes supported by Go should be supported, but I have only tested on Linux.
+
+Windows support is not on the top of my priority list, I'd rather push this to a fairly finished state first.
+
+### For compiling code with the compiler
+
+Currently I have hard-wired an assumption that the target platform is 64-bit.
+
+Aside from that restriction, the compiler should be able to target any platform supported by clang.
 
 ## Dependencies
 
-- Modern Go version
-- clang toolchain in your PATH
+### Building the compiler
+
+- Reasonably modern Go version
+
+### Using the compiler
+
+- clang installed system-wide
 
 ## Compiler CLI
 
@@ -61,32 +51,51 @@ qkc -h
 
 ### Examples
 
-Compiling current directory:
+#### Compiling current directory
 
 ```bash
 qkc .
+./main
 ```
 
-Specifying an output file:
+The compiler will discover all `.qk` files belonging to the root module, build the dependency graph from there, and produce an executable named after the root module in the current directory.
+
+By default, the root module is `main`.
+
+Files belong to the `main` module if they either specify `module main` at the top of the file, or if they don't specify any module at all (in which case they are considered to belong to the `main` module by default).
+
+**Important:**
+
+"`main` module" and "root module" are not the same thing. The former is a module literally named `main`, while the latter is the module from which the compiler builds the dependency graph.
+
+If you use `-m foo` and have files with no `module` declaration, those files will still belong to the `main` module, and so the compiler will look for a `foo` module as the root module instead, which will be empty.
+
+#### Specifying an output file
 
 ```bash
 qkc -o my_program .
 ```
 
-Building a shared library:
+#### Building a shared library from `foo` module
 
 ```bash
-qkc -o libfoo.so .
+qkc -o libfoo.so -m foo foo/
 ```
 
-Building an object file to build a static library:
+Or by specifying the output type explicitly and using the default output name (in this case `libbaz.so`):
+
+```bash
+qkc -t so -m baz baz/
+```
+
+#### Building an object file into a static library
 
 ```bash
 qkc -o foo.o .
 ar rcs libfoo.a foo.o
 ```
 
-Cross compiling for arm64 Linux (assuming you have a compatible sysroot) with optimizations:
+#### Cross compiling for arm64 Linux with optimizations
 
 ```bash
 qkc -target aarch64-unknown-linux-gnu -sysroot $(aarch64-linux-gnu-gcc -print-sysroot) -O3 .
@@ -94,14 +103,37 @@ qkc -target aarch64-unknown-linux-gnu -sysroot $(aarch64-linux-gnu-gcc -print-sy
 
 Notes
 
+- The same module discovery rules apply when producing executables and libraries/object files. 
 - Cross-linking requires the target runtime objects (crt*.o) and libraries (libgcc, libc) to be available in the
   specified sysroot or installed toolchain; otherwise linking will fail.
 
 
-## Language grammar
+## Docs
 
-- See `docs/grammar.md` for an EBNF grammar and parser-accurate syntax notes.
+- `docs/grammar.md` for an EBNF grammar and parser-accurate syntax notes.
+- `docs/types.go` for a reference of the type system and type syntax.
+
+For now, even if not detailed and comprehensive, these are the only docs available.
+The reason for that is that I don't want to spend too much time writing docs for a language that is still in the early stages of design and implementation, and that I am not sure will even be usable in the end.
 
 ## Contributing
 
-No, this is not a "serious" project, plese don't use or contribute to this.
+I don't really see a point in accepting contributions at this stage, but you may try I guess, maybe I'll like your changes.
+
+## Rationale
+
+As this is my first compiler project, I wanted to keep things simple and not implement complex language features.
+
+As a result, the language is fairly simple and broadly similar to C in terms of complexity and semantics.
+However, because it has been designed from the ground up, I decided to include some modern features that
+are not present in C but are easy enough to implement for a beginner such as myself.
+
+Because I restricted myself to relatively simple language features, most of my experimentation has been in the syntax,
+which while it is somewhat inspired by languages like Rust and Go, in many ways it is unique to this language.
+
+My end goal is to reach the same level of usability as C, where any project can feasibly be implemented in this language instead of C.
+
+That said, I do not expect this to be a "C killer" as many language projects have claimed to be, because I have
+no prior background in compiler or language design. Basically, I know my place.
+
+Because my aim is to create a compiler, not design a language, it does not currently have any formal specification, and the design is very much a work in progress, so I will be making changes to the language design as I go along.

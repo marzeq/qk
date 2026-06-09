@@ -176,7 +176,7 @@ func parseArgs() (*Args, error) {
 			fmt.Println("Options:")
 			fmt.Println("  -E <dir>           Exclude directory from source file search (can specify multiple times)")
 			fmt.Println("  -o <file>          Output file name")
-			fmt.Println("  -m <module>        Main module name (default: main)")
+			fmt.Println("  -m <module>        Root module name (default: main)")
 			fmt.Println("  -t <type>          Output type (exe, obj, so)")
 			fmt.Println("  -O<level>          Optimisation level (0, 1, 2, 3, s, fast)")
 			fmt.Println("  -static            Link with static libraries")
