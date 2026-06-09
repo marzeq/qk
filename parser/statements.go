@@ -71,7 +71,7 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 		return nil, shared.NewError(p.PrevLoc(), "expected '('")
 	}
 
-	var args []FunctionNodeType
+	var args []*FunctionNodeArg
 	variadic := false
 	for !p.Match(tokeniser.TokenCloseParen) {
 		if p.Match(tokeniser.Token3Dots) {
@@ -105,7 +105,7 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 			return nil, err
 		}
 
-		args = append(args, FunctionNodeType{
+		args = append(args, &FunctionNodeArg{
 			Name:    arg.Name,
 			Type:    argType,
 			Mutable: mutable,

@@ -203,7 +203,9 @@ func (s StructType) String() string {
 	var result strings.Builder
 	result.WriteString("struct { ")
 	for i, field := range s.Fields {
-		result.WriteString(field.L + ": " + field.R.String())
+		result.WriteString(field.L)
+		result.WriteString(": ")
+		result.WriteString(field.R.String())
 		if i < len(s.Fields)-1 {
 			result.WriteString(", ")
 		}
@@ -365,7 +367,8 @@ func (f FunctionType) String() string {
 			result.WriteString(", ")
 		}
 	}
-	result.WriteString("): " + f.ReturnType.String())
+	result.WriteString("): ")
+	result.WriteString(f.ReturnType.String())
 	return result.String()
 }
 

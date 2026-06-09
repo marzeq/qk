@@ -56,7 +56,8 @@ func (a *Analyser) visitFunction(n *parser.FunctionDefNode) {
 			Type:    n.Symbol.Signature.Parameters[i],
 			Mutable: arg.Mutable,
 		}
-		a.defineSymbol(paramSym, n)
+		a.defineSymbol(paramSym, arg)
+		arg.Symbol = paramSym
 	}
 
 	if n.Body != nil {

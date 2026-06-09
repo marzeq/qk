@@ -357,14 +357,18 @@ type ModuleNode struct {
 
 func (n ModuleNode) GetLoc() shared.Location { return n.Loc }
 
-type FunctionNodeType struct {
+type FunctionNodeArg struct {
 	Name    string
 	Type    TypeNode
 	Mutable bool
+	Symbol  *symbols.Symbol
 }
+
+func (a FunctionNodeArg) GetLoc() shared.Location { return a.Type.GetLoc() }
+
 type FunctionDefNode struct {
 	Name        string
-	Args        []FunctionNodeType
+	Args        []*FunctionNodeArg
 	RetTypeNode TypeNode
 	Body        Node
 	ExternFrom  string
