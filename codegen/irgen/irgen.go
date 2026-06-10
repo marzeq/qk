@@ -369,7 +369,7 @@ func (g *Generator) generateCastExpr(node *parser.CastNode) ir.Operand {
 	}
 
 	from := g.GenerateExpr(node.Operand)
-	if from.Type.Equals(targetType) {
+	if from.Type.Equals(targetType) || sameIntegerWidthCast(from.Type, targetType) {
 		return from
 	}
 
@@ -751,13 +751,25 @@ func (g *Generator) generateBinaryExpr(node *parser.BinaryOpNode) ir.Operand {
 }
 
 func (g *Generator) coerceOperand(op ir.Operand, target types.Type) ir.Operand {
-	if op.Type.Equals(target) {
+	if op.Type.Equals(target) || sameIntegerWidthCast(op.Type, target) {
 		return op
 	}
 
 	dst := g.currentFunction.NewValueOfType(target)
 	g.Emit(ir.Cast{Dest: dst, From: op, To: target})
 	return ir.ValueOperand(dst, target)
+}
+
+func sameIntegerWidthCast(from types.Type, to types.Type) bool {
+	fromPrim, fromOK := from.(types.PrimitiveType)
+	toPrim, toOK := to.(types.PrimitiveType)
+	if !fromOK || !toOK {
+		return false
+	}
+	if !types.IsInteger(fromPrim) || !types.IsInteger(toPrim) {
+		return false
+	}
+	return types.IntegerRank(fromPrim) == types.IntegerRank(toPrim)
 }
 
 func (g *Generator) generateUnaryExpr(node *parser.UnaryOpNode) ir.Operand {
