@@ -40,6 +40,7 @@ type Args struct {
 	dumpLLVM     bool
 	keepBuildDir bool
 	static       bool
+	noEmit       bool
 	target       string
 	sysroot      string
 	outputType   OutputType
@@ -121,6 +122,10 @@ func parseArgs() (*Args, error) {
 			a.debug = true
 			i++
 
+		case tok == "-no-emit":
+			a.noEmit = true
+			i++
+
 		case tok == "-dump-ir":
 			a.dumpIR = true
 			i++
@@ -184,6 +189,7 @@ func parseArgs() (*Args, error) {
 			fmt.Println("  -sysroot <path>    Sysroot path for target")
 			fmt.Println("  -C <args>          Additional arguments to pass to clang when building module object files")
 			fmt.Println("  -L <args>          Additional arguments to pass to linker")
+			fmt.Println("  -no-emit           Do not emit any output files, just check for errors")
 			os.Exit(0)
 
 		default:

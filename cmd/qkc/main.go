@@ -104,6 +104,11 @@ func main() {
 		fatal("main function not found in main module (%s)", args.mainModule)
 	}
 
+	if args.noEmit {
+		fmt.Println("typecheck successful, no output emitted due to -no-emit flag")
+		return
+	}
+
 	buildDir, err := emitLLVMFiles(llvmOutputs, order)
 	check(err)
 	if !args.keepBuildDir {
