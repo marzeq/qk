@@ -197,8 +197,14 @@ func (a *Analyser) visitFor(n *parser.ForNode) {
 	prev := a.current
 	a.current = symbols.NewScope(prev)
 
-	for _, node := range n.ExprsOrStmts {
-		a.visit(node)
+	if n.Init != nil {
+		a.visit(n.Init)
+	}
+	if n.Condition != nil {
+		a.visitExpression(n.Condition)
+	}
+	if n.Post != nil {
+		a.visit(n.Post)
 	}
 
 	a.visitBlock(n.Body)

@@ -89,9 +89,10 @@ if_stmt        = "if", opt_newlines, expression, opt_newlines, block,
                  } ;
 
 for_stmt       = "for", opt_newlines,
-                 [ stmt_or_expr, { ";", opt_newlines, stmt_or_expr } ],
-                 opt_newlines,
-                 block ;
+                 [ stmt_or_expr ], opt_newlines, ";", opt_newlines,
+                 [ expression ], opt_newlines, ";", opt_newlines,
+                 [ stmt_or_expr ],
+                 opt_newlines, block ;
 
 stmt_or_expr   = statement | expression ;
 
@@ -275,7 +276,7 @@ named_type     = identifier
 
 - Inside blocks, statements are generally separated by newline or semicolon.
 - `if` and `for` manage their own internal block boundaries and do not require an additional separator immediately after their parse in some contexts.
-- `for` header accepts a semicolon-separated list of statements or expressions before the loop body block.
+- `for` header is split into optional init / condition / post slots separated by semicolons before the loop body block.
 
 ### 5. Expressions and precedence
 

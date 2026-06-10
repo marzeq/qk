@@ -190,8 +190,10 @@ func (g *Generator) GenerateNode(node parser.Node) {
 		g.generateIf(n)
 	case *parser.FunctionCallNode:
 		g.generateFunctionCallExpr(n)
+	case parser.ExpressionNode:
+		g.GenerateExpr(n)
 	default:
-		panic("todo")
+		panic(fmt.Sprintf("todo: generate node type %T", node))
 	}
 }
 
@@ -232,7 +234,7 @@ func (g *Generator) generateDeclaration(node *parser.DeclarationNode) {
 func (g *Generator) generateAssignment(node *parser.AssignmentNode) {
 	ident, ok := node.Assignee.(*parser.IdentifierNode)
 	if !ok {
-		panic("todo")
+		panic("assignment assignee is not an identifier")
 	}
 	if ident.Symbol == nil {
 		panic("assignment identifier symbol is nil")
@@ -262,7 +264,7 @@ func (g *Generator) generateControlKeyword(node *parser.ControlKeywordNode) {
 		value := g.GenerateExpr(node.ReturnValue)
 		g.Emit(ir.Return{HasValue: true, Value: value})
 	default:
-		panic("todo")
+		panic(fmt.Sprintf("todo: control keyword %s", node.Keyword))
 	}
 }
 
@@ -288,12 +290,14 @@ func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
 		return g.generateFunctionCallExpr(n)
 	case *parser.FieldAccessNode:
 		return g.generateFieldAccessExpr(n)
+	case *parser.IndexExprNode:
+		return g.generateIndexExpr(n)
 	case *parser.CastNode:
 		return g.generateCastExpr(n)
 	case *parser.StringLiteralNode:
 		return g.generateStringLiteralExpr(n)
 	default:
-		panic("todo")
+		panic(fmt.Sprintf("todo: generate expr type %T", expr))
 	}
 }
 
@@ -450,6 +454,39 @@ func (g *Generator) generateFieldAccessExpr(node *parser.FieldAccessNode) ir.Ope
 	dst := g.currentFunction.NewValueOfType(node.GetType())
 	g.Emit(ir.LoadPtr{Dest: dst, Ptr: ir.ValueOperand(fieldPtrID, types.PointerType{Base: node.GetType()})})
 	return ir.ValueOperand(dst, node.GetType())
+}
+
+func (g *Generator) generateIndexExpr(node *parser.IndexExprNode) ir.Operand {
+	index := g.GenerateExpr(node.Index)
+
+	switch subjectType := node.Subject.GetType().(type) {
+	case types.SliceType:
+		basePtr := g.generateAddressOfExpr(node.Subject)
+
+		dataPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: types.PointerType{Base: subjectType.Base}})
+		g.Emit(ir.FieldAddress{Dest: dataPtrID, Base: basePtr, Field: "0"})
+
+		dataPtr := g.currentFunction.NewValueOfType(types.PointerType{Base: subjectType.Base})
+		g.Emit(ir.LoadPtr{Dest: dataPtr, Ptr: ir.ValueOperand(dataPtrID, types.PointerType{Base: types.PointerType{Base: subjectType.Base}})})
+
+		elemPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: subjectType.Base})
+		g.Emit(ir.IndexAddress{Dest: elemPtrID, Base: ir.ValueOperand(dataPtr, types.PointerType{Base: subjectType.Base}), Index: index})
+
+		dst := g.currentFunction.NewValueOfType(node.GetType())
+		g.Emit(ir.LoadPtr{Dest: dst, Ptr: ir.ValueOperand(elemPtrID, types.PointerType{Base: node.GetType()})})
+		return ir.ValueOperand(dst, node.GetType())
+
+	case types.PointerType:
+		elemPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: subjectType.Base})
+		g.Emit(ir.IndexAddress{Dest: elemPtrID, Base: g.GenerateExpr(node.Subject), Index: index})
+
+		dst := g.currentFunction.NewValueOfType(node.GetType())
+		g.Emit(ir.LoadPtr{Dest: dst, Ptr: ir.ValueOperand(elemPtrID, types.PointerType{Base: node.GetType()})})
+		return ir.ValueOperand(dst, node.GetType())
+
+	default:
+		panic("index expression requires slice or pointer")
+	}
 }
 
 func (g *Generator) generateIfExpr(node *parser.IfExprNode) ir.Operand {
@@ -650,6 +687,13 @@ func (g *Generator) generateIdentifierExpr(node *parser.IdentifierNode) ir.Opera
 func (g *Generator) generateBinaryExpr(node *parser.BinaryOpNode) ir.Operand {
 	left := g.GenerateExpr(node.Operand1)
 	right := g.GenerateExpr(node.Operand2)
+
+	if types.IsNumeric(left.Type) && types.IsNumeric(right.Type) {
+		common := types.PromoteNumeric(left.Type, right.Type)
+		left = g.coerceOperand(left, common)
+		right = g.coerceOperand(right, common)
+	}
+
 	dst := g.currentFunction.NewValueOfType(node.GetType())
 
 	switch node.Op {
@@ -674,10 +718,20 @@ func (g *Generator) generateBinaryExpr(node *parser.BinaryOpNode) ir.Operand {
 	case parser.BinaryOpGreaterEqual:
 		g.Emit(ir.CmpGe{Dest: dst, Left: left, Right: right})
 	default:
-		panic("todo")
+		panic(fmt.Sprintf("todo: binary operator %v", node.Op))
 	}
 
 	return ir.ValueOperand(dst, node.GetType())
+}
+
+func (g *Generator) coerceOperand(op ir.Operand, target types.Type) ir.Operand {
+	if op.Type.Equals(target) {
+		return op
+	}
+
+	dst := g.currentFunction.NewValueOfType(target)
+	g.Emit(ir.Cast{Dest: dst, From: op, To: target})
+	return ir.ValueOperand(dst, target)
 }
 
 func (g *Generator) generateUnaryExpr(node *parser.UnaryOpNode) ir.Operand {
@@ -698,7 +752,7 @@ func (g *Generator) generateUnaryExpr(node *parser.UnaryOpNode) ir.Operand {
 		g.Emit(ir.FieldAddress{Dest: lenPtr, Base: operand, Field: "1"})
 		g.Emit(ir.LoadPtr{Dest: dst, Ptr: ir.ValueOperand(lenPtr, types.PointerType{Base: node.GetType()})})
 	default:
-		panic("todo")
+		panic(fmt.Sprintf("todo: unary operator %v", node.Op))
 	}
 
 	return ir.ValueOperand(dst, node.GetType())

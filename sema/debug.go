@@ -76,6 +76,15 @@ func (w *debugWalker) walkNode(node parser.Node) {
 		}
 
 	case *parser.ForNode:
+		if n.Init != nil {
+			w.walkNode(n.Init)
+		}
+		if n.Condition != nil {
+			w.walkExpr(n.Condition)
+		}
+		if n.Post != nil {
+			w.walkNode(n.Post)
+		}
 		w.walkNode(n.Body)
 
 	case *parser.ControlKeywordNode:

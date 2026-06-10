@@ -405,9 +405,11 @@ type IfNode struct {
 func (n IfNode) GetLoc() shared.Location { return n.Loc }
 
 type ForNode struct {
-	ExprsOrStmts []Node
-	Body         *BlockNode
-	Loc          shared.Location
+	Init      Node
+	Condition ExpressionNode
+	Post      Node
+	Body      *BlockNode
+	Loc       shared.Location
 }
 
 func (n ForNode) GetLoc() shared.Location { return n.Loc }

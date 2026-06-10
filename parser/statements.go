@@ -697,35 +697,71 @@ func (p *Parser) ParseForLoop() (*ForNode, error) {
 		p.Inc()
 	}
 
-	var err error
-
-	exprsOrStmts := []Node{}
-
-	for !p.Match(tokeniser.TokenOpenCurly) {
-		ogLoc := p.CurrLoc()
+	parseStmtOrExpr := func() (Node, error) {
 		ogPos := p.pos
-		exOrSt, _, err := p.ParseStatement()
-		if err != nil {
-			p.pos = ogPos
-			exOrSt, err = p.ParseExpression()
-			if err != nil {
-				return nil, shared.NewError(ogLoc, "expected a valid statement or expression")
-			}
+		ogLoc := p.CurrLoc()
+
+		node, _, err := p.ParseStatement()
+		if err == nil {
+			return node, nil
 		}
 
-		exprsOrStmts = append(exprsOrStmts, exOrSt)
+		p.pos = ogPos
+		expr, exprErr := p.ParseExpression()
+		if exprErr == nil {
+			return expr, nil
+		}
+
+		return nil, shared.NewError(ogLoc, "expected a valid statement or expression")
+	}
+
+	var init Node
+	var condition ExpressionNode
+	var post Node
+
+	for slot := 0; slot < 3; slot++ {
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
 
 		if p.Match(tokeniser.TokenOpenCurly) {
 			break
 		}
 
-		if !p.Expect(tokeniser.TokenSemicolon) {
-			return nil, shared.NewError(p.PrevLoc(),
-				"expected ';' to end statement or expression")
+		if p.Match(tokeniser.TokenSemicolon) {
+			p.Inc()
+			continue
+		}
+
+		switch slot {
+		case 0:
+			node, err := parseStmtOrExpr()
+			if err != nil {
+				return nil, err
+			}
+			init = node
+		case 1:
+			expr, err := p.ParseExpression()
+			if err != nil {
+				return nil, err
+			}
+			condition = expr
+		case 2:
+			node, err := parseStmtOrExpr()
+			if err != nil {
+				return nil, err
+			}
+			post = node
 		}
 
 		for p.Match(tokeniser.TokenNewline) {
 			p.Inc()
+		}
+
+		if slot < 2 {
+			if !p.Expect(tokeniser.TokenSemicolon) {
+				return nil, shared.NewError(p.PrevLoc(), "expected ';' in for header")
+			}
 		}
 	}
 
@@ -739,8 +775,10 @@ func (p *Parser) ParseForLoop() (*ForNode, error) {
 	}
 
 	return &ForNode{
-		ExprsOrStmts: exprsOrStmts,
-		Body:         body,
-		Loc:          beginLoc,
+		Init:      init,
+		Condition: condition,
+		Post:      post,
+		Body:      body,
+		Loc:       beginLoc,
 	}, nil
 }

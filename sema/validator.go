@@ -81,6 +81,18 @@ func (v *Validator) validateNode(node parser.Node) {
 		v.validateIf(n)
 
 	case *parser.ForNode:
+		if n.Init != nil {
+			v.validateNode(n.Init)
+		}
+		if n.Condition != nil {
+			v.validateExpr(n.Condition)
+			if !n.Condition.GetType().Equals(types.PrimitiveBool) {
+				v.errorf(n.Condition, "for condition must be bool")
+			}
+		}
+		if n.Post != nil {
+			v.validateNode(n.Post)
+		}
 		v.validateNode(n.Body)
 
 	case *parser.ControlKeywordNode:

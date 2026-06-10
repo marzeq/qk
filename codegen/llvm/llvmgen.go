@@ -350,6 +350,8 @@ func (e *Emitter) InstrEmit(out *strings.Builder, instr ir.Instr) {
 		e.AddressOfEmit(out, instr)
 	case ir.FieldAddress:
 		e.FieldAddressEmit(out, instr)
+	case ir.IndexAddress:
+		e.IndexAddressEmit(out, instr)
 	case ir.LoadPtr:
 		e.LoadPtrEmit(out, instr)
 	case ir.StorePtr:
@@ -537,6 +539,14 @@ func (e *Emitter) FieldAddressEmit(out *strings.Builder, f ir.FieldAddress) {
 	fmt.Fprintf(out, "%s = getelementptr inbounds %s, ptr %s, i32 0, i32 %d", e.ValueIDEmit(f.Dest), e.TypeEmit(baseTy), e.OperandEmit(f.Base), fieldIndex)
 }
 
+func (e *Emitter) IndexAddressEmit(out *strings.Builder, i ir.IndexAddress) {
+	baseTy := i.Base.Type
+	if ptr, ok := baseTy.(types.PointerType); ok {
+		baseTy = ptr.Base
+	}
+	fmt.Fprintf(out, "%s = getelementptr inbounds %s, ptr %s, %s %s", e.ValueIDEmit(i.Dest), e.TypeEmit(baseTy), e.OperandEmit(i.Base), e.TypeEmit(i.Index.Type), e.OperandEmit(i.Index))
+}
+
 func (e *Emitter) CallEmit(out *strings.Builder, c ir.Call) {
 	fnName := c.Name
 	if e.externMap != nil {
@@ -681,5 +691,5 @@ func (e *Emitter) CastEmit(out *strings.Builder, c ir.Cast) {
 		return
 	}
 
-	panic("unsupported cast")
+	panic(fmt.Sprintf("unsupported cast from %s to %s in llvmgen", from, to))
 }

@@ -139,8 +139,14 @@ func (a *Attributor) attributeNode(node parser.Node) {
 		}
 
 	case *parser.ForNode:
-		for _, node := range n.ExprsOrStmts {
-			a.attributeNode(node)
+		if n.Init != nil {
+			a.attributeNode(n.Init)
+		}
+		if n.Condition != nil {
+			a.attributeExpr(n.Condition)
+		}
+		if n.Post != nil {
+			a.attributeNode(n.Post)
 		}
 		a.attributeNode(n.Body)
 
