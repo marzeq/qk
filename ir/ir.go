@@ -276,14 +276,6 @@ type FieldAddress struct {
 
 func (FieldAddress) isInstr() {}
 
-type IndexAddress struct {
-	Dest  ValueID
-	Base  Operand
-	Index Operand
-}
-
-func (IndexAddress) isInstr() {}
-
 type Call struct {
 	Dest      ValueID
 	Name      string

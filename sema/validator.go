@@ -81,18 +81,6 @@ func (v *Validator) validateNode(node parser.Node) {
 		v.validateIf(n)
 
 	case *parser.ForNode:
-		if n.Init != nil {
-			v.validateNode(n.Init)
-		}
-		if n.Condition != nil {
-			v.validateExpr(n.Condition)
-			if !n.Condition.GetType().Equals(types.PrimitiveBool) {
-				v.errorf(n.Condition, "for condition must be bool")
-			}
-		}
-		if n.Post != nil {
-			v.validateNode(n.Post)
-		}
 		v.validateNode(n.Body)
 
 	case *parser.ControlKeywordNode:
@@ -136,13 +124,13 @@ func (v *Validator) finaliseDeclaration(n *parser.DeclarationNode) {
 }
 
 func (v *Validator) validateAssignment(n *parser.AssignmentNode) {
-	if !v.validateLValue(n.Subject) {
+	if !v.validateLValue(n.Assignee) {
 		return
 	}
 
-	v.validateExpr(n.Subject)
+	v.validateExpr(n.Assignee)
 
-	lhsType := n.Subject.GetType()
+	lhsType := n.Assignee.GetType()
 	n.Value = v.validateExprWithExpected(n.Value, lhsType)
 }
 
@@ -173,10 +161,10 @@ func (v *Validator) validateLValue(expr parser.ExpressionNode) bool {
 }
 
 func (v *Validator) validateIndexAssignment(n *parser.IndexAssignmentNode) {
-	v.validateExpr(n.Subject)
+	v.validateExpr(n.Assignee)
 	v.validateExpr(n.Index)
 
-	containerType := n.Subject.GetType()
+	containerType := n.Assignee.GetType()
 
 	indexType := n.Index.GetType()
 	if !types.IsInteger(indexType) {

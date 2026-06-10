@@ -169,12 +169,12 @@ func (a *Analyser) visitExpression(expr parser.ExpressionNode) {
 }
 
 func (a *Analyser) visitAssignment(n *parser.AssignmentNode) {
-	a.visit(n.Subject)
+	a.visit(n.Assignee)
 	a.visitExpression(n.Value)
 }
 
 func (a *Analyser) visitIndexAssignment(n *parser.IndexAssignmentNode) {
-	a.visitExpression(n.Subject)
+	a.visitExpression(n.Assignee)
 	a.visitExpression(n.Index)
 	a.visitExpression(n.Value)
 }
@@ -197,14 +197,8 @@ func (a *Analyser) visitFor(n *parser.ForNode) {
 	prev := a.current
 	a.current = symbols.NewScope(prev)
 
-	if n.Init != nil {
-		a.visit(n.Init)
-	}
-	if n.Condition != nil {
-		a.visitExpression(n.Condition)
-	}
-	if n.Post != nil {
-		a.visit(n.Post)
+	for _, node := range n.ExprsOrStmts {
+		a.visit(node)
 	}
 
 	a.visitBlock(n.Body)

@@ -56,11 +56,11 @@ func (w *debugWalker) walkNode(node parser.Node) {
 		}
 
 	case *parser.AssignmentNode:
-		w.walkExpr(n.Subject)
+		w.walkExpr(n.Assignee)
 		w.walkExpr(n.Value)
 
 	case *parser.IndexAssignmentNode:
-		w.walkExpr(n.Subject)
+		w.walkExpr(n.Assignee)
 		w.walkExpr(n.Index)
 		w.walkExpr(n.Value)
 
@@ -76,15 +76,6 @@ func (w *debugWalker) walkNode(node parser.Node) {
 		}
 
 	case *parser.ForNode:
-		if n.Init != nil {
-			w.walkNode(n.Init)
-		}
-		if n.Condition != nil {
-			w.walkExpr(n.Condition)
-		}
-		if n.Post != nil {
-			w.walkNode(n.Post)
-		}
 		w.walkNode(n.Body)
 
 	case *parser.ControlKeywordNode:

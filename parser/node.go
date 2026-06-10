@@ -405,11 +405,9 @@ type IfNode struct {
 func (n IfNode) GetLoc() shared.Location { return n.Loc }
 
 type ForNode struct {
-	Init      Node
-	Condition ExpressionNode
-	Post      Node
-	Body      *BlockNode
-	Loc       shared.Location
+	ExprsOrStmts []Node
+	Body         *BlockNode
+	Loc          shared.Location
 }
 
 func (n ForNode) GetLoc() shared.Location { return n.Loc }
@@ -435,18 +433,18 @@ type DeclarationNode struct {
 func (n DeclarationNode) GetLoc() shared.Location { return n.Loc }
 
 type AssignmentNode struct {
-	Subject ExpressionNode
-	Value   ExpressionNode
-	Loc     shared.Location
+	Assignee ExpressionNode
+	Value    ExpressionNode
+	Loc      shared.Location
 }
 
 func (n AssignmentNode) GetLoc() shared.Location { return n.Loc }
 
 type IndexAssignmentNode struct {
-	Subject ExpressionNode
-	Index   ExpressionNode
-	Value   ExpressionNode
-	Loc     shared.Location
+	Assignee ExpressionNode
+	Index    ExpressionNode
+	Value    ExpressionNode
+	Loc      shared.Location
 }
 
 func (n IndexAssignmentNode) GetLoc() shared.Location { return n.Loc }

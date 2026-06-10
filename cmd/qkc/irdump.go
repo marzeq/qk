@@ -85,8 +85,6 @@ func formatInstr(inst ir.Instr) string {
 		return fmt.Sprintf("v%d = addrof s%d", i.Dest, i.Slot)
 	case ir.FieldAddress:
 		return fmt.Sprintf("v%d = fieldaddr %s, .%s", i.Dest, formatOperand(i.Base), i.Field)
-	case ir.IndexAddress:
-		return fmt.Sprintf("v%d = indexaddr %s, %s", i.Dest, formatOperand(i.Base), formatOperand(i.Index))
 	case ir.Call:
 		args := strings.Builder{}
 		for idx, arg := range i.Args {

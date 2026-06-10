@@ -123,7 +123,7 @@ func (a *Attributor) attributeNode(node parser.Node) {
 		a.attributeExpr(n.Value)
 
 	case *parser.IndexAssignmentNode:
-		a.attributeExpr(n.Subject)
+		a.attributeExpr(n.Assignee)
 		a.attributeExpr(n.Value)
 		a.attributeExpr(n.Index)
 
@@ -139,14 +139,8 @@ func (a *Attributor) attributeNode(node parser.Node) {
 		}
 
 	case *parser.ForNode:
-		if n.Init != nil {
-			a.attributeNode(n.Init)
-		}
-		if n.Condition != nil {
-			a.attributeExpr(n.Condition)
-		}
-		if n.Post != nil {
-			a.attributeNode(n.Post)
+		for _, node := range n.ExprsOrStmts {
+			a.attributeNode(node)
 		}
 		a.attributeNode(n.Body)
 

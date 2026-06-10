@@ -510,9 +510,9 @@ func (p *Parser) ParseAssignment(ident *IdentifierNode) (*AssignmentNode, error)
 	}
 
 	return &AssignmentNode{
-		Subject: ident,
-		Value:   expr,
-		Loc:     ident.Loc,
+		Assignee: ident,
+		Value:    expr,
+		Loc:      ident.Loc,
 	}, err
 }
 
@@ -540,9 +540,9 @@ func (p *Parser) ParsePointerAssignment() (*AssignmentNode, error) {
 	}
 
 	return &AssignmentNode{
-		Subject: expr,
-		Value:   valExpr,
-		Loc:     identLoc,
+		Assignee: expr,
+		Value:    valExpr,
+		Loc:      identLoc,
 	}, err
 }
 
@@ -568,10 +568,10 @@ func (p *Parser) ParseIndexAssignment(ident *IdentifierNode) (*IndexAssignmentNo
 		return nil, err
 	}
 	return &IndexAssignmentNode{
-		Subject: ident,
-		Index:   indexExpr,
-		Value:   valueExpr,
-		Loc:     ident.Loc,
+		Assignee: ident,
+		Index:    indexExpr,
+		Value:    valueExpr,
+		Loc:      ident.Loc,
 	}, nil
 }
 
@@ -697,71 +697,35 @@ func (p *Parser) ParseForLoop() (*ForNode, error) {
 		p.Inc()
 	}
 
-	parseStmtOrExpr := func() (Node, error) {
-		ogPos := p.pos
+	var err error
+
+	exprsOrStmts := []Node{}
+
+	for !p.Match(tokeniser.TokenOpenCurly) {
 		ogLoc := p.CurrLoc()
-
-		node, _, err := p.ParseStatement()
-		if err == nil {
-			return node, nil
+		ogPos := p.pos
+		exOrSt, _, err := p.ParseStatement()
+		if err != nil {
+			p.pos = ogPos
+			exOrSt, err = p.ParseExpression()
+			if err != nil {
+				return nil, shared.NewError(ogLoc, "expected a valid statement or expression")
+			}
 		}
 
-		p.pos = ogPos
-		expr, exprErr := p.ParseExpression()
-		if exprErr == nil {
-			return expr, nil
-		}
-
-		return nil, shared.NewError(ogLoc, "expected a valid statement or expression")
-	}
-
-	var init Node
-	var condition ExpressionNode
-	var post Node
-
-	for slot := 0; slot < 3; slot++ {
-		for p.Match(tokeniser.TokenNewline) {
-			p.Inc()
-		}
+		exprsOrStmts = append(exprsOrStmts, exOrSt)
 
 		if p.Match(tokeniser.TokenOpenCurly) {
 			break
 		}
 
-		if p.Match(tokeniser.TokenSemicolon) {
-			p.Inc()
-			continue
-		}
-
-		switch slot {
-		case 0:
-			node, err := parseStmtOrExpr()
-			if err != nil {
-				return nil, err
-			}
-			init = node
-		case 1:
-			expr, err := p.ParseExpression()
-			if err != nil {
-				return nil, err
-			}
-			condition = expr
-		case 2:
-			node, err := parseStmtOrExpr()
-			if err != nil {
-				return nil, err
-			}
-			post = node
+		if !p.Expect(tokeniser.TokenSemicolon) {
+			return nil, shared.NewError(p.PrevLoc(),
+				"expected ';' to end statement or expression")
 		}
 
 		for p.Match(tokeniser.TokenNewline) {
 			p.Inc()
-		}
-
-		if slot < 2 {
-			if !p.Expect(tokeniser.TokenSemicolon) {
-				return nil, shared.NewError(p.PrevLoc(), "expected ';' in for header")
-			}
 		}
 	}
 
@@ -775,10 +739,8 @@ func (p *Parser) ParseForLoop() (*ForNode, error) {
 	}
 
 	return &ForNode{
-		Init:      init,
-		Condition: condition,
-		Post:      post,
-		Body:      body,
-		Loc:       beginLoc,
+		ExprsOrStmts: exprsOrStmts,
+		Body:         body,
+		Loc:          beginLoc,
 	}, nil
 }
