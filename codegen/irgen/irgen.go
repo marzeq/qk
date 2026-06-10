@@ -6,6 +6,7 @@ import (
 
 	"github.com/marzeq/qk/ir"
 	"github.com/marzeq/qk/parser"
+	"github.com/marzeq/qk/shared"
 	"github.com/marzeq/qk/symbols"
 	"github.com/marzeq/qk/tokeniser"
 	"github.com/marzeq/qk/types"
@@ -277,8 +278,12 @@ func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
 		return g.generateIfExpr(n)
 	case *parser.BinaryOpNode:
 		return g.generateBinaryExpr(n)
+	case *parser.UnaryOpNode:
+		return g.generateUnaryExpr(n)
 	case *parser.StructLiteralNode:
 		return g.generateStructLiteralExpr(n)
+	case *parser.SliceLiteralNode:
+		return g.generateSliceLiteralExpr(n)
 	case *parser.FunctionCallNode:
 		return g.generateFunctionCallExpr(n)
 	case *parser.FieldAccessNode:
@@ -351,6 +356,65 @@ func (g *Generator) generateStructLiteralExpr(node *parser.StructLiteralNode) ir
 	dst := g.currentFunction.NewValueOfType(node.GetType())
 	g.Emit(ir.Load{Dest: dst, Slot: tmpSlot})
 	return ir.ValueOperand(dst, node.GetType())
+}
+
+func (g *Generator) generateSliceLiteralExpr(node *parser.SliceLiteralNode) ir.Operand {
+	sliceType, ok := node.GetType().(types.SliceType)
+	if !ok {
+		panic("slice literal must have slice type")
+	}
+
+	tmpSlot := g.currentFunction.NewSlot(sliceType, "")
+	g.Emit(ir.Alloca{Slot: tmpSlot})
+
+	slicePtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: sliceType})
+	g.Emit(ir.AddressOf{Dest: slicePtrID, Slot: tmpSlot})
+	slicePtr := ir.ValueOperand(slicePtrID, types.PointerType{Base: sliceType})
+
+	var elemPtr ir.Operand
+	if len(node.Elements) == 0 {
+		elemPtr = ir.NullConstOperand(types.PointerType{Base: sliceType.Base})
+	} else {
+		bufferType := types.StructType{
+			Fields: make([]shared.Pair[string, types.Type], len(node.Elements)),
+		}
+		for i := range node.Elements {
+			bufferType.Fields[i] = shared.Pair[string, types.Type]{
+				L: fmt.Sprintf("%d", i),
+				R: sliceType.Base,
+			}
+		}
+
+		bufferSlot := g.currentFunction.NewSlot(bufferType, "")
+		g.Emit(ir.Alloca{Slot: bufferSlot})
+
+		bufferPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: bufferType})
+		g.Emit(ir.AddressOf{Dest: bufferPtrID, Slot: bufferSlot})
+		bufferPtr := ir.ValueOperand(bufferPtrID, types.PointerType{Base: bufferType})
+
+		for i, element := range node.Elements {
+			fieldPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: sliceType.Base})
+			g.Emit(ir.FieldAddress{Dest: fieldPtrID, Base: bufferPtr, Field: fmt.Sprintf("%d", i)})
+			value := g.GenerateExpr(element)
+			g.Emit(ir.StorePtr{Ptr: ir.ValueOperand(fieldPtrID, types.PointerType{Base: sliceType.Base}), Value: value})
+		}
+
+		elemPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: sliceType.Base})
+		g.Emit(ir.FieldAddress{Dest: elemPtrID, Base: bufferPtr, Field: "0"})
+		elemPtr = ir.ValueOperand(elemPtrID, types.PointerType{Base: sliceType.Base})
+	}
+
+	basePtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: sliceType.Base})
+	g.Emit(ir.FieldAddress{Dest: basePtrID, Base: slicePtr, Field: "0"})
+	g.Emit(ir.StorePtr{Ptr: ir.ValueOperand(basePtrID, types.PointerType{Base: sliceType.Base}), Value: elemPtr})
+
+	lenPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: types.PrimitiveUsz})
+	g.Emit(ir.FieldAddress{Dest: lenPtrID, Base: slicePtr, Field: "1"})
+	g.Emit(ir.StorePtr{Ptr: ir.ValueOperand(lenPtrID, types.PointerType{Base: types.PrimitiveUsz}), Value: ir.IntConstOperand(fmt.Sprintf("%d", len(node.Elements)), types.PrimitiveUsz)})
+
+	loaded := g.currentFunction.NewValueOfType(sliceType)
+	g.Emit(ir.Load{Dest: loaded, Slot: tmpSlot})
+	return ir.ValueOperand(loaded, sliceType)
 }
 
 func (g *Generator) generateStructLiteralIntoSlot(slot ir.SlotID, node *parser.StructLiteralNode) {
@@ -609,6 +673,30 @@ func (g *Generator) generateBinaryExpr(node *parser.BinaryOpNode) ir.Operand {
 		g.Emit(ir.CmpGt{Dest: dst, Left: left, Right: right})
 	case parser.BinaryOpGreaterEqual:
 		g.Emit(ir.CmpGe{Dest: dst, Left: left, Right: right})
+	default:
+		panic("todo")
+	}
+
+	return ir.ValueOperand(dst, node.GetType())
+}
+
+func (g *Generator) generateUnaryExpr(node *parser.UnaryOpNode) ir.Operand {
+	dst := g.currentFunction.NewValueOfType(node.GetType())
+
+	switch node.Op {
+	case parser.UnaryOpNegate:
+		operand := g.GenerateExpr(node.Operand)
+		g.Emit(ir.Sub{Dest: dst, Left: ir.IntConstOperand("0", node.GetType()), Right: operand})
+	case parser.UnaryOpReference:
+		return g.generateAddressOfExpr(node.Operand)
+	case parser.UnaryOpDereference:
+		operand := g.GenerateExpr(node.Operand)
+		g.Emit(ir.LoadPtr{Dest: dst, Ptr: operand})
+	case parser.UnaryOpSliceLen:
+		operand := g.generateAddressOfExpr(node.Operand)
+		lenPtr := g.currentFunction.NewValueOfType(types.PointerType{Base: node.GetType()})
+		g.Emit(ir.FieldAddress{Dest: lenPtr, Base: operand, Field: "1"})
+		g.Emit(ir.LoadPtr{Dest: dst, Ptr: ir.ValueOperand(lenPtr, types.PointerType{Base: node.GetType()})})
 	default:
 		panic("todo")
 	}

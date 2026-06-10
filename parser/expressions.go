@@ -189,15 +189,6 @@ func (p *Parser) ParsePostfix() (ExpressionNode, error) {
 		switch {
 		case p.Match(tokeniser.TokenOpenSquare):
 			p.Inc()
-			if p.Match(tokeniser.TokenCloseSquare) {
-				expr = &UnaryOpNode{
-					Op:      UnaryOpSliceLen,
-					Operand: expr,
-					Loc:     beginLoc,
-				}
-				p.Inc()
-				continue
-			}
 
 			for p.Match(tokeniser.TokenNewline) {
 				p.Inc()
@@ -231,6 +222,15 @@ func (p *Parser) ParsePostfix() (ExpressionNode, error) {
 			field, err := p.ParseIdent()
 			if err != nil {
 				return nil, err
+			}
+
+			if field.Name == "len" {
+				expr = &UnaryOpNode{
+					Op:      UnaryOpSliceLen,
+					Operand: expr,
+					Loc:     beginLoc,
+				}
+				continue
 			}
 
 			expr = &FieldAccessNode{

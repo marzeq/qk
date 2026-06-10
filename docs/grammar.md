@@ -165,7 +165,7 @@ unary          = ( "-" | "*" | "&" ), opt_newlines, unary
 
 postfix        = term,
                  {
-                   "[" ( "]" | opt_newlines, expression, opt_newlines, "]" )
+                   "[" , opt_newlines, expression, opt_newlines, "]"
                    | "(" [ arg_list ] ")"
                    | ".", opt_newlines, identifier
                  } ;
