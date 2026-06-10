@@ -123,7 +123,7 @@ func (a *Attributor) attributeNode(node parser.Node) {
 		a.attributeExpr(n.Value)
 
 	case *parser.IndexAssignmentNode:
-		a.attributeExpr(n.Assignee)
+		a.attributeExpr(n.Subject)
 		a.attributeExpr(n.Value)
 		a.attributeExpr(n.Index)
 

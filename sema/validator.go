@@ -136,13 +136,13 @@ func (v *Validator) finaliseDeclaration(n *parser.DeclarationNode) {
 }
 
 func (v *Validator) validateAssignment(n *parser.AssignmentNode) {
-	if !v.validateLValue(n.Assignee) {
+	if !v.validateLValue(n.Subject) {
 		return
 	}
 
-	v.validateExpr(n.Assignee)
+	v.validateExpr(n.Subject)
 
-	lhsType := n.Assignee.GetType()
+	lhsType := n.Subject.GetType()
 	n.Value = v.validateExprWithExpected(n.Value, lhsType)
 }
 
@@ -173,10 +173,10 @@ func (v *Validator) validateLValue(expr parser.ExpressionNode) bool {
 }
 
 func (v *Validator) validateIndexAssignment(n *parser.IndexAssignmentNode) {
-	v.validateExpr(n.Assignee)
+	v.validateExpr(n.Subject)
 	v.validateExpr(n.Index)
 
-	containerType := n.Assignee.GetType()
+	containerType := n.Subject.GetType()
 
 	indexType := n.Index.GetType()
 	if !types.IsInteger(indexType) {

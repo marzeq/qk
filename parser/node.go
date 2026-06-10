@@ -435,18 +435,18 @@ type DeclarationNode struct {
 func (n DeclarationNode) GetLoc() shared.Location { return n.Loc }
 
 type AssignmentNode struct {
-	Assignee ExpressionNode
-	Value    ExpressionNode
-	Loc      shared.Location
+	Subject ExpressionNode
+	Value   ExpressionNode
+	Loc     shared.Location
 }
 
 func (n AssignmentNode) GetLoc() shared.Location { return n.Loc }
 
 type IndexAssignmentNode struct {
-	Assignee ExpressionNode
-	Index    ExpressionNode
-	Value    ExpressionNode
-	Loc      shared.Location
+	Subject ExpressionNode
+	Index   ExpressionNode
+	Value   ExpressionNode
+	Loc     shared.Location
 }
 
 func (n IndexAssignmentNode) GetLoc() shared.Location { return n.Loc }

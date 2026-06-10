@@ -169,12 +169,12 @@ func (a *Analyser) visitExpression(expr parser.ExpressionNode) {
 }
 
 func (a *Analyser) visitAssignment(n *parser.AssignmentNode) {
-	a.visit(n.Assignee)
+	a.visit(n.Subject)
 	a.visitExpression(n.Value)
 }
 
 func (a *Analyser) visitIndexAssignment(n *parser.IndexAssignmentNode) {
-	a.visitExpression(n.Assignee)
+	a.visitExpression(n.Subject)
 	a.visitExpression(n.Index)
 	a.visitExpression(n.Value)
 }

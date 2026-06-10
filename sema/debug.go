@@ -56,11 +56,11 @@ func (w *debugWalker) walkNode(node parser.Node) {
 		}
 
 	case *parser.AssignmentNode:
-		w.walkExpr(n.Assignee)
+		w.walkExpr(n.Subject)
 		w.walkExpr(n.Value)
 
 	case *parser.IndexAssignmentNode:
-		w.walkExpr(n.Assignee)
+		w.walkExpr(n.Subject)
 		w.walkExpr(n.Index)
 		w.walkExpr(n.Value)
 

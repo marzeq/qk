@@ -184,6 +184,8 @@ func (g *Generator) GenerateNode(node parser.Node) {
 		g.generateDeclaration(n)
 	case *parser.AssignmentNode:
 		g.generateAssignment(n)
+	case *parser.IndexAssignmentNode:
+		g.generateIndexAssignment(n)
 	case *parser.ControlKeywordNode:
 		g.generateControlKeyword(n)
 	case *parser.IfNode:
@@ -232,7 +234,7 @@ func (g *Generator) generateDeclaration(node *parser.DeclarationNode) {
 }
 
 func (g *Generator) generateAssignment(node *parser.AssignmentNode) {
-	ident, ok := node.Assignee.(*parser.IdentifierNode)
+	ident, ok := node.Subject.(*parser.IdentifierNode)
 	if !ok {
 		panic("assignment assignee is not an identifier")
 	}
@@ -252,6 +254,30 @@ func (g *Generator) generateAssignment(node *parser.AssignmentNode) {
 
 	rhs := g.GenerateExpr(node.Value)
 	g.Emit(ir.Store{Slot: slot, Value: rhs})
+}
+
+func (g *Generator) generateIndexAssignment(node *parser.IndexAssignmentNode) {
+	index := g.GenerateExpr(node.Index)
+	switch subjectType := node.Subject.GetType().(type) {
+	case types.SliceType:
+		basePtr := g.generateAddressOfExpr(node.Subject)
+		dataPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: types.PointerType{Base: subjectType.Base}})
+		g.Emit(ir.FieldAddress{Dest: dataPtrID, Base: basePtr, Field: "0"})
+		dataPtr := g.currentFunction.NewValueOfType(types.PointerType{Base: subjectType.Base})
+		g.Emit(ir.LoadPtr{Dest: dataPtr, Ptr: ir.ValueOperand(dataPtrID, types.PointerType{Base: types.PointerType{Base: subjectType.Base}})})
+		elemPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: subjectType.Base})
+		g.Emit(ir.IndexAddress{Dest: elemPtrID, Base: ir.ValueOperand(dataPtr, types.PointerType{Base: subjectType.Base}), Index: index})
+		value := g.GenerateExpr(node.Value)
+		g.Emit(ir.StorePtr{Ptr: ir.ValueOperand(elemPtrID, types.PointerType{Base: subjectType.Base}), Value: value})
+	case types.PointerType:
+		subjectPtr := g.GenerateExpr(node.Subject)
+		elemPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: subjectType.Base})
+		g.Emit(ir.IndexAddress{Dest: elemPtrID, Base: subjectPtr, Index: index})
+		value := g.GenerateExpr(node.Value)
+		g.Emit(ir.StorePtr{Ptr: ir.ValueOperand(elemPtrID, types.PointerType{Base: subjectType.Base}), Value: value})
+	default:
+		panic("index assignment requires slice or pointer")
+	}
 }
 
 func (g *Generator) generateControlKeyword(node *parser.ControlKeywordNode) {

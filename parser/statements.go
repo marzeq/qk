@@ -510,9 +510,9 @@ func (p *Parser) ParseAssignment(ident *IdentifierNode) (*AssignmentNode, error)
 	}
 
 	return &AssignmentNode{
-		Assignee: ident,
-		Value:    expr,
-		Loc:      ident.Loc,
+		Subject: ident,
+		Value:   expr,
+		Loc:     ident.Loc,
 	}, err
 }
 
@@ -540,9 +540,9 @@ func (p *Parser) ParsePointerAssignment() (*AssignmentNode, error) {
 	}
 
 	return &AssignmentNode{
-		Assignee: expr,
-		Value:    valExpr,
-		Loc:      identLoc,
+		Subject: expr,
+		Value:   valExpr,
+		Loc:     identLoc,
 	}, err
 }
 
@@ -568,10 +568,10 @@ func (p *Parser) ParseIndexAssignment(ident *IdentifierNode) (*IndexAssignmentNo
 		return nil, err
 	}
 	return &IndexAssignmentNode{
-		Assignee: ident,
-		Index:    indexExpr,
-		Value:    valueExpr,
-		Loc:      ident.Loc,
+		Subject: ident,
+		Index:   indexExpr,
+		Value:   valueExpr,
+		Loc:     ident.Loc,
 	}, nil
 }
 
