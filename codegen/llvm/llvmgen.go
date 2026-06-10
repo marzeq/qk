@@ -609,6 +609,13 @@ func (e *Emitter) CastEmit(out *strings.Builder, c ir.Cast) {
 	toPrim, toOK := to.(types.PrimitiveType)
 
 	if fromSlice, ok := from.(types.SliceType); ok {
+		if _, ok := to.(types.SliceType); ok {
+			tmp := e.currentFn.NewValueOfType(types.PointerType{Base: from})
+			fmt.Fprintf(out, "%s = alloca %s\n", e.ValueIDEmit(tmp), e.TypeEmit(from))
+			fmt.Fprintf(out, "store %s %s, ptr %s\n", e.TypeEmit(from), e.OperandEmit(c.From), e.ValueIDEmit(tmp))
+			fmt.Fprintf(out, "%s = load %s, ptr %s", e.ValueIDEmit(c.Dest), e.TypeEmit(to), e.ValueIDEmit(tmp))
+			return
+		}
 		if toPtr, ok := to.(types.PointerType); ok {
 			if toPtr.Base.Equals(types.PrimitiveVoid) || fromSlice.Base.Equals(toPtr.Base) {
 				fmt.Fprintf(out, "%s = extractvalue %s %s, 0", e.ValueIDEmit(c.Dest), e.TypeEmit(from), e.OperandEmit(c.From))
