@@ -467,9 +467,6 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 			if err != nil {
 				return nil, err
 			}
-			if ch == "\n" {
-				return nil, shared.NewError(loc, "Unexpected newline in char literal")
-			}
 			if t.Consume() != '\'' {
 				return nil, shared.NewError(loc, "Expected ' to end char literal")
 			}

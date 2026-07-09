@@ -21,6 +21,9 @@ func (a *Analyser) visit(node parser.Node) {
 	case *parser.AssignmentNode:
 		a.visitAssignment(n)
 
+	case *parser.PointerAssignmentNode:
+		a.visitPointerAssignment(n)
+
 	case *parser.IndexAssignmentNode:
 		a.visitIndexAssignment(n)
 
@@ -170,6 +173,11 @@ func (a *Analyser) visitExpression(expr parser.ExpressionNode) {
 
 func (a *Analyser) visitAssignment(n *parser.AssignmentNode) {
 	a.visit(n.Assignee)
+	a.visitExpression(n.Value)
+}
+
+func (a *Analyser) visitPointerAssignment(n *parser.PointerAssignmentNode) {
+	a.visitExpression(n.Assignee)
 	a.visitExpression(n.Value)
 }
 

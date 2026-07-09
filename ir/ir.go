@@ -313,6 +313,13 @@ type Cast struct {
 
 func (Cast) isInstr() {}
 
+type Sizeof struct {
+	Dest ValueID
+	Type types.Type
+}
+
+func (Sizeof) isInstr() {}
+
 type StringConst struct {
 	Dest  ValueID
 	Value string

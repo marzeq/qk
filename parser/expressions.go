@@ -8,31 +8,7 @@ import (
 )
 
 func (p *Parser) ParseExpression() (ExpressionNode, error) {
-	return p.ParseAsCast()
-}
-
-func (p *Parser) ParseAsCast() (ExpressionNode, error) {
-	beginLoc := p.CurrLoc()
-	left, err := p.ParseLogicalOr()
-	if err != nil {
-		return nil, err
-	}
-	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordAs) {
-		p.Inc()
-		for p.Match(tokeniser.TokenNewline) {
-			p.Inc()
-		}
-		typ, err := p.ParseType()
-		if err != nil {
-			return nil, err
-		}
-		return &CastNode{
-			ToType:  typ,
-			Operand: left,
-			Loc:     beginLoc,
-		}, nil
-	}
-	return left, nil
+	return p.ParseLogicalOr()
 }
 
 func (p *Parser) ParseSizeOfExpression() (ExpressionNode, error) {
@@ -140,21 +116,13 @@ func (p *Parser) ParseLogicalNot() (ExpressionNode, error) {
 func (p *Parser) ParseUnary() (ExpressionNode, error) {
 	beginLoc := p.CurrLoc()
 
-	if p.Match(
-		tokeniser.TokenMinus,
-		tokeniser.TokenAsterisk,
-		tokeniser.TokenAmpersand,
-	) {
+	if p.Match(tokeniser.TokenMinus) {
 		op := p.Consume()
 
 		var val UnaryOpKind
 		switch op.Type {
 		case tokeniser.TokenMinus:
 			val = UnaryOpNegate
-		case tokeniser.TokenAsterisk:
-			val = UnaryOpDereference
-		case tokeniser.TokenAmpersand:
-			val = UnaryOpReference
 		}
 
 		for p.Match(tokeniser.TokenNewline) {
@@ -214,6 +182,50 @@ func (p *Parser) ParsePostfix() (ExpressionNode, error) {
 			}
 		case p.Match(tokeniser.TokenDot):
 			p.Inc()
+
+			if p.Match(tokeniser.TokenAsterisk) {
+				p.Inc()
+				expr = &UnaryOpNode{
+					Op:      UnaryOpDereference,
+					Operand: expr,
+					Loc:     beginLoc,
+				}
+				continue
+			}
+
+			if p.Match(tokeniser.TokenAmpersand) {
+				p.Inc()
+				expr = &UnaryOpNode{
+					Op:      UnaryOpReference,
+					Operand: expr,
+					Loc:     beginLoc,
+				}
+				continue
+			}
+
+			if p.Match(tokeniser.TokenOpenParen) {
+				p.Inc()
+				for p.Match(tokeniser.TokenNewline) {
+					p.Inc()
+				}
+				typ, err := p.ParseType()
+				if err != nil {
+					return nil, err
+				}
+				for p.Match(tokeniser.TokenNewline) {
+					p.Inc()
+				}
+				if !p.Expect(tokeniser.TokenCloseParen) {
+					return nil, shared.NewError(p.PrevLoc(), "expected ')'")
+				}
+				expr = &CastNode{
+					ToType:  typ,
+					Operand: expr,
+					Loc:     beginLoc,
+				}
+				continue
+			}
+
 
 			for p.Match(tokeniser.TokenNewline) {
 				p.Inc()
@@ -506,6 +518,13 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 		}
 		p.Inc()
 		if !p.Match(tokeniser.TokenNumber) {
+			if p.Match(tokeniser.TokenOpenParen) {
+				p.Dec()
+				return &IntegerLiteralNode{
+					Value: nLit.Value,
+					Loc:   beginLoc,
+				}, nil
+			}
 			return &FloatLiteralNode{
 				Value: nLit.Value + ".0",
 				Loc:   beginLoc,

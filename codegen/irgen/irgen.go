@@ -184,6 +184,8 @@ func (g *Generator) GenerateNode(node parser.Node) {
 		g.generateDeclaration(n)
 	case *parser.AssignmentNode:
 		g.generateAssignment(n)
+	case *parser.PointerAssignmentNode:
+		g.generatePointerAssignment(n)
 	case *parser.ControlKeywordNode:
 		g.generateControlKeyword(n)
 	case *parser.IfNode:
@@ -191,7 +193,7 @@ func (g *Generator) GenerateNode(node parser.Node) {
 	case *parser.FunctionCallNode:
 		g.generateFunctionCallExpr(n)
 	default:
-		panic("todo")
+		panic(fmt.Sprintf("todo: generate node %T", n))
 	}
 }
 
@@ -252,6 +254,10 @@ func (g *Generator) generateAssignment(node *parser.AssignmentNode) {
 	g.Emit(ir.Store{Slot: slot, Value: rhs})
 }
 
+func (g *Generator) generatePointerAssignment(node *parser.PointerAssignmentNode) {
+	panic("todo")
+}
+
 func (g *Generator) generateControlKeyword(node *parser.ControlKeywordNode) {
 	switch node.Keyword {
 	case tokeniser.KeywordReturn:
@@ -290,9 +296,14 @@ func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
 		return g.generateFieldAccessExpr(n)
 	case *parser.CastNode:
 		return g.generateCastExpr(n)
+	case *parser.SizeOfNode:
+		return g.generateSizeOfExpr(n)
 	case *parser.StringLiteralNode:
 		return g.generateStringLiteralExpr(n)
+	case *parser.NilLiteralNode:
+		return g.generateNilLiteralExpr(n)
 	default:
+		fmt.Printf("todo: generate expr %T\n", n)
 		panic("todo")
 	}
 }
@@ -327,6 +338,10 @@ func (g *Generator) generateStringLiteralExpr(node *parser.StringLiteralNode) ir
 	return ir.ValueOperand(loaded, sliceType)
 }
 
+func (g *Generator) generateNilLiteralExpr(node *parser.NilLiteralNode) ir.Operand {
+	return ir.NullConstOperand(node.GetType())
+}
+
 func (g *Generator) generateCastExpr(node *parser.CastNode) ir.Operand {
 	targetType := node.GetType()
 
@@ -346,6 +361,12 @@ func (g *Generator) generateCastExpr(node *parser.CastNode) ir.Operand {
 	dst := g.currentFunction.NewValueOfType(targetType)
 	g.Emit(ir.Cast{Dest: dst, From: from, To: targetType})
 	return ir.ValueOperand(dst, targetType)
+}
+
+func (g *Generator) generateSizeOfExpr(node *parser.SizeOfNode) ir.Operand {
+	dst := g.currentFunction.NewValueOfType(types.PrimitiveUsz)
+	g.Emit(ir.Sizeof{Dest: dst, Type: node.Type})
+	return ir.ValueOperand(dst, types.PrimitiveUsz)
 }
 
 func (g *Generator) generateStructLiteralExpr(node *parser.StructLiteralNode) ir.Operand {

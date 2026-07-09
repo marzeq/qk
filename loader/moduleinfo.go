@@ -13,7 +13,7 @@ type PartialModuleInfo struct {
 }
 
 func CollectModuleInfo(root *parser.RootNode) (*PartialModuleInfo, error) {
-	name := "main"
+	name := ""
 	imports := []string{}
 	seenModule := false
 
@@ -33,6 +33,10 @@ func CollectModuleInfo(root *parser.RootNode) (*PartialModuleInfo, error) {
 		case *parser.ImportNode:
 			imports = append(imports, n.Modules...)
 		}
+	}
+
+	if !seenModule || name == "" {
+		return nil, fmt.Errorf("module declaration is missing or empty")
 	}
 
 	return &PartialModuleInfo{

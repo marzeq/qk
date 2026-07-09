@@ -421,6 +421,15 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 			}
 			node, err := p.ParseFunctionCall(modAN)
 			return node, true, err
+		} else if p.Match(tokeniser.TokenDot) {
+			if p.Next().Type == tokeniser.TokenAsterisk {
+				node, err := p.ParsePointerAssignment(ident)
+				return node, true, err
+			}
+			if p.Next().Type == tokeniser.TokenIdentifier {
+				node, err := p.ParseMemberAssignment(ident)
+				return node, true, err
+			}
 		} else if p.Match(tokeniser.TokenOpenSquare) {
 			node, err := p.ParseIndexAssignment(ident)
 			return node, true, err
@@ -432,11 +441,6 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 
 	if p.Match(tokeniser.TokenOpenCurly) {
 		node, err := p.ParseBlock()
-		return node, true, err
-	}
-
-	if p.Match(tokeniser.TokenAsterisk) {
-		node, err := p.ParsePointerAssignment()
 		return node, true, err
 	}
 
@@ -516,34 +520,41 @@ func (p *Parser) ParseAssignment(ident *IdentifierNode) (*AssignmentNode, error)
 	}, err
 }
 
-func (p *Parser) ParsePointerAssignment() (*AssignmentNode, error) {
-	identLoc := p.CurrLoc()
-	if !p.Match(tokeniser.TokenAsterisk) {
+func (p *Parser) ParseMemberAssignment(ident *IdentifierNode) (*MemberAssignmentNode, error) {
+	panic("member assignment not implemented yet")
+}
+
+func (p *Parser) ParsePointerAssignment(ident *IdentifierNode) (*PointerAssignmentNode, error) {
+	if !p.Expect(tokeniser.TokenDot) {
+		return nil, shared.NewError(p.PrevLoc(), "expected '.'")
+	}
+	if !p.Expect(tokeniser.TokenAsterisk) {
 		return nil, shared.NewError(p.PrevLoc(), "expected '*'")
 	}
+	for p.Match(tokeniser.TokenNewline) {
+		p.Inc()
+	}
+	if !p.Expect(tokeniser.TokenEquals) {
+		return nil, shared.NewError(p.PrevLoc(), "expected '='")
+	}
+	for p.Match(tokeniser.TokenNewline) {
+		p.Inc()
+	}
+
 	expr, err := p.ParseExpression()
 	if err != nil {
 		return nil, err
 	}
 
-	if !p.Expect(tokeniser.TokenEquals) {
-		return nil, shared.NewError(p.PrevLoc(), "expected '='")
-	}
-
-	for p.Match(tokeniser.TokenNewline) {
-		p.Inc()
-	}
-
-	valExpr, err := p.ParseExpression()
-	if err != nil {
-		return nil, err
-	}
-
-	return &AssignmentNode{
-		Assignee: expr,
-		Value:    valExpr,
-		Loc:      identLoc,
-	}, err
+	return &PointerAssignmentNode{
+		Assignee: &UnaryOpNode{
+			Op:      UnaryOpDereference,
+			Operand: ident,
+			Loc:     ident.Loc,
+		},
+		Value:    expr,
+		Loc:      ident.Loc,
+	}, nil
 }
 
 func (p *Parser) ParseIndexAssignment(ident *IdentifierNode) (*IndexAssignmentNode, error) {

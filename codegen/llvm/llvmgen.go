@@ -307,14 +307,16 @@ func (e *Emitter) blockLabel(id ir.BlockID, fallbackName string) string {
 				continue
 			}
 			if block.Name != "" {
-				return block.Name
+				return fmt.Sprintf("%s.%d", block.Name, id)
 			}
 			break
 		}
 	}
+
 	if fallbackName != "" {
-		return fallbackName
+		return fmt.Sprintf("%s.%d", fallbackName, id)
 	}
+
 	return fmt.Sprintf("b%d", id)
 }
 
@@ -364,6 +366,8 @@ func (e *Emitter) InstrEmit(out *strings.Builder, instr ir.Instr) {
 		e.ReturnEmit(out, instr)
 	case ir.Cast:
 		e.CastEmit(out, instr)
+	case ir.Sizeof:
+		e.SizeofEmit(out, instr)
 	case ir.StringConst:
 		e.StringConstEmit(out, instr)
 	default:
@@ -617,7 +621,9 @@ func (e *Emitter) CastEmit(out *strings.Builder, c ir.Cast) {
 			srcBits := types.IntegerRank(fromPrim)
 			dstBits := types.IntegerRank(toPrim)
 			op := "trunc"
-			if srcBits < dstBits {
+			if srcBits == dstBits {
+				op = "bitcast"
+			} else if srcBits < dstBits {
 				if types.IsUnsigned(fromPrim) {
 					op = "zext"
 				} else {
@@ -629,8 +635,12 @@ func (e *Emitter) CastEmit(out *strings.Builder, c ir.Cast) {
 		}
 
 		if types.IsFloat(fromPrim) && types.IsFloat(toPrim) {
+			srcBits := types.FloatRank(fromPrim)
+			dstBits := types.FloatRank(toPrim)
 			op := "fptrunc"
-			if types.FloatRank(fromPrim) < types.FloatRank(toPrim) {
+			if srcBits == dstBits {
+				op = "bitcast"
+			} else if srcBits < dstBits {
 				op = "fpext"
 			}
 			fmt.Fprintf(out, "%s = %s %s %s to %s", e.ValueIDEmit(c.Dest), op, e.TypeEmit(from), e.OperandEmit(c.From), e.TypeEmit(to))
@@ -682,4 +692,14 @@ func (e *Emitter) CastEmit(out *strings.Builder, c ir.Cast) {
 	}
 
 	panic("unsupported cast")
+}
+
+func (e *Emitter) SizeofEmit(out *strings.Builder, s ir.Sizeof) {
+	fmt.Fprintf(
+		out,
+		"%s = ptrtoint ptr getelementptr (%s, ptr null, i32 1) to %s",
+		e.ValueIDEmit(s.Dest),
+		e.TypeEmit(s.Type),
+		e.TypeEmit(types.PrimitiveUsz),
+		)
 }

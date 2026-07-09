@@ -74,6 +74,9 @@ func (v *Validator) validateNode(node parser.Node) {
 	case *parser.AssignmentNode:
 		v.validateAssignment(n)
 
+	case *parser.PointerAssignmentNode:
+		v.validatePointerAssignment(n)
+
 	case *parser.IndexAssignmentNode:
 		v.validateIndexAssignment(n)
 
@@ -134,6 +137,17 @@ func (v *Validator) validateAssignment(n *parser.AssignmentNode) {
 	n.Value = v.validateExprWithExpected(n.Value, lhsType)
 }
 
+func (v *Validator) validatePointerAssignment(n *parser.PointerAssignmentNode) {
+	if !v.validateLValue(n.Assignee) {
+		return
+	}
+
+	v.validateExpr(n.Assignee)
+
+	lhsType := n.Assignee.GetType()
+	n.Value = v.validateExprWithExpected(n.Value, lhsType)
+}
+
 func (v *Validator) validateLValue(expr parser.ExpressionNode) bool {
 	switch e := expr.(type) {
 
@@ -145,6 +159,12 @@ func (v *Validator) validateLValue(expr parser.ExpressionNode) bool {
 
 	case *parser.UnaryOpNode:
 		if e.Op == parser.UnaryOpDereference {
+			if ptrType, ok := e.Operand.GetType().(types.PointerType); ok {
+				if ptrType.Base.Equals(types.PrimitiveVoid) {
+					v.errorf(e, "cannot assign to dereferenced void pointer")
+					return false
+				}
+			}
 			v.validateExpr(e.Operand)
 			return true
 		}
@@ -226,6 +246,7 @@ func (v *Validator) validateReturn(n *parser.ControlKeywordNode) {
 
 func (v *Validator) validateExpr(node parser.ExpressionNode) {
 	if _, ok := node.GetType().(types.ErrorType); ok {
+		v.errorf(node, "uncaught error type in expression")
 		return
 	}
 
@@ -283,6 +304,11 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		case parser.UnaryOpDereference:
 			if _, ok := operandType.(types.PointerType); !ok {
 				v.errorf(n, "cannot dereference non-pointer type")
+			}
+			if ptrType, ok := operandType.(types.PointerType); ok {
+				if ptrType.Base.Equals(types.PrimitiveVoid) {
+					v.errorf(n, "cannot dereference void pointer")
+				}
 			}
 
 		case parser.UnaryOpSliceLen:
