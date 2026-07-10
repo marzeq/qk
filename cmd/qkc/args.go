@@ -20,12 +20,14 @@ const (
 type OptimisationLevel string
 
 const (
-	OptLevel0    OptimisationLevel = "0"
-	OptLevel1    OptimisationLevel = "1"
-	OptLevel2    OptimisationLevel = "2"
-	OptLevel3    OptimisationLevel = "3"
-	OptLevelSize OptimisationLevel = "s"
-	OptLevelFast OptimisationLevel = "fast"
+	OptLevel0       OptimisationLevel = "0"
+	OptLevel1       OptimisationLevel = "1"
+	OptLevel2       OptimisationLevel = "2"
+	OptLevel3       OptimisationLevel = "3"
+	OptLevelSize    OptimisationLevel = "s"
+	OptLevelSizeMax OptimisationLevel = "z"
+	OptLevelFast    OptimisationLevel = "fast"
+	OptLevelDebug   OptimisationLevel = "g"
 )
 
 type Args struct {
@@ -105,16 +107,26 @@ func parseArgs() (*Args, error) {
 			if tok == "" {
 				return nil, fmt.Errorf("expected value after -O")
 			}
-			if tok == "s" {
+			switch tok {
+			case "g":
+				a.optLevel = OptLevelDebug
+			case "s":
 				a.optLevel = OptLevelSize
-			} else if tok == "fast" {
+			case "z":
+				a.optLevel = OptLevelSizeMax
+			case "fast":
 				a.optLevel = OptLevelFast
-			} else if _, err := strconv.Atoi(tok); err == nil {
-				a.optLevel = OptimisationLevel(tok)
-			} else {
-				return nil, fmt.Errorf("invalid optimisation level: %s", tok)
+			default:
+				n, err := strconv.Atoi(tok)
+				if err != nil || n < 0 {
+					return nil, fmt.Errorf("invalid optimisation level: %s", tok)
+				}
+				if n > 3 {
+					fmt.Fprintf(os.Stderr, "warning: optimisation level %s is equivalent to -O3\n", tok)
+					n = 3
+				}
+				a.optLevel = OptimisationLevel(strconv.Itoa(n))
 			}
-
 		case tok == "-v":
 			a.verbose = true
 			i++
@@ -188,7 +200,7 @@ func parseArgs() (*Args, error) {
 			fmt.Println("  -o <file>          Output file name")
 			fmt.Println("  -m <module>        Root module name (default: main)")
 			fmt.Println("  -t <type>          Output type (exe, obj, so)")
-			fmt.Println("  -O<level>          Optimisation level (0, 1, 2, 3, s, fast)")
+			fmt.Println("  -O<level>          Optimisation level (0, 1, 2, 3, s, z, fast, g)")
 			fmt.Println("  -static            Link with static libraries")
 			fmt.Println("  -target <triple>   Target triple for code generation")
 			fmt.Println("  -sysroot <path>    Sysroot path for target")
