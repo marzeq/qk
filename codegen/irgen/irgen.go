@@ -302,6 +302,8 @@ func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
 		return g.generateSizeOfExprExpr(n)
 	case *parser.StringLiteralNode:
 		return g.generateStringLiteralExpr(n)
+	case *parser.CharLiteralNode:
+		return ir.IntConstOperand(fmt.Sprint(int(n.Value)), n.GetType())
 	case *parser.NilLiteralNode:
 		return g.generateNilLiteralExpr(n)
 	default:

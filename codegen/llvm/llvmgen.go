@@ -691,6 +691,16 @@ func (e *Emitter) CastEmit(out *strings.Builder, c ir.Cast) {
 		return
 	}
 
+	if fromPrim.Equals(types.PrimitiveChar) && types.IsInteger(toPrim) {
+		fmt.Fprintf(out, "%s = zext %s %s to %s", e.ValueIDEmit(c.Dest), e.TypeEmit(from), e.OperandEmit(c.From), e.TypeEmit(to))
+		return
+	}
+
+	if types.IsInteger(fromPrim) && toPrim.Equals(types.PrimitiveChar) {
+		fmt.Fprintf(out, "%s = trunc %s %s to %s", e.ValueIDEmit(c.Dest), e.TypeEmit(from), e.OperandEmit(c.From), e.TypeEmit(to))
+		return
+	}
+
 	panic("unsupported cast")
 }
 
