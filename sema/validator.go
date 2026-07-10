@@ -514,7 +514,8 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		*parser.NilLiteralNode,
 		*parser.IdentifierNode,
 		*parser.ModuleAccessNode,
-		*parser.SizeOfNode:
+		*parser.SizeOfNode,
+		*parser.SizeOfExprNode:
 		// nothing to validate
 
 	default:

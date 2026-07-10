@@ -344,6 +344,17 @@ func (n SizeOfNode) GetLoc() shared.Location { return n.Loc }
 func (n *SizeOfNode) SetType(t types.Type)   { n.Type = t }
 func (n *SizeOfNode) GetType() types.Type    { return n.Type }
 
+type SizeOfExprNode struct {
+	Operand     ExpressionNode
+	OperandType types.Type
+	Loc         shared.Location
+	Type        types.Type
+}
+
+func (n SizeOfExprNode) GetLoc() shared.Location { return n.Loc }
+func (n *SizeOfExprNode) SetType(t types.Type)   { n.Type = t }
+func (n *SizeOfExprNode) GetType() types.Type    { return n.Type }
+
 type ImportNode struct {
 	Modules []string
 	Loc     shared.Location

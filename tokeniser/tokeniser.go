@@ -243,6 +243,7 @@ var keywords = map[string]struct{}{
 	string(KeywordNil):      {},
 	string(KeywordAs):       {},
 	string(KeywordSizeof):   {},
+	string(KeywordLen):      {},
 }
 
 func IsKeyword(w string) bool {

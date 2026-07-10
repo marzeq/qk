@@ -82,6 +82,7 @@ const (
 	KeywordNil      KeywordKind = "nil"
 	KeywordAs       KeywordKind = "as"
 	KeywordSizeof   KeywordKind = "sizeof"
+	KeywordLen      KeywordKind = "len"
 )
 
 func (t Token) String() string {

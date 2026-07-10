@@ -18,17 +18,51 @@ func (p *Parser) ParseSizeOfExpression() (ExpressionNode, error) {
 	}
 	p.Inc()
 
+	if !p.Expect(tokeniser.TokenOpenParen) {
+		return nil, shared.NewError(p.PrevLoc(), "expected '(' after 'sizeof'")
+	}
+
 	for p.Match(tokeniser.TokenNewline) {
 		p.Inc()
 	}
-	typ, err := p.ParseType()
+
+	var node Node
+	var err error
+
+	p.PushPos()
+	node, err = p.ParseType()
 	if err != nil {
-		return nil, err
+		p.PopPos()
+		node, err = p.ParseExpression()
+		if err != nil {
+			return nil, shared.NewError(p.PrevLoc(), "expected type or expression after 'sizeof'")
+		}
+	} else {
+		p.CommitPos()
 	}
-	return &SizeOfNode{
-		Operand: typ,
-		Loc:     beginLoc,
-	}, nil
+
+	for p.Match(tokeniser.TokenNewline) {
+		p.Inc()
+	}
+
+	if !p.Expect(tokeniser.TokenCloseParen) {
+		return nil, shared.NewError(p.PrevLoc(), "expected ')' after 'sizeof' type")
+	}
+
+	switch node := node.(type) {
+	case TypeNode:
+		return &SizeOfNode{
+			Operand: node,
+			Loc:     beginLoc,
+		}, nil
+	case ExpressionNode:
+		return &SizeOfExprNode{
+			Operand: node,
+			Loc:     beginLoc,
+		}, nil
+	}
+
+	panic("unreachable")
 }
 
 func (p *Parser) ParseLogicalOr() (ExpressionNode, error) {
@@ -234,15 +268,6 @@ func (p *Parser) ParsePostfix() (ExpressionNode, error) {
 			field, err := p.ParseIdent()
 			if err != nil {
 				return nil, err
-			}
-
-			if field.Name == "len" {
-				expr = &UnaryOpNode{
-					Op:      UnaryOpSliceLen,
-					Operand: expr,
-					Loc:     beginLoc,
-				}
-				continue
 			}
 
 			expr = &FieldAccessNode{
@@ -480,6 +505,41 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 		}
 
 		return ident, nil
+	}
+
+	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordLen) {
+		p.Inc()
+
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+
+		if !p.Expect(tokeniser.TokenOpenParen) {
+			return nil, shared.NewError(p.PrevLoc(), "expected '(' after 'len'")
+		}
+
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+
+		expr, err := p.ParseExpression()
+		if err != nil {
+			return nil, err
+		}
+
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+
+		if !p.Expect(tokeniser.TokenCloseParen) {
+			return nil, shared.NewError(p.PrevLoc(), "expected ')' after 'len' expression")
+		}
+
+		return &UnaryOpNode{
+			Op:      UnaryOpSliceLen,
+			Operand: expr,
+			Loc:     beginLoc,
+		}, nil
 	}
 
 	if p.Match(tokeniser.TokenOpenCurly) {

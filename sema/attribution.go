@@ -429,6 +429,11 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		n.SetType(types.PrimitiveUsz)
 		n.OperandType = a.analyser.resolveTypeNode(n.Operand)
 
+	case *parser.SizeOfExprNode:
+		a.attributeExpr(n.Operand)
+		n.SetType(types.PrimitiveUsz)
+		n.OperandType = n.Operand.GetType()
+
 	default:
 		panic(fmt.Sprintf("unexpected expression type: %T\n", node))
 	}

@@ -298,6 +298,8 @@ func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
 		return g.generateCastExpr(n)
 	case *parser.SizeOfNode:
 		return g.generateSizeOfExpr(n)
+	case *parser.SizeOfExprNode:
+		return g.generateSizeOfExprExpr(n)
 	case *parser.StringLiteralNode:
 		return g.generateStringLiteralExpr(n)
 	case *parser.NilLiteralNode:
@@ -366,6 +368,12 @@ func (g *Generator) generateCastExpr(node *parser.CastNode) ir.Operand {
 func (g *Generator) generateSizeOfExpr(node *parser.SizeOfNode) ir.Operand {
 	dst := g.currentFunction.NewValueOfType(types.PrimitiveUsz)
 	g.Emit(ir.Sizeof{Dest: dst, Type: node.OperandType})
+	return ir.ValueOperand(dst, types.PrimitiveUsz)
+}
+
+func (g *Generator) generateSizeOfExprExpr(node *parser.SizeOfExprNode) ir.Operand {
+	dst := g.currentFunction.NewValueOfType(types.PrimitiveUsz)
+	g.Emit(ir.Sizeof{Dest: dst, Type: node.Operand.GetType()})
 	return ir.ValueOperand(dst, types.PrimitiveUsz)
 }
 

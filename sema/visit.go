@@ -1,6 +1,8 @@
 package sema
 
 import (
+	"fmt"
+
 	"github.com/marzeq/qk/parser"
 	"github.com/marzeq/qk/symbols"
 	"github.com/marzeq/qk/types"
@@ -155,6 +157,9 @@ func (a *Analyser) visitExpression(expr parser.ExpressionNode) {
 	case *parser.SizeOfNode:
 		a.resolveTypeNode(e.Operand)
 
+	case *parser.SizeOfExprNode:
+		a.visitExpression(e.Operand)
+
 	case *parser.GivenExprNode:
 		a.visitBlock(e.Block)
 		a.visitExpression(e.FinalExpr)
@@ -167,7 +172,7 @@ func (a *Analyser) visitExpression(expr parser.ExpressionNode) {
 		*parser.NilLiteralNode:
 
 	default:
-		panic("unsupported expression type")
+		panic(fmt.Sprintf("unsupported expression node type %T", e))
 	}
 }
 
