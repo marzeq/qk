@@ -154,23 +154,24 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 
 		if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordForeign) {
 			p.Inc()
-			if !p.Expect(tokeniser.TokenOpenParen) {
-				return nil, shared.NewError(p.PrevLoc(), "expected '(' after 'foreign'")
-			}
-			externNameTok, ok := p.ExpectGet(tokeniser.TokenString)
-			if !ok {
-				return nil, shared.NewError(p.PrevLoc(),
-					"expected string literal for extern function name")
-			}
-			if !p.Expect(tokeniser.TokenCloseParen) {
-				return nil, shared.NewError(p.PrevLoc(),
-					"expected ')' after extern function name")
+			externNameStr := name.Value
+			if p.Match(tokeniser.TokenOpenParen) {
+				externNameTok, ok := p.ExpectGet(tokeniser.TokenString)
+				if !ok {
+					return nil, shared.NewError(p.PrevLoc(),
+						"expected string literal for extern function name")
+				}
+				if !p.Expect(tokeniser.TokenCloseParen) {
+					return nil, shared.NewError(p.PrevLoc(),
+						"expected ')' after extern function name")
+				}
+				externNameStr = externNameTok.Value
 			}
 			return &FunctionDefNode{
 				Name:        name.Value,
 				Args:        args,
 				RetTypeNode: retType,
-				ExternFrom:  externNameTok.Value,
+				ExternFrom:  externNameStr,
 				HasVariadic: variadic,
 				Loc:         beginLoc,
 			}, nil
