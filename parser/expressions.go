@@ -260,7 +260,6 @@ func (p *Parser) ParsePostfix() (ExpressionNode, error) {
 				continue
 			}
 
-
 			for p.Match(tokeniser.TokenNewline) {
 				p.Inc()
 			}

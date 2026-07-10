@@ -132,7 +132,7 @@ func main() {
 			args.target,
 			args.sysroot,
 			args.clangArgs,
-			)
+		)
 		check(err)
 
 		err = dumpAssemblyFiles(buildDir, order)
@@ -147,7 +147,7 @@ func main() {
 		args.target,
 		args.sysroot,
 		args.clangArgs,
-		)
+	)
 	check(err)
 
 	stat, err := os.Stat(args.output)

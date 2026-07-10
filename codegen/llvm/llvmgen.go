@@ -117,7 +117,7 @@ func (e *Emitter) EmitFunction(out *strings.Builder, fn *ir.Function) {
 		fmt.Fprintf(out, "%s %%%s", e.TypeEmit(paramType), paramName)
 	}
 	out.WriteString(") ")
-	
+
 	for _, attr := range fn.Attributes {
 		at := attr.GetType()
 		switch at {
@@ -744,5 +744,5 @@ func (e *Emitter) SizeofEmit(out *strings.Builder, s ir.Sizeof) {
 		e.ValueIDEmit(s.Dest),
 		e.TypeEmit(s.Type),
 		e.TypeEmit(types.PrimitiveUsz),
-		)
+	)
 }
