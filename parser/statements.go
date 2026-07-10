@@ -131,39 +131,11 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 		retType = argType
 	}
 
-	if !p.Expect(tokeniser.TokenEquals) {
-		return nil, shared.NewError(p.PrevLoc(), "expected '='")
-	}
-
 	for p.Match(tokeniser.TokenNewline) {
 		p.Inc()
 	}
 
 	var body Node
-
-	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordExtern) {
-		p.Inc()
-		if !p.Expect(tokeniser.TokenOpenParen) {
-			return nil, shared.NewError(p.PrevLoc(), "expected '(' after 'extern'")
-		}
-		externNameTok, ok := p.ExpectGet(tokeniser.TokenString)
-		if !ok {
-			return nil, shared.NewError(p.PrevLoc(),
-				"expected string literal for extern function name")
-		}
-		if !p.Expect(tokeniser.TokenCloseParen) {
-			return nil, shared.NewError(p.PrevLoc(),
-				"expected ')' after extern function name")
-		}
-		return &FunctionDefNode{
-			Name:        name.Value,
-			Args:        args,
-			RetTypeNode: retType,
-			ExternFrom:  externNameTok.Value,
-			HasVariadic: variadic,
-			Loc:         beginLoc,
-		}, nil
-	}
 
 	if p.Match(tokeniser.TokenOpenCurly) {
 		b, err := p.ParseBlock()
@@ -172,6 +144,38 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 		}
 		body = b
 	} else {
+		if !p.Expect(tokeniser.TokenEquals) {
+			return nil, shared.NewError(p.PrevLoc(), "expected '='")
+		}
+
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+
+		if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordExtern) {
+			p.Inc()
+			if !p.Expect(tokeniser.TokenOpenParen) {
+				return nil, shared.NewError(p.PrevLoc(), "expected '(' after 'extern'")
+			}
+			externNameTok, ok := p.ExpectGet(tokeniser.TokenString)
+			if !ok {
+				return nil, shared.NewError(p.PrevLoc(),
+					"expected string literal for extern function name")
+			}
+			if !p.Expect(tokeniser.TokenCloseParen) {
+				return nil, shared.NewError(p.PrevLoc(),
+					"expected ')' after extern function name")
+			}
+			return &FunctionDefNode{
+				Name:        name.Value,
+				Args:        args,
+				RetTypeNode: retType,
+				ExternFrom:  externNameTok.Value,
+				HasVariadic: variadic,
+				Loc:         beginLoc,
+			}, nil
+		}
+
 		b, err := p.ParseExpression()
 		if err != nil {
 			return nil, err
@@ -179,7 +183,7 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 		body = b
 	}
 
-	if variadic {
+	if variadic && !extern {
 		return nil, shared.NewError(beginLoc, "variadics are only supported for extern functions for now")
 	}
 
