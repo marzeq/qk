@@ -94,6 +94,9 @@ func main() {
 					if fn.Symbol.Signature.ReturnType != types.PrimitiveVoid {
 						fatal("%v", shared.NewError(fn.Loc, "main function must return void"))
 					}
+					if len(fn.Symbol.Attributes) != 0 {
+						fatal("%v", shared.NewError(fn.Loc, "main function must not have attributes"))
+					}
 					foundMain = true
 					break
 				}

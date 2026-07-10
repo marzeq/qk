@@ -69,9 +69,10 @@ func (g *Generator) Generate(root *parser.RootNode) *ir.Module {
 				switch attr := attr.(type) {
 				case attributes.FunctionAttributeForeign:
 					externFrom = attr.From
-				default:
-					panic(fmt.Sprintf("todo: function attribute %T", attr))
 				}
+			}
+			if externFrom == "" {
+				panic("function with body must have foreign attribute")
 			}
 			sig := g.buildFunctionSignature(fn)
 			name := fn.Name
@@ -150,6 +151,7 @@ func (g *Generator) buildFunctionSignature(fn *parser.FunctionDefNode) ir.Functi
 		sig.ParamTypes = append(sig.ParamTypes, fn.Symbol.Signature.Parameters...)
 		sig.ReturnType = fn.Symbol.Signature.ReturnType
 		sig.Variadic = fn.Symbol.Signature.Variadic
+		sig.Attributes = fn.Symbol.Attributes
 		return sig
 	}
 
@@ -667,6 +669,7 @@ func (g *Generator) buildCallSignature(node *parser.FunctionCallNode) ir.Functio
 		sig.ParamTypes = append([]types.Type(nil), node.Symbol.Signature.Parameters...)
 		sig.ReturnType = node.Symbol.Signature.ReturnType
 		sig.Variadic = node.Symbol.Signature.Variadic
+		sig.Attributes = node.Symbol.Attributes
 	}
 
 	return sig

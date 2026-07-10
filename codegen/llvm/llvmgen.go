@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/marzeq/qk/attributes"
 	"github.com/marzeq/qk/ir"
 	"github.com/marzeq/qk/symbols"
 	"github.com/marzeq/qk/types"
@@ -61,7 +62,18 @@ func (e *Emitter) EmitModule(out *strings.Builder, m *ir.Module) {
 			}
 			out.WriteString("...")
 		}
-		out.WriteString(")\n")
+		out.WriteString(")")
+		for _, attr := range ex.Signature.Attributes {
+			at := attr.GetType()
+			switch at {
+			case attributes.AttributeTypeNoReturn:
+				out.WriteString(" noreturn")
+			case attributes.AttributeTypeForeign:
+			default:
+				panic(fmt.Sprintf("unsupported attribute type for extern function: %s", at))
+			}
+		}
+		out.WriteString("\n")
 	}
 
 	for i, fn := range m.Functions {
@@ -104,7 +116,23 @@ func (e *Emitter) EmitFunction(out *strings.Builder, fn *ir.Function) {
 		}
 		fmt.Fprintf(out, "%s %%%s", e.TypeEmit(paramType), paramName)
 	}
-	out.WriteString(") {\n")
+	out.WriteString(") ")
+	
+	for _, attr := range fn.Attributes {
+		at := attr.GetType()
+		switch at {
+		case attributes.AttributeTypeNoInline:
+			out.WriteString("noinline ")
+		case attributes.AttributeTypeInline:
+			out.WriteString("alwaysinline ")
+		case attributes.AttributeTypeNoReturn:
+			out.WriteString("noreturn ")
+		default:
+			panic(fmt.Sprintf("unsupported attribute type for function: %s", at))
+		}
+	}
+
+	out.WriteString("{\n")
 
 	for _, slot := range fn.Slots {
 		fmt.Fprintf(out, "  ; slot %s %s %s\n", e.SlotIDEmit(slot.ID), e.TypeEmit(slot.Type), slot.Name)
@@ -563,6 +591,11 @@ func (e *Emitter) CallEmit(out *strings.Builder, c ir.Call) {
 		fmt.Fprintf(out, "%s %s", e.TypeEmit(arg.Type), e.OperandEmit(arg))
 	}
 	out.WriteString(")")
+
+	noreturnAttr := c.Signature.Attributes.Get(attributes.AttributeTypeNoReturn)
+	if noreturnAttr != nil {
+		out.WriteString("\nunreachable")
+	}
 }
 
 func (e *Emitter) JumpEmit(out *strings.Builder, j ir.Jump) {

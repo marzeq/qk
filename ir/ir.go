@@ -73,6 +73,7 @@ type FunctionSignature struct {
 	ParamTypes []types.Type
 	ReturnType types.Type
 	Variadic   bool
+	Attributes attributes.Attributes
 }
 
 type Function struct {
