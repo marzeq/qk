@@ -365,7 +365,7 @@ func (g *Generator) generateCastExpr(node *parser.CastNode) ir.Operand {
 
 func (g *Generator) generateSizeOfExpr(node *parser.SizeOfNode) ir.Operand {
 	dst := g.currentFunction.NewValueOfType(types.PrimitiveUsz)
-	g.Emit(ir.Sizeof{Dest: dst, Type: node.Type})
+	g.Emit(ir.Sizeof{Dest: dst, Type: node.OperandType})
 	return ir.ValueOperand(dst, types.PrimitiveUsz)
 }
 

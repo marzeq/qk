@@ -427,6 +427,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 
 	case *parser.SizeOfNode:
 		n.SetType(types.PrimitiveUsz)
+		n.OperandType = a.analyser.resolveTypeNode(n.Operand)
 
 	default:
 		panic(fmt.Sprintf("unexpected expression type: %T\n", node))

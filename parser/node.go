@@ -334,9 +334,10 @@ func (n *CastNode) SetType(t types.Type)   { n.Type = t }
 func (n *CastNode) GetType() types.Type    { return n.Type }
 
 type SizeOfNode struct {
-	Operand TypeNode
-	Loc     shared.Location
-	Type    types.Type
+	Operand     TypeNode
+	OperandType types.Type
+	Loc         shared.Location
+	Type        types.Type
 }
 
 func (n SizeOfNode) GetLoc() shared.Location { return n.Loc }
