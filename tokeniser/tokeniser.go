@@ -1,6 +1,7 @@
 package tokeniser
 
 import (
+	"strings"
 	"fmt"
 	"os"
 
@@ -90,13 +91,13 @@ func IsSpace(c rune) bool {
 }
 
 func (t *Tokeniser) ReadWord() string {
-	s := ""
+	var s strings.Builder
 
 	for IsLegalWordChar(t.Peek()) {
-		s += string(t.Consume())
+		s.WriteString(string(t.Consume()))
 	}
 
-	return s
+	return s.String()
 }
 
 func (t *Tokeniser) ReadNumber() (string, error) {
@@ -154,7 +155,7 @@ func (t *Tokeniser) HanldeEscape() (string, error) {
 }
 
 func (t *Tokeniser) ReadString() (string, error) {
-	s := ""
+	var s strings.Builder
 
 	if t.Peek() != '"' {
 		return "", shared.NewError(t.GetLoc(), "expected '\"' to start a string")
@@ -166,7 +167,7 @@ func (t *Tokeniser) ReadString() (string, error) {
 		if err != nil {
 			return "", err
 		}
-		s += ch
+		s.WriteString(ch)
 	}
 
 	if t.Peek() != '"' {
@@ -174,7 +175,7 @@ func (t *Tokeniser) ReadString() (string, error) {
 	}
 	t.Inc()
 
-	return s, nil
+	return s.String(), nil
 }
 
 func (t *Tokeniser) IgnoreComment() {
