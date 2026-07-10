@@ -114,6 +114,7 @@ func main() {
 
 	buildDir, err := emitLLVMFiles(llvmOutputs, order)
 	check(err)
+
 	if !args.keepBuildDir {
 		defer os.RemoveAll(buildDir)
 	}
@@ -122,7 +123,31 @@ func main() {
 		fmt.Printf("emitted LLVM files to %s\n", buildDir)
 	}
 
-	objFiles, err := compileLLVMModules(buildDir, order, args.optLevel, args.verbose, args.target, args.sysroot, args.clangArgs)
+	if args.dumpAsm {
+		err := emitAssemblyFiles(
+			buildDir,
+			order,
+			args.optLevel,
+			args.verbose,
+			args.target,
+			args.sysroot,
+			args.clangArgs,
+			)
+		check(err)
+
+		err = dumpAssemblyFiles(buildDir, order)
+		check(err)
+	}
+
+	objFiles, err := compileLLVMModules(
+		buildDir,
+		order,
+		args.optLevel,
+		args.verbose,
+		args.target,
+		args.sysroot,
+		args.clangArgs,
+		)
 	check(err)
 
 	stat, err := os.Stat(args.output)
@@ -435,4 +460,79 @@ func safeModuleFileName(name string) string {
 	}
 
 	return b.String()
+}
+
+func emitAssemblyFiles(buildDir string, order []string, optLevel OptimisationLevel, verbose bool, target string, sysroot string, extraClangArgs []string) error {
+	for _, name := range order {
+		llPath := filepath.Join(buildDir, safeModuleFileName(name)+".ll")
+
+		if _, err := os.Stat(llPath); err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return err
+		}
+
+		asmPath := filepath.Join(buildDir, safeModuleFileName(name)+".s")
+
+		clangArgs := []string{
+			"-S",
+			llPath,
+			"-o", asmPath,
+			fmt.Sprintf("-O%s", optLevel),
+		}
+
+		if target != "" {
+			clangArgs = append([]string{"-target", target}, clangArgs...)
+		}
+
+		if sysroot != "" {
+			clangArgs = append(clangArgs, "--sysroot="+sysroot)
+		}
+
+		if len(extraClangArgs) > 0 {
+			clangArgs = append(clangArgs, extraClangArgs...)
+		}
+
+		if verbose {
+			fmt.Printf("> clang %s\n", strings.Join(clangArgs, " "))
+		}
+
+		cmd := exec.Command("clang", clangArgs...)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("clang failed while generating assembly for module %q: %w\n%s",
+				name, err, string(out))
+		}
+	}
+
+	return nil
+}
+
+func dumpAssemblyFiles(buildDir string, order []string) error {
+	first := true
+
+	for _, name := range order {
+		asmPath := filepath.Join(buildDir, safeModuleFileName(name)+".s")
+
+		data, err := os.ReadFile(asmPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return err
+		}
+
+		if !first {
+			fmt.Println()
+		}
+		first = false
+
+		fmt.Print(string(data))
+		if len(data) > 0 && data[len(data)-1] != '\n' {
+			fmt.Println()
+		}
+	}
+
+	return nil
 }

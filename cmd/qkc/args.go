@@ -38,6 +38,7 @@ type Args struct {
 	debug        bool
 	dumpIR       bool
 	dumpLLVM     bool
+	dumpAsm      bool
 	keepBuildDir bool
 	static       bool
 	noEmit       bool
@@ -132,6 +133,10 @@ func parseArgs() (*Args, error) {
 
 		case tok == "-dump-llvm":
 			a.dumpLLVM = true
+			i++
+
+		case tok == "-dump-asm":
+			a.dumpAsm = true
 			i++
 
 		case tok == "-keep-build-dir":
