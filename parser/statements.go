@@ -152,10 +152,10 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 			p.Inc()
 		}
 
-		if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordExtern) {
+		if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordForeign) {
 			p.Inc()
 			if !p.Expect(tokeniser.TokenOpenParen) {
-				return nil, shared.NewError(p.PrevLoc(), "expected '(' after 'extern'")
+				return nil, shared.NewError(p.PrevLoc(), "expected '(' after 'foreign'")
 			}
 			externNameTok, ok := p.ExpectGet(tokeniser.TokenString)
 			if !ok {
