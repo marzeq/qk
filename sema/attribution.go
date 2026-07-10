@@ -3,6 +3,7 @@ package sema
 import (
 	"fmt"
 
+	"github.com/marzeq/qk/attributes"
 	"github.com/marzeq/qk/parser"
 	"github.com/marzeq/qk/shared"
 	"github.com/marzeq/qk/tokeniser"
@@ -48,7 +49,9 @@ func (a *Attributor) attributeNode(node parser.Node) {
 			a.attributeNode(n.Body)
 		}
 
-		if n.ExternFrom != "" && n.RetTypeNode == nil {
+		foreignAttr := n.Attributes.Get(attributes.AttributeTypeForeign)
+
+		if foreignAttr != nil && n.RetTypeNode == nil {
 			a.errorf(n, "extern function must have a return type annotation")
 		}
 

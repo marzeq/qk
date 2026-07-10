@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"github.com/marzeq/qk/attributes"
 	"github.com/marzeq/qk/shared"
 	"github.com/marzeq/qk/tokeniser"
 )
@@ -135,56 +136,80 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 		p.Inc()
 	}
 
-	var body Node
+	attrs := attributes.Attributes{}
 
-	if p.Match(tokeniser.TokenOpenCurly) {
-		b, err := p.ParseBlock()
+	expectsBody := true
+
+	for p.Match(tokeniser.TokenAt) {
+		attrName, attrArgs, err := p.ParseAttribute()
 		if err != nil {
 			return nil, err
 		}
-		body = b
-	} else {
-		if !p.Expect(tokeniser.TokenEquals) {
-			return nil, shared.NewError(p.PrevLoc(), "expected '='")
-		}
 
-		for p.Match(tokeniser.TokenNewline) {
-			p.Inc()
-		}
-
-		if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordForeign) {
-			p.Inc()
-			externNameStr := name.Value
-			if p.Match(tokeniser.TokenOpenParen) {
-				externNameTok, ok := p.ExpectGet(tokeniser.TokenString)
-				if !ok {
-					return nil, shared.NewError(p.PrevLoc(),
-						"expected string literal for extern function name")
-				}
-				if !p.Expect(tokeniser.TokenCloseParen) {
-					return nil, shared.NewError(p.PrevLoc(),
-						"expected ')' after extern function name")
-				}
-				externNameStr = externNameTok.Value
+		switch attributes.AttributeType(attrName) {
+		case attributes.AttributeTypeInline:
+			if len(attrArgs) > 0 {
+				return nil, shared.NewError(p.PrevLoc(), "inline attribute does not take any arguments")
 			}
-			return &FunctionDefNode{
-				Name:        name.Value,
-				Args:        args,
-				RetTypeNode: retType,
-				ExternFrom:  externNameStr,
-				HasVariadic: variadic,
-				Loc:         beginLoc,
-			}, nil
+			attrs = append(attrs, attributes.FunctionAttributeInline{})
+		case attributes.AttributeTypeNoInline:
+			if len(attrArgs) > 0 {
+				return nil, shared.NewError(p.PrevLoc(), "noinline attribute does not take any arguments")
+			}
+			attrs = append(attrs, attributes.FunctionAttributeNoInline{})
+		case attributes.AttributeTypeNoReturn:
+			if len(attrArgs) > 0 {
+				return nil, shared.NewError(p.PrevLoc(), "noreturn attribute does not take any arguments")
+			}
+			attrs = append(attrs, attributes.FunctionAttributeNoReturn{})
+		case attributes.AttributeTypeForeign:
+			fgnNameStr := name.Value
+			if len(attrArgs) == 0 {
+			} else if len(attrArgs) == 1 {
+				nameNode, ok := attrArgs[0].(*StringLiteralNode)
+				if !ok {
+					return nil, shared.NewError(p.PrevLoc(), "foreign attribute argument must be a string literal")
+				}
+				fgnNameStr = nameNode.Value
+			} else {
+				return nil, shared.NewError(p.PrevLoc(), "foreign attribute takes at most one argument")
+			}
+			attrs = append(attrs, attributes.FunctionAttributeForeign{From: fgnNameStr})
+			expectsBody = false
+		default:
+			return nil, shared.NewError(p.PrevLoc(), "unknown function attribute: %s", attrName)
 		}
-
-		b, err := p.ParseExpression()
-		if err != nil {
-			return nil, err
-		}
-		body = b
 	}
 
-	if variadic && !extern {
+	var body Node
+
+	if expectsBody {
+		if p.Match(tokeniser.TokenOpenCurly) {
+			b, err := p.ParseBlock()
+			if err != nil {
+				return nil, err
+			}
+			body = b
+		} else if p.Match(tokeniser.TokenEquals) {
+			p.Inc() // consume '='
+
+			for p.Match(tokeniser.TokenNewline) {
+				p.Inc()
+			}
+
+			b, err := p.ParseExpression()
+			if err != nil {
+				return nil, err
+			}
+			body = b
+		} else {
+			return nil, shared.NewError(p.PrevLoc(), "expected function body as either block or expression after '='")
+		}
+	}
+
+	foreignAttr := attrs.Get(attributes.AttributeTypeForeign)
+
+	if variadic && foreignAttr == nil {
 		return nil, shared.NewError(beginLoc, "variadics are only supported for extern functions for now")
 	}
 
@@ -195,7 +220,46 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 		Body:        body,
 		Extern:      extern,
 		Loc:         beginLoc,
+		Attributes:  attrs,
+		HasVariadic: variadic,
 	}, nil
+}
+
+func (p *Parser) ParseAttribute() (string, []Node, error) {
+	if !p.Expect(tokeniser.TokenAt) {
+		return "", nil, shared.NewError(p.PrevLoc(), "expected '@' for attribute")
+	}
+	nameIdent, err := p.ParseIdent()
+	if err != nil {
+		return "", nil, err
+	}
+	if !p.Match(tokeniser.TokenOpenParen) {
+		return nameIdent.Name, nil, nil
+	}
+	p.Inc()
+
+	for p.Match(tokeniser.TokenNewline) {
+		p.Inc()
+	}
+
+	var args []Node
+	for !p.Match(tokeniser.TokenCloseParen) {
+		arg, err := p.ParseExpression()
+		if err != nil {
+			return "", nil, err
+		}
+		args = append(args, arg)
+		if !p.Match(tokeniser.TokenComma) {
+			break
+		}
+		p.Inc()
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+	}
+	p.Inc() // consume ')'
+
+	return nameIdent.Name, args, nil
 }
 
 func (p *Parser) ParseTypeAlias() (*TypeAliasNode, error) {
@@ -557,8 +621,8 @@ func (p *Parser) ParsePointerAssignment(ident *IdentifierNode) (*PointerAssignme
 			Operand: ident,
 			Loc:     ident.Loc,
 		},
-		Value:    expr,
-		Loc:      ident.Loc,
+		Value: expr,
+		Loc:   ident.Loc,
 	}, nil
 }
 

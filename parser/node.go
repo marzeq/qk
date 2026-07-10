@@ -5,6 +5,7 @@ import (
 	"github.com/marzeq/qk/symbols"
 	"github.com/marzeq/qk/tokeniser"
 	"github.com/marzeq/qk/types"
+	"github.com/marzeq/qk/attributes"
 )
 
 type (
@@ -378,15 +379,16 @@ type FunctionNodeArg struct {
 
 func (a FunctionNodeArg) GetLoc() shared.Location { return a.Type.GetLoc() }
 
+
 type FunctionDefNode struct {
 	Name        string
 	Args        []*FunctionNodeArg
 	RetTypeNode TypeNode
 	Body        Node
-	ExternFrom  string
 	HasVariadic bool
 	Extern      bool
 	Pub         bool
+	Attributes  attributes.Attributes
 	Loc         shared.Location
 	Symbol      *symbols.Symbol
 }

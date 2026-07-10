@@ -63,7 +63,7 @@ func (a *Analyser) collectFunctionSignature(n *parser.FunctionDefNode) {
 		Signature:  sig,
 		Public:     n.Pub,
 		Extern:     n.Extern,
-		ExternFrom: n.ExternFrom,
+		Attributes: n.Attributes,
 	}
 
 	if a.defineSymbol(sym, n) {

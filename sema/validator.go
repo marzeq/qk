@@ -49,11 +49,6 @@ func (v *Validator) validateNode(node parser.Node) {
 
 		if n.Body != nil {
 			v.validateNode(n.Body)
-		} else {
-			if n.ExternFrom == "" {
-				v.errorf(n, "function declaration missing body or extern")
-				return
-			}
 		}
 
 		v.currentFunction = prev

@@ -224,7 +224,6 @@ var keywords = map[string]struct{}{
 	string(KeywordLet):      {},
 	string(KeywordMut):      {},
 	string(KeywordExtern):   {},
-	string(KeywordForeign):  {},
 	string(KeywordStruct):   {},
 	string(KeywordType):     {},
 	string(KeywordIf):       {},
@@ -443,6 +442,10 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 			continue
 		case ':':
 			t.AddToken(TokenColon, t.GetLoc())
+			t.Inc()
+			continue
+		case '@':
+			t.AddToken(TokenAt, t.GetLoc())
 			t.Inc()
 			continue
 		case '.':

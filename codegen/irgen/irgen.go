@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/marzeq/qk/attributes"
 	"github.com/marzeq/qk/ir"
 	"github.com/marzeq/qk/parser"
 	"github.com/marzeq/qk/shared"
@@ -62,10 +63,19 @@ func (g *Generator) Generate(root *parser.RootNode) *ir.Module {
 		if !ok {
 			continue
 		}
-		if fn.ExternFrom != "" {
+		if fn.Body == nil {
+			var externFrom string
+			for _, attr := range fn.Attributes {
+				switch attr := attr.(type) {
+				case attributes.FunctionAttributeForeign:
+					externFrom = attr.From
+				default:
+					panic(fmt.Sprintf("todo: function attribute %T", attr))
+				}
+			}
 			sig := g.buildFunctionSignature(fn)
 			name := fn.Name
-			g.Module.AddExtern(ir.ExternDecl{Name: name, Signature: sig, From: fn.ExternFrom})
+			g.Module.AddExtern(ir.ExternDecl{Name: name, Signature: sig, From: externFrom})
 			continue
 		}
 		g.GenerateFunction(fn)
@@ -586,7 +596,9 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 	if node.Symbol != nil {
 		name = node.Symbol.Name
 
-		if !node.Symbol.Extern && node.Symbol.ExternFrom == "" {
+		foreignAttr := node.Symbol.Attributes.Get(attributes.AttributeTypeForeign)
+
+		if !node.Symbol.Extern && foreignAttr == nil {
 			callModule := g.ModuleName
 			if node.Name != nil && node.Name.ModName != "" {
 				callModule = node.Name.ModName

@@ -54,6 +54,7 @@ const (
 	TokenDot
 	Token3Dots
 	TokenArrow
+	TokenAt
 )
 
 type KeywordKind string
@@ -62,7 +63,6 @@ const (
 	KeywordLet      KeywordKind = "let"
 	KeywordMut      KeywordKind = "mut"
 	KeywordExtern   KeywordKind = "extern"
-	KeywordForeign  KeywordKind = "foreign"
 	KeywordStruct   KeywordKind = "struct"
 	KeywordType     KeywordKind = "type"
 	KeywordIf       KeywordKind = "if"
@@ -164,6 +164,8 @@ func (t Token) String() string {
 		return "..."
 	case TokenArrow:
 		return "->"
+	case TokenAt:
+		return "@"
 	default:
 		return "{UNKNOWN}"
 	}

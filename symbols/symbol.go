@@ -1,6 +1,7 @@
 package symbols
 
 import (
+	"github.com/marzeq/qk/attributes"
 	"github.com/marzeq/qk/types"
 )
 
@@ -19,7 +20,7 @@ type Symbol struct {
 	Mutable    bool
 	Public     bool
 	Extern     bool
-	ExternFrom string
+	Attributes attributes.Attributes
 
 	Type      types.Type         // for SymbolKindVariable
 	Signature *FunctionSignature // for SymbolKindFunction

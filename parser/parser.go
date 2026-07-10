@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"fmt"
 	"slices"
 
 	"github.com/marzeq/qk/shared"
@@ -111,6 +112,10 @@ func (p *Parser) Match(ttypes ...tokeniser.TokenKind) bool {
 	ptype := p.Peek().Type
 
 	return slices.Contains(ttypes, ptype)
+}
+
+func (p *Parser) DumpCurrent() {
+	fmt.Printf("Current token: %v\n", p.Peek())
 }
 
 func (p *Parser) Parse() (*RootNode, error) {
