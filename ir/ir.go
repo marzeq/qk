@@ -1,6 +1,9 @@
 package ir
 
-import "github.com/marzeq/qk/types"
+import (
+	"github.com/marzeq/qk/attributes"
+	"github.com/marzeq/qk/types"
+)
 
 type ValueID uint32
 type SlotID uint32
@@ -78,6 +81,7 @@ type Function struct {
 	Signature  FunctionSignature
 	Parameters []Parameter
 	Slots      []Slot
+	Attributes attributes.Attributes
 	Values     map[ValueID]types.Type
 
 	Blocks []*Block
@@ -88,11 +92,12 @@ type Function struct {
 	nextBlock BlockID
 }
 
-func NewFunction(name string, extern bool) *Function {
+func NewFunction(name string, extern bool, attributes attributes.Attributes) *Function {
 	return &Function{
-		Name:   name,
-		Values: make(map[ValueID]types.Type),
-		Extern: extern,
+		Name:       name,
+		Values:     make(map[ValueID]types.Type),
+		Extern:     extern,
+		Attributes: attributes,
 	}
 }
 

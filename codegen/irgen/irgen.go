@@ -89,7 +89,7 @@ func (g *Generator) GenerateFunction(fn *parser.FunctionDefNode) {
 	if !fn.Extern && !g.isProgramEntryFunction(fn.Name) {
 		name = g.mangleFunctionName(g.ModuleName, fn.Name)
 	}
-	irFn := ir.NewFunction(name, fn.Extern)
+	irFn := ir.NewFunction(name, fn.Extern, fn.Attributes)
 	irFn.Signature = g.buildFunctionSignature(fn)
 	g.Module.AddFunction(irFn)
 
@@ -117,8 +117,6 @@ func (g *Generator) GenerateFunction(fn *parser.FunctionDefNode) {
 		} else {
 			g.Emit(ir.Return{HasValue: true, Value: ret})
 		}
-	case nil:
-		g.Emit(ir.Return{})
 	default:
 		panic(fmt.Sprintf("todo: function body %T", body))
 	}

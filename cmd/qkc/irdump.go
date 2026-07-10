@@ -39,6 +39,10 @@ func dumpIRModules(mods map[string]*ir.Module) {
 				fmt.Printf("    slot s%d %s %s\n", slot.ID, typeName, slot.Name)
 			}
 
+			for _, attr := range fn.Attributes {
+				fmt.Printf("    attr %s\n", attr.GetType())
+			}
+
 			for _, block := range fn.Blocks {
 				fmt.Printf("    b%d (%s):\n", block.ID, block.Name)
 				for _, inst := range block.Instr {
