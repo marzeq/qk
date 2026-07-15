@@ -22,12 +22,6 @@ func (s *Scope) Define(sym *Symbol) error {
 		return fmt.Errorf("symbol '%v' already defined in this scope", sym.Name)
 	}
 
-	for sc := s.Parent; sc != nil; sc = sc.Parent {
-		if _, exists := sc.Symbols[sym.Name]; exists {
-			return fmt.Errorf("symbol '%v' would shadow symbol from parent scope", sym.Name)
-		}
-	}
-
 	s.Symbols[sym.Name] = sym
 	return nil
 }

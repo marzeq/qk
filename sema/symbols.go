@@ -11,12 +11,6 @@ func (a *Analyser) defineSymbol(sym *symbols.Symbol, node parser.Node) bool {
 		return false
 	}
 
-	if a.current.Parent != nil {
-		if _, ok := a.current.Parent.Resolve(sym.Name); ok {
-			a.errorf(node, "symbol %q shadows outer declaration", sym.Name)
-		}
-	}
-
 	a.current.Symbols[sym.Name] = sym
 	return true
 }
