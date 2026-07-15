@@ -106,6 +106,8 @@ func (g *Generator) generateGlobalInitializer(expr parser.ExpressionNode) ir.Ope
 	switch node := expr.(type) {
 	case *parser.IntegerLiteralNode:
 		return ir.IntConstOperand(node.Value, node.GetType())
+	case *parser.FloatLiteralNode:
+		return ir.FloatConstOperand(node.Value, node.GetType())
 	case *parser.BoolLiteralNode:
 		return ir.BoolConstOperand(node.Value == string(tokeniser.KeywordTrue))
 	case *parser.CharLiteralNode:
@@ -324,6 +326,8 @@ func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
 	switch n := expr.(type) {
 	case *parser.IntegerLiteralNode:
 		return ir.IntConstOperand(n.Value, n.GetType())
+	case *parser.FloatLiteralNode:
+		return ir.FloatConstOperand(n.Value, n.GetType())
 	case *parser.BoolLiteralNode:
 		return ir.BoolConstOperand(n.Value == string(tokeniser.KeywordTrue))
 	case *parser.IdentifierNode:

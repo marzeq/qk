@@ -80,6 +80,7 @@ The compiler will convert values automatically in a few cases:
 
 Integer and float literals start untyped until the compiler decides on a concrete type.
 
-- untyped integers usually default to `i32`
-- untyped floats usually default to `f32`
-
+- An untyped numeric literal is resolved by a type annotation, assignment, function argument, explicitly typed
+  slice or struct field, or an arithmetic operation with a concrete numeric operand.
+- A declaration without a concrete type context is rejected. Use a type annotation such as
+  `let x: u32 = 3` or an explicit cast such as `let x = 3.(i64)`.

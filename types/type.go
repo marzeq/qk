@@ -478,6 +478,34 @@ func IsUntyped(t Type) bool {
 	return false
 }
 
+func HasUntyped(t Type) bool {
+	if IsUntyped(t) {
+		return true
+	}
+
+	switch t := t.(type) {
+	case SliceType:
+		return HasUntyped(t.Base)
+	case PointerType:
+		return HasUntyped(t.Base)
+	case StructType:
+		for _, field := range t.Fields {
+			if HasUntyped(field.R) {
+				return true
+			}
+		}
+	case FunctionType:
+		for _, parameter := range t.Parameters {
+			if HasUntyped(parameter) {
+				return true
+			}
+		}
+		return HasUntyped(t.ReturnType)
+	}
+
+	return false
+}
+
 func PromoteNumeric(a, b Type) Type {
 	if a.Equals(b) {
 		return a
@@ -546,17 +574,6 @@ func widerUnsigned(a, b PrimitiveType) PrimitiveType {
 		return a
 	}
 	return b
-}
-
-func DefaultUntyped(t Type) Type {
-	switch t.(type) {
-	case UntypedInt:
-		return PrimitiveI32
-	case UntypedFloat:
-		return PrimitiveF32
-	default:
-		return t
-	}
 }
 
 type UnknownType struct{}

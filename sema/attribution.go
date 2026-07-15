@@ -106,6 +106,11 @@ func (a *Attributor) attributeNode(node parser.Node) {
 			default:
 				panic(fmt.Sprintf("unexpected function body type: %T\n", n.Body))
 			}
+
+			if types.HasUntyped(n.Symbol.Signature.ReturnType) {
+				a.errorf(n, "cannot infer function return type from untyped numeric value; add a return type annotation or cast")
+				n.Symbol.Signature.ReturnType = types.ErrorType{}
+			}
 		}
 
 	case *parser.BlockNode:

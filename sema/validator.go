@@ -114,8 +114,9 @@ func (v *Validator) finaliseDeclaration(n *parser.DeclarationNode) {
 
 	valueType := n.Value.GetType()
 
-	if types.IsUntyped(valueType) {
-		valueType = types.DefaultUntyped(valueType)
+	if types.HasUntyped(valueType) {
+		v.errorf(n, "cannot infer declaration type from untyped numeric value; add a type annotation or cast")
+		return
 	}
 
 	n.Symbol.Type = valueType
@@ -263,6 +264,9 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		for i, arg := range n.Args {
 			if i >= len(sig.Parameters) {
 				v.validateExpr(arg)
+				if types.HasUntyped(arg.GetType()) {
+					v.errorf(arg, "cannot infer type for variadic argument from untyped numeric value; add a cast")
+				}
 				continue
 			}
 
@@ -272,6 +276,10 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 
 	case *parser.CastNode:
 		v.validateExpr(n.Operand)
+
+		if types.IsUntyped(n.Operand.GetType()) {
+			n.Operand = v.createCast(n.Operand, n.Type)
+		}
 
 		if !n.Operand.GetType().CanCastTo(n.Type) {
 			v.errorf(n, "invalid cast")
@@ -335,6 +343,18 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 
 			if !types.IsNumeric(t1) || !types.IsNumeric(t2) {
 				v.errorf(n, "arithmetic operators require numeric operands")
+				break
+			}
+
+			common := types.PromoteNumeric(t1, t2)
+			if _, isError := common.(types.ErrorType); isError {
+				v.errorf(n, "incompatible types for arithmetic: %v and %v", t1, t2)
+				break
+			}
+			if !types.IsUntyped(common) {
+				n.Operand1 = v.validateExprWithExpected(n.Operand1, common)
+				n.Operand2 = v.validateExprWithExpected(n.Operand2, common)
+				n.SetType(common)
 			}
 
 		case parser.BinaryOpLogicalAnd,
@@ -350,6 +370,16 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 
 			if !t1.CanCoerceTo(t2) && !t2.CanCoerceTo(t1) {
 				v.errorf(n, "incompatible types for comparison: %v and %v", t1, t2)
+				break
+			}
+			if types.IsNumeric(t1) && types.IsNumeric(t2) {
+				common := types.PromoteNumeric(t1, t2)
+				if types.IsUntyped(common) {
+					v.errorf(n, "cannot infer numeric type for comparison")
+					break
+				}
+				n.Operand1 = v.validateExprWithExpected(n.Operand1, common)
+				n.Operand2 = v.validateExprWithExpected(n.Operand2, common)
 			}
 
 		case parser.BinaryOpLess,
@@ -359,7 +389,15 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 
 			if !types.IsNumeric(t1) || !types.IsNumeric(t2) {
 				v.errorf(n, "ordering operators require numeric operands")
+				break
 			}
+			common := types.PromoteNumeric(t1, t2)
+			if types.IsUntyped(common) {
+				v.errorf(n, "cannot infer numeric type for comparison")
+				break
+			}
+			n.Operand1 = v.validateExprWithExpected(n.Operand1, common)
+			n.Operand2 = v.validateExprWithExpected(n.Operand2, common)
 
 		default:
 			v.errorf(n, "unknown binary operator")
@@ -468,10 +506,6 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			}
 		}
 
-		if types.IsUntyped(common) {
-			common = types.DefaultUntyped(common)
-		}
-
 		n.Type = types.SliceType{
 			Base: common,
 			Size: len(n.Elements),
@@ -517,9 +551,6 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		panic(fmt.Sprintf("unhandled expression type %T", n))
 	}
 
-	if types.IsUntyped(node.GetType()) {
-		node.SetType(types.DefaultUntyped(node.GetType()))
-	}
 }
 
 func (v *Validator) createCast(node parser.ExpressionNode, target types.Type) parser.ExpressionNode {
@@ -548,6 +579,36 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 		n.SetType(types.UntypedInt{})
 	case *parser.FloatLiteralNode:
 		n.SetType(types.UntypedFloat{})
+	case *parser.UnaryOpNode:
+		if types.IsNumeric(expected) && n.Op == parser.UnaryOpNegate {
+			n.Operand = v.validateExprWithExpected(n.Operand, expected)
+			n.SetType(expected)
+			return n
+		}
+	case *parser.BinaryOpNode:
+		if types.IsNumeric(expected) && isArithmeticOperator(n.Op) {
+			n.Operand1 = v.validateExprWithExpected(n.Operand1, expected)
+			n.Operand2 = v.validateExprWithExpected(n.Operand2, expected)
+			n.SetType(expected)
+			return n
+		}
+	case *parser.IfExprNode:
+		v.validateExpr(n.IfBranch.Condition)
+		n.IfBranch.Node = v.validateExprWithExpected(n.IfBranch.Node, expected)
+		for i, branch := range n.ElseIfBranches {
+			v.validateExpr(branch.Condition)
+			n.ElseIfBranches[i].Node = v.validateExprWithExpected(branch.Node, expected)
+		}
+		if n.ElseBranch != nil {
+			n.ElseBranch = v.validateExprWithExpected(n.ElseBranch, expected)
+		}
+		n.SetType(expected)
+		return n
+	case *parser.GivenExprNode:
+		v.validateNode(n.Block)
+		n.FinalExpr = v.validateExprWithExpected(n.FinalExpr, expected)
+		n.SetType(expected)
+		return n
 	}
 
 	if n, ok := node.(*parser.StructLiteralNode); ok {
@@ -573,6 +634,19 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 	}
 
 	return node
+}
+
+func isArithmeticOperator(op parser.BinaryOpKind) bool {
+	switch op {
+	case parser.BinaryOpAdd,
+		parser.BinaryOpSubtract,
+		parser.BinaryOpMultiply,
+		parser.BinaryOpDivide,
+		parser.BinaryOpModulo:
+		return true
+	default:
+		return false
+	}
 }
 
 func (v *Validator) validateSliceLiteralWithExpected(n *parser.SliceLiteralNode, expected types.Type) {
