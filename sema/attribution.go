@@ -6,6 +6,7 @@ import (
 	"github.com/marzeq/qk/attributes"
 	"github.com/marzeq/qk/parser"
 	"github.com/marzeq/qk/shared"
+	"github.com/marzeq/qk/symbols"
 	"github.com/marzeq/qk/tokeniser"
 	"github.com/marzeq/qk/types"
 )
@@ -365,6 +366,13 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		}
 
 	case *parser.FieldAccessNode:
+		if ident, ok := n.Subject.(*parser.IdentifierNode); ok &&
+			ident.Symbol != nil && ident.Symbol.Kind == symbols.SymbolKindModule {
+			a.errorf(n, "module-qualified names use ':' rather than '.'")
+			n.SetType(types.ErrorType{})
+			break
+		}
+
 		a.attributeExpr(n.Subject)
 		switch t := n.Subject.GetType().(type) {
 		case types.StructType:
