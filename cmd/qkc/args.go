@@ -50,187 +50,259 @@ type Args struct {
 	clangArgs    []string
 	linkArgs     []string
 	libs         []string
+	libraryPaths []string
+	nprocs       int
 }
 
-func parseArgs() (*Args, error) {
-	a := &Args{optLevel: OptLevel2, outputType: OutputUnspecified, mainModule: "main"}
-	args := os.Args[1:]
-	i := 0
+func parseOptLevel(level string) (OptimisationLevel, error) {
+	switch level {
+	case "g":
+		return OptLevelDebug, nil
+	case "s":
+		return OptLevelSize, nil
+	case "z":
+		return OptLevelSizeMax, nil
+	case "fast":
+		return OptLevelFast, nil
+	default:
+		n, err := strconv.Atoi(level)
+		if err != nil || n < 0 {
+			return "", fmt.Errorf("invalid optimisation level: %s", level)
+		}
+		if n > 3 {
+			fmt.Fprintf(os.Stderr, "warning: optimisation level %s is equivalent to -O3\n", level)
+			n = 3
+		}
+		return OptimisationLevel(strconv.Itoa(n)), nil
+	}
+}
 
-	for i < len(args) {
-		tok := args[i]
+func parseOutputType(value string) (OutputType, error) {
+	switch value {
+	case "exe", "executable", ".exe":
+		return OutputExecutable, nil
+	case "obj", "object", ".o":
+		return OutputObject, nil
+	case "so", "shared", "sharedlib", ".so", ".dll", ".dylib":
+		return OutputSharedLib, nil
+	default:
+		return OutputUnspecified, fmt.Errorf("unknown output type: %s", value)
+	}
+}
 
-		switch {
-		case tok == "-E":
-			i++
-			if i >= len(args) {
-				return nil, fmt.Errorf("expected value after %s", tok)
-			}
-			a.excludeDirs = append(a.excludeDirs, args[i])
-			i++
+type argumentParser struct {
+	args  *Args
+	input []string
+	index int
+}
 
-		case tok == "-o":
-			i++
-			if i >= len(args) {
-				return nil, fmt.Errorf("expected value after %s", tok)
-			}
-			a.output = args[i]
-			i++
+func newArgumentParser(input []string) *argumentParser {
+	return &argumentParser{
+		args:  &Args{optLevel: OptLevel2, outputType: OutputUnspecified, mainModule: "main"},
+		input: input,
+	}
+}
 
-		case tok == "-t":
-			i++
-			if i >= len(args) {
-				return nil, fmt.Errorf("expected value after %s", tok)
-			}
-			switch args[i] {
-			case "exe", "executable", ".exe":
-				a.outputType = OutputExecutable
-			case "obj", "object", ".o":
-				a.outputType = OutputObject
-			case "so", "shared", "sharedlib", ".so", ".dll", ".dylib":
-				a.outputType = OutputSharedLib
-			default:
-				return nil, fmt.Errorf("unknown output type: %s", args[i])
-			}
-			i++
+func (p *argumentParser) current() string {
+	return p.input[p.index]
+}
 
-		case tok == "-m":
-			i++
-			if i >= len(args) {
-				return nil, fmt.Errorf("expected value after %s", tok)
-			}
-			a.mainModule = args[i]
-			i++
+func (p *argumentParser) nextValue(option string) (string, error) {
+	p.index++
+	if p.index >= len(p.input) {
+		return "", fmt.Errorf("expected value after %s", option)
+	}
+	value := p.input[p.index]
+	p.index++
+	return value, nil
+}
 
-		case len(tok) >= 2 && tok[0:2] == "-O":
-			i++
-			tok = tok[2:]
-			if tok == "" {
-				return nil, fmt.Errorf("expected value after -O")
-			}
-			switch tok {
-			case "g":
-				a.optLevel = OptLevelDebug
-			case "s":
-				a.optLevel = OptLevelSize
-			case "z":
-				a.optLevel = OptLevelSizeMax
-			case "fast":
-				a.optLevel = OptLevelFast
-			default:
-				n, err := strconv.Atoi(tok)
-				if err != nil || n < 0 {
-					return nil, fmt.Errorf("invalid optimisation level: %s", tok)
-				}
-				if n > 3 {
-					fmt.Fprintf(os.Stderr, "warning: optimisation level %s is equivalent to -O3\n", tok)
-					n = 3
-				}
-				a.optLevel = OptimisationLevel(strconv.Itoa(n))
-			}
-		case tok == "-v":
-			a.verbose = true
-			i++
+func (p *argumentParser) gluedOrNextValue(prefix string) (string, error) {
+	option := p.current()
+	if len(option) > len(prefix) {
+		p.index++
+		return option[len(prefix):], nil
+	}
+	return p.nextValue(prefix)
+}
 
-		case tok == "-d":
-			a.debug = true
-			i++
+func (p *argumentParser) parseSplitArgs(option string, target *[]string) error {
+	value, err := p.nextValue(option)
+	if err != nil {
+		return err
+	}
+	*target = append(*target, strings.Fields(value)...)
+	return nil
+}
 
-		case tok == "-no-emit":
-			a.noEmit = true
-			i++
-
-		case tok == "-dump-ir":
-			a.dumpIR = true
-			i++
-
-		case tok == "-dump-llvm":
-			a.dumpLLVM = true
-			i++
-
-		case tok == "-dump-asm":
-			a.dumpAsm = true
-			i++
-
-		case tok == "-keep-build-dir":
-			a.keepBuildDir = true
-			i++
-
-		case tok == "-static":
-			a.static = true
-			i++
-
-		case tok == "-target":
-			i++
-			if i >= len(args) {
-				return nil, fmt.Errorf("expected value after -target")
-			}
-			a.target = args[i]
-			i++
-
-		case tok == "-sysroot":
-			i++
-			if i >= len(args) {
-				return nil, fmt.Errorf("expected value after -sysroot")
-			}
-			a.sysroot = args[i]
-			i++
-
-		case tok == "-C":
-			i++
-			if i >= len(args) {
-				return nil, fmt.Errorf("expected value after %s", tok)
-			}
-			parts := strings.Fields(args[i])
-			a.clangArgs = append(a.clangArgs, parts...)
-			i++
-
-		case tok == "-L":
-			i++
-			if i >= len(args) {
-				return nil, fmt.Errorf("expected value after %s", tok)
-			}
-			parts := strings.Fields(args[i])
-			a.linkArgs = append(a.linkArgs, parts...)
-			i++
-
-		case len(tok) > 2 && tok[0:2] == "-l":
-			a.libs = append(a.libs, tok[2:])
-			i++
-
-		case tok == "-h" || tok == "--help":
-			fmt.Printf("Usage: %s [options] <baseDir>\n", os.Args[0])
-			fmt.Println("Options:")
-			fmt.Println("  -E <dir>           Exclude directory or file from source file search (can specify multiple times)")
-			fmt.Println("  -o <file>          Output file name")
-			fmt.Println("  -m <module>        Root module name (default: main)")
-			fmt.Println("  -t <type>          Output type (exe, obj, so)")
-			fmt.Println("  -O<level>          Optimisation level (0, 1, 2, 3, s, z, fast, g)")
-			fmt.Println("  -static            Link with static libraries")
-			fmt.Println("  -l<lib>            Link with library <lib> (can specify multiple times)")
-			fmt.Println("  -target <triple>   Target triple for code generation")
-			fmt.Println("  -sysroot <path>    Sysroot path for target")
-			fmt.Println("  -C <args>          Additional arguments to pass to clang when building module object files")
-			fmt.Println("  -L <args>          Additional arguments to pass to linker")
-			fmt.Println("  -no-emit           Do not emit any output files, just check for errors")
-			os.Exit(0)
-
-		default:
-			if tok[0] == '-' {
-				return nil, fmt.Errorf("unknown argument: %s", tok)
-			}
-			if a.baseDir != "" {
-				return nil, fmt.Errorf("multiple base directories specified")
-			}
-			a.baseDir = tok
-			i++
+func (p *argumentParser) parse() (*Args, error) {
+	for p.index < len(p.input) {
+		if err := p.parseCurrent(); err != nil {
+			return nil, err
 		}
 	}
 
-	if err := finaliseArgs(a); err != nil {
+	if err := finaliseArgs(p.args); err != nil {
 		return nil, err
 	}
-	return a, nil
+	return p.args, nil
+}
+
+func (p *argumentParser) parseCurrent() error {
+	tok := p.current()
+
+	switch {
+	case tok == "-E":
+		value, err := p.nextValue(tok)
+		if err != nil {
+			return err
+		}
+		p.args.excludeDirs = append(p.args.excludeDirs, value)
+
+	case tok == "-o":
+		value, err := p.nextValue(tok)
+		if err != nil {
+			return err
+		}
+		p.args.output = value
+
+	case tok == "-t":
+		value, err := p.nextValue(tok)
+		if err != nil {
+			return err
+		}
+		outputType, err := parseOutputType(value)
+		if err != nil {
+			return err
+		}
+		p.args.outputType = outputType
+
+	case tok == "-m":
+		value, err := p.nextValue(tok)
+		if err != nil {
+			return err
+		}
+		p.args.mainModule = value
+
+	case strings.HasPrefix(tok, "-O"):
+		value, err := p.gluedOrNextValue("-O")
+		if err != nil {
+			return err
+		}
+		level, err := parseOptLevel(value)
+		if err != nil {
+			return err
+		}
+		p.args.optLevel = level
+
+	case tok == "-v":
+		p.args.verbose = true
+		p.index++
+
+	case tok == "-d":
+		p.args.debug = true
+		p.index++
+
+	case tok == "-no-emit":
+		p.args.noEmit = true
+		p.index++
+
+	case tok == "-dump-ir":
+		p.args.dumpIR = true
+		p.index++
+
+	case tok == "-dump-llvm":
+		p.args.dumpLLVM = true
+		p.index++
+
+	case tok == "-dump-asm":
+		p.args.dumpAsm = true
+		p.index++
+
+	case tok == "-keep-build-dir":
+		p.args.keepBuildDir = true
+		p.index++
+
+	case tok == "-static":
+		p.args.static = true
+		p.index++
+
+	case tok == "-target":
+		value, err := p.nextValue(tok)
+		if err != nil {
+			return err
+		}
+		p.args.target = value
+
+	case tok == "-sysroot":
+		value, err := p.nextValue(tok)
+		if err != nil {
+			return err
+		}
+		p.args.sysroot = value
+
+	case tok == "-Xcompile":
+		if err := p.parseSplitArgs(tok, &p.args.clangArgs); err != nil {
+			return err
+		}
+
+	case tok == "-Xlink":
+		if err := p.parseSplitArgs(tok, &p.args.linkArgs); err != nil {
+			return err
+		}
+
+	case strings.HasPrefix(tok, "-l"):
+		value, err := p.gluedOrNextValue("-l")
+		if err != nil {
+			return err
+		}
+		p.args.libs = append(p.args.libs, value)
+
+	case strings.HasPrefix(tok, "-L"):
+		value, err := p.gluedOrNextValue("-L")
+		if err != nil {
+			return err
+		}
+		p.args.libraryPaths = append(p.args.libraryPaths, value)
+
+	case tok == "-h" || tok == "--help":
+		printUsage()
+		os.Exit(0)
+
+	default:
+		if strings.HasPrefix(tok, "-") {
+			return fmt.Errorf("unknown argument: %s", tok)
+		}
+		if p.args.baseDir != "" {
+			return fmt.Errorf("multiple base directories specified")
+		}
+		p.args.baseDir = tok
+		p.index++
+	}
+
+	return nil
+}
+
+func parseArgs() (*Args, error) {
+	return newArgumentParser(os.Args[1:]).parse()
+}
+
+func printUsage() {
+	fmt.Printf("Usage: %s [options] <baseDir>\n", os.Args[0])
+	fmt.Println("Options:")
+	fmt.Println("  -E <dir>           Exclude directory or file from source file search (can specify multiple times)")
+	fmt.Println("  -o <file>          Output file name")
+	fmt.Println("  -m <module>        Root module name (default: main)")
+	fmt.Println("  -t <type>          Output type (exe, obj, so)")
+	fmt.Println("  -O <level>         Optimisation level (0, 1, 2, 3, s, z, fast, g)")
+	fmt.Println("  -static            Link with static libraries")
+	fmt.Println("  -l <lib>           Link with library <lib> (can specify multiple times)")
+	fmt.Println("  -target <triple>   Target triple for code generation")
+	fmt.Println("  -sysroot <path>    Sysroot path for target")
+	fmt.Println("  -Xcompile <args>   Additional arguments to pass to clang when building module object files")
+	fmt.Println("  -Xlink <args>      Additional arguments to pass to clang when linking the final executable")
+	fmt.Println("  -L <path>          Add library search path (can specify multiple times)")
+	fmt.Println("  -no-emit           Do not emit any output files, just check for errors")
 }
 
 func finaliseArgs(args *Args) error {
