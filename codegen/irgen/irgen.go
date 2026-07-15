@@ -97,6 +97,7 @@ func (g *Generator) generateGlobalDeclaration(node *parser.DeclarationNode) {
 		Name:    g.mangleGlobalName(g.ModuleName, node.Name),
 		Type:    node.Symbol.Type,
 		Mutable: node.Mutable,
+		Public:  node.Pub,
 		Value:   g.generateGlobalInitializer(node.Value),
 	})
 	g.globals[node.Symbol] = g.Module.Globals[len(g.Module.Globals)-1].Name
@@ -332,6 +333,8 @@ func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
 		return ir.BoolConstOperand(n.Value == string(tokeniser.KeywordTrue))
 	case *parser.IdentifierNode:
 		return g.generateIdentifierExpr(n)
+	case *parser.ModuleAccessNode:
+		return g.generateModuleAccessExpr(n)
 	case *parser.IfExprNode:
 		return g.generateIfExpr(n)
 	case *parser.BinaryOpNode:
@@ -639,6 +642,7 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 		args = append(args, g.GenerateExpr(arg))
 	}
 	callSig := g.buildCallSignature(node)
+	args = g.promoteVariadicArgs(args, callSig)
 
 	name := node.Name.String()
 	if node.Symbol != nil {
@@ -671,6 +675,24 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 	dst := g.currentFunction.NewValueOfType(node.GetType())
 	g.Emit(ir.Call{Dest: dst, Name: name, Args: args, Signature: callSig})
 	return ir.ValueOperand(dst, node.GetType())
+}
+
+func (g *Generator) promoteVariadicArgs(args []ir.Operand, sig ir.FunctionSignature) []ir.Operand {
+	if !sig.Variadic {
+		return args
+	}
+
+	for i := len(sig.ParamTypes); i < len(args); i++ {
+		if !args[i].Type.Equals(types.PrimitiveF32) {
+			continue
+		}
+
+		dst := g.currentFunction.NewValueOfType(types.PrimitiveF64)
+		g.Emit(ir.Cast{Dest: dst, From: args[i], To: types.PrimitiveF64})
+		args[i] = ir.ValueOperand(dst, types.PrimitiveF64)
+	}
+
+	return args
 }
 
 func (g *Generator) mangleFunctionName(moduleName, fnName string) string {
@@ -751,6 +773,27 @@ func (g *Generator) generateIdentifierExpr(node *parser.IdentifierNode) ir.Opera
 	dst := g.currentFunction.NewValueOfType(node.GetType())
 	g.Emit(ir.Load{Dest: dst, Slot: slot})
 
+	return ir.ValueOperand(dst, node.GetType())
+}
+
+func (g *Generator) generateModuleAccessExpr(node *parser.ModuleAccessNode) ir.Operand {
+	if node.Symbol == nil || node.Symbol.Kind != symbols.SymbolKindVariable {
+		panic("module access is not a variable")
+	}
+
+	name := g.mangleGlobalName(node.ModName, node.Symbol.Name)
+	g.Module.AddExternGlobal(ir.ExternGlobal{
+		Name:    name,
+		Type:    node.GetType(),
+		Mutable: node.Symbol.Mutable,
+	})
+
+	dst := g.currentFunction.NewValueOfType(node.GetType())
+	g.Emit(ir.LoadGlobal{
+		Dest: dst,
+		Name: name,
+		Type: node.GetType(),
+	})
 	return ir.ValueOperand(dst, node.GetType())
 }
 

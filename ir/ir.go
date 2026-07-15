@@ -141,9 +141,10 @@ func (f *Function) AddParameter(name string, ty types.Type, slot SlotID) {
 }
 
 type Module struct {
-	Functions []*Function
-	Externs   []ExternDecl
-	Globals   []Global
+	Functions     []*Function
+	Externs       []ExternDecl
+	Globals       []Global
+	ExternGlobals []ExternGlobal
 }
 
 func (m *Module) AddFunction(fn *Function) {
@@ -164,11 +165,27 @@ type Global struct {
 	Name    string
 	Type    types.Type
 	Mutable bool
+	Public  bool
 	Value   Operand
 }
 
 func (m *Module) AddGlobal(global Global) {
 	m.Globals = append(m.Globals, global)
+}
+
+type ExternGlobal struct {
+	Name    string
+	Type    types.Type
+	Mutable bool
+}
+
+func (m *Module) AddExternGlobal(global ExternGlobal) {
+	for _, existing := range m.ExternGlobals {
+		if existing.Name == global.Name {
+			return
+		}
+	}
+	m.ExternGlobals = append(m.ExternGlobals, global)
 }
 
 type Instr interface {

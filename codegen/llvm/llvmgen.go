@@ -41,7 +41,11 @@ func (e *Emitter) EmitModule(out *strings.Builder, m *ir.Module) {
 		e.GlobalEmit(out, global)
 		out.WriteString("\n")
 	}
-	if len(e.stringDefs) > 0 || len(m.Globals) > 0 {
+	for _, global := range m.ExternGlobals {
+		e.ExternGlobalEmit(out, global)
+		out.WriteString("\n")
+	}
+	if len(e.stringDefs) > 0 || len(m.Globals) > 0 || len(m.ExternGlobals) > 0 {
 		out.WriteString("\n")
 	}
 	for i, ex := range m.Externs {
@@ -93,12 +97,24 @@ func (e *Emitter) EmitModule(out *strings.Builder, m *ir.Module) {
 	}
 }
 
+func (e *Emitter) ExternGlobalEmit(out *strings.Builder, global ir.ExternGlobal) {
+	kind := "constant"
+	if global.Mutable {
+		kind = "global"
+	}
+	fmt.Fprintf(out, "@%s = external %s %s", global.Name, kind, e.TypeEmit(global.Type))
+}
+
 func (e *Emitter) GlobalEmit(out *strings.Builder, global ir.Global) {
 	kind := "constant"
 	if global.Mutable {
 		kind = "global"
 	}
-	fmt.Fprintf(out, "@%s = internal %s %s %s", global.Name, kind, e.TypeEmit(global.Type), e.OperandEmit(global.Value))
+	linkage := "internal "
+	if global.Public {
+		linkage = ""
+	}
+	fmt.Fprintf(out, "@%s = %s%s %s %s", global.Name, linkage, kind, e.TypeEmit(global.Type), e.OperandEmit(global.Value))
 }
 
 func (e *Emitter) EmitFunction(out *strings.Builder, fn *ir.Function) {

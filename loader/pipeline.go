@@ -108,6 +108,7 @@ func GenerateIRModules(mods map[string]*ModuleInfo, mainModule string, order []s
 			modIR := gen.Generate(root)
 			out.Functions = append(out.Functions, modIR.Functions...)
 			out.Globals = append(out.Globals, modIR.Globals...)
+			out.ExternGlobals = append(out.ExternGlobals, modIR.ExternGlobals...)
 			if len(modIR.Externs) > 0 {
 				out.Externs = append(out.Externs, modIR.Externs...)
 			}
