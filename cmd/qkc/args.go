@@ -49,6 +49,7 @@ type Args struct {
 	outputType   OutputType
 	clangArgs    []string
 	linkArgs     []string
+	libs         []string
 }
 
 func parseArgs() (*Args, error) {
@@ -193,15 +194,20 @@ func parseArgs() (*Args, error) {
 			a.linkArgs = append(a.linkArgs, parts...)
 			i++
 
+		case len(tok) > 2 && tok[0:2] == "-l":
+			a.libs = append(a.libs, tok[2:])
+			i++
+
 		case tok == "-h" || tok == "--help":
 			fmt.Printf("Usage: %s [options] <baseDir>\n", os.Args[0])
 			fmt.Println("Options:")
-			fmt.Println("  -E <dir>           Exclude directory from source file search (can specify multiple times)")
+			fmt.Println("  -E <dir>           Exclude directory or file from source file search (can specify multiple times)")
 			fmt.Println("  -o <file>          Output file name")
 			fmt.Println("  -m <module>        Root module name (default: main)")
 			fmt.Println("  -t <type>          Output type (exe, obj, so)")
 			fmt.Println("  -O<level>          Optimisation level (0, 1, 2, 3, s, z, fast, g)")
 			fmt.Println("  -static            Link with static libraries")
+			fmt.Println("  -l<lib>            Link with library <lib> (can specify multiple times)")
 			fmt.Println("  -target <triple>   Target triple for code generation")
 			fmt.Println("  -sysroot <path>    Sysroot path for target")
 			fmt.Println("  -C <args>          Additional arguments to pass to clang when building module object files")

@@ -108,7 +108,6 @@ func main() {
 	}
 
 	if args.noEmit {
-		fmt.Println("typecheck successful, no output emitted due to -no-emit flag")
 		return
 	}
 
@@ -170,7 +169,7 @@ func main() {
 
 	os.Remove(args.output)
 
-	err = linkObjects(objFiles, args.output, args.outputType, args.static, args.verbose, args.target, args.sysroot, args.linkArgs)
+	err = linkObjects(objFiles, args.output, args.outputType, args.static, args.verbose, args.target, args.sysroot, args.linkArgs, args.libs)
 	check(err)
 
 	if args.keepBuildDir {
@@ -380,8 +379,8 @@ func compileLLVMModules(buildDir string, order []string, optLevel OptimisationLe
 	return objFiles, nil
 }
 
-func linkObjects(objFiles []string, output string, outputType OutputType, static, verbose bool, target string, sysroot string, extraLinkArgs []string) error {
-	args, err := buildLinkArgs(objFiles, output, outputType, static, target, sysroot, extraLinkArgs)
+func linkObjects(objFiles []string, output string, outputType OutputType, static, verbose bool, target string, sysroot string, extraLinkArgs []string, libs []string) error {
+	args, err := buildLinkArgs(objFiles, output, outputType, static, target, sysroot, extraLinkArgs, libs)
 	if err != nil {
 		return err
 	}
@@ -398,7 +397,7 @@ func linkObjects(objFiles []string, output string, outputType OutputType, static
 	return nil
 }
 
-func buildLinkArgs(objFiles []string, output string, outputType OutputType, static bool, target string, sysroot string, extraLinkArgs []string) ([]string, error) {
+func buildLinkArgs(objFiles []string, output string, outputType OutputType, static bool, target string, sysroot string, extraLinkArgs []string, libs []string) ([]string, error) {
 	args := append([]string{}, objFiles...)
 
 	switch outputType {
@@ -428,6 +427,10 @@ func buildLinkArgs(objFiles []string, output string, outputType OutputType, stat
 
 	if len(extraLinkArgs) > 0 {
 		args = append(args, extraLinkArgs...)
+	}
+
+	for _, lib := range libs {
+		args = append(args, "-l"+lib)
 	}
 
 	args = append(args, "-o", output)
