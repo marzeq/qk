@@ -20,6 +20,14 @@ func dumpIRModules(mods map[string]*ir.Module) {
 		mod := mods[name]
 		fmt.Printf("module %s\n", name)
 
+		for _, global := range mod.Globals {
+			kind := "const"
+			if global.Mutable {
+				kind = "mut"
+			}
+			fmt.Printf("  %s %s %s = %s\n", kind, formatType(global.Type), global.Name, formatOperand(global.Value))
+		}
+
 		for _, fn := range mod.Functions {
 			fmt.Printf("  fn %s%s -> %s (entry=b%d)\n", fn.Name, formatSignatureParams(fn.Signature.ParamTypes), formatType(fn.Signature.ReturnType), fn.Entry)
 
@@ -79,14 +87,20 @@ func formatInstr(inst ir.Instr) string {
 		return fmt.Sprintf("alloca s%d", i.Slot)
 	case ir.Load:
 		return fmt.Sprintf("v%d = load s%d", i.Dest, i.Slot)
+	case ir.LoadGlobal:
+		return fmt.Sprintf("v%d = load global %s", i.Dest, i.Name)
 	case ir.Store:
 		return fmt.Sprintf("store s%d, %s", i.Slot, formatOperand(i.Value))
+	case ir.StoreGlobal:
+		return fmt.Sprintf("store global %s, %s", i.Name, formatOperand(i.Value))
 	case ir.LoadPtr:
 		return fmt.Sprintf("v%d = loadptr %s", i.Dest, formatOperand(i.Ptr))
 	case ir.StorePtr:
 		return fmt.Sprintf("storeptr %s, %s", formatOperand(i.Ptr), formatOperand(i.Value))
 	case ir.AddressOf:
 		return fmt.Sprintf("v%d = addrof s%d", i.Dest, i.Slot)
+	case ir.AddressOfGlobal:
+		return fmt.Sprintf("v%d = addrof global %s", i.Dest, i.Name)
 	case ir.FieldAddress:
 		return fmt.Sprintf("v%d = fieldaddr %s, .%s", i.Dest, formatOperand(i.Base), i.Field)
 	case ir.Call:

@@ -143,6 +143,7 @@ func (f *Function) AddParameter(name string, ty types.Type, slot SlotID) {
 type Module struct {
 	Functions []*Function
 	Externs   []ExternDecl
+	Globals   []Global
 }
 
 func (m *Module) AddFunction(fn *Function) {
@@ -157,6 +158,17 @@ type ExternDecl struct {
 
 func (m *Module) AddExtern(e ExternDecl) {
 	m.Externs = append(m.Externs, e)
+}
+
+type Global struct {
+	Name    string
+	Type    types.Type
+	Mutable bool
+	Value   Operand
+}
+
+func (m *Module) AddGlobal(global Global) {
+	m.Globals = append(m.Globals, global)
 }
 
 type Instr interface {
@@ -246,12 +258,27 @@ type Load struct {
 
 func (Load) isInstr() {}
 
+type LoadGlobal struct {
+	Dest ValueID
+	Name string
+	Type types.Type
+}
+
+func (LoadGlobal) isInstr() {}
+
 type Store struct {
 	Slot  SlotID
 	Value Operand
 }
 
 func (Store) isInstr() {}
+
+type StoreGlobal struct {
+	Name  string
+	Value Operand
+}
+
+func (StoreGlobal) isInstr() {}
 
 type LoadPtr struct {
 	Dest ValueID
@@ -273,6 +300,14 @@ type AddressOf struct {
 }
 
 func (AddressOf) isInstr() {}
+
+type AddressOfGlobal struct {
+	Dest ValueID
+	Name string
+	Type types.Type
+}
+
+func (AddressOfGlobal) isInstr() {}
 
 type FieldAddress struct {
 	Dest  ValueID

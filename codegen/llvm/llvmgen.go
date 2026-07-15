@@ -35,7 +35,11 @@ func (e *Emitter) EmitModule(out *strings.Builder, m *ir.Module) {
 		out.WriteString(def)
 		out.WriteString("\n")
 	}
-	if len(e.stringDefs) > 0 {
+	for _, global := range m.Globals {
+		e.GlobalEmit(out, global)
+		out.WriteString("\n")
+	}
+	if len(e.stringDefs) > 0 || len(m.Globals) > 0 {
 		out.WriteString("\n")
 	}
 	for i, ex := range m.Externs {
@@ -85,6 +89,14 @@ func (e *Emitter) EmitModule(out *strings.Builder, m *ir.Module) {
 			out.WriteString("\n")
 		}
 	}
+}
+
+func (e *Emitter) GlobalEmit(out *strings.Builder, global ir.Global) {
+	kind := "constant"
+	if global.Mutable {
+		kind = "global"
+	}
+	fmt.Fprintf(out, "@%s = internal %s %s %s", global.Name, kind, e.TypeEmit(global.Type), e.OperandEmit(global.Value))
 }
 
 func (e *Emitter) EmitFunction(out *strings.Builder, fn *ir.Function) {
@@ -374,10 +386,16 @@ func (e *Emitter) InstrEmit(out *strings.Builder, instr ir.Instr) {
 		e.AllocaEmit(out, instr)
 	case ir.Load:
 		e.LoadEmit(out, instr)
+	case ir.LoadGlobal:
+		e.LoadGlobalEmit(out, instr)
 	case ir.Store:
 		e.StoreEmit(out, instr)
+	case ir.StoreGlobal:
+		e.StoreGlobalEmit(out, instr)
 	case ir.AddressOf:
 		e.AddressOfEmit(out, instr)
+	case ir.AddressOfGlobal:
+		e.AddressOfGlobalEmit(out, instr)
 	case ir.FieldAddress:
 		e.FieldAddressEmit(out, instr)
 	case ir.LoadPtr:
@@ -544,12 +562,24 @@ func (e *Emitter) LoadEmit(out *strings.Builder, l ir.Load) {
 	fmt.Fprintf(out, "%s = load %s, ptr %s", e.ValueIDEmit(l.Dest), e.TypeEmit(e.slotType(l.Slot)), e.SlotIDEmit(l.Slot))
 }
 
+func (e *Emitter) LoadGlobalEmit(out *strings.Builder, l ir.LoadGlobal) {
+	fmt.Fprintf(out, "%s = load %s, ptr @%s", e.ValueIDEmit(l.Dest), e.TypeEmit(l.Type), l.Name)
+}
+
 func (e *Emitter) StoreEmit(out *strings.Builder, s ir.Store) {
 	fmt.Fprintf(out, "store %s %s, ptr %s", e.TypeEmit(e.slotType(s.Slot)), e.OperandEmit(s.Value), e.SlotIDEmit(s.Slot))
 }
 
+func (e *Emitter) StoreGlobalEmit(out *strings.Builder, s ir.StoreGlobal) {
+	fmt.Fprintf(out, "store %s %s, ptr @%s", e.TypeEmit(s.Value.Type), e.OperandEmit(s.Value), s.Name)
+}
+
 func (e *Emitter) AddressOfEmit(out *strings.Builder, s ir.AddressOf) {
 	fmt.Fprintf(out, "%s = getelementptr inbounds %s, ptr %s, i32 0", e.ValueIDEmit(s.Dest), e.TypeEmit(e.slotType(s.Slot)), e.SlotIDEmit(s.Slot))
+}
+
+func (e *Emitter) AddressOfGlobalEmit(out *strings.Builder, s ir.AddressOfGlobal) {
+	fmt.Fprintf(out, "%s = getelementptr inbounds %s, ptr @%s, i32 0", e.ValueIDEmit(s.Dest), e.TypeEmit(s.Type), s.Name)
 }
 
 func (e *Emitter) LoadPtrEmit(out *strings.Builder, l ir.LoadPtr) {

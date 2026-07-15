@@ -98,10 +98,11 @@ func (a *Analyser) collectGlobalVariable(n *parser.DeclarationNode) {
 	}
 
 	sym := &symbols.Symbol{
-		Name:   n.Name,
-		Kind:   symbols.SymbolKindVariable,
-		Type:   varType,
-		Public: n.Pub,
+		Name:    n.Name,
+		Kind:    symbols.SymbolKindVariable,
+		Type:    varType,
+		Mutable: n.Mutable,
+		Public:  n.Pub,
 	}
 
 	if a.defineSymbol(sym, n) {

@@ -43,6 +43,7 @@ type Generator struct {
 	currentFunction *ir.Function
 	currentBlock    *ir.Block
 	currentEnv      *Env
+	globals         map[*symbols.Symbol]string
 }
 
 func (g *Generator) Emit(instruction ir.Instr) {
@@ -57,32 +58,63 @@ func (g *Generator) Emit(instruction ir.Instr) {
 
 func (g *Generator) Generate(root *parser.RootNode) *ir.Module {
 	g.Module = &ir.Module{}
+	g.globals = make(map[*symbols.Symbol]string)
 
 	for _, node := range root.Body {
-		fn, ok := node.(*parser.FunctionDefNode)
-		if !ok {
-			continue
-		}
-		if fn.Body == nil {
-			var externFrom string
-			for _, attr := range fn.Attributes {
-				switch attr := attr.(type) {
-				case attributes.FunctionAttributeForeign:
-					externFrom = attr.From
+		switch node := node.(type) {
+		case *parser.DeclarationNode:
+			g.generateGlobalDeclaration(node)
+		case *parser.FunctionDefNode:
+			if node.Body == nil {
+				var externFrom string
+				for _, attr := range node.Attributes {
+					switch attr := attr.(type) {
+					case attributes.FunctionAttributeForeign:
+						externFrom = attr.From
+					}
 				}
+				if externFrom == "" {
+					panic("function with body must have foreign attribute")
+				}
+				sig := g.buildFunctionSignature(node)
+				name := node.Name
+				g.Module.AddExtern(ir.ExternDecl{Name: name, Signature: sig, From: externFrom})
+				continue
 			}
-			if externFrom == "" {
-				panic("function with body must have foreign attribute")
-			}
-			sig := g.buildFunctionSignature(fn)
-			name := fn.Name
-			g.Module.AddExtern(ir.ExternDecl{Name: name, Signature: sig, From: externFrom})
-			continue
+			g.GenerateFunction(node)
 		}
-		g.GenerateFunction(fn)
 	}
 
 	return g.Module
+}
+
+func (g *Generator) generateGlobalDeclaration(node *parser.DeclarationNode) {
+	if node.Symbol == nil {
+		panic("global declaration symbol is nil")
+	}
+
+	g.Module.AddGlobal(ir.Global{
+		Name:    g.mangleGlobalName(g.ModuleName, node.Name),
+		Type:    node.Symbol.Type,
+		Mutable: node.Mutable,
+		Value:   g.generateGlobalInitializer(node.Value),
+	})
+	g.globals[node.Symbol] = g.Module.Globals[len(g.Module.Globals)-1].Name
+}
+
+func (g *Generator) generateGlobalInitializer(expr parser.ExpressionNode) ir.Operand {
+	switch node := expr.(type) {
+	case *parser.IntegerLiteralNode:
+		return ir.IntConstOperand(node.Value, node.GetType())
+	case *parser.BoolLiteralNode:
+		return ir.BoolConstOperand(node.Value == string(tokeniser.KeywordTrue))
+	case *parser.CharLiteralNode:
+		return ir.IntConstOperand(fmt.Sprint(int(node.Value)), node.GetType())
+	case *parser.NilLiteralNode:
+		return ir.NullConstOperand(node.GetType())
+	default:
+		panic(fmt.Sprintf("global initializer must be a literal, got %T", expr))
+	}
 }
 
 func (g *Generator) GenerateFunction(fn *parser.FunctionDefNode) {
@@ -252,7 +284,13 @@ func (g *Generator) generateAssignment(node *parser.AssignmentNode) {
 
 	slot, ok := g.currentEnv.Lookup(ident.Symbol)
 	if !ok {
-		panic("assignment slot not found")
+		global, exists := g.globals[ident.Symbol]
+		if !exists {
+			panic("assignment slot not found")
+		}
+		rhs := g.GenerateExpr(node.Value)
+		g.Emit(ir.StoreGlobal{Name: global, Value: rhs})
+		return
 	}
 
 	if lit, ok := node.Value.(*parser.StructLiteralNode); ok {
@@ -567,7 +605,13 @@ func (g *Generator) generateAddressOfExpr(expr parser.ExpressionNode) ir.Operand
 
 		slot, ok := g.currentEnv.Lookup(ident.Symbol)
 		if !ok {
-			panic("identifier slot not found")
+			global, exists := g.globals[ident.Symbol]
+			if !exists {
+				panic("identifier slot not found")
+			}
+			addr := g.currentFunction.NewValueOfType(types.PointerType{Base: ident.GetType()})
+			g.Emit(ir.AddressOfGlobal{Dest: addr, Name: global, Type: ident.GetType()})
+			return ir.ValueOperand(addr, types.PointerType{Base: ident.GetType()})
 		}
 
 		addr := g.currentFunction.NewValueOfType(types.PointerType{Base: ident.GetType()})
@@ -634,6 +678,15 @@ func (g *Generator) mangleFunctionName(moduleName, fnName string) string {
 	return "__qk_" + mod + "_" + fn
 }
 
+func (g *Generator) mangleGlobalName(moduleName, globalName string) string {
+	mod := sanitizeName(moduleName)
+	global := sanitizeName(globalName)
+	if mod == "" {
+		return "__qk_global_" + global
+	}
+	return "__qk_" + mod + "_global_" + global
+}
+
 func (g *Generator) isProgramEntryFunction(fnName string) bool {
 	return g.ModuleName == g.MainModule && fnName == "main"
 }
@@ -682,7 +735,13 @@ func (g *Generator) generateIdentifierExpr(node *parser.IdentifierNode) ir.Opera
 
 	slot, ok := g.currentEnv.Lookup(node.Symbol)
 	if !ok {
-		panic("identifier slot not found")
+		global, exists := g.globals[node.Symbol]
+		if !exists {
+			panic("identifier slot not found")
+		}
+		dst := g.currentFunction.NewValueOfType(node.GetType())
+		g.Emit(ir.LoadGlobal{Dest: dst, Name: global, Type: node.GetType()})
+		return ir.ValueOperand(dst, node.GetType())
 	}
 
 	dst := g.currentFunction.NewValueOfType(node.GetType())
