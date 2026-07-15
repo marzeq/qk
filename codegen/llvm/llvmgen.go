@@ -2,6 +2,8 @@ package llvm
 
 import (
 	"fmt"
+	"math"
+	"strconv"
 	"strings"
 
 	"github.com/marzeq/qk/attributes"
@@ -299,7 +301,7 @@ func (e *Emitter) OperandEmit(op ir.Operand) string {
 	case ir.OperandIntConst:
 		return op.IntValue
 	case ir.OperandFloatConst:
-		return op.FloatValue
+		return llvmFloatLiteral(op.FloatValue, op.Type)
 	case ir.OperandBoolConst:
 		if op.BoolValue {
 			return "1"
@@ -310,6 +312,19 @@ func (e *Emitter) OperandEmit(op ir.Operand) string {
 	default:
 		panic("unreachable")
 	}
+}
+
+func llvmFloatLiteral(value string, ty types.Type) string {
+	floatValue, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		panic(fmt.Sprintf("invalid float literal %q: %v", value, err))
+	}
+
+	if ty.Equals(types.PrimitiveF32) {
+		floatValue = float64(float32(floatValue))
+	}
+
+	return fmt.Sprintf("0x%016X", math.Float64bits(floatValue))
 }
 
 func (e *Emitter) parameterNameForValue(id ir.ValueID) (string, bool) {

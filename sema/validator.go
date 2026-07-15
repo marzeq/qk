@@ -116,6 +116,7 @@ func (v *Validator) finaliseDeclaration(n *parser.DeclarationNode) {
 
 	if types.HasUntyped(valueType) {
 		v.errorf(n, "cannot infer declaration type from untyped numeric value; add a type annotation or cast")
+		n.Symbol.Type = types.ErrorType{}
 		return
 	}
 
@@ -242,7 +243,6 @@ func (v *Validator) validateReturn(n *parser.ControlKeywordNode) {
 
 func (v *Validator) validateExpr(node parser.ExpressionNode) {
 	if _, ok := node.GetType().(types.ErrorType); ok {
-		v.errorf(node, "uncaught error type in expression")
 		return
 	}
 
