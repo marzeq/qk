@@ -106,6 +106,9 @@ func (g *Generator) generateGlobalDeclaration(node *parser.DeclarationNode) {
 func (g *Generator) generateGlobalInitializer(expr parser.ExpressionNode) ir.Operand {
 	switch node := expr.(type) {
 	case *parser.IntegerLiteralNode:
+		if types.IsFloat(node.GetType()) {
+			return ir.FloatConstOperand(node.Value, node.GetType())
+		}
 		return ir.IntConstOperand(node.Value, node.GetType())
 	case *parser.FloatLiteralNode:
 		return ir.FloatConstOperand(node.Value, node.GetType())
@@ -326,6 +329,9 @@ func (g *Generator) generateControlKeyword(node *parser.ControlKeywordNode) {
 func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
 	switch n := expr.(type) {
 	case *parser.IntegerLiteralNode:
+		if types.IsFloat(n.GetType()) {
+			return ir.FloatConstOperand(n.Value, n.GetType())
+		}
 		return ir.IntConstOperand(n.Value, n.GetType())
 	case *parser.FloatLiteralNode:
 		return ir.FloatConstOperand(n.Value, n.GetType())
@@ -649,6 +655,10 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 		name = node.Symbol.Name
 
 		foreignAttr := node.Symbol.Attributes.Get(attributes.AttributeTypeForeign)
+		if foreign, ok := foreignAttr.(attributes.FunctionAttributeForeign); ok &&
+			node.Name != nil && node.Name.ModName != "" {
+			g.addExternForCall(node.Symbol.Name, callSig, foreign.From)
+		}
 
 		if !node.Symbol.Extern && foreignAttr == nil {
 			callModule := g.ModuleName
@@ -675,6 +685,15 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 	dst := g.currentFunction.NewValueOfType(node.GetType())
 	g.Emit(ir.Call{Dest: dst, Name: name, Args: args, Signature: callSig})
 	return ir.ValueOperand(dst, node.GetType())
+}
+
+func (g *Generator) addExternForCall(name string, signature ir.FunctionSignature, from string) {
+	for _, extern := range g.Module.Externs {
+		if extern.Name == name {
+			return
+		}
+	}
+	g.Module.AddExtern(ir.ExternDecl{Name: name, Signature: signature, From: from})
 }
 
 func (g *Generator) promoteVariadicArgs(args []ir.Operand, sig ir.FunctionSignature) []ir.Operand {

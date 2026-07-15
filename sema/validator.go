@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/marzeq/qk/attributes"
 	"github.com/marzeq/qk/parser"
 	"github.com/marzeq/qk/shared"
 	"github.com/marzeq/qk/symbols"
@@ -46,6 +47,10 @@ func (v *Validator) validateNode(node parser.Node) {
 	case *parser.FunctionDefNode:
 		prev := v.currentFunction
 		v.currentFunction = n.Symbol
+
+		if n.Symbol.Signature.Variadic && n.Symbol.Attributes.Get(attributes.AttributeTypeForeign) == nil {
+			v.errorf(n, "non-foreign functions cannot be variadic")
+		}
 
 		if n.Body != nil {
 			v.validateNode(n.Body)

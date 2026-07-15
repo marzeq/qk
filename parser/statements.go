@@ -207,12 +207,6 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 		}
 	}
 
-	foreignAttr := attrs.Get(attributes.AttributeTypeForeign)
-
-	if variadic && foreignAttr == nil {
-		return nil, shared.NewError(beginLoc, "variadics are only supported for extern functions for now")
-	}
-
 	return &FunctionDefNode{
 		Name:        name.Value,
 		Args:        args,
