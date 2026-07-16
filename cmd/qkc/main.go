@@ -52,7 +52,7 @@ func main() {
 
 	analyser := sema.NewAnalyser()
 
-	order, errs := loader.ComputeModuleOrder(modules)
+	order, errs := loader.ComputeModuleOrder(modules, args.mainModule)
 	checkErrs(errs)
 
 	var warnings []error

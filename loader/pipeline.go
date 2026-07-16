@@ -8,13 +8,8 @@ import (
 	"github.com/marzeq/qk/sema"
 )
 
-func ComputeModuleOrder(mods map[string]*ModuleInfo) ([]string, []error) {
-	graph, err := BuildDependencyGraph(mods)
-	if err != nil {
-		return nil, []error{err}
-	}
-
-	order, err := TopoSort(graph)
+func ComputeModuleOrder(mods map[string]*ModuleInfo, primaryModule string) ([]string, []error) {
+	order, err := ModuleDependencyOrder(mods, primaryModule)
 	if err != nil {
 		return nil, []error{err}
 	}
