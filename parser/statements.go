@@ -441,76 +441,39 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 		}
 	}
 
-	if p.Match(tokeniser.TokenIdentifier) {
-		ident, err := p.ParseIdent()
-		if err != nil {
-			return nil, false, err
-		}
-
-		if p.Match(tokeniser.TokenColon) {
-			p.Inc()
-
-			for p.Match(tokeniser.TokenNewline) {
-				p.Inc()
-			}
-
-			modIdent, err := p.ParseIdent()
-			if err != nil {
-				return nil, true, err
-			}
-
-			modAN := &ModuleAccessNode{
-				ModName: ident.Name,
-				Ident:   modIdent,
-				Loc:     ident.Loc,
-			}
-
-			if p.Match(tokeniser.TokenOpenParen) {
-				node, err := p.ParseFunctionCall(modAN)
-				return node, true, err
-			}
-
-			return modAN, true, nil
-		}
-
-		if p.Match(tokeniser.TokenEquals) {
-			node, err := p.ParseAssignment(ident)
-			return node, true, err
-		} else if p.Match(tokeniser.TokenOpenParen) {
-			modAN := &ModuleAccessNode{
-				ModName: "",
-				Ident:   ident,
-				Loc:     ident.Loc,
-			}
-			node, err := p.ParseFunctionCall(modAN)
-			return node, true, err
-		} else if p.Match(tokeniser.TokenDot) {
-			if p.Next().Type == tokeniser.TokenAsterisk {
-				node, err := p.ParsePointerAssignment(ident)
-				return node, true, err
-			}
-			if p.Next().Type == tokeniser.TokenIdentifier {
-				node, err := p.ParseMemberAssignment(ident)
-				return node, true, err
-			}
-		} else if p.Match(tokeniser.TokenOpenSquare) {
-			node, err := p.ParseIndexAssignment(ident)
-			return node, true, err
-		} else if p.Match(tokeniser.TokenIncBy, tokeniser.TokenDecBy, tokeniser.TokenMulBy, tokeniser.TokenDivBy, tokeniser.TokenModBy) {
-			node, err := p.ParseCompoundAssignment(ident)
-			return node, true, err
-		}
-
-		return nil, false, shared.NewError(p.CurrLoc(),
-			"unexpected token after identifier %s", p.Peek())
-	}
-
 	if p.Match(tokeniser.TokenOpenCurly) {
 		node, err := p.ParseBlock()
 		return node, true, err
 	}
 
-	return nil, false, shared.NewError(p.CurrLoc(), "unexpected token %s", p.Peek())
+	expr, err := p.ParseExpression()
+	if err != nil {
+		return nil, false, err
+	}
+
+	if p.Match(tokeniser.TokenEquals) {
+		p.Inc()
+		parsed, err := p.ParseAssignment(expr)
+		if err != nil {
+			return nil, false, err
+		}
+		return parsed, true, nil
+	}
+
+	if p.Match(tokeniser.TokenIncBy, tokeniser.TokenDecBy, tokeniser.TokenMulBy, tokeniser.TokenDivBy, tokeniser.TokenModBy) {
+		parsed, err := p.ParseCompoundAssignment(p.Consume(), expr)
+		if err != nil {
+			return nil, false, err
+		}
+		return parsed, true, nil
+	}
+
+	switch expr.(type) {
+	case *FunctionCallNode:
+		return expr, true, nil
+	default:
+		return nil, false, shared.NewError(p.CurrLoc(), "expected a valid statement")
+	}
 }
 
 func (p *Parser) ParseDeclaration() (*DeclarationNode, error) {
@@ -565,11 +528,7 @@ func (p *Parser) ParseDeclaration() (*DeclarationNode, error) {
 	}, nil
 }
 
-func (p *Parser) ParseAssignment(ident *IdentifierNode) (*AssignmentNode, error) {
-	if !p.Expect(tokeniser.TokenEquals) {
-		return nil, shared.NewError(p.PrevLoc(), "expected '='")
-	}
-
+func (p *Parser) ParseAssignment(subj ExpressionNode) (*AssignmentNode, error) {
 	for p.Match(tokeniser.TokenNewline) {
 		p.Inc()
 	}
@@ -580,62 +539,13 @@ func (p *Parser) ParseAssignment(ident *IdentifierNode) (*AssignmentNode, error)
 	}
 
 	return &AssignmentNode{
-		Assignee: ident,
+		Assignee: subj,
 		Value:    expr,
-		Loc:      ident.Loc,
+		Loc:      subj.GetLoc(),
 	}, err
 }
 
-func (p *Parser) ParseMemberAssignment(ident *IdentifierNode) (*MemberAssignmentNode, error) {
-	panic("member assignment not implemented yet")
-}
-
-func (p *Parser) ParsePointerAssignment(ident *IdentifierNode) (*PointerAssignmentNode, error) {
-	if !p.Expect(tokeniser.TokenDot) {
-		return nil, shared.NewError(p.PrevLoc(), "expected '.'")
-	}
-	if !p.Expect(tokeniser.TokenAsterisk) {
-		return nil, shared.NewError(p.PrevLoc(), "expected '*'")
-	}
-	for p.Match(tokeniser.TokenNewline) {
-		p.Inc()
-	}
-	if !p.Expect(tokeniser.TokenEquals) {
-		return nil, shared.NewError(p.PrevLoc(), "expected '='")
-	}
-	for p.Match(tokeniser.TokenNewline) {
-		p.Inc()
-	}
-
-	expr, err := p.ParseExpression()
-	if err != nil {
-		return nil, err
-	}
-
-	return &PointerAssignmentNode{
-		Assignee: &UnaryOpNode{
-			Op:      UnaryOpDereference,
-			Operand: ident,
-			Loc:     ident.Loc,
-		},
-		Value: expr,
-		Loc:   ident.Loc,
-	}, nil
-}
-
-func (p *Parser) ParseCompoundAssignment(ident *IdentifierNode) (*AssignmentNode, error) {
-	opTok := p.Peek()
-	p.Inc()
-
-	for p.Match(tokeniser.TokenNewline) {
-		p.Inc()
-	}
-
-	expr, err := p.ParseExpression()
-	if err != nil {
-		return nil, err
-	}
-
+func (p *Parser) ParseCompoundAssignment(opTok tokeniser.Token, subj ExpressionNode) (*AssignmentNode, error) {
 	var op BinaryOpKind
 
 	switch opTok.Type {
@@ -653,44 +563,24 @@ func (p *Parser) ParseCompoundAssignment(ident *IdentifierNode) (*AssignmentNode
 		return nil, shared.NewError(opTok.Loc, "unexpected compound assignment operator %s", opTok)
 	}
 
-	return &AssignmentNode{
-		Assignee: ident,
-		Value: &BinaryOpNode{
-			Op:       op,
-			Operand1: ident,
-			Operand2: expr,
-			Loc:      ident.Loc,
-		},
-		Loc: ident.Loc,
-	}, nil
-}
-
-func (p *Parser) ParseIndexAssignment(ident *IdentifierNode) (*IndexAssignmentNode, error) {
-	if !p.Expect(tokeniser.TokenOpenSquare) {
-		return nil, shared.NewError(p.PrevLoc(), "expected '['")
-	}
-	indexExpr, err := p.ParseExpression()
-	if err != nil {
-		return nil, err
-	}
-	if !p.Expect(tokeniser.TokenCloseSquare) {
-		return nil, shared.NewError(p.PrevLoc(), "expected ']'")
-	}
-	if !p.Expect(tokeniser.TokenEquals) {
-		return nil, shared.NewError(p.PrevLoc(), "expected '='")
-	}
 	for p.Match(tokeniser.TokenNewline) {
 		p.Inc()
 	}
-	valueExpr, err := p.ParseExpression()
+
+	expr, err := p.ParseExpression()
 	if err != nil {
 		return nil, err
 	}
-	return &IndexAssignmentNode{
-		Assignee: ident,
-		Index:    indexExpr,
-		Value:    valueExpr,
-		Loc:      ident.Loc,
+
+	return &AssignmentNode{
+		Assignee: subj,
+		Value: &BinaryOpNode{
+			Op:       op,
+			Operand1: subj,
+			Operand2: expr,
+			Loc:      expr.GetLoc(),
+		},
+		Loc: subj.GetLoc(),
 	}, nil
 }
 

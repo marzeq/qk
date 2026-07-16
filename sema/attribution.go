@@ -129,16 +129,8 @@ func (a *Attributor) attributeNode(node parser.Node) {
 		}
 
 	case *parser.AssignmentNode:
-		a.attributeExpr(n.Value)
-
-	case *parser.PointerAssignmentNode:
 		a.attributeExpr(n.Assignee)
 		a.attributeExpr(n.Value)
-
-	case *parser.IndexAssignmentNode:
-		a.attributeExpr(n.Assignee)
-		a.attributeExpr(n.Value)
-		a.attributeExpr(n.Index)
 
 	case *parser.IfNode:
 		a.attributeExpr(n.IfBranch.Condition)

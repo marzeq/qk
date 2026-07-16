@@ -83,12 +83,6 @@ func (v *Validator) validateNode(node parser.Node) {
 	case *parser.AssignmentNode:
 		v.validateAssignment(n)
 
-	case *parser.PointerAssignmentNode:
-		v.validatePointerAssignment(n)
-
-	case *parser.IndexAssignmentNode:
-		v.validateIndexAssignment(n)
-
 	case *parser.IfNode:
 		v.validateIf(n)
 
@@ -154,17 +148,6 @@ func (v *Validator) validateAssignment(n *parser.AssignmentNode) {
 	n.Value = v.validateExprWithExpected(n.Value, lhsType)
 }
 
-func (v *Validator) validatePointerAssignment(n *parser.PointerAssignmentNode) {
-	if !v.validateLValue(n.Assignee) {
-		return
-	}
-
-	v.validateExpr(n.Assignee)
-
-	lhsType := n.Assignee.GetType()
-	n.Value = v.validateExprWithExpected(n.Value, lhsType)
-}
-
 func (v *Validator) validateLValue(expr parser.ExpressionNode) bool {
 	switch e := expr.(type) {
 
@@ -196,47 +179,18 @@ func (v *Validator) validateLValue(expr parser.ExpressionNode) bool {
 		v.errorf(expr, "invalid assignment target")
 		return false
 
-	default:
+	case *parser.FieldAccessNode:
+		panic("todo: validate assignment to field access expression")
 
+	case *parser.IndexExprNode:
+		panic("todo: validate assignment to index expression")
+
+	default:
 		v.errorf(expr, "invalid assignment target!")
 		return false
 	}
 
 	return true
-}
-
-func (v *Validator) validateIndexAssignment(n *parser.IndexAssignmentNode) {
-	v.validateExpr(n.Assignee)
-	v.validateExpr(n.Index)
-
-	containerType := n.Assignee.GetType()
-
-	indexType := n.Index.GetType()
-	if !types.IsInteger(indexType) {
-		v.errorf(n, "index must be integer")
-		return
-	}
-
-	var base types.Type
-	switch t := containerType.(type) {
-	case types.SliceType:
-		if t.Size != -1 {
-			if idxLit, ok := n.Index.(*parser.IntegerLiteralNode); ok {
-				idx, _ := strconv.Atoi(idxLit.Value)
-				if idx < 0 || idx >= t.Size {
-					v.errorf(n, "index %d out of bounds for slice of size %d", idx, t.Size)
-				}
-			}
-		}
-		base = t.Base
-	case types.PointerType:
-		base = t.Base
-	default:
-		v.errorf(n, "cannot index into non-slice type")
-		return
-	}
-
-	n.Value = v.validateExprWithExpected(n.Value, base)
 }
 
 func (v *Validator) validateIf(n *parser.IfNode) {

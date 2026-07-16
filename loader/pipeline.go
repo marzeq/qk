@@ -37,7 +37,7 @@ func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, o
 		return analyser.Errors(), nil
 	}
 
-	if verbose {
+	if verbose && debug {
 		fmt.Println("completed analysis phase")
 	}
 
@@ -55,7 +55,7 @@ func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, o
 		return attributor.Errors(), nil
 	}
 
-	if verbose {
+	if verbose && debug {
 		fmt.Println("completed attribution phase")
 	}
 
@@ -78,7 +78,7 @@ func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, o
 		return errs, nil
 	}
 
-	if verbose {
+	if verbose && debug {
 		fmt.Println("completed validation phase")
 	}
 
@@ -98,7 +98,7 @@ func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, o
 	return nil, warnings
 }
 
-func GenerateIRModules(mods map[string]*ModuleInfo, mainModule string, order []string, verbose bool) (map[string]*ir.Module, []error) {
+func GenerateIRModules(mods map[string]*ModuleInfo, mainModule string, order []string, verbose bool, debug bool) (map[string]*ir.Module, []error) {
 	irMods := map[string]*ir.Module{}
 
 	for _, name := range order {
@@ -119,7 +119,7 @@ func GenerateIRModules(mods map[string]*ModuleInfo, mainModule string, order []s
 		irMods[name] = out
 	}
 
-	if verbose {
+	if verbose && debug {
 		fmt.Println("completed ir generation phase")
 	}
 

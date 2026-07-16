@@ -232,8 +232,6 @@ func (g *Generator) GenerateNode(node parser.Node) {
 		g.generateDeclaration(n)
 	case *parser.AssignmentNode:
 		g.generateAssignment(n)
-	case *parser.PointerAssignmentNode:
-		g.generatePointerAssignment(n)
 	case *parser.ControlKeywordNode:
 		g.generateControlKeyword(n)
 	case *parser.IfNode:
@@ -286,47 +284,64 @@ func (g *Generator) generateDeclaration(node *parser.DeclarationNode) {
 }
 
 func (g *Generator) generateAssignment(node *parser.AssignmentNode) {
-	ident, ok := node.Assignee.(*parser.IdentifierNode)
-	if !ok {
-		panic("todo")
-	}
-	if ident.Symbol == nil {
-		panic("assignment identifier symbol is nil")
-	}
-
-	slot, ok := g.currentEnv.Lookup(ident.Symbol)
-	if !ok {
-		global, exists := g.globals[ident.Symbol]
-		if !exists {
-			panic("assignment slot not found")
+	switch n := node.Assignee.(type) {
+	case *parser.IdentifierNode, *parser.ModuleAccessNode:
+		var symbol *symbols.Symbol
+		switch n := n.(type) {
+		case *parser.IdentifierNode:
+			symbol = n.Symbol
+		case *parser.ModuleAccessNode:
+			symbol = n.Symbol
 		}
+		if symbol == nil {
+			panic("assignment symbol is nil")
+		}
+
+		slot, ok := g.currentEnv.Lookup(symbol)
+		if !ok {
+			global, exists := g.globals[symbol]
+			if !exists {
+				panic("assignment slot not found")
+			}
+			rhs := g.GenerateExpr(node.Value)
+			g.Emit(ir.StoreGlobal{Name: global, Value: rhs})
+			return
+		}
+
+		if lit, ok := node.Value.(*parser.StructLiteralNode); ok {
+			g.generateStructLiteralIntoSlot(slot, lit)
+			return
+		}
+
 		rhs := g.GenerateExpr(node.Value)
-		g.Emit(ir.StoreGlobal{Name: global, Value: rhs})
-		return
+		g.Emit(ir.Store{Slot: slot, Value: rhs})
+
+	case *parser.UnaryOpNode:
+		switch n.Op {
+		case parser.UnaryOpDereference:
+			ptr := g.GenerateExpr(n.Operand)
+			value := g.GenerateExpr(node.Value)
+
+			g.Emit(ir.StorePtr{
+				Ptr:   ptr,
+				Value: value,
+			})
+		default:
+			panic(fmt.Sprintf("todo: assignment unary op %T", n))
+		}
+
+	case *parser.FieldAccessNode:
+		base := g.GenerateExpr(n.Subject)
+		fieldPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: n.GetType()})
+		g.Emit(ir.FieldAddress{
+			Dest:  fieldPtrID,
+			Base:  base,
+			Field: n.Field.Name,
+		})
+
+	default:
+		panic(fmt.Sprintf("todo: assignment assignee %T", n))
 	}
-
-	if lit, ok := node.Value.(*parser.StructLiteralNode); ok {
-		g.generateStructLiteralIntoSlot(slot, lit)
-		return
-	}
-
-	rhs := g.GenerateExpr(node.Value)
-	g.Emit(ir.Store{Slot: slot, Value: rhs})
-}
-
-func (g *Generator) generatePointerAssignment(node *parser.PointerAssignmentNode) {
-	deref, ok := node.Assignee.(*parser.UnaryOpNode)
-	if !ok || deref.Op != parser.UnaryOpDereference {
-		panic("pointer assignment target must be a dereference")
-	}
-
-	ptr := g.GenerateExpr(deref.Operand)
-	value := g.GenerateExpr(node.Value)
-
-	g.Emit(ir.StorePtr{
-		Ptr:   ptr,
-		Value: value,
-	})
 }
 
 func (g *Generator) generateControlKeyword(node *parser.ControlKeywordNode) {

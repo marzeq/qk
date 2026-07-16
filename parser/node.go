@@ -477,32 +477,6 @@ type AssignmentNode struct {
 
 func (n AssignmentNode) GetLoc() shared.Location { return n.Loc }
 
-type PointerAssignmentNode struct {
-	Assignee ExpressionNode
-	Value    ExpressionNode
-	Loc      shared.Location
-}
-
-func (n PointerAssignmentNode) GetLoc() shared.Location { return n.Loc }
-
-type MemberAssignmentNode struct {
-	Assignee ExpressionNode
-	Field    *IdentifierNode
-	Value    ExpressionNode
-	Loc      shared.Location
-}
-
-func (n MemberAssignmentNode) GetLoc() shared.Location { return n.Loc }
-
-type IndexAssignmentNode struct {
-	Assignee ExpressionNode
-	Index    ExpressionNode
-	Value    ExpressionNode
-	Loc      shared.Location
-}
-
-func (n IndexAssignmentNode) GetLoc() shared.Location { return n.Loc }
-
 type BlockNode struct {
 	Body []Node
 	Loc  shared.Location

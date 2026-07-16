@@ -42,7 +42,7 @@ func main() {
 		partials = append(partials, info)
 	}
 
-	if args.verbose {
+	if args.verbose && args.debug {
 		fmt.Println("parsed and collected modules")
 	}
 
@@ -61,11 +61,11 @@ func main() {
 		fmt.Println(w)
 	}
 
-	if args.verbose {
+	if args.verbose && args.debug {
 		fmt.Println("semantic analysis completed successfully")
 	}
 
-	irModules, errs := loader.GenerateIRModules(modules, args.mainModule, order, args.verbose)
+	irModules, errs := loader.GenerateIRModules(modules, args.mainModule, order, args.verbose, args.debug)
 	checkErrs(errs)
 
 	llvmOutputs := buildLLVMModules(irModules, args.mainModule, order, args.outputType == OutputExecutable)
@@ -122,7 +122,7 @@ func main() {
 		defer os.RemoveAll(buildDir)
 	}
 
-	if args.verbose {
+	if args.verbose && args.debug {
 		fmt.Printf("emitted LLVM files to %s\n", buildDir)
 	}
 
