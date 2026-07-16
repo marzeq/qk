@@ -158,7 +158,8 @@ func (v *Validator) validateLValue(expr parser.ExpressionNode) bool {
 		}
 
 	case *parser.UnaryOpNode:
-		if e.Op == parser.UnaryOpDereference {
+		switch e.Op {
+		case parser.UnaryOpDereference:
 			if ptrType, ok := e.Operand.GetType().(types.PointerType); ok {
 				if ptrType.Base.Equals(types.PrimitiveVoid) {
 					v.errorf(e, "cannot assign to dereferenced void pointer")
@@ -174,19 +175,58 @@ func (v *Validator) validateLValue(expr parser.ExpressionNode) bool {
 				panic(fmt.Sprintf("unreachable: dereference of non-pointer type %T", e.Operand.GetType()))
 			}
 			v.validateExpr(e.Operand)
-			return true
+		default:
+			v.errorf(expr, "invalid assignment target")
+			return false
 		}
-		v.errorf(expr, "invalid assignment target")
-		return false
 
 	case *parser.FieldAccessNode:
 		panic("todo: validate assignment to field access expression")
 
 	case *parser.IndexExprNode:
-		panic("todo: validate assignment to index expression")
+		switch subject := e.Subject.(type) {
+		case *parser.IdentifierNode, *parser.ModuleAccessNode:
+			var symbol *symbols.Symbol
+			switch s := subject.(type) {
+			case *parser.IdentifierNode:
+				symbol = s.Symbol
+			case *parser.ModuleAccessNode:
+				symbol = s.Symbol
+			}
+			if !symbol.Mutable {
+				v.errorf(e, "cannot assign to index of immutable symbol")
+				return false
+			}
+			v.validateExpr(subject)
+
+		case *parser.UnaryOpNode:
+			switch subject.Op {
+			case parser.UnaryOpDereference:
+				if ptrType, ok := subject.Operand.GetType().(types.PointerType); ok {
+					if ptrType.Base.Equals(types.PrimitiveVoid) {
+						v.errorf(e, "cannot assign to dereferenced void pointer")
+						return false
+					}
+					if !ptrType.Mutable {
+						v.errorf(e, "cannot assign to dereferenced immutable pointer")
+						return false
+					}
+				} else if _, ok := subject.Operand.GetType().(types.ErrorType); ok {
+					// do nothing, error already reported
+				} else {
+					panic(fmt.Sprintf("unreachable: dereference of non-pointer type %T", subject.Operand.GetType()))
+				}
+				v.validateExpr(subject.Operand)
+			default:
+				v.errorf(expr, "cannot assign to index of this expression")
+				return false
+			}
+		default:
+			panic("todo")
+		}
 
 	default:
-		v.errorf(expr, "invalid assignment target!")
+		v.errorf(expr, "cannot assign to this expression")
 		return false
 	}
 

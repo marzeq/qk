@@ -381,6 +381,17 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 			n.SetType(types.ErrorType{})
 		}
 
+		switch n.Index.GetType().(type) {
+		case types.UntypedInt:
+			n.Index = &parser.CastNode{
+				Operand: n.Index,
+				Type:    types.PrimitiveUsz,
+			}
+		case types.UntypedFloat:
+			a.errorf(n, "cannot use untyped float as index; cast to integer type")
+			n.SetType(types.ErrorType{})
+		}
+
 	case *parser.FieldAccessNode:
 		if ident, ok := n.Subject.(*parser.IdentifierNode); ok &&
 			ident.Symbol != nil && ident.Symbol.Kind == symbols.SymbolKindModule {

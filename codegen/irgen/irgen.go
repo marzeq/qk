@@ -339,6 +339,14 @@ func (g *Generator) generateAssignment(node *parser.AssignmentNode) {
 			Field: n.Field.Name,
 		})
 
+	case *parser.IndexExprNode:
+		elementPtr := g.generateIndexAddress(n)
+		value := g.GenerateExpr(node.Value)
+		g.Emit(ir.StorePtr{
+			Ptr:   elementPtr,
+			Value: value,
+		})
+
 	default:
 		panic(fmt.Sprintf("todo: assignment assignee %T", n))
 	}
@@ -618,6 +626,8 @@ func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
 		return g.generateStructLiteralExpr(n)
 	case *parser.SliceLiteralNode:
 		return g.generateSliceLiteralExpr(n)
+	case *parser.IndexExprNode:
+		return g.generateIndexExpr(n)
 	case *parser.FunctionCallNode:
 		return g.generateFunctionCallExpr(n)
 	case *parser.FieldAccessNode:
@@ -638,6 +648,50 @@ func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
 		fmt.Printf("todo: generate expr %T\n", n)
 		panic("todo")
 	}
+}
+
+func (g *Generator) generateIndexExpr(node *parser.IndexExprNode) ir.Operand {
+	elementPtr := g.generateIndexAddress(node)
+	dst := g.currentFunction.NewValueOfType(node.GetType())
+	g.Emit(ir.LoadPtr{Dest: dst, Ptr: elementPtr})
+	return ir.ValueOperand(dst, node.GetType())
+}
+
+func (g *Generator) generateIndexAddress(node *parser.IndexExprNode) ir.Operand {
+	index := g.GenerateExpr(node.Index)
+	var base ir.Operand
+	switch subjectType := node.Subject.GetType().(type) {
+	case types.SliceType:
+		slicePtr := g.generateAddressOfExpr(node.Subject)
+		dataPtrPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: types.PointerType{Base: subjectType.Base}})
+		g.Emit(ir.FieldAddress{
+			Dest:  dataPtrPtrID,
+			Base:  slicePtr,
+			Field: "0",
+		})
+
+		dataPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: subjectType.Base})
+		g.Emit(ir.LoadPtr{
+			Dest: dataPtrID,
+			Ptr:  ir.ValueOperand(dataPtrPtrID, types.PointerType{Base: types.PointerType{Base: subjectType.Base}}),
+		})
+		base = ir.ValueOperand(dataPtrID, types.PointerType{Base: subjectType.Base})
+
+	case types.PointerType:
+		base = g.GenerateExpr(node.Subject)
+
+	default:
+		panic(fmt.Sprintf("cannot generate index expression for %T", subjectType))
+	}
+
+	elementPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: node.GetType()})
+	g.Emit(ir.ElementAddress{
+		Dest:    elementPtrID,
+		Base:    base,
+		Index:   index,
+		Element: node.GetType(),
+	})
+	return ir.ValueOperand(elementPtrID, types.PointerType{Base: node.GetType()})
 }
 
 func (g *Generator) generateStringLiteralExpr(node *parser.StringLiteralNode) ir.Operand {
