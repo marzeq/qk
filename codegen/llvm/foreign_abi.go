@@ -2,19 +2,19 @@ package llvm
 
 import (
 	"fmt"
+	"runtime"
+	"strings"
 
 	"github.com/marzeq/qk/types"
 )
 
-// abiChunk is one System V AMD64 eightbyte used to pass an aggregate.  LLVM
-// IR function types are already ABI-lowered, so foreign C declarations must
-// use these chunks rather than the source-level struct type.
 type abiChunk struct {
-	typeName string
-	offset   int
+	typeName   string
+	attributes string
+	offset     int
 }
 
-type abiClass uint8
+type abiClass int
 
 const (
 	abiClassNone abiClass = iota
@@ -22,52 +22,108 @@ const (
 	abiClassInteger
 )
 
+type foreignABIGenerator interface {
+	aggregateChunks(*Emitter, types.StructType) []abiChunk
+	requiresSRet(*Emitter, types.StructType) bool
+}
+
+type sysVAMD64ABIGenerator struct{}
+type win64ABIGenerator struct{}
+type aarch64ABIGenerator struct {
+	linux bool
+}
+
 func (e *Emitter) foreignABIChunks(ty types.Type) []abiChunk {
 	st, ok := ty.(types.StructType)
 	if !ok {
 		return nil
 	}
-
-	size, align := e.typeSizeAlign(st)
-	if size == 0 {
-		return nil
+	generator := e.foreignABIGenerator()
+	if generator == nil {
+		panic(fmt.Sprintf("C aggregate ABI lowering is not implemented for target %q", e.targetTriple()))
 	}
+	return generator.aggregateChunks(e, st)
+}
+
+func (sysVAMD64ABIGenerator) aggregateChunks(e *Emitter, st types.StructType) []abiChunk {
+	size, _ := e.typeSizeAlign(st)
 	if size > 16 {
-		panic(fmt.Sprintf("foreign aggregate %v is larger than 16 bytes; sret/byval lowering is not implemented", ty))
+		panic(fmt.Sprintf("C aggregate %v is larger than 16 bytes; byval/sret lowering is not implemented", st))
 	}
-
 	classes := make([]abiClass, (size+7)/8)
-	floatFields := make([][]types.PrimitiveType, len(classes))
-	e.classifyAggregate(st, 0, classes, floatFields)
-
+	floats := make([][]types.PrimitiveType, len(classes))
+	e.classifyAggregate(st, 0, classes, floats)
 	chunks := make([]abiChunk, len(classes))
 	for i, class := range classes {
-		bytes := size - i*8
-		if bytes > 8 {
-			bytes = 8
-		}
-		chunks[i] = abiChunk{offset: i * 8}
+		bytes := min(size-i*8, 8)
+		chunks[i].offset = i * 8
 		switch class {
 		case abiClassInteger:
 			chunks[i].typeName = fmt.Sprintf("i%d", bytes*8)
 		case abiClassSSE:
-			fields := floatFields[i]
+			floatFields := floats[i]
 			switch {
-			case len(fields) == 1 && fields[0] == types.PrimitiveF32:
+			case len(floatFields) == 1 && floatFields[0] == types.PrimitiveF32:
 				chunks[i].typeName = "float"
-			case len(fields) == 1 && fields[0] == types.PrimitiveF64:
+			case len(floatFields) == 1 && floatFields[0] == types.PrimitiveF64:
 				chunks[i].typeName = "double"
-			case len(fields) == 2 && fields[0] == types.PrimitiveF32 && fields[1] == types.PrimitiveF32:
+			case len(floatFields) == 2 &&
+				floatFields[0] == types.PrimitiveF32 &&
+				floatFields[1] == types.PrimitiveF32:
 				chunks[i].typeName = "<2 x float>"
 			default:
-				panic(fmt.Sprintf("unsupported foreign SSE aggregate chunk in %v", ty))
+				panic(fmt.Sprintf("unsupported C SSE aggregate chunk in %v", st))
 			}
 		default:
-			panic(fmt.Sprintf("invalid foreign aggregate chunk in %v", ty))
+			panic(fmt.Sprintf("invalid C aggregate chunk in %v", st))
 		}
 	}
-	_ = align
 	return chunks
+}
+
+func (sysVAMD64ABIGenerator) requiresSRet(_ *Emitter, st types.StructType) bool {
+	size, _ := (&Emitter{}).typeSizeAlign(st)
+	return size > 16
+}
+
+func (win64ABIGenerator) aggregateChunks(e *Emitter, st types.StructType) []abiChunk {
+	size, _ := e.typeSizeAlign(st)
+	switch size {
+	case 1, 2, 4, 8:
+		return []abiChunk{{typeName: fmt.Sprintf("i%d", size*8)}}
+	default:
+		return []abiChunk{{typeName: "ptr", offset: -1}}
+	}
+}
+
+func (win64ABIGenerator) requiresSRet(e *Emitter, st types.StructType) bool {
+	size, _ := e.typeSizeAlign(st)
+	return size != 1 && size != 2 && size != 4 && size != 8
+}
+
+func (g aarch64ABIGenerator) aggregateChunks(e *Emitter, st types.StructType) []abiChunk {
+	if element, count, ok := e.homogeneousFloatAggregate(st); ok && count <= 4 {
+		chunk := abiChunk{typeName: fmt.Sprintf("[%d x %s]", count, element)}
+		if g.linux && count > 1 {
+			chunk.attributes = " alignstack(8)"
+		}
+		return []abiChunk{chunk}
+	}
+
+	size, _ := e.typeSizeAlign(st)
+	switch {
+	case size <= 8:
+		return []abiChunk{{typeName: "i64"}}
+	case size <= 16:
+		return []abiChunk{{typeName: "i64"}, {typeName: "i64", offset: 8}}
+	default:
+		return []abiChunk{{typeName: "ptr", offset: -1}}
+	}
+}
+
+func (aarch64ABIGenerator) requiresSRet(e *Emitter, st types.StructType) bool {
+	size, _ := e.typeSizeAlign(st)
+	return size > 16
 }
 
 func (e *Emitter) foreignABIParamTypes(ty types.Type) []string {
@@ -76,24 +132,82 @@ func (e *Emitter) foreignABIParamTypes(ty types.Type) []string {
 		return []string{e.TypeEmit(ty)}
 	}
 	result := make([]string, len(chunks))
-	for i, chunk := range chunks {
-		result[i] = chunk.typeName
+	for i := range chunks {
+		result[i] = chunks[i].typeName + chunks[i].attributes
 	}
 	return result
 }
 
 func (e *Emitter) foreignABIReturnType(ty types.Type) string {
-	chunks := e.foreignABIChunks(ty)
-	switch len(chunks) {
-	case 0:
-		return e.TypeEmit(ty)
-	case 1:
-		return chunks[0].typeName
-	case 2:
-		return fmt.Sprintf("{ %s, %s }", chunks[0].typeName, chunks[1].typeName)
-	default:
-		panic("aggregate cannot have more than two System V AMD64 eightbytes")
+	if st, ok := ty.(types.StructType); ok {
+		if generator := e.foreignABIGenerator(); generator != nil && generator.requiresSRet(e, st) {
+			panic(fmt.Sprintf("Win64 aggregate return %v requires sret lowering", ty))
+		}
 	}
+	chunks := e.foreignABIChunks(ty)
+	if len(chunks) == 0 {
+		return e.TypeEmit(ty)
+	}
+	if len(chunks) == 1 {
+		return chunks[0].typeName
+	}
+	return fmt.Sprintf("{ %s, %s }", chunks[0].typeName, chunks[1].typeName)
+}
+
+func (e *Emitter) targetTriple() string {
+	if e.TargetTriple != "" {
+		return e.TargetTriple
+	}
+	return runtime.GOARCH + "-" + runtime.GOOS
+}
+
+func (e *Emitter) foreignABIGenerator() foreignABIGenerator {
+	target := strings.ToLower(e.targetTriple())
+	if strings.Contains(target, "aarch64") || strings.Contains(target, "arm64") {
+		return aarch64ABIGenerator{linux: strings.Contains(target, "linux")}
+	}
+	if !strings.Contains(target, "x86_64") && !strings.Contains(target, "amd64") {
+		return nil
+	}
+	if strings.Contains(target, "windows") || strings.Contains(target, "win32") {
+		return win64ABIGenerator{}
+	}
+	return sysVAMD64ABIGenerator{}
+}
+
+func (e *Emitter) homogeneousFloatAggregate(st types.StructType) (element string, count int, ok bool) {
+	var primitive types.PrimitiveType
+	var visit func(types.Type) bool
+	visit = func(ty types.Type) bool {
+		switch t := ty.(type) {
+		case types.PrimitiveType:
+			if t != types.PrimitiveF32 && t != types.PrimitiveF64 {
+				return false
+			}
+			if primitive != "" && primitive != t {
+				return false
+			}
+			primitive = t
+			count++
+			return true
+		case types.StructType:
+			for _, field := range t.Fields {
+				if !visit(field.R) {
+					return false
+				}
+			}
+			return true
+		default:
+			return false
+		}
+	}
+	if !visit(st) || count == 0 {
+		return "", 0, false
+	}
+	if primitive == types.PrimitiveF32 {
+		return "float", count, true
+	}
+	return "double", count, true
 }
 
 func (e *Emitter) typeSizeAlign(ty types.Type) (int, int) {
@@ -113,42 +227,41 @@ func (e *Emitter) typeSizeAlign(ty types.Type) (int, int) {
 		}
 	case types.PointerType:
 		return 8, 8
-	case types.SliceType:
-		return 16, 8
 	case types.StructType:
 		offset, maxAlign := 0, 1
 		for _, field := range t.Fields {
 			size, align := e.typeSizeAlign(field.R)
-			offset = alignTo(offset, align)
-			offset += size
-			if align > maxAlign {
-				maxAlign = align
-			}
+			offset = alignTo(offset, align) + size
+			maxAlign = max(maxAlign, align)
 		}
 		return alignTo(offset, maxAlign), maxAlign
 	default:
-		panic(fmt.Sprintf("unsupported foreign ABI type %T", ty))
+		panic(fmt.Sprintf("unsupported C ABI type %T", ty))
 	}
 }
 
-func alignTo(value, align int) int { return (value + align - 1) &^ (align - 1) }
+func alignTo(v, a int) int {
+	return (v + a - 1) &^ (a - 1)
+}
 
-func (e *Emitter) classifyAggregate(ty types.Type, base int, classes []abiClass, floatFields [][]types.PrimitiveType) {
+func (e *Emitter) classifyAggregate(
+	ty types.Type,
+	base int,
+	classes []abiClass,
+	floats [][]types.PrimitiveType,
+) {
 	switch t := ty.(type) {
 	case types.StructType:
 		offset := 0
 		for _, field := range t.Fields {
 			_, align := e.typeSizeAlign(field.R)
 			offset = alignTo(offset, align)
-			e.classifyAggregate(field.R, base+offset, classes, floatFields)
+			e.classifyAggregate(field.R, base+offset, classes, floats)
 			size, _ := e.typeSizeAlign(field.R)
 			offset += size
 		}
-	case types.SliceType, types.PointerType:
+	case types.PointerType:
 		e.markAggregateClass(base, 8, abiClassInteger, classes)
-		if _, ok := t.(types.SliceType); ok {
-			e.markAggregateClass(base+8, 8, abiClassInteger, classes)
-		}
 	case types.PrimitiveType:
 		size, _ := e.typeSizeAlign(t)
 		class := abiClassInteger
@@ -157,10 +270,10 @@ func (e *Emitter) classifyAggregate(ty types.Type, base int, classes []abiClass,
 		}
 		e.markAggregateClass(base, size, class, classes)
 		if class == abiClassSSE {
-			floatFields[base/8] = append(floatFields[base/8], t)
+			floats[base/8] = append(floats[base/8], t)
 		}
 	default:
-		panic(fmt.Sprintf("unsupported foreign aggregate field type %T", ty))
+		panic(fmt.Sprintf("unsupported C aggregate field type %T", ty))
 	}
 }
 

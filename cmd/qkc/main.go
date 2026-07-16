@@ -68,7 +68,7 @@ func main() {
 	irModules, errs := loader.GenerateIRModules(modules, args.mainModule, order, args.verbose, args.debug)
 	checkErrs(errs)
 
-	llvmOutputs := buildLLVMModules(irModules, args.mainModule, order, args.outputType == OutputExecutable)
+	llvmOutputs := buildLLVMModules(irModules, args.mainModule, order, args.outputType == OutputExecutable, args.target)
 
 	if args.dumpIR {
 		dumpIRModules(irModules)
@@ -291,7 +291,7 @@ func fatal(format string, args ...any) {
 	os.Exit(1)
 }
 
-func buildLLVMModules(mods map[string]*ir.Module, mainModule string, order []string, isExecutable bool) map[string]string {
+func buildLLVMModules(mods map[string]*ir.Module, mainModule string, order []string, isExecutable bool, targetTriple string) map[string]string {
 	outputs := make(map[string]string, len(mods))
 
 	for _, name := range order {
@@ -300,7 +300,7 @@ func buildLLVMModules(mods map[string]*ir.Module, mainModule string, order []str
 			continue
 		}
 
-		emitter := &llvm.Emitter{ModuleName: name, Executable: isExecutable, MainModule: mainModule}
+		emitter := &llvm.Emitter{ModuleName: name, Executable: isExecutable, MainModule: mainModule, TargetTriple: targetTriple}
 		var output strings.Builder
 		emitter.EmitModule(&output, mod)
 		outputs[name] = output.String()

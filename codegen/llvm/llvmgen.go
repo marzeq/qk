@@ -13,16 +13,17 @@ import (
 )
 
 type Emitter struct {
-	Variables  map[ir.SlotID]*symbols.Symbol
-	SlotTypes  map[ir.SlotID]types.Type
-	MainModule string
-	ModuleName string
-	Executable bool
-	currentFn  *ir.Function
-	externMap  map[string]string // qk name -> actual external symbol name for functions with body extern("...")
-	stringMap  map[string]string // literal value -> global name
-	stringDefs []string
-	abiTemp    int
+	Variables    map[ir.SlotID]*symbols.Symbol
+	SlotTypes    map[ir.SlotID]types.Type
+	MainModule   string
+	ModuleName   string
+	TargetTriple string
+	Executable   bool
+	currentFn    *ir.Function
+	externMap    map[string]string // qk name -> actual external symbol name for functions with body extern("...")
+	stringMap    map[string]string // literal value -> global name
+	stringDefs   []string
+	abiTemp      int
 }
 
 func (e *Emitter) EmitModule(out *strings.Builder, m *ir.Module) {
@@ -757,7 +758,23 @@ func (e *Emitter) lowerCallArgument(out *strings.Builder, arg ir.Operand, foreig
 		return []string{fmt.Sprintf("%s %s", e.TypeEmit(arg.Type), e.OperandEmit(arg))}
 	}
 	slot := e.nextABITemp()
-	fmt.Fprintf(out, "%s = alloca %s\n  store %s %s, ptr %s\n  ", slot, e.TypeEmit(arg.Type), e.TypeEmit(arg.Type), e.OperandEmit(arg), slot)
+	allocationType := e.TypeEmit(arg.Type)
+	zeroInitialize := false
+	if st, ok := arg.Type.(types.StructType); ok && len(chunks) == 1 && chunks[0].offset == 0 && chunks[0].typeName == "i64" {
+		size, _ := e.typeSizeAlign(st)
+		if size < 8 {
+			allocationType = "i64"
+			zeroInitialize = true
+		}
+	}
+	fmt.Fprintf(out, "%s = alloca %s\n  ", slot, allocationType)
+	if zeroInitialize {
+		fmt.Fprintf(out, "store i64 0, ptr %s\n  ", slot)
+	}
+	fmt.Fprintf(out, "store %s %s, ptr %s\n  ", e.TypeEmit(arg.Type), e.OperandEmit(arg), slot)
+	if len(chunks) == 1 && chunks[0].offset == -1 {
+		return []string{fmt.Sprintf("ptr %s", slot)}
+	}
 	result := make([]string, len(chunks))
 	for i, chunk := range chunks {
 		ptr := slot
@@ -767,7 +784,7 @@ func (e *Emitter) lowerCallArgument(out *strings.Builder, arg ir.Operand, foreig
 		}
 		value := e.nextABITemp()
 		fmt.Fprintf(out, "%s = load %s, ptr %s, align 1\n  ", value, chunk.typeName, ptr)
-		result[i] = fmt.Sprintf("%s %s", chunk.typeName, value)
+		result[i] = fmt.Sprintf("%s%s %s", chunk.typeName, chunk.attributes, value)
 	}
 	return result
 }
