@@ -24,47 +24,25 @@ type RootNode struct {
 
 func (n RootNode) GetLoc() shared.Location { return n.Loc }
 
-type IdentOrModAccessNode interface {
-	GetSymbol() *symbols.Symbol
-	ExpressionNode
-}
-
 type IdentifierNode struct {
-	Name   string
-	Loc    shared.Location
-	Symbol *symbols.Symbol
-}
-
-func (n IdentifierNode) GetLoc() shared.Location { return n.Loc }
-func (n IdentifierNode) String() string          { return n.Name }
-func (n *IdentifierNode) SetType(t types.Type)   {}
-func (n *IdentifierNode) GetType() types.Type {
-	if n.Symbol == nil {
-		panic("identifier node has no symbol")
-	}
-	return n.Symbol.Type
-}
-func (n *IdentifierNode) GetSymbol() *symbols.Symbol { return n.Symbol }
-
-type ModuleAccessNode struct {
-	ModName            string
+	Name               string
+	Module             string
 	ResolvedModuleName string
-	Ident              *IdentifierNode
 	Loc                shared.Location
 	Symbol             *symbols.Symbol
 	Type               types.Type
 }
 
-func (n ModuleAccessNode) GetLoc() shared.Location { return n.Loc }
-func (n ModuleAccessNode) String() string {
-	if n.ModName == "" {
-		return n.Ident.String()
+func (n IdentifierNode) GetLoc() shared.Location { return n.Loc }
+func (n IdentifierNode) String() string {
+	if n.Module == "" {
+		return n.Name
 	}
-	return n.ModName + ":" + n.Ident.String()
+	return n.Module + ":" + n.Name
 }
-func (n *ModuleAccessNode) SetType(t types.Type)       { n.Type = t }
-func (n *ModuleAccessNode) GetType() types.Type        { return n.Type }
-func (n *ModuleAccessNode) GetSymbol() *symbols.Symbol { return n.Symbol }
+func (n *IdentifierNode) SetType(t types.Type)       { n.Type = t }
+func (n *IdentifierNode) GetType() types.Type        { return n.Type }
+func (n *IdentifierNode) GetSymbol() *symbols.Symbol { return n.Symbol }
 
 type FieldAccessNode struct {
 	Subject ExpressionNode
@@ -184,7 +162,7 @@ func (n *NilLiteralNode) SetType(t types.Type)   { n.Type = t }
 func (n *NilLiteralNode) GetType() types.Type    { return n.Type }
 
 type StructLiteralNode struct {
-	Name   *ModuleAccessNode
+	Name   *IdentifierNode
 	Fields []shared.Pair[string, ExpressionNode] // field name, value
 	Loc    shared.Location
 	Symbol *symbols.Symbol
@@ -208,7 +186,7 @@ func (n *SliceLiteralNode) SetType(t types.Type)   { n.Type = t }
 func (n *SliceLiteralNode) GetType() types.Type    { return n.Type }
 
 type FunctionCallNode struct {
-	Name   *ModuleAccessNode
+	Name   *IdentifierNode
 	Args   []ExpressionNode
 	Loc    shared.Location
 	Symbol *symbols.Symbol

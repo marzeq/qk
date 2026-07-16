@@ -316,7 +316,7 @@ func (g *Generator) generateDeclaration(node *parser.DeclarationNode) {
 
 func (g *Generator) generateAssignment(node *parser.AssignmentNode) {
 	switch n := node.Assignee.(type) {
-	case parser.IdentOrModAccessNode:
+	case *parser.IdentifierNode:
 		slot, ok := g.currentEnv.Lookup(n.GetSymbol())
 		if !ok {
 			global, exists := g.globals[n.GetSymbol()]
@@ -634,8 +634,6 @@ func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
 		return ir.BoolConstOperand(n.Value == string(tokeniser.KeywordTrue))
 	case *parser.IdentifierNode:
 		return g.generateIdentifierExpr(n)
-	case *parser.ModuleAccessNode:
-		return g.generateModuleAccessExpr(n)
 	case *parser.IfExprNode:
 		return g.generateIfExpr(n)
 	case *parser.BinaryOpNode:
@@ -1050,14 +1048,14 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 
 		foreignAttr := node.Symbol.Attributes.Get(attributes.AttributeTypeForeign)
 		if foreign, ok := foreignAttr.(attributes.FunctionAttributeForeign); ok &&
-			node.Name != nil && node.Name.ModName != "" {
+			node.Name != nil && node.Name.Module != "" {
 			g.addExternForCall(node.Symbol.Name, callSig, foreign.From)
 		}
 
 		if !node.Symbol.Extern && foreignAttr == nil {
 			callModule := g.ModuleName
-			if node.Name != nil && node.Name.ModName != "" {
-				callModule = node.Name.ModName
+			if node.Name != nil && node.Name.Module != "" {
+				callModule = node.Name.Module
 				if node.Name.ResolvedModuleName != "" {
 					callModule = node.Name.ResolvedModuleName
 				}
@@ -1174,6 +1172,9 @@ func (g *Generator) generateIdentifierExpr(node *parser.IdentifierNode) ir.Opera
 	if node.Symbol == nil {
 		panic("identifier symbol is nil")
 	}
+	if node.Module != "" {
+		return g.generateModuleIdentifierExpr(node)
+	}
 
 	slot, ok := g.currentEnv.Lookup(node.Symbol)
 	if !ok {
@@ -1192,12 +1193,12 @@ func (g *Generator) generateIdentifierExpr(node *parser.IdentifierNode) ir.Opera
 	return ir.ValueOperand(dst, node.GetType())
 }
 
-func (g *Generator) generateModuleAccessExpr(node *parser.ModuleAccessNode) ir.Operand {
+func (g *Generator) generateModuleIdentifierExpr(node *parser.IdentifierNode) ir.Operand {
 	if node.Symbol == nil || node.Symbol.Kind != symbols.SymbolKindVariable {
 		panic("module access is not a variable")
 	}
 
-	moduleName := node.ModName
+	moduleName := node.Module
 	if node.ResolvedModuleName != "" {
 		moduleName = node.ResolvedModuleName
 	}

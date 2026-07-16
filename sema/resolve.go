@@ -5,40 +5,31 @@ import (
 	"github.com/marzeq/qk/symbols"
 )
 
-func (a *Analyser) resolveIdentifier(n *parser.IdentifierNode) {
-	sym, ok := a.current.Resolve(n.Name)
-	if !ok {
-		a.errorf(n, "undefined identifier %q", n.Name)
-		return
-	}
-	n.Symbol = sym
-}
-
-func (a *Analyser) resolveModuleAccess(n *parser.ModuleAccessNode) (*symbols.Symbol, bool) {
-	if n.ModName == "" {
-		sym, ok := a.current.Resolve(n.Ident.Name)
+func (a *Analyser) resolveIdentifier(n *parser.IdentifierNode) (*symbols.Symbol, bool) {
+	if n.Module == "" {
+		sym, ok := a.current.Resolve(n.Name)
 		if !ok {
-			a.errorf(n, "undefined identifier %q", n.Ident.Name)
+			a.errorf(n, "undefined identifier %q", n.Name)
 			return nil, false
 		}
 		n.Symbol = sym
 		return sym, true
 	}
 
-	modSym, ok := a.current.Resolve(n.ModName)
+	modSym, ok := a.current.Resolve(n.Module)
 	if !ok || modSym.Kind != symbols.SymbolKindModule {
-		a.errorf(n, "unknown module %q", n.ModName)
+		a.errorf(n, "unknown module %q", n.Module)
 		return nil, false
 	}
 
-	sym, ok := modSym.Module.Scope.Resolve(n.Ident.Name)
+	sym, ok := modSym.Module.Scope.Resolve(n.Name)
 	if !ok {
-		a.errorf(n, "undefined symbol %q in module %q", n.Ident.Name, n.ModName)
+		a.errorf(n, "undefined symbol %q in module %q", n.Name, n.Module)
 		return nil, false
 	}
 
-	if !sym.Public && n.ModName != a.currentMod {
-		a.errorf(n, "symbol %q is not public in module %q", sym.Name, n.ModName)
+	if !sym.Public && n.Module != a.currentMod {
+		a.errorf(n, "symbol %q is not public in module %q", sym.Name, n.Module)
 		return nil, false
 	}
 
@@ -48,7 +39,7 @@ func (a *Analyser) resolveModuleAccess(n *parser.ModuleAccessNode) (*symbols.Sym
 }
 
 func (a *Analyser) resolveFunctionCall(n *parser.FunctionCallNode) {
-	sym, ok := a.resolveModuleAccess(n.Name)
+	sym, ok := a.resolveIdentifier(n.Name)
 	if !ok {
 		return
 	}
@@ -67,7 +58,7 @@ func (a *Analyser) resolveFunctionCall(n *parser.FunctionCallNode) {
 
 func (a *Analyser) visitStructLiteral(n *parser.StructLiteralNode) {
 	if n.Name != nil {
-		sym, ok := a.resolveModuleAccess(n.Name)
+		sym, ok := a.resolveIdentifier(n.Name)
 		if !ok {
 			return
 		}

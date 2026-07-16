@@ -184,15 +184,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 	switch n := node.(type) {
 	case *parser.IdentifierNode:
 		if n.Symbol == nil || n.Symbol.Type == nil {
-			a.errorf(n, "undefined identifier: %s", n.Name)
-			n.SetType(types.ErrorType{})
-		} else {
-			n.SetType(n.Symbol.Type)
-		}
-
-	case *parser.ModuleAccessNode:
-		if n.Symbol == nil || n.Symbol.Type == nil {
-			a.errorf(n, "undefined identifier: %s:%s", n.ModName, n.Ident)
+			a.errorf(n, "undefined identifier: %s", n.String())
 			n.SetType(types.ErrorType{})
 		} else {
 			n.SetType(n.Symbol.Type)

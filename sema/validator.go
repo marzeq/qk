@@ -151,7 +151,7 @@ func (v *Validator) validateAssignment(n *parser.AssignmentNode) {
 func (v *Validator) validateLValue(expr parser.ExpressionNode) bool {
 	switch e := expr.(type) {
 
-	case parser.IdentOrModAccessNode:
+	case *parser.IdentifierNode:
 		if !e.GetSymbol().Mutable {
 			v.errorf(e, "cannot assign to immutable symbol")
 			return false
@@ -651,7 +651,6 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		*parser.CharLiteralNode,
 		*parser.NilLiteralNode,
 		*parser.IdentifierNode,
-		*parser.ModuleAccessNode,
 		*parser.SizeOfNode,
 		*parser.SizeOfExprNode:
 		// nothing to validate

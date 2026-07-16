@@ -95,8 +95,6 @@ func (w *debugWalker) walkExpr(expr parser.ExpressionNode) {
 
 	case *parser.IdentifierNode:
 
-	case *parser.ModuleAccessNode:
-
 	case *parser.IntegerLiteralNode,
 		*parser.FloatLiteralNode,
 		*parser.BoolLiteralNode,

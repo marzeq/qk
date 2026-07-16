@@ -116,9 +116,6 @@ func (a *Analyser) visitExpression(expr parser.ExpressionNode) {
 	case *parser.IdentifierNode:
 		a.resolveIdentifier(e)
 
-	case *parser.ModuleAccessNode:
-		a.resolveModuleAccess(e)
-
 	case *parser.BinaryOpNode:
 		a.visitExpression(e.Operand1)
 		a.visitExpression(e.Operand2)

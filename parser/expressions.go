@@ -483,41 +483,31 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 				return nil, err
 			}
 
-			modAN := &ModuleAccessNode{
-				ModName: ident.Name,
-				Ident:   modIdent,
-				Loc:     ident.Loc,
+			qualifiedIdent := &IdentifierNode{
+				Module: ident.Name,
+				Name:   modIdent.Name,
+				Loc:    ident.Loc,
 			}
 
 			if p.Match(tokeniser.TokenOpenCurly) &&
 				(!p.disambiguateTrailingBlock || p.trailingBraceStartsStructLiteral()) {
-				return p.ParseStructLiteral(modAN)
+				return p.ParseStructLiteral(qualifiedIdent)
 			}
 
 			if p.Match(tokeniser.TokenOpenParen) {
-				return p.ParseFunctionCall(modAN)
+				return p.ParseFunctionCall(qualifiedIdent)
 			}
 
-			return modAN, nil
+			return qualifiedIdent, nil
 		}
 
 		if p.Match(tokeniser.TokenOpenParen) {
-			modAN := &ModuleAccessNode{
-				ModName: "",
-				Ident:   ident,
-				Loc:     ident.Loc,
-			}
-			return p.ParseFunctionCall(modAN)
+			return p.ParseFunctionCall(ident)
 		}
 
 		if p.Match(tokeniser.TokenOpenCurly) &&
 			(!p.disambiguateTrailingBlock || p.trailingBraceStartsStructLiteral()) {
-			modAN := &ModuleAccessNode{
-				ModName: "",
-				Ident:   ident,
-				Loc:     ident.Loc,
-			}
-			return p.ParseStructLiteral(modAN)
+			return p.ParseStructLiteral(ident)
 		}
 
 		return ident, nil
@@ -644,7 +634,7 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 	return nil, shared.NewError(p.CurrLoc(), "unexpected token %s", p.Peek())
 }
 
-func (p *Parser) ParseFunctionCall(name *ModuleAccessNode) (*FunctionCallNode, error) {
+func (p *Parser) ParseFunctionCall(name *IdentifierNode) (*FunctionCallNode, error) {
 	var args []ExpressionNode
 
 	if !p.Expect(tokeniser.TokenOpenParen) {
@@ -844,7 +834,7 @@ func (p *Parser) ParseBlockExpression() (ExpressionNode, error) {
 	return blockExpression, err
 }
 
-func (p *Parser) ParseStructLiteral(name *ModuleAccessNode) (*StructLiteralNode, error) {
+func (p *Parser) ParseStructLiteral(name *IdentifierNode) (*StructLiteralNode, error) {
 	beginLoc := p.CurrLoc()
 
 	if !p.Expect(tokeniser.TokenOpenCurly) {
