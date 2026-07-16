@@ -149,6 +149,12 @@ func (p *Parser) ParseLogicalNot() (ExpressionNode, error) {
 
 func (p *Parser) ParseUnary() (ExpressionNode, error) {
 	beginLoc := p.CurrLoc()
+	if p.Match(tokeniser.TokenIncrement) {
+		return nil, shared.NewError(beginLoc, "use ... += 1 instead")
+	}
+	if p.Match(tokeniser.TokenDecrement) {
+		return nil, shared.NewError(beginLoc, "use ... -= 1 instead")
+	}
 
 	if p.Match(tokeniser.TokenMinus) {
 		op := p.Consume()
@@ -189,6 +195,10 @@ func (p *Parser) ParsePostfix() (ExpressionNode, error) {
 
 	for {
 		switch {
+		case p.Match(tokeniser.TokenIncrement):
+			return nil, shared.NewError(p.CurrLoc(), "use ... += 1 instead")
+		case p.Match(tokeniser.TokenDecrement):
+			return nil, shared.NewError(p.CurrLoc(), "use ... -= 1 instead")
 		case p.Match(tokeniser.TokenOpenSquare):
 			p.Inc()
 

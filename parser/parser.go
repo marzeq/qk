@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 
@@ -193,78 +194,31 @@ func (p *Parser) Parse() (*RootNode, error) {
 			FilePath: eofTok.Loc.FilePath,
 		},
 	}
+	var parseErrors []error
 	for !p.Match(tokeniser.TokenEof) {
 		for p.Match(tokeniser.TokenNewline, tokeniser.TokenSemicolon) {
 			p.Inc()
 		}
-		e := shared.NewError(p.CurrLoc(), "expected function definition, constant definition, type alias or import statement")
-		if !p.Match(tokeniser.TokenKeyword) {
-			return nil, e
+		if p.Match(tokeniser.TokenEof) {
+			break
 		}
 
-		switch p.Peek().Value {
-		case string(tokeniser.KeywordPub):
-			p.Inc()
-			if !p.Match(tokeniser.TokenKeyword) || p.Peek().Value != string(tokeniser.KeywordLet) && p.Peek().Value != string(tokeniser.KeywordExtern) {
-				return nil, e
-			}
-			stmt, _, err := p.ParseStatement()
-			if err != nil {
-				return nil, err
-			}
-
-			switch s := stmt.(type) {
-			case *FunctionDefNode:
-				s.Pub = true
-			case *DeclarationNode:
-				s.Pub = true
-			case *TypeAliasNode:
-				s.Pub = true
-			default:
-				return nil, e
-			}
-
-			rootNode.Body = append(rootNode.Body, stmt)
-		case string(tokeniser.KeywordLet):
-			stmt, _, err := p.ParseStatement()
-			if err != nil {
-				return nil, err
-			}
-			switch stmt.(type) {
-			case *FunctionDefNode, *DeclarationNode, *TypeAliasNode:
-				rootNode.Body = append(rootNode.Body, stmt)
-			default:
-				return nil, e
-			}
-		case string(tokeniser.KeywordExtern):
-			stmt, _, err := p.ParseStatement()
-			if err != nil {
-				return nil, err
-			}
-			rootNode.Body = append(rootNode.Body, stmt)
-
-		case string(tokeniser.KeywordImport):
-			imp, err := p.ParseImport()
-			if err != nil {
-				return nil, err
-			}
-			rootNode.Body = append(rootNode.Body, imp)
-		case string(tokeniser.KeywordModule):
-			mod, err := p.ParseModule()
-			if err != nil {
-				return nil, err
-			}
-			rootNode.Body = append(rootNode.Body, mod)
-		default:
-			return nil, e
+		stmt, err := p.parseTopLevel()
+		if err != nil {
+			parseErrors = append(parseErrors, err)
+			p.synchroniseTopLevel()
+			continue
 		}
+		rootNode.Body = append(rootNode.Body, stmt)
 
 		if p.Match(tokeniser.TokenEof) {
 			break
 		}
 
 		if !p.Match(tokeniser.TokenNewline, tokeniser.TokenSemicolon) {
-			return nil, shared.NewError(p.CurrLoc(), "expected ';' or '\\n'")
+			parseErrors = append(parseErrors, shared.NewError(p.CurrLoc(), "expected ';' or '\\n'"))
+			p.synchroniseTopLevel()
+			continue
 		}
 
 		for p.Match(tokeniser.TokenNewline, tokeniser.TokenSemicolon) {
@@ -272,5 +226,86 @@ func (p *Parser) Parse() (*RootNode, error) {
 		}
 	}
 
-	return rootNode, nil
+	return rootNode, errors.Join(parseErrors...)
+}
+
+func (p *Parser) parseTopLevel() (Node, error) {
+	e := shared.NewError(p.CurrLoc(), "expected function definition, constant definition, type alias or import statement")
+	if !p.Match(tokeniser.TokenKeyword) {
+		return nil, e
+	}
+
+	isPublic := p.Peek().Value == string(tokeniser.KeywordPub)
+	if isPublic {
+		p.Inc()
+		if !p.Match(tokeniser.TokenKeyword) ||
+			(p.Peek().Value != string(tokeniser.KeywordLet) && p.Peek().Value != string(tokeniser.KeywordExtern)) {
+			return nil, e
+		}
+	}
+
+	var node Node
+	var err error
+	switch p.Peek().Value {
+	case string(tokeniser.KeywordLet), string(tokeniser.KeywordExtern):
+		node, _, err = p.ParseStatement()
+	case string(tokeniser.KeywordImport):
+		node, err = p.ParseImport()
+	case string(tokeniser.KeywordModule):
+		node, err = p.ParseModule()
+	default:
+		return nil, e
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	switch n := node.(type) {
+	case *FunctionDefNode:
+		n.Pub = isPublic
+	case *DeclarationNode:
+		n.Pub = isPublic
+	case *TypeAliasNode:
+		n.Pub = isPublic
+	default:
+		if isPublic {
+			return nil, e
+		}
+	}
+	return node, nil
+}
+
+func isTopLevelStart(tok tokeniser.Token) bool {
+	if tok.Type != tokeniser.TokenKeyword {
+		return false
+	}
+	switch tok.Value {
+	case string(tokeniser.KeywordPub), string(tokeniser.KeywordLet),
+		string(tokeniser.KeywordExtern), string(tokeniser.KeywordImport), string(tokeniser.KeywordModule):
+		return true
+	default:
+		return false
+	}
+}
+
+func (p *Parser) synchroniseTopLevel() {
+	// Failed speculative parses must not affect the next declaration.
+	p.posStack = nil
+	depth := 0
+	atBoundary := p.pos == 0 || p.tokens[p.pos-1].Type == tokeniser.TokenNewline || p.tokens[p.pos-1].Type == tokeniser.TokenSemicolon
+	for !p.Match(tokeniser.TokenEof) {
+		if depth == 0 && atBoundary && isTopLevelStart(p.Peek()) {
+			return
+		}
+		tok := p.Consume()
+		switch tok.Type {
+		case tokeniser.TokenOpenCurly:
+			depth++
+		case tokeniser.TokenCloseCurly:
+			if depth > 0 {
+				depth--
+			}
+		}
+		atBoundary = tok.Type == tokeniser.TokenNewline || tok.Type == tokeniser.TokenSemicolon
+	}
 }

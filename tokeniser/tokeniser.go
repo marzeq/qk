@@ -374,7 +374,8 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 				t.AddToken(TokenIncBy, t.GetLoc())
 				t.Inc().Inc()
 			} else if t.Next() == '+' {
-				return nil, shared.NewError(t.GetLoc(), "use ... += 1 instead")
+				t.AddToken(TokenIncrement, t.GetLoc())
+				t.Inc().Inc()
 			} else {
 				t.AddToken(TokenPlus, t.GetLoc())
 				t.Inc()
@@ -396,7 +397,8 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 				t.AddToken(TokenArrow, t.GetLoc())
 				t.Inc().Inc()
 			} else if t.Next() == '-' {
-				return nil, shared.NewError(t.GetLoc(), "use ... -= 1 instead")
+				t.AddToken(TokenDecrement, t.GetLoc())
+				t.Inc().Inc()
 			} else {
 				t.AddToken(TokenMinus, t.GetLoc())
 				t.Inc()

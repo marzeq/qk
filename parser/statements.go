@@ -1,6 +1,8 @@
 package parser
 
 import (
+	"errors"
+
 	"github.com/marzeq/qk/attributes"
 	"github.com/marzeq/qk/shared"
 	"github.com/marzeq/qk/tokeniser"
@@ -17,10 +19,13 @@ func (p *Parser) ParseBlock() (*BlockNode, error) {
 	}
 
 	var children []Node
+	var parseErrors []error
 	for !p.Match(tokeniser.TokenCloseCurly, tokeniser.TokenEof) {
 		stmt, semiNeeded, err := p.ParseStatement()
 		if err != nil {
-			return nil, err
+			parseErrors = append(parseErrors, err)
+			p.synchroniseStatement()
+			continue
 		}
 		children = append(children, stmt)
 
@@ -29,8 +34,10 @@ func (p *Parser) ParseBlock() (*BlockNode, error) {
 		}
 
 		if semiNeeded && !p.Match(tokeniser.TokenSemicolon, tokeniser.TokenNewline) {
-			return nil, shared.NewError(p.CurrLoc(),
-				"expected ';' or '\\n' to end statement")
+			parseErrors = append(parseErrors, shared.NewError(p.CurrLoc(),
+				"expected ';' or '\\n' to end statement"))
+			p.synchroniseStatement()
+			continue
 		}
 
 		for p.Match(tokeniser.TokenSemicolon, tokeniser.TokenNewline) {
@@ -45,7 +52,56 @@ func (p *Parser) ParseBlock() (*BlockNode, error) {
 	return &BlockNode{
 		Body: children,
 		Loc:  beginLoc,
-	}, nil
+	}, errors.Join(parseErrors...)
+}
+
+func (p *Parser) synchroniseStatement() {
+	// Failed speculative parses must not affect the next statement.
+	p.posStack = nil
+	if p.atStatementBoundary() && isStatementStart(p.Peek()) {
+		return
+	}
+	depth := 0
+	for !p.Match(tokeniser.TokenEof) {
+		if depth == 0 && p.Match(tokeniser.TokenCloseCurly) {
+			return
+		}
+		tok := p.Consume()
+		switch tok.Type {
+		case tokeniser.TokenOpenParen, tokeniser.TokenOpenSquare, tokeniser.TokenOpenCurly:
+			depth++
+		case tokeniser.TokenCloseParen, tokeniser.TokenCloseSquare, tokeniser.TokenCloseCurly:
+			if depth > 0 {
+				depth--
+			}
+		case tokeniser.TokenNewline, tokeniser.TokenSemicolon:
+			if depth == 0 {
+				return
+			}
+		}
+	}
+}
+
+func (p *Parser) atStatementBoundary() bool {
+	return p.pos == 0 || p.tokens[p.pos-1].Type == tokeniser.TokenNewline ||
+		p.tokens[p.pos-1].Type == tokeniser.TokenSemicolon
+}
+
+func isStatementStart(tok tokeniser.Token) bool {
+	if tok.Type == tokeniser.TokenIdentifier || tok.Type == tokeniser.TokenOpenCurly {
+		return true
+	}
+	if tok.Type != tokeniser.TokenKeyword {
+		return false
+	}
+	switch tok.Value {
+	case string(tokeniser.KeywordLet), string(tokeniser.KeywordExtern),
+		string(tokeniser.KeywordReturn), string(tokeniser.KeywordBreak),
+		string(tokeniser.KeywordContinue), string(tokeniser.KeywordIf), string(tokeniser.KeywordFor):
+		return true
+	default:
+		return false
+	}
 }
 
 func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
