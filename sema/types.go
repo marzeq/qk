@@ -40,7 +40,8 @@ func (a *Analyser) resolveTypeNode(n parser.TypeNode) types.Type {
 
 	case *parser.PointerTypeNode:
 		return types.PointerType{
-			Base: a.resolveTypeNode(t.BaseType),
+			Base:    a.resolveTypeNode(t.BaseType),
+			Mutable: t.Mutable,
 		}
 
 	case *parser.SliceTypeNode:

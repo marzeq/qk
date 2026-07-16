@@ -1,6 +1,7 @@
 package types
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
@@ -215,12 +216,13 @@ func (s StructType) String() string {
 }
 
 type PointerType struct {
-	Base Type
+	Base    Type
+	Mutable bool
 }
 
 func (p PointerType) Equals(other Type) bool {
 	if otherPointer, ok := other.(PointerType); ok {
-		return p.Base.Equals(otherPointer.Base)
+		return p.Base.Equals(otherPointer.Base) && p.Mutable == otherPointer.Mutable
 	}
 	return false
 }
@@ -238,6 +240,11 @@ func (p PointerType) CanCoerceTo(other Type) bool {
 	if p.Base.Equals(PrimitiveVoid) || otherPointer.Base.Equals(PrimitiveVoid) {
 		return true
 	}
+
+	if !p.Mutable && otherPointer.Mutable {
+		return false
+	}
+
 	return p.Base.CanCoerceTo(otherPointer.Base)
 }
 
@@ -248,6 +255,9 @@ func (p PointerType) CanCastTo(other Type) bool {
 
 	switch t := other.(type) {
 	case PointerType:
+		if !p.Mutable && t.Mutable {
+			return false
+		}
 		return true
 	case PrimitiveType:
 		return IsInteger(t)
@@ -257,7 +267,13 @@ func (p PointerType) CanCastTo(other Type) bool {
 }
 
 func (p PointerType) String() string {
-	return "*" + p.Base.String()
+	sb := strings.Builder{}
+	sb.WriteString("*")
+	if p.Mutable {
+		sb.WriteString("mut ")
+	}
+	sb.WriteString(p.Base.String())
+	return sb.String()
 }
 
 func IsPointer(t Type) bool {
@@ -495,10 +511,8 @@ func HasUntyped(t Type) bool {
 			}
 		}
 	case FunctionType:
-		for _, parameter := range t.Parameters {
-			if HasUntyped(parameter) {
-				return true
-			}
+		if slices.ContainsFunc(t.Parameters, HasUntyped) {
+			return true
 		}
 		return HasUntyped(t.ReturnType)
 	}

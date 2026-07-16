@@ -315,7 +315,18 @@ func (g *Generator) generateAssignment(node *parser.AssignmentNode) {
 }
 
 func (g *Generator) generatePointerAssignment(node *parser.PointerAssignmentNode) {
-	panic("todo")
+	deref, ok := node.Assignee.(*parser.UnaryOpNode)
+	if !ok || deref.Op != parser.UnaryOpDereference {
+		panic("pointer assignment target must be a dereference")
+	}
+
+	ptr := g.GenerateExpr(deref.Operand)
+	value := g.GenerateExpr(node.Value)
+
+	g.Emit(ir.StorePtr{
+		Ptr:   ptr,
+		Value: value,
+	})
 }
 
 func (g *Generator) generateControlKeyword(node *parser.ControlKeywordNode) {
@@ -1104,6 +1115,8 @@ func (g *Generator) generateUnaryExpr(node *parser.UnaryOpNode) ir.Operand {
 		}
 		g.Emit(ir.Sub{Dest: dst, Left: zero, Right: operand})
 	case parser.UnaryOpReference:
+		fallthrough
+	case parser.UnaryOpMutableReference:
 		return g.generateAddressOfExpr(node.Operand)
 	case parser.UnaryOpDereference:
 		operand := g.GenerateExpr(node.Operand)

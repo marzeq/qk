@@ -24,7 +24,7 @@ func ComputeModuleOrder(mods map[string]*ModuleInfo) ([]string, []error) {
 	return order, nil
 }
 
-func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, order []string, verbose, debug bool) []error {
+func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, order []string, verbose, debug bool) (errors []error, warnings []error) {
 	for _, name := range order {
 		info := mods[name]
 
@@ -34,7 +34,7 @@ func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, o
 	}
 
 	if len(analyser.Errors()) > 0 {
-		return analyser.Errors()
+		return analyser.Errors(), nil
 	}
 
 	if verbose {
@@ -52,7 +52,7 @@ func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, o
 	}
 
 	if len(attributor.Errors()) > 0 {
-		return attributor.Errors()
+		return attributor.Errors(), nil
 	}
 
 	if verbose {
@@ -69,11 +69,13 @@ func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, o
 	}
 
 	if len(validator.Errors()) > 0 {
-		return validator.Errors()
+		return validator.Errors(), nil
 	}
 
+	warnings = append(warnings, validator.Warnings()...)
+
 	if errs := checkExternConflicts(mods, order); len(errs) > 0 {
-		return errs
+		return errs, nil
 	}
 
 	if verbose {
@@ -93,7 +95,7 @@ func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, o
 		}
 	}
 
-	return nil
+	return nil, warnings
 }
 
 func GenerateIRModules(mods map[string]*ModuleInfo, mainModule string, order []string, verbose bool) (map[string]*ir.Module, []error) {

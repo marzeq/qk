@@ -229,8 +229,13 @@ func (p *Parser) ParsePostfix() (ExpressionNode, error) {
 
 			if p.Match(tokeniser.TokenAmpersand) {
 				p.Inc()
+				op := UnaryOpReference
+				if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordMut) {
+					p.Inc()
+					op = UnaryOpMutableReference
+				}
 				expr = &UnaryOpNode{
-					Op:      UnaryOpReference,
+					Op:      op,
 					Operand: expr,
 					Loc:     beginLoc,
 				}
@@ -1048,6 +1053,12 @@ func (p *Parser) ParsePointerType() (*PointerTypeNode, error) {
 		return nil, shared.NewError(p.PrevLoc(), "expected '*' to start pointer type")
 	}
 
+	mutable := false
+	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordMut) {
+		p.Inc()
+		mutable = true
+	}
+
 	tpe, err := p.ParseType()
 	if err != nil {
 		return nil, err
@@ -1055,6 +1066,7 @@ func (p *Parser) ParsePointerType() (*PointerTypeNode, error) {
 
 	return &PointerTypeNode{
 		BaseType: tpe,
+		Mutable:  mutable,
 		Loc:      beginLoc,
 	}, nil
 }

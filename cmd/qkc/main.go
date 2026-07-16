@@ -54,8 +54,12 @@ func main() {
 	order, errs := loader.ComputeModuleOrder(modules)
 	checkErrs(errs)
 
-	errs = loader.RunSemanticPipeline(modules, analyser, order, args.verbose, args.debug)
+	var warnings []error
+	errs, warnings = loader.RunSemanticPipeline(modules, analyser, order, args.verbose, args.debug)
 	checkErrs(errs)
+	for _, w := range warnings {
+		fmt.Println(w)
+	}
 
 	if args.verbose {
 		fmt.Println("semantic analysis completed successfully")

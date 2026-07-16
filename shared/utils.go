@@ -7,14 +7,24 @@ import (
 )
 
 type Error struct {
-	message string
-	loc     Location
+	message   string
+	loc       Location
+	isWarning bool
 }
 
 func NewError(loc Location, message string, a ...any) Error {
 	return Error{
-		message: fmt.Sprintf(message, a...),
-		loc:     loc,
+		message:   fmt.Sprintf(message, a...),
+		loc:       loc,
+		isWarning: false,
+	}
+}
+
+func NewWarning(loc Location, message string, a ...any) Error {
+	return Error{
+		message:   fmt.Sprintf(message, a...),
+		loc:       loc,
+		isWarning: true,
 	}
 }
 
@@ -34,16 +44,29 @@ func (err Error) Error() string {
 	end := min(len(lines)-1, lineIdx+2)
 
 	var b strings.Builder
+	if err.isWarning {
+		b.WriteString("Warning: ")
+	} else {
+		b.WriteString("Error: ")
+	}
 	fmt.Fprintf(&b, "%s:%d:%d\n", err.loc.FilePath, err.loc.LC.Line, err.loc.LC.Col)
 
 	const red = "\x1b[31m"
+	const yellow = "\x1b[33m"
 	const reset = "\x1b[0m"
+
+	var color string
+	if err.isWarning {
+		color = yellow
+	} else {
+		color = red
+	}
 
 	for i := start; i <= end; i++ {
 		ln := i + 1
 		if i == lineIdx {
 			fmt.Fprintf(&b, "%s%4d |%s %s  %s(col %d)%s\n",
-				red, ln, reset, lines[i], red, err.loc.LC.Col, reset)
+				color, ln, reset, lines[i], color, err.loc.LC.Col, reset)
 		} else {
 			fmt.Fprintf(&b, "%4d | %s\n", ln, lines[i])
 		}

@@ -496,6 +496,9 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 		} else if p.Match(tokeniser.TokenOpenSquare) {
 			node, err := p.ParseIndexAssignment(ident)
 			return node, true, err
+		} else if p.Match(tokeniser.TokenIncBy, tokeniser.TokenDecBy, tokeniser.TokenMulBy, tokeniser.TokenDivBy, tokeniser.TokenModBy) {
+			node, err := p.ParseCompoundAssignment(ident)
+			return node, true, err
 		}
 
 		return nil, false, shared.NewError(p.CurrLoc(),
@@ -617,6 +620,48 @@ func (p *Parser) ParsePointerAssignment(ident *IdentifierNode) (*PointerAssignme
 		},
 		Value: expr,
 		Loc:   ident.Loc,
+	}, nil
+}
+
+func (p *Parser) ParseCompoundAssignment(ident *IdentifierNode) (*AssignmentNode, error) {
+	opTok := p.Peek()
+	p.Inc()
+
+	for p.Match(tokeniser.TokenNewline) {
+		p.Inc()
+	}
+
+	expr, err := p.ParseExpression()
+	if err != nil {
+		return nil, err
+	}
+
+	var op BinaryOpKind
+
+	switch opTok.Type {
+	case tokeniser.TokenIncBy:
+		op = BinaryOpAdd
+	case tokeniser.TokenDecBy:
+		op = BinaryOpSubtract
+	case tokeniser.TokenMulBy:
+		op = BinaryOpMultiply
+	case tokeniser.TokenDivBy:
+		op = BinaryOpDivide
+	case tokeniser.TokenModBy:
+		op = BinaryOpModulo
+	default:
+		return nil, shared.NewError(opTok.Loc, "unexpected compound assignment operator %s", opTok)
+	}
+
+	return &AssignmentNode{
+		Assignee: ident,
+		Value: &BinaryOpNode{
+			Op:       op,
+			Operand1: ident,
+			Operand2: expr,
+			Loc:      ident.Loc,
+		},
+		Loc: ident.Loc,
 	}, nil
 }
 

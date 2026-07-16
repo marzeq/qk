@@ -103,6 +103,7 @@ func (n SliceTypeNode) _type()                  {}
 
 type PointerTypeNode struct {
 	BaseType TypeNode
+	Mutable  bool
 	Loc      shared.Location
 }
 
@@ -250,6 +251,7 @@ const (
 	UnaryOpLogicalNot UnaryOpKind = iota
 	UnaryOpNegate
 	UnaryOpReference
+	UnaryOpMutableReference
 	UnaryOpDereference
 	UnaryOpSliceLen
 )

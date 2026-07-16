@@ -225,7 +225,8 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 
 	case *parser.NilLiteralNode:
 		n.SetType(types.PointerType{
-			Base: types.PrimitiveVoid,
+			Base:    types.PrimitiveVoid,
+			Mutable: false,
 		})
 
 	case *parser.StructLiteralNode:
@@ -347,7 +348,13 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 			}
 		case parser.UnaryOpReference:
 			n.SetType(types.PointerType{
-				Base: n.Operand.GetType(),
+				Base:    n.Operand.GetType(),
+				Mutable: false,
+			})
+		case parser.UnaryOpMutableReference:
+			n.SetType(types.PointerType{
+				Base:    n.Operand.GetType(),
+				Mutable: true,
 			})
 		case parser.UnaryOpDereference:
 			if ptr, ok := n.Operand.GetType().(types.PointerType); ok {

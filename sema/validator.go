@@ -16,6 +16,7 @@ type Validator struct {
 	analyser        *Analyser
 	currentFunction *symbols.Symbol
 	errors          []error
+	warnings        []error
 }
 
 func (a *Analyser) NewValidator() *Validator {
@@ -26,12 +27,20 @@ func (v *Validator) errorf(node parser.Node, format string, args ...any) {
 	v.errors = append(v.errors, shared.NewError(node.GetLoc(), format, args...))
 }
 
+func (v *Validator) warnf(node parser.Node, format string, args ...any) {
+	v.warnings = append(v.warnings, shared.NewWarning(node.GetLoc(), format, args...))
+}
+
 func (v *Validator) ValidateModule(root *parser.RootNode) {
 	v.validateNode(root)
 }
 
 func (v *Validator) Errors() []error {
 	return v.errors
+}
+
+func (v *Validator) Warnings() []error {
+	return v.warnings
 }
 
 func (v *Validator) validateNode(node parser.Node) {
@@ -172,6 +181,14 @@ func (v *Validator) validateLValue(expr parser.ExpressionNode) bool {
 					v.errorf(e, "cannot assign to dereferenced void pointer")
 					return false
 				}
+				if !ptrType.Mutable {
+					v.errorf(e, "cannot assign to dereferenced immutable pointer")
+					return false
+				}
+			} else if _, ok := e.Operand.GetType().(types.ErrorType); ok {
+				// do nothing, error already reported
+			} else {
+				panic(fmt.Sprintf("unreachable: dereference of non-pointer type %T", e.Operand.GetType()))
 			}
 			v.validateExpr(e.Operand)
 			return true
@@ -394,14 +411,22 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 
 		case parser.UnaryOpReference:
 
-		case parser.UnaryOpDereference:
-			if _, ok := operandType.(types.PointerType); !ok {
-				v.errorf(n, "cannot dereference non-pointer type")
+		case parser.UnaryOpMutableReference:
+			if id, ok := n.Operand.(*parser.IdentifierNode); ok {
+				if id.Symbol != nil && !id.Symbol.Mutable {
+					v.errorf(n, "taking mutable reference of immutable variable")
+				}
+			} else {
+				panic(fmt.Sprintf("todo: taking reference of non-identifier expression %T", n.Operand))
 			}
+
+		case parser.UnaryOpDereference:
 			if ptrType, ok := operandType.(types.PointerType); ok {
 				if ptrType.Base.Equals(types.PrimitiveVoid) {
 					v.errorf(n, "cannot dereference void pointer")
 				}
+			} else {
+				v.errorf(n, "cannot dereference non-pointer type")
 			}
 
 		case parser.UnaryOpSliceLen:
