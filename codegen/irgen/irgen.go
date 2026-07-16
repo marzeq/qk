@@ -1259,6 +1259,16 @@ func (g *Generator) generateBinaryExpr(node *parser.BinaryOpNode) ir.Operand {
 		g.Emit(ir.LogicalAnd{Dest: dst, Left: left, Right: right})
 	case parser.BinaryOpLogicalOr:
 		g.Emit(ir.LogicalOr{Dest: dst, Left: left, Right: right})
+	case parser.BinaryOpBitwiseAnd:
+		g.Emit(ir.BitwiseAnd{Dest: dst, Left: left, Right: right})
+	case parser.BinaryOpBitwiseOr:
+		g.Emit(ir.BitwiseOr{Dest: dst, Left: left, Right: right})
+	case parser.BinaryOpBitwiseXor:
+		g.Emit(ir.BitwiseXor{Dest: dst, Left: left, Right: right})
+	case parser.BinaryOpShiftLeft:
+		g.Emit(ir.ShiftLeft{Dest: dst, Left: left, Right: right})
+	case parser.BinaryOpShiftRight:
+		g.Emit(ir.ShiftRight{Dest: dst, Left: left, Right: right})
 	default:
 		panic(fmt.Sprintf("todo: generate binary expr for op %s", node.Op))
 	}
@@ -1272,14 +1282,13 @@ func (g *Generator) generateUnaryExpr(node *parser.UnaryOpNode) ir.Operand {
 	switch node.Op {
 	case parser.UnaryOpNegate:
 		operand := g.GenerateExpr(node.Operand)
-		zero := ir.IntConstOperand("0", node.GetType())
-		if types.IsFloat(node.GetType()) {
-			zero = ir.FloatConstOperand("0", node.GetType())
-		}
-		g.Emit(ir.Sub{Dest: dst, Left: zero, Right: operand})
+		g.Emit(ir.Negate{Dest: dst, Operand: operand})
 	case parser.UnaryOpLogicalNot:
 		operand := g.GenerateExpr(node.Operand)
-		g.Emit(ir.CmpEq{Dest: dst, Left: operand, Right: ir.BoolConstOperand(false)})
+		g.Emit(ir.LogicalNot{Dest: dst, Operand: operand})
+	case parser.UnaryOpBitwiseNot:
+		operand := g.GenerateExpr(node.Operand)
+		g.Emit(ir.BitwiseNot{Dest: dst, Operand: operand})
 	case parser.UnaryOpReference:
 		fallthrough
 	case parser.UnaryOpMutableReference:

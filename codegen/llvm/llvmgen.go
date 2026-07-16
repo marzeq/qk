@@ -436,6 +436,22 @@ func (e *Emitter) InstrEmit(out *strings.Builder, instr ir.Instr) {
 		e.LogicalOrEmit(out, instr)
 	case ir.LogicalAnd:
 		e.LogicalAndEmit(out, instr)
+	case ir.BitwiseAnd:
+		e.BitwiseAndEmit(out, instr)
+	case ir.BitwiseOr:
+		e.BitwiseOrEmit(out, instr)
+	case ir.BitwiseXor:
+		e.BitwiseXorEmit(out, instr)
+	case ir.ShiftLeft:
+		e.ShiftLeftEmit(out, instr)
+	case ir.ShiftRight:
+		e.ShiftRightEmit(out, instr)
+	case ir.Negate:
+		e.NegateEmit(out, instr)
+	case ir.LogicalNot:
+		e.LogicalNotEmit(out, instr)
+	case ir.BitwiseNot:
+		e.BitwiseNotEmit(out, instr)
 	case ir.Alloca:
 		e.AllocaEmit(out, instr)
 	case ir.AllocaArray:
@@ -577,7 +593,7 @@ func (e *Emitter) CmpEqEmit(out *strings.Builder, c ir.CmpEq) {
 func (e *Emitter) CmpNeEmit(out *strings.Builder, c ir.CmpNe) {
 	instr := "icmp ne"
 	if types.IsFloat(c.Left.Type) {
-		instr = "fcmp one"
+		instr = "fcmp une"
 	}
 	fmt.Fprintf(out, "%s = %s %s %s, %s", e.ValueIDEmit(c.Dest), instr, e.TypeEmit(c.Left.Type), e.OperandEmit(c.Left), e.OperandEmit(c.Right))
 }
@@ -628,6 +644,46 @@ func (e *Emitter) LogicalOrEmit(out *strings.Builder, l ir.LogicalOr) {
 
 func (e *Emitter) LogicalAndEmit(out *strings.Builder, l ir.LogicalAnd) {
 	fmt.Fprintf(out, "%s = and i1 %s, %s", e.ValueIDEmit(l.Dest), e.OperandEmit(l.Left), e.OperandEmit(l.Right))
+}
+
+func (e *Emitter) BitwiseAndEmit(out *strings.Builder, b ir.BitwiseAnd) {
+	fmt.Fprintf(out, "%s = and %s %s, %s", e.ValueIDEmit(b.Dest), e.TypeEmit(b.Left.Type), e.OperandEmit(b.Left), e.OperandEmit(b.Right))
+}
+
+func (e *Emitter) BitwiseOrEmit(out *strings.Builder, b ir.BitwiseOr) {
+	fmt.Fprintf(out, "%s = or %s %s, %s", e.ValueIDEmit(b.Dest), e.TypeEmit(b.Left.Type), e.OperandEmit(b.Left), e.OperandEmit(b.Right))
+}
+
+func (e *Emitter) BitwiseXorEmit(out *strings.Builder, b ir.BitwiseXor) {
+	fmt.Fprintf(out, "%s = xor %s %s, %s", e.ValueIDEmit(b.Dest), e.TypeEmit(b.Left.Type), e.OperandEmit(b.Left), e.OperandEmit(b.Right))
+}
+
+func (e *Emitter) ShiftLeftEmit(out *strings.Builder, s ir.ShiftLeft) {
+	fmt.Fprintf(out, "%s = shl %s %s, %s", e.ValueIDEmit(s.Dest), e.TypeEmit(s.Left.Type), e.OperandEmit(s.Left), e.OperandEmit(s.Right))
+}
+
+func (e *Emitter) ShiftRightEmit(out *strings.Builder, s ir.ShiftRight) {
+	op := "ashr"
+	if types.IsUnsigned(s.Left.Type) {
+		op = "lshr"
+	}
+	fmt.Fprintf(out, "%s = %s %s %s, %s", e.ValueIDEmit(s.Dest), op, e.TypeEmit(s.Left.Type), e.OperandEmit(s.Left), e.OperandEmit(s.Right))
+}
+
+func (e *Emitter) NegateEmit(out *strings.Builder, n ir.Negate) {
+	if types.IsFloat(n.Operand.Type) {
+		fmt.Fprintf(out, "%s = fneg %s %s", e.ValueIDEmit(n.Dest), e.TypeEmit(n.Operand.Type), e.OperandEmit(n.Operand))
+		return
+	}
+	fmt.Fprintf(out, "%s = sub %s 0, %s", e.ValueIDEmit(n.Dest), e.TypeEmit(n.Operand.Type), e.OperandEmit(n.Operand))
+}
+
+func (e *Emitter) LogicalNotEmit(out *strings.Builder, n ir.LogicalNot) {
+	fmt.Fprintf(out, "%s = xor i1 %s, true", e.ValueIDEmit(n.Dest), e.OperandEmit(n.Operand))
+}
+
+func (e *Emitter) BitwiseNotEmit(out *strings.Builder, n ir.BitwiseNot) {
+	fmt.Fprintf(out, "%s = xor %s %s, -1", e.ValueIDEmit(n.Dest), e.TypeEmit(n.Operand.Type), e.OperandEmit(n.Operand))
 }
 
 func (e *Emitter) AllocaEmit(out *strings.Builder, a ir.Alloca) {

@@ -242,6 +242,7 @@ const (
 	UnaryOpMutableReference
 	UnaryOpDereference
 	UnaryOpSliceLen
+	UnaryOpBitwiseNot
 )
 
 func (u UnaryOpKind) String() string {
@@ -256,6 +257,8 @@ func (u UnaryOpKind) String() string {
 		return "*"
 	case UnaryOpSliceLen:
 		return "[]"
+	case UnaryOpBitwiseNot:
+		return "~"
 	default:
 		return "unknown"
 	}
@@ -299,6 +302,11 @@ const (
 	BinaryOpMultiply
 	BinaryOpDivide
 	BinaryOpModulo
+	BinaryOpBitwiseAnd
+	BinaryOpBitwiseXor
+	BinaryOpBitwiseOr
+	BinaryOpShiftLeft
+	BinaryOpShiftRight
 )
 
 func (b BinaryOpKind) String() string {
@@ -329,6 +337,16 @@ func (b BinaryOpKind) String() string {
 		return "/"
 	case BinaryOpModulo:
 		return "%"
+	case BinaryOpBitwiseAnd:
+		return "&"
+	case BinaryOpBitwiseXor:
+		return "^"
+	case BinaryOpBitwiseOr:
+		return "|"
+	case BinaryOpShiftLeft:
+		return "<<"
+	case BinaryOpShiftRight:
+		return ">>"
 	default:
 		return "unknown"
 	}

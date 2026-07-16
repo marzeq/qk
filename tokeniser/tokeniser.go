@@ -351,7 +351,10 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 			}
 			continue
 		case '<':
-			if t.Next() == '=' {
+			if t.Next() == '<' {
+				t.AddToken(TokenShiftLeft, t.GetLoc())
+				t.Inc().Inc()
+			} else if t.Next() == '=' {
 				t.AddToken(TokenLessEquals, t.GetLoc())
 				t.Inc().Inc()
 			} else {
@@ -360,7 +363,10 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 			}
 			continue
 		case '>':
-			if t.Next() == '=' {
+			if t.Next() == '>' {
+				t.AddToken(TokenShiftRight, t.GetLoc())
+				t.Inc().Inc()
+			} else if t.Next() == '=' {
 				t.AddToken(TokenGreaterEquals, t.GetLoc())
 				t.Inc().Inc()
 			} else {
@@ -436,6 +442,18 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 			continue
 		case '&':
 			t.AddToken(TokenAmpersand, t.GetLoc())
+			t.Inc()
+			continue
+		case '|':
+			t.AddToken(TokenPipe, t.GetLoc())
+			t.Inc()
+			continue
+		case '^':
+			t.AddToken(TokenCaret, t.GetLoc())
+			t.Inc()
+			continue
+		case '~':
+			t.AddToken(TokenTilde, t.GetLoc())
 			t.Inc()
 			continue
 		case ';':

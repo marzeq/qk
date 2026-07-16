@@ -335,6 +335,9 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		case parser.UnaryOpNegate:
 			if types.IsSigned(n.Operand.GetType()) || types.IsFloat(n.Operand.GetType()) {
 				n.SetType(n.Operand.GetType())
+			} else {
+				a.errorf(n, "negation operator requires a signed integer or float operand")
+				n.SetType(types.ErrorType{})
 			}
 		case parser.UnaryOpLogicalNot:
 			if n.Operand.GetType().Equals(types.PrimitiveBool) {
@@ -366,6 +369,13 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 				n.SetType(types.PrimitiveUsz)
 			default:
 				a.errorf(n, "slice length operator requires a slice operand")
+				n.SetType(types.ErrorType{})
+			}
+		case parser.UnaryOpBitwiseNot:
+			if types.IsInteger(n.Operand.GetType()) {
+				n.SetType(n.Operand.GetType())
+			} else {
+				a.errorf(n, "bitwise not operator requires an integer operand")
 				n.SetType(types.ErrorType{})
 			}
 		default:
@@ -462,6 +472,20 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 				n.SetType(types.PrimitiveBool)
 			} else {
 				a.errorf(n, "logical operators require boolean operands")
+				n.SetType(types.ErrorType{})
+			}
+		case parser.BinaryOpBitwiseAnd, parser.BinaryOpBitwiseXor, parser.BinaryOpBitwiseOr,
+			parser.BinaryOpShiftLeft, parser.BinaryOpShiftRight:
+			if types.IsInteger(t1) && types.IsInteger(t2) {
+				got := types.PromoteNumeric(t1, t2)
+				if got.Equals(types.ErrorType{}) {
+					a.errorf(n, "incompatible integer types for bitwise operator: %v and %v", t1, t2)
+					n.SetType(types.ErrorType{})
+				} else {
+					n.SetType(got)
+				}
+			} else {
+				a.errorf(n, "bitwise operators require integer operands")
 				n.SetType(types.ErrorType{})
 			}
 		default:

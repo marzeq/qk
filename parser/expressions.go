@@ -144,7 +144,49 @@ func (p *Parser) ParseLogicalNot() (ExpressionNode, error) {
 		}, nil
 	}
 
-	return p.ParseComparison()
+	return p.ParseBitwiseOr()
+}
+
+func (p *Parser) ParseBitwiseOr() (ExpressionNode, error) {
+	return p.parseLeftAssociative(p.ParseBitwiseXor, []tokeniser.TokenKind{tokeniser.TokenPipe}, map[tokeniser.TokenKind]BinaryOpKind{
+		tokeniser.TokenPipe: BinaryOpBitwiseOr,
+	})
+}
+
+func (p *Parser) ParseBitwiseXor() (ExpressionNode, error) {
+	return p.parseLeftAssociative(p.ParseBitwiseAnd, []tokeniser.TokenKind{tokeniser.TokenCaret}, map[tokeniser.TokenKind]BinaryOpKind{
+		tokeniser.TokenCaret: BinaryOpBitwiseXor,
+	})
+}
+
+func (p *Parser) ParseBitwiseAnd() (ExpressionNode, error) {
+	return p.parseLeftAssociative(p.ParseComparison, []tokeniser.TokenKind{tokeniser.TokenAmpersand}, map[tokeniser.TokenKind]BinaryOpKind{
+		tokeniser.TokenAmpersand: BinaryOpBitwiseAnd,
+	})
+}
+
+func (p *Parser) parseLeftAssociative(
+	parseOperand func() (ExpressionNode, error),
+	tokens []tokeniser.TokenKind,
+	operators map[tokeniser.TokenKind]BinaryOpKind,
+) (ExpressionNode, error) {
+	beginLoc := p.CurrLoc()
+	left, err := parseOperand()
+	if err != nil {
+		return nil, err
+	}
+	for p.Match(tokens...) {
+		op := operators[p.Consume().Type]
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+		right, err := parseOperand()
+		if err != nil {
+			return nil, err
+		}
+		left = &BinaryOpNode{Op: op, Operand1: left, Operand2: right, Loc: beginLoc}
+	}
+	return left, nil
 }
 
 func (p *Parser) ParseUnary() (ExpressionNode, error) {
@@ -156,13 +198,15 @@ func (p *Parser) ParseUnary() (ExpressionNode, error) {
 		return nil, shared.NewError(beginLoc, "use ... -= 1 instead")
 	}
 
-	if p.Match(tokeniser.TokenMinus) {
+	if p.Match(tokeniser.TokenMinus, tokeniser.TokenTilde) {
 		op := p.Consume()
 
 		var val UnaryOpKind
 		switch op.Type {
 		case tokeniser.TokenMinus:
 			val = UnaryOpNegate
+		case tokeniser.TokenTilde:
+			val = UnaryOpBitwiseNot
 		}
 
 		for p.Match(tokeniser.TokenNewline) {
@@ -298,7 +342,7 @@ func (p *Parser) ParsePostfix() (ExpressionNode, error) {
 
 func (p *Parser) ParseComparison() (ExpressionNode, error) {
 	beginLoc := p.CurrLoc()
-	left, err := p.ParseAddSub()
+	left, err := p.ParseShift()
 	if err != nil {
 		return nil, err
 	}
@@ -325,7 +369,7 @@ func (p *Parser) ParseComparison() (ExpressionNode, error) {
 			p.Inc()
 		}
 
-		right, err := p.ParseAddSub()
+		right, err := p.ParseShift()
 		if err != nil {
 			return nil, err
 		}
@@ -338,6 +382,15 @@ func (p *Parser) ParseComparison() (ExpressionNode, error) {
 	}
 
 	return left, nil
+}
+
+func (p *Parser) ParseShift() (ExpressionNode, error) {
+	return p.parseLeftAssociative(p.ParseAddSub,
+		[]tokeniser.TokenKind{tokeniser.TokenShiftLeft, tokeniser.TokenShiftRight},
+		map[tokeniser.TokenKind]BinaryOpKind{
+			tokeniser.TokenShiftLeft:  BinaryOpShiftLeft,
+			tokeniser.TokenShiftRight: BinaryOpShiftRight,
+		})
 }
 
 func (p *Parser) ParseAddSub() (ExpressionNode, error) {

@@ -381,8 +381,13 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			}
 
 		case parser.UnaryOpNegate:
-			if !types.IsNumeric(operandType) {
-				v.errorf(n, "operator - requires numeric type")
+			if !types.IsSigned(operandType) && !types.IsFloat(operandType) {
+				v.errorf(n, "operator - requires a signed integer or float")
+			}
+
+		case parser.UnaryOpBitwiseNot:
+			if !types.IsInteger(operandType) {
+				v.errorf(n, "operator ~ requires an integer")
 			}
 
 		case parser.UnaryOpReference:
@@ -460,6 +465,27 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			if !t1.Equals(types.PrimitiveBool) ||
 				!t2.Equals(types.PrimitiveBool) {
 				v.errorf(n, "logical operators require bool operands")
+			}
+
+		case parser.BinaryOpBitwiseAnd,
+			parser.BinaryOpBitwiseXor,
+			parser.BinaryOpBitwiseOr,
+			parser.BinaryOpShiftLeft,
+			parser.BinaryOpShiftRight:
+
+			if !types.IsInteger(t1) || !types.IsInteger(t2) {
+				v.errorf(n, "bitwise operators require integer operands")
+				break
+			}
+			common := types.PromoteNumeric(t1, t2)
+			if _, isError := common.(types.ErrorType); isError {
+				v.errorf(n, "incompatible integer types for bitwise operation: %v and %v", t1, t2)
+				break
+			}
+			if !types.IsUntyped(common) {
+				n.Operand1 = v.validateExprWithExpected(n.Operand1, common)
+				n.Operand2 = v.validateExprWithExpected(n.Operand2, common)
+				n.SetType(common)
 			}
 
 		case parser.BinaryOpEqual,
@@ -688,13 +714,14 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 	case *parser.FloatLiteralNode:
 		n.SetType(types.UntypedFloat{})
 	case *parser.UnaryOpNode:
-		if types.IsNumeric(expected) && n.Op == parser.UnaryOpNegate {
+		if (types.IsNumeric(expected) && n.Op == parser.UnaryOpNegate) ||
+			(types.IsInteger(expected) && n.Op == parser.UnaryOpBitwiseNot) {
 			n.Operand = v.validateExprWithExpected(n.Operand, expected)
 			n.SetType(expected)
 			return n
 		}
 	case *parser.BinaryOpNode:
-		if types.IsNumeric(expected) && isArithmeticOperator(n.Op) {
+		if types.IsNumeric(expected) && (isArithmeticOperator(n.Op) || isBitwiseOperator(n.Op)) {
 			n.Operand1 = v.validateExprWithExpected(n.Operand1, expected)
 			n.Operand2 = v.validateExprWithExpected(n.Operand2, expected)
 			n.SetType(expected)
@@ -749,6 +776,16 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 	}
 
 	return node
+}
+
+func isBitwiseOperator(op parser.BinaryOpKind) bool {
+	switch op {
+	case parser.BinaryOpBitwiseAnd, parser.BinaryOpBitwiseXor, parser.BinaryOpBitwiseOr,
+		parser.BinaryOpShiftLeft, parser.BinaryOpShiftRight:
+		return true
+	default:
+		return false
+	}
 }
 
 func isArithmeticOperator(op parser.BinaryOpKind) bool {

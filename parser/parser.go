@@ -69,7 +69,8 @@ func (p *Parser) trailingBraceStartsStructLiteral() bool {
 		tokeniser.TokenLess, tokeniser.TokenLessEquals,
 		tokeniser.TokenGreater, tokeniser.TokenGreaterEquals,
 		tokeniser.TokenPlus, tokeniser.TokenMinus, tokeniser.TokenAsterisk,
-		tokeniser.TokenSlash, tokeniser.TokenPercent:
+		tokeniser.TokenSlash, tokeniser.TokenPercent, tokeniser.TokenAmpersand,
+		tokeniser.TokenPipe, tokeniser.TokenCaret, tokeniser.TokenShiftLeft, tokeniser.TokenShiftRight:
 		return true
 	case tokeniser.TokenKeyword:
 		return next.Value == string(tokeniser.KeywordAnd) ||

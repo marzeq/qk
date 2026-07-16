@@ -154,11 +154,18 @@ logical_and    = logical_not,
                  { "and", opt_newlines, logical_not } ;
 
 logical_not    = ( "not", opt_newlines, logical_not )
-               | comparison ;
+               | bitwise_or ;
 
-comparison     = add_sub,
+bitwise_or     = bitwise_xor, { "|", opt_newlines, bitwise_xor } ;
+bitwise_xor    = bitwise_and, { "^", opt_newlines, bitwise_and } ;
+bitwise_and    = comparison, { "&", opt_newlines, comparison } ;
+
+comparison     = shift,
                  { ( "==" | "!=" | "<" | ">" | "<=" | ">=" ),
-                   opt_newlines, add_sub } ;
+                   opt_newlines, shift } ;
+
+shift          = add_sub,
+                 { ( "<<" | ">>" ), opt_newlines, add_sub } ;
 
 add_sub        = mul_div,
                  { ( "+" | "-" ), opt_newlines, mul_div } ;
@@ -166,7 +173,7 @@ add_sub        = mul_div,
 mul_div        = unary,
                  { ( "*" | "/" | "%" ), opt_newlines, unary } ;
 
-unary          = ( "-" | "*" | "&" ), opt_newlines, unary
+unary          = ( "-" | "~" ), opt_newlines, unary
                | postfix ;
 
 postfix        = term,

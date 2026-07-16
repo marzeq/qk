@@ -289,6 +289,62 @@ type Mod struct {
 
 func (Mod) isInstr() {}
 
+type BitwiseAnd struct {
+	Dest        ValueID
+	Left, Right Operand
+}
+
+func (BitwiseAnd) isInstr() {}
+
+type BitwiseOr struct {
+	Dest        ValueID
+	Left, Right Operand
+}
+
+func (BitwiseOr) isInstr() {}
+
+type BitwiseXor struct {
+	Dest        ValueID
+	Left, Right Operand
+}
+
+func (BitwiseXor) isInstr() {}
+
+type ShiftLeft struct {
+	Dest        ValueID
+	Left, Right Operand
+}
+
+func (ShiftLeft) isInstr() {}
+
+type ShiftRight struct {
+	Dest        ValueID
+	Left, Right Operand
+}
+
+func (ShiftRight) isInstr() {}
+
+type Negate struct {
+	Dest    ValueID
+	Operand Operand
+}
+
+func (Negate) isInstr() {}
+
+type LogicalNot struct {
+	Dest    ValueID
+	Operand Operand
+}
+
+func (LogicalNot) isInstr() {}
+
+type BitwiseNot struct {
+	Dest    ValueID
+	Operand Operand
+}
+
+func (BitwiseNot) isInstr() {}
+
 type Alloca struct {
 	Slot SlotID
 }

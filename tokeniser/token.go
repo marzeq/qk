@@ -42,6 +42,11 @@ const (
 	TokenSlash
 	TokenPercent
 	TokenAmpersand
+	TokenPipe
+	TokenCaret
+	TokenTilde
+	TokenShiftLeft
+	TokenShiftRight
 
 	TokenIncBy
 	TokenDecBy
@@ -147,6 +152,16 @@ func (t Token) String() string {
 		return "%"
 	case TokenAmpersand:
 		return "&"
+	case TokenPipe:
+		return "|"
+	case TokenCaret:
+		return "^"
+	case TokenTilde:
+		return "~"
+	case TokenShiftLeft:
+		return "<<"
+	case TokenShiftRight:
+		return ">>"
 	case TokenIncBy:
 		return "+="
 	case TokenDecBy:
