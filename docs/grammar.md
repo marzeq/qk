@@ -7,7 +7,8 @@ This document describes the syntax accepted by the current `tokeniser` and `pars
 - Newlines and semicolons are statement separators in many positions.
 - Module-qualified names use `module:name` (colon), not dot notation.
 - Function definitions are expression-bodied or block-bodied.
-- Enums are nominal and their variants are scoped (`Color.RED`); `.RED` is accepted when a `Color` is expected.
+- Types declared with `type` are nominal and distinct by default. `type alias` creates a transparent alias instead.
+- Enum variants are scoped (`Color.RED`); `.RED` is accepted when a `Color` is expected.
 - Enum variants may all use implicit ordinal values or all specify integer values with `=`, but the two forms cannot be mixed in one enum.
 - Untagged unions are nominal types. A union literal initializes exactly one field; field access is unchecked and does not track which field is active.
 - `if` can be a statement and an expression.
@@ -123,7 +124,7 @@ declaration    = "let", [ "mut" ], identifier,
                  [ ":", type_expr ],
                  "=", opt_newlines, expression ;
 
-type_alias     = "let", identifier, "=", "type", type_expr ;
+type_alias     = "let", identifier, "=", "type", [ "alias" ], type_expr ;
 
 fn_def         = "let", identifier,
                  "(", [ fn_param_list | "..." ], ")",
@@ -282,7 +283,7 @@ named_type     = identifier
 ### 1. Tokenisation model
 
 - Identifiers start with a letter or underscore and then continue with letters, digits, or underscore.
-- Keywords include: `let`, `mut`, `struct`, `union`, `enum`, `type`, `if`, `else`, `given`, `for`, `in`, `break`, `continue`, `return`, `import`, `module`, `pub`, `and`, `or`, `not`, `true`, `false`, `nil`, `as`, `sizeof`.
+- Keywords include: `let`, `mut`, `struct`, `union`, `enum`, `type`, `alias`, `if`, `else`, `given`, `for`, `in`, `break`, `continue`, `return`, `import`, `module`, `pub`, `and`, `or`, `not`, `true`, `false`, `nil`, `as`, `sizeof`.
 - Integer tokens are decimal with optional leading minus.
 - Floating-point literals are assembled by the parser from integer tokens separated by a dot (for example `12.34`, `12.`, `.34`).
 - Strings and chars support escape sequences: `\\`, `\"`, `\n`, `\r`, `\t`, `\b`, `\f`, `\v`, `\a`, `\0`.

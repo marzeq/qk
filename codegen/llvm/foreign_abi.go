@@ -34,6 +34,7 @@ type aarch64ABIGenerator struct {
 }
 
 func (e *Emitter) foreignABIChunks(ty types.Type) []abiChunk {
+	ty = types.Underlying(ty)
 	st, ok := ty.(types.StructType)
 	if !ok {
 		return nil
@@ -139,7 +140,7 @@ func (e *Emitter) foreignABIParamTypes(ty types.Type) []string {
 }
 
 func (e *Emitter) foreignABIReturnType(ty types.Type) string {
-	if st, ok := ty.(types.StructType); ok {
+	if st, ok := types.Underlying(ty).(types.StructType); ok {
 		if generator := e.foreignABIGenerator(); generator != nil && generator.requiresSRet(e, st) {
 			panic(fmt.Sprintf("Win64 aggregate return %v requires sret lowering", ty))
 		}
@@ -211,6 +212,7 @@ func (e *Emitter) homogeneousFloatAggregate(st types.StructType) (element string
 }
 
 func (e *Emitter) typeSizeAlign(ty types.Type) (int, int) {
+	ty = types.Underlying(ty)
 	switch t := ty.(type) {
 	case types.PrimitiveType:
 		switch t {
@@ -263,6 +265,7 @@ func (e *Emitter) classifyAggregate(
 	classes []abiClass,
 	floats [][]types.PrimitiveType,
 ) {
+	ty = types.Underlying(ty)
 	switch t := ty.(type) {
 	case types.StructType:
 		offset := 0

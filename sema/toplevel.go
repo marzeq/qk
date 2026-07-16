@@ -75,14 +75,6 @@ func (a *Analyser) collectFunctionSignature(n *parser.FunctionDefNode) {
 }
 
 func (a *Analyser) collectTypeAlias(n *parser.TypeAliasNode) {
-	if enum, ok := n.Type.(*parser.EnumTypeNode); ok {
-		enum.Name = n.Name
-		enum.Module = a.currentMod
-	}
-	if union, ok := n.Type.(*parser.UnionTypeNode); ok {
-		union.Name = n.Name
-		union.Module = a.currentMod
-	}
 	sym := &symbols.Symbol{
 		Name:   n.Name,
 		Kind:   symbols.SymbolKindType,

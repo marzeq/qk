@@ -165,7 +165,7 @@ func (v *Validator) validateLValue(expr parser.ExpressionNode) bool {
 	case *parser.UnaryOpNode:
 		switch e.Op {
 		case parser.UnaryOpDereference:
-			switch ptrType := e.Operand.GetType().(type) {
+			switch ptrType := types.Underlying(e.Operand.GetType()).(type) {
 			case types.PointerType:
 				if ptrType.Base.Equals(types.PrimitiveVoid) {
 					v.errorf(e, "cannot assign to dereferenced void pointer")
@@ -194,7 +194,7 @@ func (v *Validator) validateLValue(expr parser.ExpressionNode) bool {
 	case *parser.IndexExprNode:
 		// A slice's mutability comes from the place that holds the slice,
 		// whereas a pointer carries the mutability of the pointed-to data.
-		switch subjectType := e.Subject.GetType().(type) {
+		switch subjectType := types.Underlying(e.Subject.GetType()).(type) {
 		case types.SliceType:
 			if !v.validateLValue(e.Subject) {
 				return false
@@ -304,7 +304,7 @@ func (v *Validator) validateRangeFor(n *parser.RangeForNode) {
 
 func (v *Validator) validateForEach(n *parser.ForEachNode) {
 	v.validateExpr(n.Iterable)
-	slice, ok := n.Iterable.GetType().(types.SliceType)
+	slice, ok := types.Underlying(n.Iterable.GetType()).(types.SliceType)
 	if !ok {
 		v.errorf(n, "for loop iterable must be a slice")
 		return
@@ -371,7 +371,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			n.Operand = v.createCast(n.Operand, n.Type)
 		}
 
-		if !n.Operand.GetType().CanCastTo(n.Type) {
+		if !types.CanExplicitCast(n.Operand.GetType(), n.Type) {
 			v.errorf(n, "cannot cast %v to %v", n.Operand.GetType(), n.Type)
 		}
 
@@ -415,7 +415,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			}
 
 		case parser.UnaryOpDereference:
-			if ptrType, ok := operandType.(types.PointerType); ok {
+			if ptrType, ok := types.Underlying(operandType).(types.PointerType); ok {
 				if ptrType.Base.Equals(types.PrimitiveVoid) {
 					v.errorf(n, "cannot dereference void pointer")
 				}
@@ -553,9 +553,9 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			v.errorf(n, "index must be integer")
 		}
 
-		switch n.Subject.GetType().(type) {
+		switch types.Underlying(n.Subject.GetType()).(type) {
 		case types.SliceType:
-			if t, ok := n.Subject.GetType().(types.SliceType); ok {
+			if t, ok := types.Underlying(n.Subject.GetType()).(types.SliceType); ok {
 				if t.Size != -1 {
 					if idxLit, ok := n.Index.(*parser.IntegerLiteralNode); ok {
 						idx, _ := strconv.Atoi(idxLit.Value)
@@ -579,7 +579,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			return
 		}
 		v.validateExpr(n.Subject)
-		subjectType := n.Subject.GetType()
+		subjectType := types.Underlying(n.Subject.GetType())
 		if unionType, ok := subjectType.(types.UnionType); ok {
 			for _, field := range unionType.Fields {
 				if field.L == n.Field.Name {
@@ -757,7 +757,7 @@ func (v *Validator) createCast(node parser.ExpressionNode, target types.Type) pa
 func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expected types.Type) parser.ExpressionNode {
 	switch n := node.(type) {
 	case *parser.EnumLiteralNode:
-		enumType, ok := expected.(types.EnumType)
+		enumType, ok := types.Underlying(expected).(types.EnumType)
 		if !ok {
 			v.errorf(n, "enum shorthand .%s requires an expected enum type", n.Variant)
 			n.SetType(types.ErrorType{})
@@ -770,11 +770,19 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 			return n
 		}
 		n.Value = value
-		n.SetType(enumType)
+		n.SetType(expected)
 		return n
 	case *parser.IntegerLiteralNode:
+		if types.IsNumeric(expected) {
+			n.SetType(expected)
+			return n
+		}
 		n.SetType(types.UntypedInt{})
 	case *parser.FloatLiteralNode:
+		if types.IsFloat(expected) {
+			n.SetType(expected)
+			return n
+		}
 		n.SetType(types.UntypedFloat{})
 	case *parser.UnaryOpNode:
 		if (types.IsNumeric(expected) && n.Op == parser.UnaryOpNegate) ||
@@ -865,7 +873,7 @@ func isArithmeticOperator(op parser.BinaryOpKind) bool {
 }
 
 func (v *Validator) validateSliceLiteralWithExpected(n *parser.SliceLiteralNode, expected types.Type) {
-	sliceType, ok := expected.(types.SliceType)
+	sliceType, ok := types.Underlying(expected).(types.SliceType)
 	if !ok {
 		v.validateExpr(n)
 		got := n.GetType()
@@ -890,7 +898,7 @@ func (v *Validator) validateSliceLiteralWithExpected(n *parser.SliceLiteralNode,
 		if sliceType.Size != -1 && size != -1 && size != sliceType.Size {
 			v.errorf(n, "cannot assign repeated slice of size %d to [%v, %d]", size, sliceType.Base, sliceType.Size)
 		}
-		n.SetType(types.SliceType{Base: sliceType.Base, Size: size})
+		n.SetType(expected)
 		return
 	}
 
@@ -902,14 +910,11 @@ func (v *Validator) validateSliceLiteralWithExpected(n *parser.SliceLiteralNode,
 		n.Elements[i] = v.validateExprWithExpected(element, sliceType.Base)
 	}
 
-	n.SetType(types.SliceType{
-		Base: sliceType.Base,
-		Size: len(n.Elements),
-	})
+	n.SetType(expected)
 }
 
 func (v *Validator) validateStructLiteralWithExpected(n *parser.StructLiteralNode, expected types.Type) {
-	if unionType, ok := expected.(types.UnionType); ok {
+	if unionType, ok := types.Underlying(expected).(types.UnionType); ok {
 		if len(n.Fields) != 1 {
 			v.errorf(n, "union literal must initialize exactly one field")
 			n.SetType(types.ErrorType{})
@@ -919,7 +924,7 @@ func (v *Validator) validateStructLiteralWithExpected(n *parser.StructLiteralNod
 		for _, unionField := range unionType.Fields {
 			if unionField.L == field.L {
 				n.Fields[0].R = v.validateExprWithExpected(field.R, unionField.R)
-				n.SetType(unionType)
+				n.SetType(expected)
 				return
 			}
 		}
@@ -927,7 +932,7 @@ func (v *Validator) validateStructLiteralWithExpected(n *parser.StructLiteralNod
 		n.SetType(types.ErrorType{})
 		return
 	}
-	structType, ok := expected.(types.StructType)
+	structType, ok := types.Underlying(expected).(types.StructType)
 	if !ok {
 		v.errorf(n, "cannot use struct literal for non-struct type %v", expected)
 		n.SetType(types.ErrorType{})
@@ -990,5 +995,5 @@ func (v *Validator) validateStructLiteralWithExpected(n *parser.StructLiteralNod
 		v.errorf(n, "missing fields in struct literal: %v", strings.Join(missingFields, ", "))
 	}
 
-	n.SetType(structType)
+	n.SetType(expected)
 }

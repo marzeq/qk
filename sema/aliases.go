@@ -31,6 +31,9 @@ func (a *Analyser) resolveAlias(info *aliasInfo, node parser.Node) types.Type {
 	info.state = aliasResolving
 
 	resolved := a.resolveTypeNode(info.node.Type)
+	if !info.node.Transparent {
+		resolved = types.DefinedType{Module: a.currentMod, Name: info.node.Name, Underlying: resolved}
+	}
 
 	info.node.Symbol.TypeInfo = resolved
 	info.state = aliasResolved

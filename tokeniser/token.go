@@ -74,6 +74,7 @@ const (
 	KeywordEnum     KeywordKind = "enum"
 	KeywordUnion    KeywordKind = "union"
 	KeywordType     KeywordKind = "type"
+	KeywordAlias    KeywordKind = "alias"
 	KeywordIf       KeywordKind = "if"
 	KeywordElse     KeywordKind = "else"
 	KeywordGiven    KeywordKind = "given"

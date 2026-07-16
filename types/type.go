@@ -15,6 +15,54 @@ type Type interface {
 	String() string
 }
 
+// DefinedType is a nominal user-defined type. Its underlying type determines
+// representation and explicit cast compatibility, but never implicit coercion.
+type DefinedType struct {
+	Module     string
+	Name       string
+	Underlying Type
+}
+
+func (d DefinedType) Equals(other Type) bool {
+	o, ok := other.(DefinedType)
+	return ok && d.Module == o.Module && d.Name == o.Name
+}
+func (d DefinedType) CanCoerceTo(other Type) bool { return d.Equals(other) }
+func (d DefinedType) CanCastTo(other Type) bool {
+	return castCompatible(d.Underlying, Underlying(other))
+}
+func (d DefinedType) String() string {
+	if d.Module == "" {
+		return d.Name
+	}
+	return d.Module + ":" + d.Name
+}
+
+func Underlying(t Type) Type {
+	for {
+		d, ok := t.(DefinedType)
+		if !ok {
+			return t
+		}
+		t = d.Underlying
+	}
+}
+
+func castCompatible(from, to Type) bool {
+	from = Underlying(from)
+	to = Underlying(to)
+	return from.Equals(to) || from.CanCastTo(to) || to.CanCastTo(from)
+}
+
+func CanExplicitCast(from, to Type) bool {
+	if from.CanCastTo(to) {
+		return true
+	}
+	_, fromDefined := from.(DefinedType)
+	_, toDefined := to.(DefinedType)
+	return (fromDefined || toDefined) && castCompatible(from, to)
+}
+
 type PrimitiveType string
 
 const (
@@ -42,10 +90,12 @@ const (
 )
 
 func IsSigned(t Type) bool {
+	t = Underlying(t)
 	return t == PrimitiveI8 || t == PrimitiveI16 || t == PrimitiveI32 || t == PrimitiveI64 || t == PrimitiveIsz
 }
 
 func IsUnsigned(t Type) bool {
+	t = Underlying(t)
 	return t == PrimitiveU8 || t == PrimitiveU16 || t == PrimitiveU32 || t == PrimitiveU64 || t == PrimitiveUsz
 }
 
@@ -324,6 +374,7 @@ func (p PointerType) String() string {
 }
 
 func IsPointer(t Type) bool {
+	t = Underlying(t)
 	_, ok := t.(PointerType)
 	return ok
 }

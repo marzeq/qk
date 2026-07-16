@@ -471,11 +471,12 @@ type FunctionDefNode struct {
 func (n FunctionDefNode) GetLoc() shared.Location { return n.Loc }
 
 type TypeAliasNode struct {
-	Name   string
-	Type   TypeNode
-	Pub    bool
-	Loc    shared.Location
-	Symbol *symbols.Symbol
+	Name        string
+	Type        TypeNode
+	Transparent bool
+	Pub         bool
+	Loc         shared.Location
+	Symbol      *symbols.Symbol
 }
 
 func (n TypeAliasNode) GetLoc() shared.Location { return n.Loc }

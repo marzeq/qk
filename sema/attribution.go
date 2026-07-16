@@ -161,7 +161,7 @@ func (a *Attributor) attributeNode(node parser.Node) {
 	case *parser.ForEachNode:
 		a.attributeExpr(n.Iterable)
 		if n.Symbol != nil {
-			if slice, ok := n.Iterable.GetType().(types.SliceType); ok {
+			if slice, ok := types.Underlying(n.Iterable.GetType()).(types.SliceType); ok {
 				n.Symbol.Type = slice.Base
 			}
 		}
@@ -361,14 +361,14 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 				Mutable: true,
 			})
 		case parser.UnaryOpDereference:
-			if ptr, ok := n.Operand.GetType().(types.PointerType); ok {
+			if ptr, ok := types.Underlying(n.Operand.GetType()).(types.PointerType); ok {
 				n.SetType(ptr.Base)
 			} else {
 				a.errorf(n, "cannot dereference non-pointer type")
 				n.SetType(types.ErrorType{})
 			}
 		case parser.UnaryOpSliceLen:
-			switch n.Operand.GetType().(type) {
+			switch types.Underlying(n.Operand.GetType()).(type) {
 			case types.SliceType:
 				n.SetType(types.PrimitiveUsz)
 			default:
@@ -390,7 +390,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		a.attributeExpr(n.Subject)
 		a.attributeExpr(n.Index)
 
-		switch t := n.Subject.GetType().(type) {
+		switch t := types.Underlying(n.Subject.GetType()).(type) {
 		case types.SliceType:
 			n.SetType(t.Base)
 		case types.PointerType:
@@ -413,7 +413,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 
 	case *parser.FieldAccessNode:
 		if ident, ok := n.Subject.(*parser.IdentifierNode); ok && ident.Symbol != nil && ident.Symbol.Kind == symbols.SymbolKindType {
-			if enumType, ok := ident.Symbol.TypeInfo.(types.EnumType); ok {
+			if enumType, ok := types.Underlying(ident.Symbol.TypeInfo).(types.EnumType); ok {
 				ident.SetType(enumType)
 				value, exists := enumType.VariantValue(n.Field.Name)
 				if !exists {
@@ -422,7 +422,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 				} else {
 					n.IsEnumValue = true
 					n.EnumValue = value
-					n.SetType(enumType)
+					n.SetType(ident.Symbol.TypeInfo)
 				}
 				break
 			}
@@ -435,7 +435,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		}
 
 		a.attributeExpr(n.Subject)
-		switch t := n.Subject.GetType().(type) {
+		switch t := types.Underlying(n.Subject.GetType()).(type) {
 		case types.StructType:
 			found := false
 			for _, field := range t.Fields {
@@ -485,13 +485,13 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		a.attributeExpr(n.Operand1)
 		a.attributeExpr(n.Operand2)
 		if literal, ok := n.Operand1.(*parser.EnumLiteralNode); ok && isUnresolvedEnum(literal.GetType()) {
-			if enumType, ok := n.Operand2.GetType().(types.EnumType); ok {
-				a.resolveEnumLiteral(literal, enumType)
+			if _, ok := types.Underlying(n.Operand2.GetType()).(types.EnumType); ok {
+				a.resolveEnumLiteral(literal, n.Operand2.GetType())
 			}
 		}
 		if literal, ok := n.Operand2.(*parser.EnumLiteralNode); ok && isUnresolvedEnum(literal.GetType()) {
-			if enumType, ok := n.Operand1.GetType().(types.EnumType); ok {
-				a.resolveEnumLiteral(literal, enumType)
+			if _, ok := types.Underlying(n.Operand1.GetType()).(types.EnumType); ok {
+				a.resolveEnumLiteral(literal, n.Operand1.GetType())
 			}
 		}
 		for _, operand := range []parser.ExpressionNode{n.Operand1, n.Operand2} {
@@ -582,7 +582,8 @@ func isUnresolvedEnum(t types.Type) bool {
 	return ok
 }
 
-func (a *Attributor) resolveEnumLiteral(n *parser.EnumLiteralNode, enumType types.EnumType) {
+func (a *Attributor) resolveEnumLiteral(n *parser.EnumLiteralNode, expected types.Type) {
+	enumType := types.Underlying(expected).(types.EnumType)
 	value, ok := enumType.VariantValue(n.Variant)
 	if !ok {
 		a.errorf(n, "enum %s has no variant %q", enumType, n.Variant)
@@ -590,7 +591,7 @@ func (a *Attributor) resolveEnumLiteral(n *parser.EnumLiteralNode, enumType type
 		return
 	}
 	n.Value = value
-	n.SetType(enumType)
+	n.SetType(expected)
 }
 
 func collectFunctionReturnNodes(body []parser.Node) []*parser.ControlKeywordNode {

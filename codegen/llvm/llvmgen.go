@@ -214,6 +214,7 @@ func (e *Emitter) slotType(slot ir.SlotID) types.Type {
 }
 
 func (e *Emitter) pointerBaseType(ty types.Type) types.Type {
+	ty = types.Underlying(ty)
 	if ptr, ok := ty.(types.PointerType); ok {
 		return ptr.Base
 	}
@@ -221,6 +222,7 @@ func (e *Emitter) pointerBaseType(ty types.Type) types.Type {
 }
 
 func (e *Emitter) structFieldIndex(ty types.Type, field string) int {
+	ty = types.Underlying(ty)
 	if _, ok := ty.(types.SliceType); ok {
 		switch field {
 		case "0":
@@ -254,6 +256,7 @@ func (e *Emitter) structFieldIndex(ty types.Type, field string) int {
 }
 
 func (e *Emitter) TypeEmit(ty types.Type) string {
+	ty = types.Underlying(ty)
 	switch ty := ty.(type) {
 	case types.PrimitiveType:
 		switch ty {
@@ -745,6 +748,7 @@ func (e *Emitter) FieldAddressEmit(out *strings.Builder, f ir.FieldAddress) {
 	if ptr, ok := baseTy.(types.PointerType); ok {
 		baseTy = ptr.Base
 	}
+	baseTy = types.Underlying(baseTy)
 	if _, ok := baseTy.(types.UnionType); ok {
 		fmt.Fprintf(out, "%s = getelementptr inbounds %s, ptr %s, i32 0", e.ValueIDEmit(f.Dest), e.TypeEmit(baseTy), e.OperandEmit(f.Base))
 		return
@@ -946,11 +950,13 @@ func (e *Emitter) isLLVMMainFunction(fn *ir.Function) bool {
 func (e *Emitter) CastEmit(out *strings.Builder, c ir.Cast) {
 	from := c.From.Type
 	to := c.To
-	fromPrim, fromOK := from.(types.PrimitiveType)
-	toPrim, toOK := to.(types.PrimitiveType)
+	fromRep := types.Underlying(from)
+	toRep := types.Underlying(to)
+	fromPrim, fromOK := fromRep.(types.PrimitiveType)
+	toPrim, toOK := toRep.(types.PrimitiveType)
 
-	if fromSlice, ok := from.(types.SliceType); ok {
-		if toPtr, ok := to.(types.PointerType); ok {
+	if fromSlice, ok := fromRep.(types.SliceType); ok {
+		if toPtr, ok := toRep.(types.PointerType); ok {
 			if toPtr.Base.Equals(types.PrimitiveVoid) || fromSlice.Base.Equals(toPtr.Base) {
 				fmt.Fprintf(out, "%s = extractvalue %s %s, 0", e.ValueIDEmit(c.Dest), e.TypeEmit(from), e.OperandEmit(c.From))
 				return
@@ -1023,17 +1029,17 @@ func (e *Emitter) CastEmit(out *strings.Builder, c ir.Cast) {
 		}
 	}
 
-	if types.IsPointer(from) && types.IsPointer(to) {
+	if types.IsPointer(fromRep) && types.IsPointer(toRep) {
 		fmt.Fprintf(out, "%s = bitcast %s %s to %s", e.ValueIDEmit(c.Dest), e.TypeEmit(from), e.OperandEmit(c.From), e.TypeEmit(to))
 		return
 	}
 
-	if types.IsPointer(from) && toOK && types.IsInteger(toPrim) {
+	if types.IsPointer(fromRep) && toOK && types.IsInteger(toPrim) {
 		fmt.Fprintf(out, "%s = ptrtoint %s %s to %s", e.ValueIDEmit(c.Dest), e.TypeEmit(from), e.OperandEmit(c.From), e.TypeEmit(to))
 		return
 	}
 
-	if fromOK && types.IsInteger(fromPrim) && types.IsPointer(to) {
+	if fromOK && types.IsInteger(fromPrim) && types.IsPointer(toRep) {
 		fmt.Fprintf(out, "%s = inttoptr %s %s to %s", e.ValueIDEmit(c.Dest), e.TypeEmit(from), e.OperandEmit(c.From), e.TypeEmit(to))
 		return
 	}

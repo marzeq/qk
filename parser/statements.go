@@ -356,6 +356,11 @@ func (p *Parser) ParseTypeAlias() (*TypeAliasNode, error) {
 		return nil, shared.NewError(p.PrevLoc(), "expected 'type' keyword")
 	}
 	p.Inc()
+	transparent := false
+	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordAlias) {
+		transparent = true
+		p.Inc()
+	}
 
 	tpe, err := p.ParseType()
 	if err != nil {
@@ -364,8 +369,8 @@ func (p *Parser) ParseTypeAlias() (*TypeAliasNode, error) {
 
 	return &TypeAliasNode{
 		Name: name.Value,
-		Type: tpe,
-		Loc:  beginLoc,
+		Type: tpe, Transparent: transparent,
+		Loc: beginLoc,
 	}, nil
 }
 

@@ -139,7 +139,7 @@ func (g *Generator) generateGlobalInitializer(expr parser.ExpressionNode) ir.Ope
 		}
 		panic("global field access is not an enum value")
 	case *parser.StructLiteralNode:
-		structType, ok := node.GetType().(types.StructType)
+		structType, ok := types.Underlying(node.GetType()).(types.StructType)
 		if !ok {
 			panic("global struct literal does not have a struct type")
 		}
@@ -552,7 +552,7 @@ func (g *Generator) generateForEach(node *parser.ForEachNode) {
 	if node.Symbol == nil {
 		panic("for-each loop symbol is nil")
 	}
-	sliceType, ok := node.Iterable.GetType().(types.SliceType)
+	sliceType, ok := types.Underlying(node.Iterable.GetType()).(types.SliceType)
 	if !ok {
 		panic("for-each iterable is not a slice")
 	}
@@ -696,7 +696,7 @@ func (g *Generator) generateIndexExpr(node *parser.IndexExprNode) ir.Operand {
 func (g *Generator) generateIndexAddress(node *parser.IndexExprNode) ir.Operand {
 	index := g.GenerateExpr(node.Index)
 	var base ir.Operand
-	switch subjectType := node.Subject.GetType().(type) {
+	switch subjectType := types.Underlying(node.Subject.GetType()).(type) {
 	case types.SliceType:
 		slicePtr := g.generateAddressOfExpr(node.Subject)
 		dataPtrPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: types.PointerType{Base: subjectType.Base}})
@@ -731,7 +731,7 @@ func (g *Generator) generateIndexAddress(node *parser.IndexExprNode) ir.Operand 
 }
 
 func (g *Generator) generateStringLiteralExpr(node *parser.StringLiteralNode) ir.Operand {
-	sliceType, ok := node.GetType().(types.SliceType)
+	sliceType, ok := types.Underlying(node.GetType()).(types.SliceType)
 	if !ok {
 		panic("string literal must have slice type")
 	}
@@ -768,7 +768,7 @@ func (g *Generator) generateCastExpr(node *parser.CastNode) ir.Operand {
 	targetType := node.GetType()
 
 	if str, ok := node.Operand.(*parser.StringLiteralNode); ok {
-		if _, ok := targetType.(types.PointerType); ok {
+		if _, ok := types.Underlying(targetType).(types.PointerType); ok {
 			dst := g.currentFunction.NewValueOfType(targetType)
 			g.Emit(ir.StringConst{Dest: dst, Value: str.Value})
 			return ir.ValueOperand(dst, targetType)
@@ -779,8 +779,12 @@ func (g *Generator) generateCastExpr(node *parser.CastNode) ir.Operand {
 	if from.Type.Equals(targetType) {
 		return from
 	}
-	if fromSlice, ok := from.Type.(types.SliceType); ok {
-		if toSlice, ok := targetType.(types.SliceType); ok && fromSlice.Base.Equals(toSlice.Base) {
+	if types.Underlying(from.Type).Equals(types.Underlying(targetType)) {
+		from.Type = targetType
+		return from
+	}
+	if fromSlice, ok := types.Underlying(from.Type).(types.SliceType); ok {
+		if toSlice, ok := types.Underlying(targetType).(types.SliceType); ok && fromSlice.Base.Equals(toSlice.Base) {
 			// Fixed-size and dynamic slices have the same runtime representation.
 			from.Type = targetType
 			return from
@@ -815,7 +819,7 @@ func (g *Generator) generateStructLiteralExpr(node *parser.StructLiteralNode) ir
 }
 
 func (g *Generator) generateSliceLiteralExpr(node *parser.SliceLiteralNode) ir.Operand {
-	sliceType, ok := node.GetType().(types.SliceType)
+	sliceType, ok := types.Underlying(node.GetType()).(types.SliceType)
 	if !ok {
 		panic("slice literal must have slice type")
 	}
@@ -934,7 +938,7 @@ func (g *Generator) generateStructLiteralIntoSlot(slot ir.SlotID, node *parser.S
 
 	for _, field := range node.Fields {
 		fieldTy := node.GetType()
-		switch composite := node.GetType().(type) {
+		switch composite := types.Underlying(node.GetType()).(type) {
 		case types.StructType:
 			for _, f := range composite.Fields {
 				if f.L == field.L {
