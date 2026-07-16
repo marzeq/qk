@@ -257,6 +257,10 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 	var body Node
 
 	if expectsBody {
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+
 		if p.Match(tokeniser.TokenOpenCurly) {
 			b, err := p.ParseBlock()
 			if err != nil {

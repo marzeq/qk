@@ -43,6 +43,7 @@ type Args struct {
 	dumpAsm      bool
 	keepBuildDir bool
 	static       bool
+	noLibc       bool
 	noEmit       bool
 	target       string
 	sysroot      string
@@ -231,6 +232,10 @@ func (p *argumentParser) parseCurrent() error {
 		p.args.static = true
 		p.index++
 
+	case tok == "-nolibc":
+		p.args.noLibc = true
+		p.index++
+
 	case tok == "-target":
 		value, err := p.nextValue(tok)
 		if err != nil {
@@ -305,6 +310,7 @@ func printUsage() {
 	fmt.Println("  -t <type>          Output type (exe, obj, so)")
 	fmt.Println("  -O <level>         Optimisation level (0, 1, 2, 3, s, z, fast, g)")
 	fmt.Println("  -static            Link with static libraries")
+	fmt.Println("  -nolibc            Do not link against the C standard library")
 	fmt.Println("  -l <lib>           Link with library <lib> (can specify multiple times)")
 	fmt.Println("  -target <triple>   Target triple for code generation")
 	fmt.Println("  -sysroot <path>    Sysroot path for target")

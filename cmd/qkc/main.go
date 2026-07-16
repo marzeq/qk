@@ -434,6 +434,9 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, config *Arg
 	if config.static {
 		args = append(args, "-static")
 	}
+	if config.noLibc {
+		args = append(args, "-nolibc")
+	}
 
 	if config.sysroot != "" {
 		args = append([]string{"--sysroot=" + config.sysroot}, args...)
