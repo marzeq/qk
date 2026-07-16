@@ -75,6 +75,10 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 	var args []*FunctionNodeArg
 	variadic := false
 	for !p.Match(tokeniser.TokenCloseParen) {
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+
 		if p.Match(tokeniser.Token3Dots) {
 			p.Inc()
 			variadic = true
@@ -115,7 +119,15 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 		if !p.Match(tokeniser.TokenComma) {
 			break
 		}
+
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
 		p.Consume()
+	}
+
+	for p.Match(tokeniser.TokenNewline) {
+		p.Inc()
 	}
 
 	if !p.Expect(tokeniser.TokenCloseParen) {
@@ -811,9 +823,10 @@ func (p *Parser) parseRangeOrForEach(beginLoc shared.Location) (Node, error) {
 		return nil, shared.NewError(p.PrevLoc(), "expected 'in' in for loop")
 	}
 
-	p.parsingForEachIterable = true
+	wasDisambiguatingTrailingBlock := p.disambiguateTrailingBlock
+	p.disambiguateTrailingBlock = true
 	iterable, err := p.ParseExpression()
-	p.parsingForEachIterable = false
+	p.disambiguateTrailingBlock = wasDisambiguatingTrailingBlock
 	if err != nil {
 		return nil, err
 	}
@@ -828,9 +841,10 @@ func (p *Parser) parseRangeOrForEach(beginLoc shared.Location) (Node, error) {
 		// Suppress struct-literal parsing for the range bound as well: the
 		// following loop body starts with '{', which would otherwise be consumed
 		// as a struct literal after an identifier bound.
-		p.parsingForEachIterable = true
+		wasDisambiguatingTrailingBlock := p.disambiguateTrailingBlock
+		p.disambiguateTrailingBlock = true
 		end, err := p.ParseExpression()
-		p.parsingForEachIterable = false
+		p.disambiguateTrailingBlock = wasDisambiguatingTrailingBlock
 		if err != nil {
 			return nil, err
 		}

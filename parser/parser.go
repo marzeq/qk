@@ -9,10 +9,33 @@ import (
 )
 
 type Parser struct {
-	pos                    int
-	tokens                 []tokeniser.Token
-	posStack               []int
-	parsingForEachIterable bool
+	pos      int
+	tokens   []tokeniser.Token
+	posStack []int
+	// disambiguateTrailingBlock marks expressions followed by a block, such as
+	// if conditions and for iterables. In that context a brace after an
+	// identifier is a struct literal only when it starts with field syntax.
+	disambiguateTrailingBlock bool
+}
+
+func (p *Parser) trailingBraceStartsStructLiteral() bool {
+	if !p.Match(tokeniser.TokenOpenCurly) {
+		return false
+	}
+
+	pos := p.pos + 1
+	for pos < len(p.tokens) && p.tokens[pos].Type == tokeniser.TokenNewline {
+		pos++
+	}
+	if pos >= len(p.tokens) || p.tokens[pos].Type == tokeniser.TokenCloseCurly {
+		return true
+	}
+	if p.tokens[pos].Type != tokeniser.TokenIdentifier {
+		return false
+	}
+
+	pos++
+	return pos < len(p.tokens) && p.tokens[pos].Type == tokeniser.TokenEquals
 }
 
 func NewParser(tokens []tokeniser.Token) *Parser {

@@ -479,7 +479,8 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 				Loc:     ident.Loc,
 			}
 
-			if !p.parsingForEachIterable && p.Match(tokeniser.TokenOpenCurly) {
+			if p.Match(tokeniser.TokenOpenCurly) &&
+				(!p.disambiguateTrailingBlock || p.trailingBraceStartsStructLiteral()) {
 				return p.ParseStructLiteral(modAN)
 			}
 
@@ -499,7 +500,8 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 			return p.ParseFunctionCall(modAN)
 		}
 
-		if !p.parsingForEachIterable && p.Match(tokeniser.TokenOpenCurly) {
+		if p.Match(tokeniser.TokenOpenCurly) &&
+			(!p.disambiguateTrailingBlock || p.trailingBraceStartsStructLiteral()) {
 			modAN := &ModuleAccessNode{
 				ModName: "",
 				Ident:   ident,
@@ -639,8 +641,16 @@ func (p *Parser) ParseFunctionCall(name *ModuleAccessNode) (*FunctionCallNode, e
 		return nil, shared.NewError(p.PrevLoc(), "expected '('")
 	}
 
+	for p.Match(tokeniser.TokenNewline) {
+		p.Inc()
+	}
+
 	if !p.Match(tokeniser.TokenCloseParen) {
 		for {
+			for p.Match(tokeniser.TokenNewline) {
+				p.Inc()
+			}
+
 			arg, err := p.ParseExpression()
 			if err != nil {
 				return nil, err
@@ -656,6 +666,10 @@ func (p *Parser) ParseFunctionCall(name *ModuleAccessNode) (*FunctionCallNode, e
 				p.Inc()
 			}
 		}
+	}
+
+	for p.Match(tokeniser.TokenNewline) {
+		p.Inc()
 	}
 
 	if !p.Expect(tokeniser.TokenCloseParen) {
@@ -679,7 +693,10 @@ func (p *Parser) ParseIfExpression() (*IfExprNode, error) {
 		p.Inc()
 	}
 
+	wasDisambiguatingTrailingBlock := p.disambiguateTrailingBlock
+	p.disambiguateTrailingBlock = true
 	condition, err := p.ParseExpression()
+	p.disambiguateTrailingBlock = wasDisambiguatingTrailingBlock
 	if err != nil {
 		return nil, err
 	}
@@ -720,7 +737,10 @@ func (p *Parser) ParseIfExpression() (*IfExprNode, error) {
 				p.Inc()
 			}
 
+			wasDisambiguatingTrailingBlock := p.disambiguateTrailingBlock
+			p.disambiguateTrailingBlock = true
 			elseifCondition, err := p.ParseExpression()
+			p.disambiguateTrailingBlock = wasDisambiguatingTrailingBlock
 			if err != nil {
 				return nil, err
 			}
@@ -739,6 +759,10 @@ func (p *Parser) ParseIfExpression() (*IfExprNode, error) {
 				Node:      elseifBlock,
 			}
 			node.ElseIfBranches = append(node.ElseIfBranches, elseIfBranch)
+
+			for p.Match(tokeniser.TokenNewline) {
+				p.Inc()
+			}
 		} else {
 			elseBlock, err := p.ParseBlockExpression()
 			if err != nil {
