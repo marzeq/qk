@@ -3,6 +3,7 @@ package sema
 import (
 	"fmt"
 
+	"github.com/marzeq/qk/attributes"
 	"github.com/marzeq/qk/parser"
 	"github.com/marzeq/qk/symbols"
 	"github.com/marzeq/qk/types"
@@ -83,6 +84,11 @@ func (a *Analyser) visitBlock(n *parser.BlockNode) {
 }
 
 func (a *Analyser) visitLocalDeclaration(n *parser.DeclarationNode) {
+	if n.Attributes.Get(attributes.AttributeTypeForeign) != nil {
+		a.errorf(n, "foreign variables must be declared at module scope")
+		return
+	}
+
 	var varType types.Type
 
 	if n.TypeNode != nil {

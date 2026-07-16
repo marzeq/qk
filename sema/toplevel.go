@@ -8,19 +8,23 @@ import (
 
 func (a *Analyser) collectTopLevel(root *parser.RootNode) {
 	for _, node := range root.Body {
-		switch n := node.(type) {
+		if n, ok := node.(*parser.ImportNode); ok {
+			a.collectImport(n)
+		}
+	}
 
+	for _, node := range root.Body {
+		if n, ok := node.(*parser.TypeAliasNode); ok {
+			a.collectTypeAlias(n)
+		}
+	}
+
+	for _, node := range root.Body {
+		switch n := node.(type) {
 		case *parser.FunctionDefNode:
 			a.collectFunctionSignature(n)
-
-		case *parser.TypeAliasNode:
-			a.collectTypeAlias(n)
-
 		case *parser.DeclarationNode:
 			a.collectGlobalVariable(n)
-
-		case *parser.ImportNode:
-			a.collectImport(n)
 		}
 	}
 }
@@ -98,11 +102,12 @@ func (a *Analyser) collectGlobalVariable(n *parser.DeclarationNode) {
 	}
 
 	sym := &symbols.Symbol{
-		Name:    n.Name,
-		Kind:    symbols.SymbolKindVariable,
-		Type:    varType,
-		Mutable: n.Mutable,
-		Public:  n.Pub,
+		Name:       n.Name,
+		Kind:       symbols.SymbolKindVariable,
+		Type:       varType,
+		Mutable:    n.Mutable,
+		Public:     n.Pub,
+		Attributes: n.Attributes,
 	}
 
 	if a.defineSymbol(sym, n) {
@@ -111,15 +116,19 @@ func (a *Analyser) collectGlobalVariable(n *parser.DeclarationNode) {
 }
 
 func (a *Analyser) collectImport(n *parser.ImportNode) {
-	for _, name := range n.Modules {
+	for i, name := range n.Modules {
 		mod, ok := a.modules[name]
 		if !ok {
 			a.errorf(n, "unknown module %q", name)
 			continue
 		}
 
+		alias := name
+		if i < len(n.Aliases) && n.Aliases[i] != "" {
+			alias = n.Aliases[i]
+		}
 		sym := &symbols.Symbol{
-			Name:   name,
+			Name:   alias,
 			Kind:   symbols.SymbolKindModule,
 			Module: mod,
 		}

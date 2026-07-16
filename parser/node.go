@@ -47,11 +47,12 @@ func (n *IdentifierNode) GetType() types.Type {
 func (n *IdentifierNode) GetSymbol() *symbols.Symbol { return n.Symbol }
 
 type ModuleAccessNode struct {
-	ModName string
-	Ident   *IdentifierNode
-	Loc     shared.Location
-	Symbol  *symbols.Symbol
-	Type    types.Type
+	ModName            string
+	ResolvedModuleName string
+	Ident              *IdentifierNode
+	Loc                shared.Location
+	Symbol             *symbols.Symbol
+	Type               types.Type
 }
 
 func (n ModuleAccessNode) GetLoc() shared.Location { return n.Loc }
@@ -367,6 +368,7 @@ func (n *SizeOfExprNode) GetType() types.Type    { return n.Type }
 
 type ImportNode struct {
 	Modules []string
+	Aliases []string
 	Loc     shared.Location
 }
 
@@ -465,13 +467,14 @@ type ControlKeywordNode struct {
 func (n ControlKeywordNode) GetLoc() shared.Location { return n.Loc }
 
 type DeclarationNode struct {
-	Name     string
-	Mutable  bool
-	Pub      bool
-	TypeNode TypeNode
-	Value    ExpressionNode
-	Loc      shared.Location
-	Symbol   *symbols.Symbol
+	Name       string
+	Mutable    bool
+	Pub        bool
+	TypeNode   TypeNode
+	Value      ExpressionNode
+	Attributes attributes.Attributes
+	Loc        shared.Location
+	Symbol     *symbols.Symbol
 }
 
 func (n DeclarationNode) GetLoc() shared.Location { return n.Loc }

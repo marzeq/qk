@@ -330,6 +330,17 @@ func (e *Emitter) OperandEmit(op ir.Operand) string {
 		return "0"
 	case ir.OperandNullConst:
 		return "null"
+	case ir.OperandStructConst:
+		var fields strings.Builder
+		fields.WriteString("{ ")
+		for i, field := range op.Fields {
+			if i > 0 {
+				fields.WriteString(", ")
+			}
+			fmt.Fprintf(&fields, "%s %s", e.TypeEmit(field.Type), e.OperandEmit(field))
+		}
+		fields.WriteString(" }")
+		return fields.String()
 	default:
 		panic("unreachable")
 	}

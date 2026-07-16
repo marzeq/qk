@@ -92,6 +92,19 @@ func (g *Generator) generateGlobalDeclaration(node *parser.DeclarationNode) {
 	if node.Symbol == nil {
 		panic("global declaration symbol is nil")
 	}
+	if foreign, ok := node.Symbol.Attributes.Get(attributes.AttributeTypeForeign).(attributes.FunctionAttributeForeign); ok {
+		name := foreign.From
+		if name == "" {
+			name = node.Name
+		}
+		g.Module.AddExternGlobal(ir.ExternGlobal{
+			Name:    name,
+			Type:    node.Symbol.Type,
+			Mutable: node.Mutable,
+		})
+		g.globals[node.Symbol] = name
+		return
+	}
 
 	g.Module.AddGlobal(ir.Global{
 		Name:    g.mangleGlobalName(g.ModuleName, node.Name),
@@ -118,6 +131,24 @@ func (g *Generator) generateGlobalInitializer(expr parser.ExpressionNode) ir.Ope
 		return ir.IntConstOperand(fmt.Sprint(int(node.Value)), node.GetType())
 	case *parser.NilLiteralNode:
 		return ir.NullConstOperand(node.GetType())
+	case *parser.StructLiteralNode:
+		structType, ok := node.GetType().(types.StructType)
+		if !ok {
+			panic("global struct literal does not have a struct type")
+		}
+		fields := make(map[string]parser.ExpressionNode, len(node.Fields))
+		for _, field := range node.Fields {
+			fields[field.L] = field.R
+		}
+		values := make([]ir.Operand, len(structType.Fields))
+		for i, field := range structType.Fields {
+			value, exists := fields[field.L]
+			if !exists {
+				panic(fmt.Sprintf("missing field %q in global struct literal", field.L))
+			}
+			values[i] = g.generateGlobalInitializer(value)
+		}
+		return ir.StructConstOperand(structType, values)
 	default:
 		panic(fmt.Sprintf("global initializer must be a literal, got %T", expr))
 	}
@@ -974,6 +1005,9 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 			callModule := g.ModuleName
 			if node.Name != nil && node.Name.ModName != "" {
 				callModule = node.Name.ModName
+				if node.Name.ResolvedModuleName != "" {
+					callModule = node.Name.ResolvedModuleName
+				}
 			}
 			if g.isProgramEntryFunction(node.Symbol.Name) {
 				name = node.Symbol.Name
@@ -1110,7 +1144,14 @@ func (g *Generator) generateModuleAccessExpr(node *parser.ModuleAccessNode) ir.O
 		panic("module access is not a variable")
 	}
 
-	name := g.mangleGlobalName(node.ModName, node.Symbol.Name)
+	moduleName := node.ModName
+	if node.ResolvedModuleName != "" {
+		moduleName = node.ResolvedModuleName
+	}
+	name := g.mangleGlobalName(moduleName, node.Symbol.Name)
+	if foreign, ok := node.Symbol.Attributes.Get(attributes.AttributeTypeForeign).(attributes.FunctionAttributeForeign); ok {
+		name = foreign.From
+	}
 	g.Module.AddExternGlobal(ir.ExternGlobal{
 		Name:    name,
 		Type:    node.GetType(),

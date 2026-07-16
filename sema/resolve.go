@@ -43,6 +43,7 @@ func (a *Analyser) resolveModuleAccess(n *parser.ModuleAccessNode) (*symbols.Sym
 	}
 
 	n.Symbol = sym
+	n.ResolvedModuleName = modSym.Module.Name
 	return sym, true
 }
 

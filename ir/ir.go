@@ -17,6 +17,7 @@ const (
 	OperandFloatConst
 	OperandBoolConst
 	OperandNullConst
+	OperandStructConst
 )
 
 type Operand struct {
@@ -28,6 +29,7 @@ type Operand struct {
 	IntValue   string
 	FloatValue string
 	BoolValue  bool
+	Fields     []Operand
 }
 
 func ValueOperand(id ValueID, ty types.Type) Operand {
@@ -48,6 +50,10 @@ func BoolConstOperand(value bool) Operand {
 
 func NullConstOperand(ty types.Type) Operand {
 	return Operand{Kind: OperandNullConst, Type: ty}
+}
+
+func StructConstOperand(ty types.Type, fields []Operand) Operand {
+	return Operand{Kind: OperandStructConst, Type: ty, Fields: fields}
 }
 
 type Slot struct {

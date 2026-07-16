@@ -297,6 +297,7 @@ func (p *Parser) ParseImport() (*ImportNode, error) {
 	}
 
 	modules := []string{}
+	aliases := []string{}
 
 	if p.Match(tokeniser.TokenOpenParen) {
 		p.Inc()
@@ -316,6 +317,11 @@ func (p *Parser) ParseImport() (*ImportNode, error) {
 				return nil, shared.NewError(p.PrevLoc(), "expected module name")
 			}
 			modules = append(modules, name.Value)
+			alias := name.Value
+			if p.Match(tokeniser.TokenIdentifier) {
+				alias = p.Consume().Value
+			}
+			aliases = append(aliases, alias)
 
 			if p.Match(tokeniser.TokenComma) {
 				p.Inc()
@@ -344,10 +350,16 @@ func (p *Parser) ParseImport() (*ImportNode, error) {
 			return nil, shared.NewError(p.PrevLoc(), "expected module name")
 		}
 		modules = append(modules, name.Value)
+		alias := name.Value
+		if p.Match(tokeniser.TokenIdentifier) {
+			alias = p.Consume().Value
+		}
+		aliases = append(aliases, alias)
 	}
 
 	return &ImportNode{
 		Modules: modules,
+		Aliases: aliases,
 		Loc:     beginLoc,
 	}, nil
 }
@@ -506,25 +518,56 @@ func (p *Parser) ParseDeclaration() (*DeclarationNode, error) {
 		tpe = t
 	}
 
-	if !p.Expect(tokeniser.TokenEquals) {
-		return nil, shared.NewError(p.PrevLoc(), "expected '='")
-	}
-
-	for p.Match(tokeniser.TokenNewline) {
+	var value ExpressionNode
+	attrs := attributes.Attributes{}
+	if p.Match(tokeniser.TokenEquals) {
 		p.Inc()
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+
+		expr, err := p.ParseExpression()
+		if err != nil {
+			return nil, err
+		}
+		value = expr
 	}
 
-	expr, err := p.ParseExpression()
-	if err != nil {
-		return nil, err
+	for p.Match(tokeniser.TokenAt) {
+		attrName, attrArgs, err := p.ParseAttribute()
+		if err != nil {
+			return nil, err
+		}
+		if attributes.AttributeType(attrName) != attributes.AttributeTypeForeign {
+			return nil, shared.NewError(p.PrevLoc(), "unknown declaration attribute: %s", attrName)
+		}
+		foreignName := ident.Value
+		if len(attrArgs) == 1 {
+			nameNode, ok := attrArgs[0].(*StringLiteralNode)
+			if !ok {
+				return nil, shared.NewError(p.PrevLoc(), "foreign attribute argument must be a string literal")
+			}
+			foreignName = nameNode.Value
+		} else if len(attrArgs) > 1 {
+			return nil, shared.NewError(p.PrevLoc(), "foreign attribute takes at most one argument")
+		}
+		attrs = append(attrs, attributes.FunctionAttributeForeign{From: foreignName})
+	}
+
+	if value == nil && len(attrs) == 0 {
+		return nil, shared.NewError(p.PrevLoc(), "expected '=' or declaration attribute")
+	}
+	if value == nil && tpe == nil {
+		return nil, shared.NewError(ident.Loc, "external declaration requires a type annotation")
 	}
 
 	return &DeclarationNode{
-		Name:     ident.Value,
-		TypeNode: tpe,
-		Mutable:  mutable,
-		Value:    expr,
-		Loc:      beginLoc,
+		Name:       ident.Value,
+		TypeNode:   tpe,
+		Mutable:    mutable,
+		Value:      value,
+		Attributes: attrs,
+		Loc:        beginLoc,
 	}, nil
 }
 
