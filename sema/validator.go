@@ -86,6 +86,12 @@ func (v *Validator) validateNode(node parser.Node) {
 	case *parser.ForNode:
 		v.validateFor(n)
 
+	case *parser.RangeForNode:
+		v.validateRangeFor(n)
+
+	case *parser.ForEachNode:
+		v.validateForEach(n)
+
 	case *parser.ControlKeywordNode:
 		if n.ReturnValue != nil {
 			v.validateReturn(n)
@@ -254,6 +260,44 @@ func (v *Validator) validateFor(n *parser.ForNode) {
 		}
 	}
 	v.validateNode(n.ExprsOrStmts[2])
+	v.validateNode(n.Body)
+}
+
+func (v *Validator) validateRangeFor(n *parser.RangeForNode) {
+	v.validateExpr(n.Start)
+	v.validateExpr(n.End)
+
+	common := types.PromoteNumeric(n.Start.GetType(), n.End.GetType())
+	if !types.IsInteger(common) {
+		v.errorf(n, "range bounds must be integer types")
+		return
+	}
+	if types.IsUntyped(common) {
+		common = types.PrimitiveI32
+	}
+
+	n.Start = v.validateExprWithExpected(n.Start, common)
+	n.End = v.validateExprWithExpected(n.End, common)
+	if n.Symbol != nil {
+		n.Symbol.Type = common
+	}
+	v.validateNode(n.Body)
+}
+
+func (v *Validator) validateForEach(n *parser.ForEachNode) {
+	v.validateExpr(n.Iterable)
+	slice, ok := n.Iterable.GetType().(types.SliceType)
+	if !ok {
+		v.errorf(n, "for loop iterable must be a slice")
+		return
+	}
+	if types.HasUntyped(slice.Base) {
+		v.errorf(n, "cannot infer for loop element type from untyped slice")
+		return
+	}
+	if n.Symbol != nil {
+		n.Symbol.Type = slice.Base
+	}
 	v.validateNode(n.Body)
 }
 
@@ -650,7 +694,7 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 
 	got := node.GetType()
 	if !got.CanCoerceTo(expected) {
-		v.errorf(node, "cannot assign %v to %v", got, expected)
+		v.errorf(node, "cannot use %v as %v", got, expected)
 		return node
 	}
 

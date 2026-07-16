@@ -474,7 +474,7 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 				Loc:     ident.Loc,
 			}
 
-			if p.Match(tokeniser.TokenOpenCurly) {
+			if !p.parsingForEachIterable && p.Match(tokeniser.TokenOpenCurly) {
 				return p.ParseStructLiteral(modAN)
 			}
 
@@ -494,7 +494,7 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 			return p.ParseFunctionCall(modAN)
 		}
 
-		if p.Match(tokeniser.TokenOpenCurly) {
+		if !p.parsingForEachIterable && p.Match(tokeniser.TokenOpenCurly) {
 			modAN := &ModuleAccessNode{
 				ModName: "",
 				Ident:   ident,

@@ -9,9 +9,10 @@ import (
 )
 
 type Parser struct {
-	pos      int
-	tokens   []tokeniser.Token
-	posStack []int
+	pos                    int
+	tokens                 []tokeniser.Token
+	posStack               []int
+	parsingForEachIterable bool
 }
 
 func NewParser(tokens []tokeniser.Token) *Parser {

@@ -157,6 +157,23 @@ func (a *Attributor) attributeNode(node parser.Node) {
 		}
 		a.attributeNode(n.Body)
 
+	case *parser.RangeForNode:
+		a.attributeExpr(n.Start)
+		a.attributeExpr(n.End)
+		if n.Symbol != nil {
+			n.Symbol.Type = types.PromoteNumeric(n.Start.GetType(), n.End.GetType())
+		}
+		a.attributeNode(n.Body)
+
+	case *parser.ForEachNode:
+		a.attributeExpr(n.Iterable)
+		if n.Symbol != nil {
+			if slice, ok := n.Iterable.GetType().(types.SliceType); ok {
+				n.Symbol.Type = slice.Base
+			}
+		}
+		a.attributeNode(n.Body)
+
 	case *parser.ControlKeywordNode:
 		if n.ReturnValue != nil {
 			a.attributeExpr(n.ReturnValue)

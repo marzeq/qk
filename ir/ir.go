@@ -334,6 +334,15 @@ type FieldAddress struct {
 
 func (FieldAddress) isInstr() {}
 
+type ElementAddress struct {
+	Dest    ValueID
+	Base    Operand
+	Index   Operand
+	Element types.Type
+}
+
+func (ElementAddress) isInstr() {}
+
 type Call struct {
 	Dest      ValueID
 	Name      string

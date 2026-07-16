@@ -89,9 +89,12 @@ if_stmt        = "if", opt_newlines, expression, opt_newlines, block,
                  } ;
 
 for_stmt       = "for", opt_newlines,
-                 [ stmt_or_expr, { ";", opt_newlines, stmt_or_expr } ],
-                 opt_newlines,
-                 block ;
+                 ( identifier, "in", opt_newlines, expression,
+                   [ "..", [ "=" ], opt_newlines, expression ]
+                 | stmt_or_expr, ";", opt_newlines,
+                   expression, ";", opt_newlines, stmt_or_expr
+                 ),
+                 opt_newlines, block ;
 
 stmt_or_expr   = statement | expression ;
 
@@ -247,7 +250,7 @@ named_type     = identifier
 ### 1. Tokenisation model
 
 - Identifiers start with a letter or underscore and then continue with letters, digits, or underscore.
-- Keywords include: `let`, `mut`, `extern`, `struct`, `type`, `if`, `else`, `given`, `for`, `break`, `continue`, `return`, `import`, `module`, `pub`, `and`, `or`, `not`, `true`, `false`, `nil`, `as`, `sizeof`.
+- Keywords include: `let`, `mut`, `extern`, `struct`, `type`, `if`, `else`, `given`, `for`, `in`, `break`, `continue`, `return`, `import`, `module`, `pub`, `and`, `or`, `not`, `true`, `false`, `nil`, `as`, `sizeof`.
 - Integer tokens are decimal with optional leading minus.
 - Floating-point literals are assembled by the parser from integer tokens separated by a dot (for example `12.34`, `12.`, `.34`).
 - Strings and chars support escape sequences: `\\`, `\"`, `\n`, `\r`, `\t`, `\b`, `\f`, `\v`, `\a`, `\0`.

@@ -425,6 +425,28 @@ type ForNode struct {
 
 func (n ForNode) GetLoc() shared.Location { return n.Loc }
 
+type RangeForNode struct {
+	Name      string
+	Start     ExpressionNode
+	End       ExpressionNode
+	Inclusive bool
+	Body      *BlockNode
+	Loc       shared.Location
+	Symbol    *symbols.Symbol
+}
+
+func (n RangeForNode) GetLoc() shared.Location { return n.Loc }
+
+type ForEachNode struct {
+	Name     string
+	Iterable ExpressionNode
+	Body     *BlockNode
+	Loc      shared.Location
+	Symbol   *symbols.Symbol
+}
+
+func (n ForEachNode) GetLoc() shared.Location { return n.Loc }
+
 type ControlKeywordNode struct {
 	Keyword     tokeniser.KeywordKind
 	ReturnValue ExpressionNode // only for "return"

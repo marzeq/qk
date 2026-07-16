@@ -429,6 +429,8 @@ func (e *Emitter) InstrEmit(out *strings.Builder, instr ir.Instr) {
 		e.AddressOfGlobalEmit(out, instr)
 	case ir.FieldAddress:
 		e.FieldAddressEmit(out, instr)
+	case ir.ElementAddress:
+		e.ElementAddressEmit(out, instr)
 	case ir.LoadPtr:
 		e.LoadPtrEmit(out, instr)
 	case ir.StorePtr:
@@ -628,6 +630,18 @@ func (e *Emitter) FieldAddressEmit(out *strings.Builder, f ir.FieldAddress) {
 	}
 	fieldIndex := e.structFieldIndex(baseTy, f.Field)
 	fmt.Fprintf(out, "%s = getelementptr inbounds %s, ptr %s, i32 0, i32 %d", e.ValueIDEmit(f.Dest), e.TypeEmit(baseTy), e.OperandEmit(f.Base), fieldIndex)
+}
+
+func (e *Emitter) ElementAddressEmit(out *strings.Builder, eaddr ir.ElementAddress) {
+	fmt.Fprintf(
+		out,
+		"%s = getelementptr inbounds %s, ptr %s, %s %s",
+		e.ValueIDEmit(eaddr.Dest),
+		e.TypeEmit(eaddr.Element),
+		e.OperandEmit(eaddr.Base),
+		e.TypeEmit(eaddr.Index.Type),
+		e.OperandEmit(eaddr.Index),
+	)
 }
 
 func (e *Emitter) CallEmit(out *strings.Builder, c ir.Call) {

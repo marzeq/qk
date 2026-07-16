@@ -240,6 +240,10 @@ func (g *Generator) GenerateNode(node parser.Node) {
 		g.generateIf(n)
 	case *parser.ForNode:
 		g.generateFor(n)
+	case *parser.RangeForNode:
+		g.generateRangeFor(n)
+	case *parser.ForEachNode:
+		g.generateForEach(n)
 	case *parser.FunctionCallNode:
 		g.generateFunctionCallExpr(n)
 	default:
@@ -377,6 +381,145 @@ func (g *Generator) generateFor(node *parser.ForNode) {
 	}
 
 	g.currentBlock = endBlock
+}
+
+func (g *Generator) generateRangeFor(node *parser.RangeForNode) {
+	if node.Symbol == nil {
+		panic("range loop symbol is nil")
+	}
+
+	prevEnv := g.currentEnv
+	g.currentEnv = NewEnv(prevEnv)
+	defer func() { g.currentEnv = prevEnv }()
+
+	iteratorSlot := g.currentFunction.NewSlot(node.Symbol.Type, node.Name)
+	g.currentEnv.Variables[node.Symbol] = iteratorSlot
+	g.Emit(ir.Alloca{Slot: iteratorSlot})
+	g.Emit(ir.Store{Slot: iteratorSlot, Value: g.GenerateExpr(node.Start)})
+
+	endSlot := g.currentFunction.NewSlot(node.Symbol.Type, "for.range.end")
+	g.Emit(ir.Alloca{Slot: endSlot})
+	g.Emit(ir.Store{Slot: endSlot, Value: g.GenerateExpr(node.End)})
+
+	conditionBlock := g.currentFunction.NewBlock("for.range.condition")
+	bodyBlock := g.currentFunction.NewBlock("for.range.body")
+	postBlock := g.currentFunction.NewBlock("for.range.post")
+	endBlock := g.currentFunction.NewBlock("for.range.end")
+	g.Emit(ir.Jump{Target: conditionBlock.ID})
+
+	g.currentBlock = conditionBlock
+	iterator := g.loadSlot(iteratorSlot, node.Symbol.Type)
+	end := g.loadSlot(endSlot, node.Symbol.Type)
+	condition := g.currentFunction.NewValueOfType(types.PrimitiveBool)
+	if node.Inclusive {
+		g.Emit(ir.CmpLe{Dest: condition, Left: iterator, Right: end})
+	} else {
+		g.Emit(ir.CmpLt{Dest: condition, Left: iterator, Right: end})
+	}
+	g.Emit(ir.Branch{Cond: ir.ValueOperand(condition, types.PrimitiveBool), Then: bodyBlock.ID, Else: endBlock.ID})
+
+	g.currentBlock = bodyBlock
+	g.generateBlock(node.Body)
+	if !g.currentBlockHasTerminator() {
+		g.Emit(ir.Jump{Target: postBlock.ID})
+	}
+
+	g.currentBlock = postBlock
+	current := g.loadSlot(iteratorSlot, node.Symbol.Type)
+	next := g.currentFunction.NewValueOfType(node.Symbol.Type)
+	g.Emit(ir.Add{Dest: next, Left: current, Right: ir.IntConstOperand("1", node.Symbol.Type)})
+	g.Emit(ir.Store{Slot: iteratorSlot, Value: ir.ValueOperand(next, node.Symbol.Type)})
+	g.Emit(ir.Jump{Target: conditionBlock.ID})
+	g.currentBlock = endBlock
+}
+
+func (g *Generator) generateForEach(node *parser.ForEachNode) {
+	if node.Symbol == nil {
+		panic("for-each loop symbol is nil")
+	}
+	sliceType, ok := node.Iterable.GetType().(types.SliceType)
+	if !ok {
+		panic("for-each iterable is not a slice")
+	}
+
+	prevEnv := g.currentEnv
+	g.currentEnv = NewEnv(prevEnv)
+	defer func() { g.currentEnv = prevEnv }()
+
+	sliceSlot := g.currentFunction.NewSlot(sliceType, "for.each.slice")
+	g.Emit(ir.Alloca{Slot: sliceSlot})
+	g.Emit(ir.Store{Slot: sliceSlot, Value: g.GenerateExpr(node.Iterable)})
+	indexSlot := g.currentFunction.NewSlot(types.PrimitiveUsz, "for.each.index")
+	g.Emit(ir.Alloca{Slot: indexSlot})
+	g.Emit(ir.Store{Slot: indexSlot, Value: ir.IntConstOperand("0", types.PrimitiveUsz)})
+	elementSlot := g.currentFunction.NewSlot(node.Symbol.Type, node.Name)
+	g.currentEnv.Variables[node.Symbol] = elementSlot
+	g.Emit(ir.Alloca{Slot: elementSlot})
+
+	conditionBlock := g.currentFunction.NewBlock("for.each.condition")
+	bodyBlock := g.currentFunction.NewBlock("for.each.body")
+	postBlock := g.currentFunction.NewBlock("for.each.post")
+	endBlock := g.currentFunction.NewBlock("for.each.end")
+	g.Emit(ir.Jump{Target: conditionBlock.ID})
+
+	g.currentBlock = conditionBlock
+	index := g.loadSlot(indexSlot, types.PrimitiveUsz)
+	length := g.sliceLength(sliceSlot, sliceType)
+	condition := g.currentFunction.NewValueOfType(types.PrimitiveBool)
+	g.Emit(ir.CmpLt{Dest: condition, Left: index, Right: length})
+	g.Emit(ir.Branch{Cond: ir.ValueOperand(condition, types.PrimitiveBool), Then: bodyBlock.ID, Else: endBlock.ID})
+
+	g.currentBlock = bodyBlock
+	g.storeForEachElement(sliceSlot, sliceType, index, elementSlot)
+	g.generateBlock(node.Body)
+	if !g.currentBlockHasTerminator() {
+		g.Emit(ir.Jump{Target: postBlock.ID})
+	}
+
+	g.currentBlock = postBlock
+	currentIndex := g.loadSlot(indexSlot, types.PrimitiveUsz)
+	nextIndex := g.currentFunction.NewValueOfType(types.PrimitiveUsz)
+	g.Emit(ir.Add{Dest: nextIndex, Left: currentIndex, Right: ir.IntConstOperand("1", types.PrimitiveUsz)})
+	g.Emit(ir.Store{Slot: indexSlot, Value: ir.ValueOperand(nextIndex, types.PrimitiveUsz)})
+	g.Emit(ir.Jump{Target: conditionBlock.ID})
+	g.currentBlock = endBlock
+}
+
+func (g *Generator) loadSlot(slot ir.SlotID, ty types.Type) ir.Operand {
+	dst := g.currentFunction.NewValueOfType(ty)
+	g.Emit(ir.Load{Dest: dst, Slot: slot})
+	return ir.ValueOperand(dst, ty)
+}
+
+func (g *Generator) sliceLength(slot ir.SlotID, sliceType types.SliceType) ir.Operand {
+	slicePtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: sliceType})
+	g.Emit(ir.AddressOf{Dest: slicePtrID, Slot: slot})
+	slicePtr := ir.ValueOperand(slicePtrID, types.PointerType{Base: sliceType})
+	lengthPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: types.PrimitiveUsz})
+	g.Emit(ir.FieldAddress{Dest: lengthPtrID, Base: slicePtr, Field: "1"})
+	lengthID := g.currentFunction.NewValueOfType(types.PrimitiveUsz)
+	g.Emit(ir.LoadPtr{Dest: lengthID, Ptr: ir.ValueOperand(lengthPtrID, types.PointerType{Base: types.PrimitiveUsz})})
+	return ir.ValueOperand(lengthID, types.PrimitiveUsz)
+}
+
+func (g *Generator) storeForEachElement(sliceSlot ir.SlotID, sliceType types.SliceType, index ir.Operand, elementSlot ir.SlotID) {
+	slicePtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: sliceType})
+	g.Emit(ir.AddressOf{Dest: slicePtrID, Slot: sliceSlot})
+	slicePtr := ir.ValueOperand(slicePtrID, types.PointerType{Base: sliceType})
+	basePtrPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: types.PointerType{Base: sliceType.Base}})
+	g.Emit(ir.FieldAddress{Dest: basePtrPtrID, Base: slicePtr, Field: "0"})
+	basePtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: sliceType.Base})
+	g.Emit(ir.LoadPtr{Dest: basePtrID, Ptr: ir.ValueOperand(basePtrPtrID, types.PointerType{Base: types.PointerType{Base: sliceType.Base}})})
+	elementPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: sliceType.Base})
+	g.Emit(ir.ElementAddress{
+		Dest:    elementPtrID,
+		Base:    ir.ValueOperand(basePtrID, types.PointerType{Base: sliceType.Base}),
+		Index:   index,
+		Element: sliceType.Base,
+	})
+	elementID := g.currentFunction.NewValueOfType(sliceType.Base)
+	g.Emit(ir.LoadPtr{Dest: elementID, Ptr: ir.ValueOperand(elementPtrID, types.PointerType{Base: sliceType.Base})})
+	g.Emit(ir.Store{Slot: elementSlot, Value: ir.ValueOperand(elementID, sliceType.Base)})
 }
 
 func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {

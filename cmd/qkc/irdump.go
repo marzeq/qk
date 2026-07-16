@@ -103,6 +103,8 @@ func formatInstr(inst ir.Instr) string {
 		return fmt.Sprintf("v%d = addrof global %s", i.Dest, i.Name)
 	case ir.FieldAddress:
 		return fmt.Sprintf("v%d = fieldaddr %s, .%s", i.Dest, formatOperand(i.Base), i.Field)
+	case ir.ElementAddress:
+		return fmt.Sprintf("v%d = elementaddr %s, %s", i.Dest, formatOperand(i.Base), formatOperand(i.Index))
 	case ir.Call:
 		args := strings.Builder{}
 		for idx, arg := range i.Args {

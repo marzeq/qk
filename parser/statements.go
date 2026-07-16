@@ -761,7 +761,7 @@ func (p *Parser) ParseControlKeyword() (*ControlKeywordNode, error) {
 	}, nil
 }
 
-func (p *Parser) ParseForLoop() (*ForNode, error) {
+func (p *Parser) ParseForLoop() (Node, error) {
 	beginLoc := p.CurrLoc()
 	if !p.Expect(tokeniser.TokenKeyword) {
 		return nil, shared.NewError(p.PrevLoc(), "expected 'for'")
@@ -769,6 +769,12 @@ func (p *Parser) ParseForLoop() (*ForNode, error) {
 
 	for p.Match(tokeniser.TokenNewline) {
 		p.Inc()
+	}
+
+	if p.Match(tokeniser.TokenIdentifier) &&
+		p.Next().Type == tokeniser.TokenKeyword &&
+		p.Next().Value == string(tokeniser.KeywordIn) {
+		return p.parseRangeOrForEach(beginLoc)
 	}
 
 	var err error
@@ -816,5 +822,58 @@ func (p *Parser) ParseForLoop() (*ForNode, error) {
 		ExprsOrStmts: exprsOrStmts,
 		Body:         body,
 		Loc:          beginLoc,
+	}, nil
+}
+
+func (p *Parser) parseRangeOrForEach(beginLoc shared.Location) (Node, error) {
+	name, ok := p.ExpectGet(tokeniser.TokenIdentifier)
+	if !ok {
+		return nil, shared.NewError(p.PrevLoc(), "expected loop variable name")
+	}
+	if kw, ok := p.ExpectGet(tokeniser.TokenKeyword); !ok || kw.Value != string(tokeniser.KeywordIn) {
+		return nil, shared.NewError(p.PrevLoc(), "expected 'in' in for loop")
+	}
+
+	p.parsingForEachIterable = true
+	iterable, err := p.ParseExpression()
+	p.parsingForEachIterable = false
+	if err != nil {
+		return nil, err
+	}
+
+	if p.Match(tokeniser.Token2Dots) {
+		p.Inc()
+		inclusive := p.Match(tokeniser.TokenEquals)
+		if inclusive {
+			p.Inc()
+		}
+
+		end, err := p.ParseExpression()
+		if err != nil {
+			return nil, err
+		}
+		body, err := p.ParseBlock()
+		if err != nil {
+			return nil, err
+		}
+		return &RangeForNode{
+			Name:      name.Value,
+			Start:     iterable,
+			End:       end,
+			Inclusive: inclusive,
+			Body:      body,
+			Loc:       beginLoc,
+		}, nil
+	}
+
+	body, err := p.ParseBlock()
+	if err != nil {
+		return nil, err
+	}
+	return &ForEachNode{
+		Name:     name.Value,
+		Iterable: iterable,
+		Body:     body,
+		Loc:      beginLoc,
 	}, nil
 }

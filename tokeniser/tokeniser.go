@@ -245,6 +245,7 @@ var keywords = map[string]struct{}{
 	string(KeywordAs):       {},
 	string(KeywordSizeof):   {},
 	string(KeywordLen):      {},
+	string(KeywordIn):       {},
 }
 
 func IsKeyword(w string) bool {
@@ -452,14 +453,13 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 			loc := t.GetLoc()
 			if t.Next() == '.' {
 				t.Inc()
-				nextloc := t.GetLoc()
 				if t.Next() == '.' {
 					t.Inc().Inc()
 					t.AddToken(Token3Dots, loc)
 					continue
 				}
-				t.AddToken(TokenDot, loc)
-				t.AddToken(TokenDot, nextloc)
+				t.Inc()
+				t.AddToken(Token2Dots, loc)
 				continue
 			}
 

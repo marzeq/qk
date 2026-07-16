@@ -35,6 +35,12 @@ func (a *Analyser) visit(node parser.Node) {
 	case *parser.ForNode:
 		a.visitFor(n)
 
+	case *parser.RangeForNode:
+		a.visitRangeFor(n)
+
+	case *parser.ForEachNode:
+		a.visitForEach(n)
+
 	case *parser.ControlKeywordNode:
 		a.visitControlKeyword(n)
 
@@ -216,6 +222,53 @@ func (a *Analyser) visitFor(n *parser.ForNode) {
 
 	a.visitBlock(n.Body)
 	a.current = prev
+}
+
+func (a *Analyser) visitRangeFor(n *parser.RangeForNode) {
+	prev := a.current
+	a.current = symbols.NewScope(prev)
+	defer func() {
+		a.current = prev
+	}()
+
+	a.visitExpression(n.Start)
+	a.visitExpression(n.End)
+
+	sym := &symbols.Symbol{
+		Name: n.Name,
+		Kind: symbols.SymbolKindVariable,
+		Type: n.Start.GetType(),
+	}
+	if a.defineSymbol(sym, n) {
+		n.Symbol = sym
+	}
+
+	a.visitBlock(n.Body)
+}
+
+func (a *Analyser) visitForEach(n *parser.ForEachNode) {
+	prev := a.current
+	a.current = symbols.NewScope(prev)
+	defer func() {
+		a.current = prev
+	}()
+
+	a.visitExpression(n.Iterable)
+	var elementType types.Type = types.ErrorType{}
+	if slice, ok := n.Iterable.GetType().(types.SliceType); ok {
+		elementType = slice.Base
+	}
+
+	sym := &symbols.Symbol{
+		Name: n.Name,
+		Kind: symbols.SymbolKindVariable,
+		Type: elementType,
+	}
+	if a.defineSymbol(sym, n) {
+		n.Symbol = sym
+	}
+
+	a.visitBlock(n.Body)
 }
 
 func (a *Analyser) visitControlKeyword(n *parser.ControlKeywordNode) {

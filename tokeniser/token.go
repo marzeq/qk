@@ -52,6 +52,7 @@ const (
 	TokenExclam
 	TokenColon
 	TokenDot
+	Token2Dots
 	Token3Dots
 	TokenArrow
 	TokenAt
@@ -84,6 +85,7 @@ const (
 	KeywordAs       KeywordKind = "as"
 	KeywordSizeof   KeywordKind = "sizeof"
 	KeywordLen      KeywordKind = "len"
+	KeywordIn       KeywordKind = "in"
 )
 
 func (t Token) String() string {
@@ -160,6 +162,8 @@ func (t Token) String() string {
 		return ":"
 	case TokenDot:
 		return "."
+	case Token2Dots:
+		return ".."
 	case Token3Dots:
 		return "..."
 	case TokenArrow:
