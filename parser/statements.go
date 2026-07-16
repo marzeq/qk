@@ -649,7 +649,10 @@ func (p *Parser) ParseIfStatement() (*IfNode, error) {
 		p.Inc()
 	}
 
+	wasDisambiguatingTrailingBlock := p.disambiguateTrailingBlock
+	p.disambiguateTrailingBlock = true
 	condition, err := p.ParseExpression()
+	p.disambiguateTrailingBlock = wasDisambiguatingTrailingBlock
 	if err != nil {
 		return nil, err
 	}
@@ -690,7 +693,10 @@ func (p *Parser) ParseIfStatement() (*IfNode, error) {
 				p.Inc()
 			}
 
+			wasDisambiguatingTrailingBlock := p.disambiguateTrailingBlock
+			p.disambiguateTrailingBlock = true
 			elseifCondition, err := p.ParseExpression()
+			p.disambiguateTrailingBlock = wasDisambiguatingTrailingBlock
 			if err != nil {
 				return nil, err
 			}
@@ -709,6 +715,10 @@ func (p *Parser) ParseIfStatement() (*IfNode, error) {
 				Node:      elseifBlock,
 			}
 			node.ElseIfBranches = append(node.ElseIfBranches, elseIfBranch)
+
+			for p.Match(tokeniser.TokenNewline) {
+				p.Inc()
+			}
 		} else {
 			elseBlock, err := p.ParseBlock()
 			if err != nil {
@@ -770,6 +780,8 @@ func (p *Parser) ParseForLoop() (Node, error) {
 	var err error
 
 	exprsOrStmts := []Node{}
+	wasDisambiguatingTrailingBlock := p.disambiguateTrailingBlock
+	p.disambiguateTrailingBlock = true
 
 	for !p.Match(tokeniser.TokenOpenCurly) {
 		ogPos := p.pos
@@ -797,6 +809,7 @@ func (p *Parser) ParseForLoop() (Node, error) {
 			p.Inc()
 		}
 	}
+	p.disambiguateTrailingBlock = wasDisambiguatingTrailingBlock
 
 	for p.Match(tokeniser.TokenNewline) {
 		p.Inc()

@@ -268,6 +268,20 @@ type CmpGe struct {
 
 func (CmpGe) isInstr() {}
 
+type LogicalAnd struct {
+	Dest        ValueID
+	Left, Right Operand
+}
+
+func (LogicalAnd) isInstr() {}
+
+type LogicalOr struct {
+	Dest        ValueID
+	Left, Right Operand
+}
+
+func (LogicalOr) isInstr() {}
+
 type Mod struct {
 	Dest        ValueID
 	Left, Right Operand
@@ -280,6 +294,14 @@ type Alloca struct {
 }
 
 func (Alloca) isInstr() {}
+
+type AllocaArray struct {
+	Dest    ValueID
+	Element types.Type
+	Count   Operand
+}
+
+func (AllocaArray) isInstr() {}
 
 type Load struct {
 	Dest ValueID

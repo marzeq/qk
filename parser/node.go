@@ -196,9 +196,11 @@ func (n *StructLiteralNode) SetType(t types.Type)   { n.Type = t }
 func (n *StructLiteralNode) GetType() types.Type    { return n.Type }
 
 type SliceLiteralNode struct {
-	Elements []ExpressionNode
-	Loc      shared.Location
-	Type     types.Type
+	Elements     []ExpressionNode
+	RepeatValue  ExpressionNode
+	RepeatAmount ExpressionNode
+	Loc          shared.Location
+	Type         types.Type
 }
 
 func (n SliceLiteralNode) GetLoc() shared.Location { return n.Loc }
@@ -320,6 +322,39 @@ const (
 	BinaryOpDivide
 	BinaryOpModulo
 )
+
+func (b BinaryOpKind) String() string {
+	switch b {
+	case BinaryOpLogicalOr:
+		return "or"
+	case BinaryOpLogicalAnd:
+		return "and"
+	case BinaryOpEqual:
+		return "=="
+	case BinaryOpNotEqual:
+		return "!="
+	case BinaryOpLess:
+		return "<"
+	case BinaryOpLessEqual:
+		return "<="
+	case BinaryOpGreater:
+		return ">"
+	case BinaryOpGreaterEqual:
+		return ">="
+	case BinaryOpAdd:
+		return "+"
+	case BinaryOpSubtract:
+		return "-"
+	case BinaryOpMultiply:
+		return "*"
+	case BinaryOpDivide:
+		return "/"
+	case BinaryOpModulo:
+		return "%"
+	default:
+		return "unknown"
+	}
+}
 
 type BinaryOpNode struct {
 	Op       BinaryOpKind

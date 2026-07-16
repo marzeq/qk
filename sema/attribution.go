@@ -2,6 +2,7 @@ package sema
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/marzeq/qk/attributes"
 	"github.com/marzeq/qk/parser"
@@ -240,6 +241,18 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		}
 
 	case *parser.SliceLiteralNode:
+		if n.RepeatValue != nil {
+			a.attributeExpr(n.RepeatValue)
+			a.attributeExpr(n.RepeatAmount)
+			size := -1
+			if amount, ok := n.RepeatAmount.(*parser.IntegerLiteralNode); ok {
+				if parsed, err := strconv.Atoi(amount.Value); err == nil {
+					size = parsed
+				}
+			}
+			n.SetType(types.SliceType{Base: n.RepeatValue.GetType(), Size: size})
+			break
+		}
 		typs := []types.Type{}
 		for _, elem := range n.Elements {
 			a.attributeExpr(elem)

@@ -896,6 +896,10 @@ func (p *Parser) ParseSliceLiteral() (*SliceLiteralNode, error) {
 	if !p.Expect(tokeniser.TokenOpenSquare) {
 		return nil, shared.NewError(p.PrevLoc(), "expected '[' to start slice literal")
 	}
+	for p.Match(tokeniser.TokenNewline) {
+		p.Inc()
+	}
+
 	var elements []ExpressionNode
 	for {
 		if p.Match(tokeniser.TokenCloseSquare) {
@@ -904,6 +908,27 @@ func (p *Parser) ParseSliceLiteral() (*SliceLiteralNode, error) {
 		elem, err := p.ParseExpression()
 		if err != nil {
 			return nil, err
+		}
+		if len(elements) == 0 && p.Match(tokeniser.TokenSemicolon) {
+			p.Inc()
+			for p.Match(tokeniser.TokenNewline) {
+				p.Inc()
+			}
+			amount, err := p.ParseExpression()
+			if err != nil {
+				return nil, err
+			}
+			for p.Match(tokeniser.TokenNewline) {
+				p.Inc()
+			}
+			if !p.Expect(tokeniser.TokenCloseSquare) {
+				return nil, shared.NewError(p.PrevLoc(), "expected ']' to end repeated slice literal")
+			}
+			return &SliceLiteralNode{
+				RepeatValue:  elem,
+				RepeatAmount: amount,
+				Loc:          beginLoc,
+			}, nil
 		}
 		elements = append(elements, elem)
 		if !p.Match(tokeniser.TokenComma, tokeniser.TokenNewline) {

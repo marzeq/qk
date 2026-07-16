@@ -579,6 +579,18 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		v.validateExpr(n.FinalExpr)
 
 	case *parser.SliceLiteralNode:
+		if n.RepeatValue != nil {
+			size := -1
+			if amount, ok := n.RepeatAmount.(*parser.IntegerLiteralNode); ok {
+				if parsed, err := strconv.Atoi(amount.Value); err == nil {
+					size = parsed
+				}
+			}
+			v.validateExpr(n.RepeatValue)
+			n.RepeatAmount = v.validateExprWithExpected(n.RepeatAmount, types.PrimitiveUsz)
+			n.SetType(types.SliceType{Base: n.RepeatValue.GetType(), Size: size})
+			break
+		}
 		var common types.Type = nil
 
 		if len(n.Elements) == 0 {
@@ -765,6 +777,21 @@ func (v *Validator) validateSliceLiteralWithExpected(n *parser.SliceLiteralNode,
 		if !got.Equals(expected) {
 			n.SetType(expected)
 		}
+		return
+	}
+	if n.RepeatValue != nil {
+		size := -1
+		if amount, ok := n.RepeatAmount.(*parser.IntegerLiteralNode); ok {
+			if parsed, err := strconv.Atoi(amount.Value); err == nil {
+				size = parsed
+			}
+		}
+		n.RepeatValue = v.validateExprWithExpected(n.RepeatValue, sliceType.Base)
+		n.RepeatAmount = v.validateExprWithExpected(n.RepeatAmount, types.PrimitiveUsz)
+		if sliceType.Size != -1 && size != -1 && size != sliceType.Size {
+			v.errorf(n, "cannot assign repeated slice of size %d to [%v, %d]", size, sliceType.Base, sliceType.Size)
+		}
+		n.SetType(types.SliceType{Base: sliceType.Base, Size: size})
 		return
 	}
 

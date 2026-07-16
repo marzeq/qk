@@ -153,6 +153,11 @@ func (a *Analyser) visitExpression(expr parser.ExpressionNode) {
 		a.visitStructLiteral(e)
 
 	case *parser.SliceLiteralNode:
+		if e.RepeatValue != nil {
+			a.visitExpression(e.RepeatValue)
+			a.visitExpression(e.RepeatAmount)
+			break
+		}
 		for _, el := range e.Elements {
 			a.visitExpression(el)
 		}

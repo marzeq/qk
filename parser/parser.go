@@ -27,15 +27,55 @@ func (p *Parser) trailingBraceStartsStructLiteral() bool {
 	for pos < len(p.tokens) && p.tokens[pos].Type == tokeniser.TokenNewline {
 		pos++
 	}
-	if pos >= len(p.tokens) || p.tokens[pos].Type == tokeniser.TokenCloseCurly {
-		return true
+	if pos >= len(p.tokens) {
+		return false
 	}
-	if p.tokens[pos].Type != tokeniser.TokenIdentifier {
+	if p.tokens[pos].Type != tokeniser.TokenCloseCurly {
+		if p.tokens[pos].Type != tokeniser.TokenIdentifier ||
+			pos+1 >= len(p.tokens) || p.tokens[pos+1].Type != tokeniser.TokenEquals {
+			return false
+		}
+	}
+
+	depth := 0
+	for pos = p.pos; pos < len(p.tokens); pos++ {
+		switch p.tokens[pos].Type {
+		case tokeniser.TokenOpenCurly:
+			depth++
+		case tokeniser.TokenCloseCurly:
+			depth--
+		}
+		if depth == 0 {
+			pos++
+			break
+		}
+	}
+	if depth != 0 {
 		return false
 	}
 
-	pos++
-	return pos < len(p.tokens) && p.tokens[pos].Type == tokeniser.TokenEquals
+	for pos < len(p.tokens) && p.tokens[pos].Type == tokeniser.TokenNewline {
+		pos++
+	}
+	if pos >= len(p.tokens) {
+		return false
+	}
+
+	next := p.tokens[pos]
+	switch next.Type {
+	case tokeniser.TokenOpenCurly, tokeniser.TokenOpenSquare, tokeniser.TokenDot,
+		tokeniser.TokenEqualsEquals, tokeniser.TokenNotEquals,
+		tokeniser.TokenLess, tokeniser.TokenLessEquals,
+		tokeniser.TokenGreater, tokeniser.TokenGreaterEquals,
+		tokeniser.TokenPlus, tokeniser.TokenMinus, tokeniser.TokenAsterisk,
+		tokeniser.TokenSlash, tokeniser.TokenPercent:
+		return true
+	case tokeniser.TokenKeyword:
+		return next.Value == string(tokeniser.KeywordAnd) ||
+			next.Value == string(tokeniser.KeywordOr)
+	default:
+		return false
+	}
 }
 
 func NewParser(tokens []tokeniser.Token) *Parser {

@@ -431,8 +431,14 @@ func (e *Emitter) InstrEmit(out *strings.Builder, instr ir.Instr) {
 		e.CmpGeEmit(out, instr)
 	case ir.Mod:
 		e.ModEmit(out, instr)
+	case ir.LogicalOr:
+		e.LogicalOrEmit(out, instr)
+	case ir.LogicalAnd:
+		e.LogicalAndEmit(out, instr)
 	case ir.Alloca:
 		e.AllocaEmit(out, instr)
+	case ir.AllocaArray:
+		e.AllocaArrayEmit(out, instr)
 	case ir.Load:
 		e.LoadEmit(out, instr)
 	case ir.LoadGlobal:
@@ -615,8 +621,20 @@ func (e *Emitter) CmpGeEmit(out *strings.Builder, c ir.CmpGe) {
 	fmt.Fprintf(out, "%s = %s %s %s, %s", e.ValueIDEmit(c.Dest), instr, e.TypeEmit(c.Left.Type), e.OperandEmit(c.Left), e.OperandEmit(c.Right))
 }
 
+func (e *Emitter) LogicalOrEmit(out *strings.Builder, l ir.LogicalOr) {
+	fmt.Fprintf(out, "%s = or i1 %s, %s", e.ValueIDEmit(l.Dest), e.OperandEmit(l.Left), e.OperandEmit(l.Right))
+}
+
+func (e *Emitter) LogicalAndEmit(out *strings.Builder, l ir.LogicalAnd) {
+	fmt.Fprintf(out, "%s = and i1 %s, %s", e.ValueIDEmit(l.Dest), e.OperandEmit(l.Left), e.OperandEmit(l.Right))
+}
+
 func (e *Emitter) AllocaEmit(out *strings.Builder, a ir.Alloca) {
 	fmt.Fprintf(out, "%s = alloca %s", e.SlotIDEmit(a.Slot), e.TypeEmit(e.slotType(a.Slot)))
+}
+
+func (e *Emitter) AllocaArrayEmit(out *strings.Builder, a ir.AllocaArray) {
+	fmt.Fprintf(out, "%s = alloca %s, %s %s", e.ValueIDEmit(a.Dest), e.TypeEmit(a.Element), e.TypeEmit(a.Count.Type), e.OperandEmit(a.Count))
 }
 
 func (e *Emitter) LoadEmit(out *strings.Builder, l ir.Load) {
