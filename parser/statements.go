@@ -717,14 +717,13 @@ func (p *Parser) ParseForLoop() (Node, error) {
 	exprsOrStmts := []Node{}
 
 	for !p.Match(tokeniser.TokenOpenCurly) {
-		ogLoc := p.CurrLoc()
 		ogPos := p.pos
 		exOrSt, _, err := p.ParseStatement()
 		if err != nil {
 			p.pos = ogPos
 			exOrSt, err = p.ParseExpression()
 			if err != nil {
-				return nil, shared.NewError(ogLoc, "expected a valid statement or expression")
+				return nil, err
 			}
 		}
 

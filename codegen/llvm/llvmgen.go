@@ -22,6 +22,7 @@ type Emitter struct {
 	externMap  map[string]string // qk name -> actual external symbol name for functions with body extern("...")
 	stringMap  map[string]string // literal value -> global name
 	stringDefs []string
+	abiTemp    int
 }
 
 func (e *Emitter) EmitModule(out *strings.Builder, m *ir.Module) {
@@ -33,6 +34,7 @@ func (e *Emitter) EmitModule(out *strings.Builder, m *ir.Module) {
 	e.externMap = make(map[string]string)
 	e.stringMap = make(map[string]string)
 	e.stringDefs = e.collectStringDefs(m)
+	e.abiTemp = 0
 	for _, def := range e.stringDefs {
 		out.WriteString(def)
 		out.WriteString("\n")
@@ -59,12 +61,14 @@ func (e *Emitter) EmitModule(out *strings.Builder, m *ir.Module) {
 		}
 		e.externMap[ex.Name] = llvmName
 
-		fmt.Fprintf(out, "declare %s @%s(", e.TypeEmit(ex.Signature.ReturnType), llvmName)
+		fmt.Fprintf(out, "declare %s @%s(", e.foreignABIReturnType(ex.Signature.ReturnType), llvmName)
 		for j, p := range ex.Signature.ParamTypes {
-			if j > 0 {
-				out.WriteString(", ")
+			for k, abiType := range e.foreignABIParamTypes(p) {
+				if j > 0 || k > 0 {
+					out.WriteString(", ")
+				}
+				out.WriteString(abiType)
 			}
-			out.WriteString(e.TypeEmit(p))
 		}
 		if ex.Signature.Variadic {
 			if len(ex.Signature.ParamTypes) > 0 {
@@ -664,14 +668,20 @@ func (e *Emitter) CallEmit(out *strings.Builder, c ir.Call) {
 		}
 	}
 
+	foreign := c.Signature.Attributes.Get(attributes.AttributeTypeForeign) != nil
 	callType := e.TypeEmit(c.Signature.ReturnType)
+	if foreign {
+		callType = e.foreignABIReturnType(c.Signature.ReturnType)
+	}
 	if c.Signature.Variadic {
 		var params strings.Builder
 		for i, param := range c.Signature.ParamTypes {
-			if i > 0 {
-				params.WriteString(", ")
+			for j, abiType := range e.callABIParamTypes(param, foreign) {
+				if i > 0 || j > 0 {
+					params.WriteString(", ")
+				}
+				params.WriteString(abiType)
 			}
-			params.WriteString(e.TypeEmit(param))
 		}
 		if len(c.Signature.ParamTypes) > 0 {
 			params.WriteString(", ")
@@ -680,27 +690,105 @@ func (e *Emitter) CallEmit(out *strings.Builder, c ir.Call) {
 		callType += " (" + params.String() + ")"
 	}
 
+	returnChunks := []abiChunk(nil)
+	if foreign {
+		returnChunks = e.foreignABIChunks(c.Signature.ReturnType)
+	}
+	var argPrelude strings.Builder
+	loweredArgs := make([][]string, len(c.Args))
+	for i, arg := range c.Args {
+		loweredArgs[i] = e.lowerCallArgument(&argPrelude, arg, foreign)
+	}
+	if argPrelude.Len() > 0 {
+		out.WriteString(argPrelude.String())
+	}
+	callResult := ""
+	if !c.Signature.ReturnType.Equals(types.PrimitiveVoid) && len(returnChunks) > 0 {
+		callResult = e.nextABITemp()
+	}
 	if c.Signature.ReturnType.Equals(types.PrimitiveVoid) {
 		out.WriteString("call ")
 		out.WriteString(callType)
 		out.WriteString(" @")
 		out.WriteString(fnName)
 		out.WriteString("(")
+	} else if callResult != "" {
+		fmt.Fprintf(out, "%s = call %s @%s(", callResult, callType, fnName)
 	} else {
 		fmt.Fprintf(out, "%s = call %s @%s(", e.ValueIDEmit(c.Dest), callType, fnName)
 	}
-	for i, arg := range c.Args {
-		if i > 0 {
-			out.WriteString(", ")
+	for i := range c.Args {
+		for j, lowered := range loweredArgs[i] {
+			if i > 0 || j > 0 {
+				out.WriteString(", ")
+			}
+			out.WriteString(lowered)
 		}
-		fmt.Fprintf(out, "%s %s", e.TypeEmit(arg.Type), e.OperandEmit(arg))
 	}
 	out.WriteString(")")
+	if callResult != "" {
+		e.unpackForeignReturn(out, c, callResult, returnChunks)
+	}
 
 	noreturnAttr := c.Signature.Attributes.Get(attributes.AttributeTypeNoReturn)
 	if noreturnAttr != nil {
 		out.WriteString("\nunreachable")
 	}
+}
+
+func (e *Emitter) callABIParamTypes(ty types.Type, foreign bool) []string {
+	if !foreign {
+		return []string{e.TypeEmit(ty)}
+	}
+	return e.foreignABIParamTypes(ty)
+}
+
+func (e *Emitter) nextABITemp() string {
+	e.abiTemp++
+	return fmt.Sprintf("%%abi%d", e.abiTemp)
+}
+
+func (e *Emitter) lowerCallArgument(out *strings.Builder, arg ir.Operand, foreign bool) []string {
+	if !foreign {
+		return []string{fmt.Sprintf("%s %s", e.TypeEmit(arg.Type), e.OperandEmit(arg))}
+	}
+	chunks := e.foreignABIChunks(arg.Type)
+	if len(chunks) == 0 {
+		return []string{fmt.Sprintf("%s %s", e.TypeEmit(arg.Type), e.OperandEmit(arg))}
+	}
+	slot := e.nextABITemp()
+	fmt.Fprintf(out, "%s = alloca %s\n  store %s %s, ptr %s\n  ", slot, e.TypeEmit(arg.Type), e.TypeEmit(arg.Type), e.OperandEmit(arg), slot)
+	result := make([]string, len(chunks))
+	for i, chunk := range chunks {
+		ptr := slot
+		if chunk.offset != 0 {
+			ptr = e.nextABITemp()
+			fmt.Fprintf(out, "%s = getelementptr i8, ptr %s, i64 %d\n  ", ptr, slot, chunk.offset)
+		}
+		value := e.nextABITemp()
+		fmt.Fprintf(out, "%s = load %s, ptr %s, align 1\n  ", value, chunk.typeName, ptr)
+		result[i] = fmt.Sprintf("%s %s", chunk.typeName, value)
+	}
+	return result
+}
+
+func (e *Emitter) unpackForeignReturn(out *strings.Builder, c ir.Call, callResult string, chunks []abiChunk) {
+	slot := e.nextABITemp()
+	fmt.Fprintf(out, "\n  %s = alloca %s", slot, e.TypeEmit(c.Signature.ReturnType))
+	for i, chunk := range chunks {
+		value := callResult
+		if len(chunks) > 1 {
+			value = e.nextABITemp()
+			fmt.Fprintf(out, "\n  %s = extractvalue %s %s, %d", value, e.foreignABIReturnType(c.Signature.ReturnType), callResult, i)
+		}
+		ptr := slot
+		if chunk.offset != 0 {
+			ptr = e.nextABITemp()
+			fmt.Fprintf(out, "\n  %s = getelementptr i8, ptr %s, i64 %d", ptr, slot, chunk.offset)
+		}
+		fmt.Fprintf(out, "\n  store %s %s, ptr %s, align 1", chunk.typeName, value, ptr)
+	}
+	fmt.Fprintf(out, "\n  %s = load %s, ptr %s", e.ValueIDEmit(c.Dest), e.TypeEmit(c.Signature.ReturnType), slot)
 }
 
 func (e *Emitter) JumpEmit(out *strings.Builder, j ir.Jump) {

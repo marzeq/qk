@@ -1172,6 +1172,9 @@ func (g *Generator) generateUnaryExpr(node *parser.UnaryOpNode) ir.Operand {
 			zero = ir.FloatConstOperand("0", node.GetType())
 		}
 		g.Emit(ir.Sub{Dest: dst, Left: zero, Right: operand})
+	case parser.UnaryOpLogicalNot:
+		operand := g.GenerateExpr(node.Operand)
+		g.Emit(ir.CmpEq{Dest: dst, Left: operand, Right: ir.BoolConstOperand(false)})
 	case parser.UnaryOpReference:
 		fallthrough
 	case parser.UnaryOpMutableReference:
