@@ -783,7 +783,12 @@ func (p *Parser) parseRangeOrForEach(beginLoc shared.Location) (Node, error) {
 			p.Inc()
 		}
 
+		// Suppress struct-literal parsing for the range bound as well: the
+		// following loop body starts with '{', which would otherwise be consumed
+		// as a struct literal after an identifier bound.
+		p.parsingForEachIterable = true
 		end, err := p.ParseExpression()
+		p.parsingForEachIterable = false
 		if err != nil {
 			return nil, err
 		}

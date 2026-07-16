@@ -220,7 +220,7 @@ func (a *Analyser) visitRangeFor(n *parser.RangeForNode) {
 	sym := &symbols.Symbol{
 		Name: n.Name,
 		Kind: symbols.SymbolKindVariable,
-		Type: types.UntypedInt{},
+		Type: types.PrimitiveUsz,
 	}
 	if a.defineSymbol(sym, n) {
 		n.Symbol = sym

@@ -153,7 +153,7 @@ func (a *Attributor) attributeNode(node parser.Node) {
 		a.attributeExpr(n.Start)
 		a.attributeExpr(n.End)
 		if n.Symbol != nil {
-			n.Symbol.Type = types.UntypedInt{}
+			n.Symbol.Type = types.PrimitiveUsz
 		}
 		a.attributeNode(n.Body)
 

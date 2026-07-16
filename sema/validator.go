@@ -285,18 +285,12 @@ func (v *Validator) validateRangeFor(n *parser.RangeForNode) {
 		return
 	}
 	if n.Symbol != nil {
-		n.Symbol.Type = types.UntypedInt{}
+		n.Symbol.Type = types.PrimitiveUsz
 	}
 
 	v.validateNode(n.Body)
 
-	iteratorType := boundType
-	if n.Symbol != nil && !types.IsUntyped(n.Symbol.Type) {
-		iteratorType = n.Symbol.Type
-	}
-	if types.IsUntyped(iteratorType) {
-		iteratorType = types.PrimitiveI32
-	}
+	iteratorType := types.PrimitiveUsz
 	n.Start = v.validateExprWithExpected(n.Start, iteratorType)
 	n.End = v.validateExprWithExpected(n.End, iteratorType)
 	if n.Symbol != nil {
