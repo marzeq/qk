@@ -2,6 +2,7 @@ package tokeniser
 
 import (
 	"fmt"
+	"math/big"
 	"os"
 	"strings"
 
@@ -101,25 +102,73 @@ func (t *Tokeniser) ReadWord() string {
 }
 
 func (t *Tokeniser) ReadNumber() (string, error) {
-	s := ""
+	negative := false
 
 	if t.Peek() == '-' {
 		t.Inc()
-		s = "-"
+		negative = true
 	}
 
-	for !IsSpace(t.Peek()) && t.Peek() != '\n' {
-		if IsAlpha(t.Peek()) {
-			ch := t.Consume()
-			return "", shared.NewError(t.GetLoc(), "invalid char in number literal: %c", ch)
+	base := 10
+	prefixed := false
+	if t.Peek() == '0' {
+		switch t.Next() {
+		case 'b', 'B':
+			base, prefixed = 2, true
+		case 'o', 'O':
+			base, prefixed = 8, true
+		case 'x', 'X':
+			base, prefixed = 16, true
 		}
-		if !IsNum(t.Peek()) {
+		if prefixed {
+			t.Inc().Inc()
+		}
+	}
+
+	var digits strings.Builder
+	for !IsSpace(t.Peek()) && t.Peek() != '\n' {
+		c := t.Peek()
+		if !IsAlpha(c) && !IsNum(c) {
 			break
 		}
-		s += string(t.Consume())
+		if digitValue(c) >= base {
+			return "", shared.NewError(t.GetLoc(), "invalid digit %q for base-%d integer literal", c, base)
+		}
+		digits.WriteRune(t.Consume())
 	}
 
-	return s, nil
+	if digits.Len() == 0 {
+		return "", shared.NewError(t.GetLoc(), "expected digits in base-%d integer literal", base)
+	}
+	if prefixed && t.Peek() == '.' && t.Next() != '.' {
+		return "", shared.NewError(t.GetLoc(), "base-%d floating-point literals are not supported", base)
+	}
+
+	value := digits.String()
+	if prefixed {
+		integer, ok := new(big.Int).SetString(value, base)
+		if !ok {
+			return "", shared.NewError(t.GetLoc(), "invalid base-%d integer literal", base)
+		}
+		value = integer.String()
+	}
+	if negative {
+		value = "-" + value
+	}
+	return value, nil
+}
+
+func digitValue(c rune) int {
+	switch {
+	case c >= '0' && c <= '9':
+		return int(c - '0')
+	case c >= 'a' && c <= 'f':
+		return int(c-'a') + 10
+	case c >= 'A' && c <= 'F':
+		return int(c-'A') + 10
+	default:
+		return 36
+	}
 }
 
 func (t *Tokeniser) HanldeEscape() (string, error) {
@@ -224,6 +273,7 @@ var keywords = map[string]struct{}{
 	string(KeywordLet):      {},
 	string(KeywordMut):      {},
 	string(KeywordStruct):   {},
+	string(KeywordEnum):     {},
 	string(KeywordType):     {},
 	string(KeywordIf):       {},
 	string(KeywordElse):     {},
@@ -279,6 +329,12 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 		}
 
 		if IsNum(c) {
+			if len(t.tokens) > 0 && t.tokens[len(t.tokens)-1].Type == TokenDot && c == '0' {
+				switch t.Next() {
+				case 'b', 'B', 'o', 'O', 'x', 'X':
+					return nil, shared.NewError(t.GetLoc(), "prefixed integer literal cannot be used as a decimal fraction")
+				}
+			}
 			pos := t.GetLoc()
 			n, err := t.ReadNumber()
 			if err != nil {

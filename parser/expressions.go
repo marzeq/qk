@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"math/big"
 	"strconv"
 
 	"github.com/marzeq/qk/shared"
@@ -469,6 +470,11 @@ func (p *Parser) ParseMulDiv() (ExpressionNode, error) {
 
 func (p *Parser) ParseTerm() (ExpressionNode, error) {
 	beginLoc := p.CurrLoc()
+	if p.Match(tokeniser.TokenDot) && p.Next().Type == tokeniser.TokenIdentifier {
+		p.Inc()
+		variant := p.Consume()
+		return &EnumLiteralNode{Variant: variant.Value, Loc: beginLoc}, nil
+	}
 	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordIf) {
 		expr, err := p.ParseIfExpression()
 		if err != nil {
@@ -1027,8 +1033,90 @@ func (p *Parser) ParseType() (TypeNode, error) {
 	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordStruct) {
 		return p.ParseStructType()
 	}
+	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordEnum) {
+		return p.ParseEnumType()
+	}
 
 	return p.ParseNamedType()
+}
+
+func (p *Parser) ParseEnumType() (*EnumTypeNode, error) {
+	beginLoc := p.CurrLoc()
+	if !p.Match(tokeniser.TokenKeyword) || p.Peek().Value != string(tokeniser.KeywordEnum) {
+		return nil, shared.NewError(p.CurrLoc(), "expected 'enum'")
+	}
+	p.Inc()
+	if !p.Expect(tokeniser.TokenOpenCurly) {
+		return nil, shared.NewError(p.PrevLoc(), "expected '{' after enum")
+	}
+	variants := []string{}
+	values := []string{}
+	seen := map[string]struct{}{}
+	valueMode := -1 // 0 is implicit, 1 is explicit.
+	for {
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+		if p.Match(tokeniser.TokenCloseCurly) {
+			p.Inc()
+			break
+		}
+		variant, ok := p.ExpectGet(tokeniser.TokenIdentifier)
+		if !ok {
+			return nil, shared.NewError(p.PrevLoc(), "expected enum variant")
+		}
+		if _, exists := seen[variant.Value]; exists {
+			return nil, shared.NewError(variant.Loc, "duplicate enum variant %q", variant.Value)
+		}
+		seen[variant.Value] = struct{}{}
+		variants = append(variants, variant.Value)
+		hasExplicitValue := p.Match(tokeniser.TokenEquals)
+		mode := 0
+		if hasExplicitValue {
+			mode = 1
+		}
+		if valueMode != -1 && valueMode != mode {
+			return nil, shared.NewError(variant.Loc, "cannot mix implicit and explicit enum values")
+		}
+		valueMode = mode
+		if hasExplicitValue {
+			p.Inc()
+			value, ok := p.ExpectGet(tokeniser.TokenNumber)
+			if !ok {
+				return nil, shared.NewError(p.PrevLoc(), "expected integer literal after '=' in enum variant")
+			}
+			if !enumValueFits32Bits(value.Value) {
+				return nil, shared.NewError(value.Loc, "enum value %s does not fit in 32 bits", value.Value)
+			}
+			values = append(values, value.Value)
+		} else {
+			values = append(values, strconv.Itoa(len(variants)-1))
+		}
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+		if p.Match(tokeniser.TokenComma) {
+			p.Inc()
+			continue
+		}
+		if !p.Match(tokeniser.TokenCloseCurly) {
+			return nil, shared.NewError(p.CurrLoc(), "expected ',' or '}' after enum variant")
+		}
+	}
+	if len(variants) == 0 {
+		return nil, shared.NewError(beginLoc, "enum must declare at least one variant")
+	}
+	return &EnumTypeNode{Variants: variants, Values: values, Loc: beginLoc}, nil
+}
+
+func enumValueFits32Bits(value string) bool {
+	n, ok := new(big.Int).SetString(value, 10)
+	if !ok {
+		return false
+	}
+	min := big.NewInt(-1 << 31)
+	max := new(big.Int).SetUint64(1<<32 - 1)
+	return n.Cmp(min) >= 0 && n.Cmp(max) <= 0
 }
 
 func (p *Parser) ParseStructType() (*StructTypeNode, error) {

@@ -177,7 +177,8 @@ func (a *Analyser) visitExpression(expr parser.ExpressionNode) {
 		*parser.StringLiteralNode,
 		*parser.BoolLiteralNode,
 		*parser.CharLiteralNode,
-		*parser.NilLiteralNode:
+		*parser.NilLiteralNode,
+		*parser.EnumLiteralNode:
 
 	default:
 		panic(fmt.Sprintf("unsupported expression node type %T", e))

@@ -129,7 +129,11 @@ func (v *Validator) finaliseDeclaration(n *parser.DeclarationNode) {
 	valueType := n.Value.GetType()
 
 	if types.HasUntyped(valueType) {
-		v.errorf(n, "cannot infer declaration type from untyped numeric value; add a type annotation or cast")
+		if _, ok := valueType.(types.UnresolvedEnum); ok {
+			v.errorf(n, "cannot infer enum type for declaration; add a type annotation")
+		} else {
+			v.errorf(n, "cannot infer declaration type from untyped numeric value; add a type annotation or cast")
+		}
 		n.Symbol.Type = types.ErrorType{}
 		return
 	}
@@ -330,6 +334,9 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 	}
 
 	switch n := node.(type) {
+	case *parser.EnumLiteralNode:
+		v.errorf(n, "cannot infer enum type for .%s", n.Variant)
+		n.SetType(types.ErrorType{})
 
 	case *parser.FunctionCallNode:
 		if n.Symbol == nil || n.Symbol.Kind != symbols.SymbolKindFunction {
@@ -557,6 +564,9 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		}
 
 	case *parser.FieldAccessNode:
+		if n.IsEnumValue {
+			return
+		}
 		v.validateExpr(n.Subject)
 		subjectType := n.Subject.GetType()
 		structType, ok := subjectType.(types.StructType)
@@ -709,6 +719,22 @@ func (v *Validator) createCast(node parser.ExpressionNode, target types.Type) pa
 
 func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expected types.Type) parser.ExpressionNode {
 	switch n := node.(type) {
+	case *parser.EnumLiteralNode:
+		enumType, ok := expected.(types.EnumType)
+		if !ok {
+			v.errorf(n, "enum shorthand .%s requires an expected enum type", n.Variant)
+			n.SetType(types.ErrorType{})
+			return n
+		}
+		value, exists := enumType.VariantValue(n.Variant)
+		if !exists {
+			v.errorf(n, "enum %s has no variant %q", enumType, n.Variant)
+			n.SetType(types.ErrorType{})
+			return n
+		}
+		n.Value = value
+		n.SetType(enumType)
+		return n
 	case *parser.IntegerLiteralNode:
 		n.SetType(types.UntypedInt{})
 	case *parser.FloatLiteralNode:

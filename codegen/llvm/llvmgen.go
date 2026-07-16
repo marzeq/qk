@@ -283,6 +283,8 @@ func (e *Emitter) TypeEmit(ty types.Type) string {
 		}
 	case types.PointerType:
 		return "ptr"
+	case types.EnumType:
+		return "i32"
 	case types.StructType:
 		var sb strings.Builder
 		sb.WriteString("{ ")

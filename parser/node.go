@@ -48,13 +48,26 @@ type FieldAccessNode struct {
 	Subject ExpressionNode
 	Field   *IdentifierNode
 
-	Loc  shared.Location
-	Type types.Type
+	Loc         shared.Location
+	Type        types.Type
+	EnumValue   string
+	IsEnumValue bool
 }
 
 func (n FieldAccessNode) GetLoc() shared.Location { return n.Loc }
 func (n *FieldAccessNode) SetType(t types.Type)   { n.Type = t }
 func (n *FieldAccessNode) GetType() types.Type    { return n.Type }
+
+type EnumLiteralNode struct {
+	Variant string
+	Value   string
+	Loc     shared.Location
+	Type    types.Type
+}
+
+func (n EnumLiteralNode) GetLoc() shared.Location { return n.Loc }
+func (n *EnumLiteralNode) SetType(t types.Type)   { n.Type = t }
+func (n *EnumLiteralNode) GetType() types.Type    { return n.Type }
 
 type NamedTypeNode struct {
 	ModName string
@@ -77,6 +90,17 @@ type StructTypeNode struct {
 
 func (n StructTypeNode) GetLoc() shared.Location { return n.Loc }
 func (n StructTypeNode) _type()                  {}
+
+type EnumTypeNode struct {
+	Name     string
+	Module   string
+	Variants []string
+	Values   []string
+	Loc      shared.Location
+}
+
+func (n EnumTypeNode) GetLoc() shared.Location { return n.Loc }
+func (n EnumTypeNode) _type()                  {}
 
 type SliceTypeNode struct {
 	ElementType TypeNode

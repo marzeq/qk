@@ -7,6 +7,8 @@ This document describes the syntax accepted by the current `tokeniser` and `pars
 - Newlines and semicolons are statement separators in many positions.
 - Module-qualified names use `module:name` (colon), not dot notation.
 - Function definitions are expression-bodied or block-bodied.
+- Enums are nominal and their variants are scoped (`Color.RED`); `.RED` is accepted when a `Color` is expected.
+- Enum variants may all use implicit ordinal values or all specify integer values with `=`, but the two forms cannot be mixed in one enum.
 - `if` can be a statement and an expression.
 - `given { ... } -> expr` is an expression form.
 
@@ -22,13 +24,17 @@ sep            = newline | ";" ;
 opt_newlines   = { newline } ;
 
 identifier     = ( "_" | letter ), { "_" | letter | digit } ;
-number         = [ "-" ], digit, { digit } ;
+decimal_int    = digit, { digit } ;
+binary_int     = "0", ( "b" | "B" ), binary_digit, { binary_digit } ;
+octal_int      = "0", ( "o" | "O" ), octal_digit, { octal_digit } ;
+hex_int        = "0", ( "x" | "X" ), hex_digit, { hex_digit } ;
+number         = [ "-" ], ( decimal_int | binary_int | octal_int | hex_int ) ;
 string_lit     = '"', { string_char }, '"' ;
 char_lit       = "'", char_char, "'" ;
 
 (* float literals are parsed, not tokenised directly *)
-float_lit      = number, ".", [ number ]
-               | ".", number ;
+float_lit      = [ "-" ], decimal_int, ".", [ decimal_int ]
+               | ".", decimal_int ;
 
 bool_lit       = "true" | "false" ;
 nil_lit        = "nil" ;
@@ -190,6 +196,7 @@ term           = "(", opt_newlines, expression, opt_newlines, ")"
                | struct_literal
                | slice_literal
                | module_access
+               | enum_shorthand
                | identifier
                | bool_lit
                | nil_lit
@@ -225,6 +232,8 @@ struct_literal = [ module_access ],
 
 field_init     = identifier, "=", opt_newlines, expression ;
 
+enum_shorthand = ".", identifier ;
+
 slice_literal  = "[", expression,
                  { ( "," | newline ), opt_newlines, expression },
                  [ "," | newline ],
@@ -234,7 +243,7 @@ slice_literal  = "[", expression,
 (* Types                    *)
 (* ======================== *)
 
-type_expr      = pointer_type | slice_type | struct_type | named_type ;
+type_expr      = pointer_type | slice_type | struct_type | enum_type | named_type ;
 
 pointer_type   = "*", type_expr ;
 
@@ -251,6 +260,12 @@ struct_type    = "struct", "{", opt_newlines,
 
 struct_field   = identifier, ":", type_expr ;
 
+enum_type      = "enum", "{", opt_newlines,
+                 enum_variant, { ",", opt_newlines, enum_variant },
+                 [ "," ], opt_newlines, "}" ;
+
+enum_variant   = identifier, [ "=", number ] ;
+
 named_type     = identifier
                | identifier, ":", identifier ;
 ```
@@ -260,7 +275,7 @@ named_type     = identifier
 ### 1. Tokenisation model
 
 - Identifiers start with a letter or underscore and then continue with letters, digits, or underscore.
-- Keywords include: `let`, `mut`, `struct`, `type`, `if`, `else`, `given`, `for`, `in`, `break`, `continue`, `return`, `import`, `module`, `pub`, `and`, `or`, `not`, `true`, `false`, `nil`, `as`, `sizeof`.
+- Keywords include: `let`, `mut`, `struct`, `enum`, `type`, `if`, `else`, `given`, `for`, `in`, `break`, `continue`, `return`, `import`, `module`, `pub`, `and`, `or`, `not`, `true`, `false`, `nil`, `as`, `sizeof`.
 - Integer tokens are decimal with optional leading minus.
 - Floating-point literals are assembled by the parser from integer tokens separated by a dot (for example `12.34`, `12.`, `.34`).
 - Strings and chars support escape sequences: `\\`, `\"`, `\n`, `\r`, `\t`, `\b`, `\f`, `\v`, `\a`, `\0`.

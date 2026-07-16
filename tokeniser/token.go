@@ -71,6 +71,7 @@ const (
 	KeywordLet      KeywordKind = "let"
 	KeywordMut      KeywordKind = "mut"
 	KeywordStruct   KeywordKind = "struct"
+	KeywordEnum     KeywordKind = "enum"
 	KeywordType     KeywordKind = "type"
 	KeywordIf       KeywordKind = "if"
 	KeywordElse     KeywordKind = "else"

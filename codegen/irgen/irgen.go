@@ -131,6 +131,13 @@ func (g *Generator) generateGlobalInitializer(expr parser.ExpressionNode) ir.Ope
 		return ir.IntConstOperand(fmt.Sprint(int(node.Value)), node.GetType())
 	case *parser.NilLiteralNode:
 		return ir.NullConstOperand(node.GetType())
+	case *parser.EnumLiteralNode:
+		return ir.IntConstOperand(node.Value, node.GetType())
+	case *parser.FieldAccessNode:
+		if node.IsEnumValue {
+			return ir.IntConstOperand(node.EnumValue, node.GetType())
+		}
+		panic("global field access is not an enum value")
 	case *parser.StructLiteralNode:
 		structType, ok := node.GetType().(types.StructType)
 		if !ok {
@@ -636,6 +643,8 @@ func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
 		return ir.FloatConstOperand(n.Value, n.GetType())
 	case *parser.BoolLiteralNode:
 		return ir.BoolConstOperand(n.Value == string(tokeniser.KeywordTrue))
+	case *parser.EnumLiteralNode:
+		return ir.IntConstOperand(n.Value, n.GetType())
 	case *parser.IdentifierNode:
 		return g.generateIdentifierExpr(n)
 	case *parser.IfExprNode:
@@ -930,6 +939,9 @@ func (g *Generator) generateStructLiteralIntoSlot(slot ir.SlotID, node *parser.S
 }
 
 func (g *Generator) generateFieldAccessExpr(node *parser.FieldAccessNode) ir.Operand {
+	if node.IsEnumValue {
+		return ir.IntConstOperand(node.EnumValue, node.GetType())
+	}
 	basePtr := g.generateAddressOfExpr(node.Subject)
 
 	fieldPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: node.GetType()})

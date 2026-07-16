@@ -61,6 +61,13 @@ func (a *Analyser) resolveTypeNode(n parser.TypeNode) types.Type {
 		return types.StructType{
 			Fields: fields,
 		}
+
+	case *parser.EnumTypeNode:
+		return types.EnumType{
+			Module: t.Module, Name: t.Name,
+			Variants: append([]string(nil), t.Variants...),
+			Values:   append([]string(nil), t.Values...),
+		}
 	}
 
 	a.errorf(n, "unsupported type node")

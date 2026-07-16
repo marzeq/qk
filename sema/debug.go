@@ -100,7 +100,8 @@ func (w *debugWalker) walkExpr(expr parser.ExpressionNode) {
 		*parser.BoolLiteralNode,
 		*parser.StringLiteralNode,
 		*parser.CharLiteralNode,
-		*parser.NilLiteralNode:
+		*parser.NilLiteralNode,
+		*parser.EnumLiteralNode:
 
 	case *parser.CastNode:
 		w.walkExpr(n.Operand)
@@ -169,7 +170,7 @@ func (w *debugWalker) walkExpr(expr parser.ExpressionNode) {
 func (w *debugWalker) checkType(t types.Type) {
 	switch tt := t.(type) {
 
-	case types.UntypedInt, types.UntypedFloat:
+	case types.UntypedInt, types.UntypedFloat, types.UnresolvedEnum:
 		w.errors = append(w.errors, "untyped type remains after validation")
 
 	case types.ErrorType:
@@ -185,6 +186,8 @@ func (w *debugWalker) checkType(t types.Type) {
 		for _, field := range tt.Fields {
 			w.checkType(field.R)
 		}
+
+	case types.EnumType:
 
 	case types.FunctionType:
 		for _, p := range tt.Parameters {

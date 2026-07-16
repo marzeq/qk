@@ -172,6 +172,34 @@ type StructType struct {
 	Fields []shared.Pair[string, Type]
 }
 
+type EnumType struct {
+	Module   string
+	Name     string
+	Variants []string
+	Values   []string
+}
+
+func (e EnumType) Equals(other Type) bool {
+	o, ok := other.(EnumType)
+	return ok && e.Module == o.Module && e.Name == o.Name
+}
+func (e EnumType) CanCoerceTo(other Type) bool { return e.Equals(other) }
+func (e EnumType) CanCastTo(other Type) bool   { return e.Equals(other) }
+func (e EnumType) String() string {
+	if e.Module == "" {
+		return e.Name
+	}
+	return e.Module + ":" + e.Name
+}
+func (e EnumType) VariantValue(name string) (string, bool) {
+	for i, variant := range e.Variants {
+		if variant == name {
+			return e.Values[i], true
+		}
+	}
+	return "", false
+}
+
 func (s StructType) Equals(other Type) bool {
 	otherStruct, ok := other.(StructType)
 	if !ok {
@@ -486,9 +514,19 @@ func (u UntypedFloat) String() string {
 	return "<untyped float>"
 }
 
+type UnresolvedEnum struct{}
+
+func (u UnresolvedEnum) Equals(other Type) bool {
+	_, ok := other.(UnresolvedEnum)
+	return ok
+}
+func (u UnresolvedEnum) CanCoerceTo(other Type) bool { return false }
+func (u UnresolvedEnum) CanCastTo(other Type) bool   { return false }
+func (u UnresolvedEnum) String() string              { return "<unresolved enum>" }
+
 func IsUntyped(t Type) bool {
 	switch t.(type) {
-	case UntypedInt, UntypedFloat:
+	case UntypedInt, UntypedFloat, UnresolvedEnum:
 		return true
 	}
 	return false

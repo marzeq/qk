@@ -227,6 +227,8 @@ func (e *Emitter) typeSizeAlign(ty types.Type) (int, int) {
 		}
 	case types.PointerType:
 		return 8, 8
+	case types.EnumType:
+		return 4, 4
 	case types.StructType:
 		offset, maxAlign := 0, 1
 		for _, field := range t.Fields {
@@ -262,6 +264,8 @@ func (e *Emitter) classifyAggregate(
 		}
 	case types.PointerType:
 		e.markAggregateClass(base, 8, abiClassInteger, classes)
+	case types.EnumType:
+		e.markAggregateClass(base, 4, abiClassInteger, classes)
 	case types.PrimitiveType:
 		size, _ := e.typeSizeAlign(t)
 		class := abiClassInteger

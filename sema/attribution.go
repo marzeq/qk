@@ -214,6 +214,10 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 			Mutable: false,
 		})
 
+	case *parser.EnumLiteralNode:
+		// Leading-dot enum literals are resolved later from an expected type.
+		n.SetType(types.UnresolvedEnum{})
+
 	case *parser.StructLiteralNode:
 		for _, field := range n.Fields {
 			a.attributeExpr(field.R)
@@ -408,6 +412,21 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		}
 
 	case *parser.FieldAccessNode:
+		if ident, ok := n.Subject.(*parser.IdentifierNode); ok && ident.Symbol != nil && ident.Symbol.Kind == symbols.SymbolKindType {
+			if enumType, ok := ident.Symbol.TypeInfo.(types.EnumType); ok {
+				ident.SetType(enumType)
+				value, exists := enumType.VariantValue(n.Field.Name)
+				if !exists {
+					a.errorf(n, "enum %s has no variant %q", enumType, n.Field.Name)
+					n.SetType(types.ErrorType{})
+				} else {
+					n.IsEnumValue = true
+					n.EnumValue = value
+					n.SetType(enumType)
+				}
+				break
+			}
+		}
 		if ident, ok := n.Subject.(*parser.IdentifierNode); ok &&
 			ident.Symbol != nil && ident.Symbol.Kind == symbols.SymbolKindModule {
 			a.errorf(n, "module-qualified names use ':' rather than '.'")
@@ -438,6 +457,22 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 	case *parser.BinaryOpNode:
 		a.attributeExpr(n.Operand1)
 		a.attributeExpr(n.Operand2)
+		if literal, ok := n.Operand1.(*parser.EnumLiteralNode); ok && isUnresolvedEnum(literal.GetType()) {
+			if enumType, ok := n.Operand2.GetType().(types.EnumType); ok {
+				a.resolveEnumLiteral(literal, enumType)
+			}
+		}
+		if literal, ok := n.Operand2.(*parser.EnumLiteralNode); ok && isUnresolvedEnum(literal.GetType()) {
+			if enumType, ok := n.Operand1.GetType().(types.EnumType); ok {
+				a.resolveEnumLiteral(literal, enumType)
+			}
+		}
+		for _, operand := range []parser.ExpressionNode{n.Operand1, n.Operand2} {
+			if literal, ok := operand.(*parser.EnumLiteralNode); ok && isUnresolvedEnum(literal.GetType()) {
+				a.errorf(literal, "cannot infer enum type for .%s", literal.Variant)
+				literal.SetType(types.ErrorType{})
+			}
+		}
 
 		t1 := n.Operand1.GetType()
 		t2 := n.Operand2.GetType()
@@ -513,6 +548,22 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 	if node.GetType() == nil {
 		panic("expression without type")
 	}
+}
+
+func isUnresolvedEnum(t types.Type) bool {
+	_, ok := t.(types.UnresolvedEnum)
+	return ok
+}
+
+func (a *Attributor) resolveEnumLiteral(n *parser.EnumLiteralNode, enumType types.EnumType) {
+	value, ok := enumType.VariantValue(n.Variant)
+	if !ok {
+		a.errorf(n, "enum %s has no variant %q", enumType, n.Variant)
+		n.SetType(types.ErrorType{})
+		return
+	}
+	n.Value = value
+	n.SetType(enumType)
 }
 
 func collectFunctionReturnNodes(body []parser.Node) []*parser.ControlKeywordNode {
