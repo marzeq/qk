@@ -238,6 +238,8 @@ func (g *Generator) GenerateNode(node parser.Node) {
 		g.generateControlKeyword(n)
 	case *parser.IfNode:
 		g.generateIf(n)
+	case *parser.ForNode:
+		g.generateFor(n)
 	case *parser.FunctionCallNode:
 		g.generateFunctionCallExpr(n)
 	default:
@@ -324,6 +326,57 @@ func (g *Generator) generateControlKeyword(node *parser.ControlKeywordNode) {
 	default:
 		panic("todo")
 	}
+}
+
+func (g *Generator) generateFor(node *parser.ForNode) {
+	if len(node.ExprsOrStmts) != 3 {
+		panic("for loop must have initializer, condition, and post expression")
+	}
+
+	prevEnv := g.currentEnv
+	g.currentEnv = NewEnv(prevEnv)
+	defer func() {
+		g.currentEnv = prevEnv
+	}()
+
+	g.GenerateNode(node.ExprsOrStmts[0])
+
+	conditionBlock := g.currentFunction.NewBlock("for.condition")
+	bodyBlock := g.currentFunction.NewBlock("for.body")
+	postBlock := g.currentFunction.NewBlock("for.post")
+	endBlock := g.currentFunction.NewBlock("for.end")
+
+	if !g.currentBlockHasTerminator() {
+		g.Emit(ir.Jump{Target: conditionBlock.ID})
+	}
+
+	g.currentBlock = conditionBlock
+	condition := g.GenerateExpr(node.ExprsOrStmts[1].(parser.ExpressionNode))
+	conditionValue := g.currentFunction.NewValueOfType(types.PrimitiveBool)
+	g.Emit(ir.CmpNe{
+		Dest:  conditionValue,
+		Left:  condition,
+		Right: ir.BoolConstOperand(false),
+	})
+	g.Emit(ir.Branch{
+		Cond: ir.ValueOperand(conditionValue, types.PrimitiveBool),
+		Then: bodyBlock.ID,
+		Else: endBlock.ID,
+	})
+
+	g.currentBlock = bodyBlock
+	g.generateBlock(node.Body)
+	if !g.currentBlockHasTerminator() {
+		g.Emit(ir.Jump{Target: postBlock.ID})
+	}
+
+	g.currentBlock = postBlock
+	g.GenerateNode(node.ExprsOrStmts[2])
+	if !g.currentBlockHasTerminator() {
+		g.Emit(ir.Jump{Target: conditionBlock.ID})
+	}
+
+	g.currentBlock = endBlock
 }
 
 func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {

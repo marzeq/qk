@@ -84,7 +84,7 @@ func (v *Validator) validateNode(node parser.Node) {
 		v.validateIf(n)
 
 	case *parser.ForNode:
-		v.validateNode(n.Body)
+		v.validateFor(n)
 
 	case *parser.ControlKeywordNode:
 		if n.ReturnValue != nil {
@@ -235,6 +235,26 @@ func (v *Validator) validateIf(n *parser.IfNode) {
 	if n.ElseBranch != nil {
 		v.validateNode(n.ElseBranch)
 	}
+}
+
+func (v *Validator) validateFor(n *parser.ForNode) {
+	if len(n.ExprsOrStmts) != 3 {
+		v.errorf(n, "for loop must have initializer, condition, and post expression")
+		return
+	}
+
+	v.validateNode(n.ExprsOrStmts[0])
+	condition, ok := n.ExprsOrStmts[1].(parser.ExpressionNode)
+	if !ok {
+		v.errorf(n.ExprsOrStmts[1], "for loop condition must be an expression")
+	} else {
+		v.validateExpr(condition)
+		if !condition.GetType().Equals(types.PrimitiveBool) {
+			v.errorf(condition, "for loop condition must be bool")
+		}
+	}
+	v.validateNode(n.ExprsOrStmts[2])
+	v.validateNode(n.Body)
 }
 
 func (v *Validator) validateReturn(n *parser.ControlKeywordNode) {
