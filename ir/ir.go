@@ -262,6 +262,13 @@ type CmpGe struct {
 
 func (CmpGe) isInstr() {}
 
+type Mod struct {
+	Dest        ValueID
+	Left, Right Operand
+}
+
+func (Mod) isInstr() {}
+
 type Alloca struct {
 	Slot SlotID
 }

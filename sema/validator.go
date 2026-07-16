@@ -245,6 +245,7 @@ func (v *Validator) validateIf(n *parser.IfNode) {
 
 func (v *Validator) validateFor(n *parser.ForNode) {
 	switch len(n.ExprsOrStmts) {
+	case 0:
 	case 1:
 		condition, ok := n.ExprsOrStmts[0].(parser.ExpressionNode)
 		if !ok {

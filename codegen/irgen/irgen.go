@@ -342,6 +342,8 @@ func (g *Generator) generateFor(node *parser.ForNode) {
 	var condition parser.ExpressionNode
 	var post parser.Node
 	switch len(node.ExprsOrStmts) {
+	case 0:
+		// infinite loop
 	case 1:
 		var ok bool
 		condition, ok = node.ExprsOrStmts[0].(parser.ExpressionNode)
@@ -360,39 +362,54 @@ func (g *Generator) generateFor(node *parser.ForNode) {
 		panic("for loop must have a condition or initializer, condition, and post expression")
 	}
 
-	conditionBlock := g.currentFunction.NewBlock("for.condition")
+	var conditionBlock *ir.Block
+	if condition != nil {
+		conditionBlock = g.currentFunction.NewBlock("for.condition")
+	}
+
 	bodyBlock := g.currentFunction.NewBlock("for.body")
 	endBlock := g.currentFunction.NewBlock("for.end")
+
 	var postBlock *ir.Block
 	if post != nil {
 		postBlock = g.currentFunction.NewBlock("for.post")
 	}
 
 	if !g.currentBlockHasTerminator() {
-		g.Emit(ir.Jump{Target: conditionBlock.ID})
+		if conditionBlock != nil {
+			g.Emit(ir.Jump{Target: conditionBlock.ID})
+		} else {
+			g.Emit(ir.Jump{Target: bodyBlock.ID})
+		}
 	}
 
-	g.currentBlock = conditionBlock
-	conditionOperand := g.GenerateExpr(condition)
-	conditionValue := g.currentFunction.NewValueOfType(types.PrimitiveBool)
-	g.Emit(ir.CmpNe{
-		Dest:  conditionValue,
-		Left:  conditionOperand,
-		Right: ir.BoolConstOperand(false),
-	})
-	g.Emit(ir.Branch{
-		Cond: ir.ValueOperand(conditionValue, types.PrimitiveBool),
-		Then: bodyBlock.ID,
-		Else: endBlock.ID,
-	})
+	if conditionBlock != nil {
+		g.currentBlock = conditionBlock
+
+		conditionOperand := g.GenerateExpr(condition)
+		conditionValue := g.currentFunction.NewValueOfType(types.PrimitiveBool)
+
+		g.Emit(ir.CmpNe{
+			Dest:  conditionValue,
+			Left:  conditionOperand,
+			Right: ir.BoolConstOperand(false),
+		})
+		g.Emit(ir.Branch{
+			Cond: ir.ValueOperand(conditionValue, types.PrimitiveBool),
+			Then: bodyBlock.ID,
+			Else: endBlock.ID,
+		})
+	}
 
 	g.currentBlock = bodyBlock
 	g.generateBlock(node.Body)
 	if !g.currentBlockHasTerminator() {
 		if postBlock != nil {
 			g.Emit(ir.Jump{Target: postBlock.ID})
-		} else {
+		} else if conditionBlock != nil {
 			g.Emit(ir.Jump{Target: conditionBlock.ID})
+		} else {
+			g.Emit(ir.Jump{Target: bodyBlock.ID})
 		}
 	}
 
@@ -400,7 +417,11 @@ func (g *Generator) generateFor(node *parser.ForNode) {
 		g.currentBlock = postBlock
 		g.GenerateNode(post)
 		if !g.currentBlockHasTerminator() {
-			g.Emit(ir.Jump{Target: conditionBlock.ID})
+			if conditionBlock != nil {
+				g.Emit(ir.Jump{Target: conditionBlock.ID})
+			} else {
+				g.Emit(ir.Jump{Target: bodyBlock.ID})
+			}
 		}
 	}
 
@@ -1062,8 +1083,10 @@ func (g *Generator) generateBinaryExpr(node *parser.BinaryOpNode) ir.Operand {
 		g.Emit(ir.CmpGt{Dest: dst, Left: left, Right: right})
 	case parser.BinaryOpGreaterEqual:
 		g.Emit(ir.CmpGe{Dest: dst, Left: left, Right: right})
+	case parser.BinaryOpModulo:
+		g.Emit(ir.Mod{Dest: dst, Left: left, Right: right})
 	default:
-		panic("todo")
+		panic(fmt.Sprintf("todo: generate binary expr for op %v", node.Op))
 	}
 
 	return ir.ValueOperand(dst, node.GetType())

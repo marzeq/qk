@@ -413,6 +413,8 @@ func (e *Emitter) InstrEmit(out *strings.Builder, instr ir.Instr) {
 		e.CmpLeEmit(out, instr)
 	case ir.CmpGe:
 		e.CmpGeEmit(out, instr)
+	case ir.Mod:
+		e.ModEmit(out, instr)
 	case ir.Alloca:
 		e.AllocaEmit(out, instr)
 	case ir.Load:
@@ -529,6 +531,16 @@ func (e *Emitter) DivEmit(out *strings.Builder, d ir.Div) {
 		instr = "udiv"
 	}
 	fmt.Fprintf(out, "%s = %s %s %s, %s", e.ValueIDEmit(d.Dest), instr, e.TypeEmit(d.Left.Type), e.OperandEmit(d.Left), e.OperandEmit(d.Right))
+}
+
+func (e *Emitter) ModEmit(out *strings.Builder, m ir.Mod) {
+	instr := "srem"
+	if types.IsFloat(m.Left.Type) {
+		instr = "frem"
+	} else if types.IsUnsigned(m.Left.Type) {
+		instr = "urem"
+	}
+	fmt.Fprintf(out, "%s = %s %s %s, %s", e.ValueIDEmit(m.Dest), instr, e.TypeEmit(m.Left.Type), e.OperandEmit(m.Left), e.OperandEmit(m.Right))
 }
 
 func (e *Emitter) CmpEqEmit(out *strings.Builder, c ir.CmpEq) {

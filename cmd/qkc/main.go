@@ -172,12 +172,15 @@ func main() {
 			if exitErr, ok := err.(*exec.ExitError); ok {
 				code := exitErr.ExitCode()
 				fmt.Printf("\nExit code: %d\n", code)
+				os.Remove(args.output)
 				os.Exit(code)
 			}
 			check(err)
 		}
 
 		fmt.Println("\nExit code: 0")
+		os.Remove(args.output)
+		os.Exit(0)
 	}
 }
 

@@ -869,7 +869,7 @@ func (p *Parser) ParseSliceLiteral() (*SliceLiteralNode, error) {
 	}
 	var elements []ExpressionNode
 	for {
-		if p.Match(tokeniser.TokenCloseCurly) {
+		if p.Match(tokeniser.TokenCloseSquare) {
 			break
 		}
 		elem, err := p.ParseExpression()
