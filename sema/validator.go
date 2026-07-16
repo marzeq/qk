@@ -389,7 +389,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		}
 
 		if !n.Operand.GetType().CanCastTo(n.Type) {
-			v.errorf(n, "invalid cast")
+			v.errorf(n, "cannot cast %v to %v", n.Operand.GetType(), n.Type)
 		}
 
 	case *parser.UnaryOpNode:
@@ -410,14 +410,20 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			}
 
 		case parser.UnaryOpReference:
-
+			fallthrough
 		case parser.UnaryOpMutableReference:
-			if id, ok := n.Operand.(*parser.IdentifierNode); ok {
-				if id.Symbol != nil && !id.Symbol.Mutable {
+
+			switch op := n.Operand.(type) {
+			case *parser.IdentifierNode:
+				if n.Op == parser.UnaryOpMutableReference && op.Symbol != nil && !op.Symbol.Mutable {
 					v.errorf(n, "taking mutable reference of immutable variable")
 				}
-			} else {
-				panic(fmt.Sprintf("todo: taking reference of non-identifier expression %T", n.Operand))
+			case *parser.FieldAccessNode:
+				panic(fmt.Sprintf("todo: taking reference of field access expression %T", n.Operand))
+			case *parser.IndexExprNode:
+				panic(fmt.Sprintf("todo: taking reference of index expression %T", n.Operand))
+			default:
+				v.errorf(n, "cannot take reference of this expression")
 			}
 
 		case parser.UnaryOpDereference:

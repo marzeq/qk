@@ -303,7 +303,7 @@ func (e *Emitter) TypeEmit(ty types.Type) string {
 		sb.WriteString(")")
 		return sb.String()
 	default:
-		panic("unreachable")
+		panic(fmt.Sprintf("unsupported type: %T", ty))
 	}
 }
 

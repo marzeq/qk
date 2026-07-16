@@ -237,12 +237,12 @@ func (p PointerType) CanCoerceTo(other Type) bool {
 		return false
 	}
 
-	if p.Base.Equals(PrimitiveVoid) || otherPointer.Base.Equals(PrimitiveVoid) {
-		return true
-	}
-
 	if !p.Mutable && otherPointer.Mutable {
 		return false
+	}
+
+	if p.Base.Equals(PrimitiveVoid) || otherPointer.Base.Equals(PrimitiveVoid) {
+		return true
 	}
 
 	return p.Base.CanCoerceTo(otherPointer.Base)
