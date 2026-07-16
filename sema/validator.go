@@ -244,22 +244,34 @@ func (v *Validator) validateIf(n *parser.IfNode) {
 }
 
 func (v *Validator) validateFor(n *parser.ForNode) {
-	if len(n.ExprsOrStmts) != 3 {
-		v.errorf(n, "for loop must have initializer, condition, and post expression")
+	switch len(n.ExprsOrStmts) {
+	case 1:
+		condition, ok := n.ExprsOrStmts[0].(parser.ExpressionNode)
+		if !ok {
+			v.errorf(n.ExprsOrStmts[0], "for loop condition must be an expression")
+		} else {
+			v.validateExpr(condition)
+			if !condition.GetType().Equals(types.PrimitiveBool) {
+				v.errorf(condition, "for loop condition must be bool")
+			}
+		}
+	case 3:
+		v.validateNode(n.ExprsOrStmts[0])
+		condition, ok := n.ExprsOrStmts[1].(parser.ExpressionNode)
+		if !ok {
+			v.errorf(n.ExprsOrStmts[1], "for loop condition must be an expression")
+		} else {
+			v.validateExpr(condition)
+			if !condition.GetType().Equals(types.PrimitiveBool) {
+				v.errorf(condition, "for loop condition must be bool")
+			}
+		}
+		v.validateNode(n.ExprsOrStmts[2])
+	default:
+		v.errorf(n, "for loop must have a condition or initializer, condition, and post expression")
 		return
 	}
 
-	v.validateNode(n.ExprsOrStmts[0])
-	condition, ok := n.ExprsOrStmts[1].(parser.ExpressionNode)
-	if !ok {
-		v.errorf(n.ExprsOrStmts[1], "for loop condition must be an expression")
-	} else {
-		v.validateExpr(condition)
-		if !condition.GetType().Equals(types.PrimitiveBool) {
-			v.errorf(condition, "for loop condition must be bool")
-		}
-	}
-	v.validateNode(n.ExprsOrStmts[2])
 	v.validateNode(n.Body)
 }
 
@@ -267,21 +279,29 @@ func (v *Validator) validateRangeFor(n *parser.RangeForNode) {
 	v.validateExpr(n.Start)
 	v.validateExpr(n.End)
 
-	common := types.PromoteNumeric(n.Start.GetType(), n.End.GetType())
-	if !types.IsInteger(common) {
+	boundType := types.PromoteNumeric(n.Start.GetType(), n.End.GetType())
+	if !types.IsInteger(boundType) {
 		v.errorf(n, "range bounds must be integer types")
 		return
 	}
-	if types.IsUntyped(common) {
-		common = types.PrimitiveI32
+	if n.Symbol != nil {
+		n.Symbol.Type = types.UntypedInt{}
 	}
 
-	n.Start = v.validateExprWithExpected(n.Start, common)
-	n.End = v.validateExprWithExpected(n.End, common)
-	if n.Symbol != nil {
-		n.Symbol.Type = common
-	}
 	v.validateNode(n.Body)
+
+	iteratorType := boundType
+	if n.Symbol != nil && !types.IsUntyped(n.Symbol.Type) {
+		iteratorType = n.Symbol.Type
+	}
+	if types.IsUntyped(iteratorType) {
+		iteratorType = types.PrimitiveI32
+	}
+	n.Start = v.validateExprWithExpected(n.Start, iteratorType)
+	n.End = v.validateExprWithExpected(n.End, iteratorType)
+	if n.Symbol != nil {
+		n.Symbol.Type = iteratorType
+	}
 }
 
 func (v *Validator) validateForEach(n *parser.ForEachNode) {
@@ -676,6 +696,13 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 	case *parser.GivenExprNode:
 		v.validateNode(n.Block)
 		n.FinalExpr = v.validateExprWithExpected(n.FinalExpr, expected)
+		n.SetType(expected)
+		return n
+	}
+
+	if n, ok := node.(*parser.IdentifierNode); ok &&
+		types.IsUntyped(n.GetType()) && !types.IsUntyped(expected) {
+		n.Symbol.Type = expected
 		n.SetType(expected)
 		return n
 	}

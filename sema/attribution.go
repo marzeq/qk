@@ -161,7 +161,7 @@ func (a *Attributor) attributeNode(node parser.Node) {
 		a.attributeExpr(n.Start)
 		a.attributeExpr(n.End)
 		if n.Symbol != nil {
-			n.Symbol.Type = types.PromoteNumeric(n.Start.GetType(), n.End.GetType())
+			n.Symbol.Type = types.UntypedInt{}
 		}
 		a.attributeNode(n.Body)
 

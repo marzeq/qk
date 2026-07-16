@@ -333,33 +333,51 @@ func (g *Generator) generateControlKeyword(node *parser.ControlKeywordNode) {
 }
 
 func (g *Generator) generateFor(node *parser.ForNode) {
-	if len(node.ExprsOrStmts) != 3 {
-		panic("for loop must have initializer, condition, and post expression")
-	}
-
 	prevEnv := g.currentEnv
 	g.currentEnv = NewEnv(prevEnv)
 	defer func() {
 		g.currentEnv = prevEnv
 	}()
 
-	g.GenerateNode(node.ExprsOrStmts[0])
+	var condition parser.ExpressionNode
+	var post parser.Node
+	switch len(node.ExprsOrStmts) {
+	case 1:
+		var ok bool
+		condition, ok = node.ExprsOrStmts[0].(parser.ExpressionNode)
+		if !ok {
+			panic("for loop condition must be an expression")
+		}
+	case 3:
+		g.GenerateNode(node.ExprsOrStmts[0])
+		var ok bool
+		condition, ok = node.ExprsOrStmts[1].(parser.ExpressionNode)
+		if !ok {
+			panic("for loop condition must be an expression")
+		}
+		post = node.ExprsOrStmts[2]
+	default:
+		panic("for loop must have a condition or initializer, condition, and post expression")
+	}
 
 	conditionBlock := g.currentFunction.NewBlock("for.condition")
 	bodyBlock := g.currentFunction.NewBlock("for.body")
-	postBlock := g.currentFunction.NewBlock("for.post")
 	endBlock := g.currentFunction.NewBlock("for.end")
+	var postBlock *ir.Block
+	if post != nil {
+		postBlock = g.currentFunction.NewBlock("for.post")
+	}
 
 	if !g.currentBlockHasTerminator() {
 		g.Emit(ir.Jump{Target: conditionBlock.ID})
 	}
 
 	g.currentBlock = conditionBlock
-	condition := g.GenerateExpr(node.ExprsOrStmts[1].(parser.ExpressionNode))
+	conditionOperand := g.GenerateExpr(condition)
 	conditionValue := g.currentFunction.NewValueOfType(types.PrimitiveBool)
 	g.Emit(ir.CmpNe{
 		Dest:  conditionValue,
-		Left:  condition,
+		Left:  conditionOperand,
 		Right: ir.BoolConstOperand(false),
 	})
 	g.Emit(ir.Branch{
@@ -371,13 +389,19 @@ func (g *Generator) generateFor(node *parser.ForNode) {
 	g.currentBlock = bodyBlock
 	g.generateBlock(node.Body)
 	if !g.currentBlockHasTerminator() {
-		g.Emit(ir.Jump{Target: postBlock.ID})
+		if postBlock != nil {
+			g.Emit(ir.Jump{Target: postBlock.ID})
+		} else {
+			g.Emit(ir.Jump{Target: conditionBlock.ID})
+		}
 	}
 
-	g.currentBlock = postBlock
-	g.GenerateNode(node.ExprsOrStmts[2])
-	if !g.currentBlockHasTerminator() {
-		g.Emit(ir.Jump{Target: conditionBlock.ID})
+	if postBlock != nil {
+		g.currentBlock = postBlock
+		g.GenerateNode(post)
+		if !g.currentBlockHasTerminator() {
+			g.Emit(ir.Jump{Target: conditionBlock.ID})
+		}
 	}
 
 	g.currentBlock = endBlock
@@ -1051,7 +1075,11 @@ func (g *Generator) generateUnaryExpr(node *parser.UnaryOpNode) ir.Operand {
 	switch node.Op {
 	case parser.UnaryOpNegate:
 		operand := g.GenerateExpr(node.Operand)
-		g.Emit(ir.Sub{Dest: dst, Left: ir.IntConstOperand("0", node.GetType()), Right: operand})
+		zero := ir.IntConstOperand("0", node.GetType())
+		if types.IsFloat(node.GetType()) {
+			zero = ir.FloatConstOperand("0", node.GetType())
+		}
+		g.Emit(ir.Sub{Dest: dst, Left: zero, Right: operand})
 	case parser.UnaryOpReference:
 		return g.generateAddressOfExpr(node.Operand)
 	case parser.UnaryOpDereference:
