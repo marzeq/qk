@@ -157,6 +157,28 @@ func main() {
 	if args.keepBuildDir {
 		fmt.Printf("kept build directory: %s\n", buildDir)
 	}
+
+	if args.run {
+		output, err := filepath.Abs(args.output)
+		check(err)
+
+		cmd := exec.Command(output)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		cmd.Stdin = os.Stdin
+
+		err = cmd.Run()
+		if err != nil {
+			if exitErr, ok := err.(*exec.ExitError); ok {
+				code := exitErr.ExitCode()
+				fmt.Printf("\nExit code: %d\n", code)
+				os.Exit(code)
+			}
+			check(err)
+		}
+
+		fmt.Println("\nExit code: 0")
+	}
 }
 
 func parseFile(path string) (*parser.RootNode, error) {

@@ -51,7 +51,7 @@ type Args struct {
 	linkArgs     []string
 	libs         []string
 	libraryPaths []string
-	nprocs       int
+	run          bool
 }
 
 func parseOptLevel(level string) (OptimisationLevel, error) {
@@ -177,6 +177,10 @@ func (p *argumentParser) parseCurrent() error {
 		}
 		p.args.outputType = outputType
 
+	case tok == "-run":
+		p.args.run = true
+		p.index++
+
 	case tok == "-m":
 		value, err := p.nextValue(tok)
 		if err != nil {
@@ -269,6 +273,10 @@ func (p *argumentParser) parseCurrent() error {
 		printUsage()
 		os.Exit(0)
 
+	case tok == "-v" || tok == "--version":
+		printVersion()
+		os.Exit(0)
+
 	default:
 		if strings.HasPrefix(tok, "-") {
 			return fmt.Errorf("unknown argument: %s", tok)
@@ -292,6 +300,7 @@ func printUsage() {
 	fmt.Println("Options:")
 	fmt.Println("  -E <dir>           Exclude directory or file from source file search (can specify multiple times)")
 	fmt.Println("  -o <file>          Output file name")
+	fmt.Println("  -run               Automatically run output executable")
 	fmt.Println("  -m <module>        Root module name (default: main)")
 	fmt.Println("  -t <type>          Output type (exe, obj, so)")
 	fmt.Println("  -O <level>         Optimisation level (0, 1, 2, 3, s, z, fast, g)")
@@ -303,6 +312,10 @@ func printUsage() {
 	fmt.Println("  -Xlink <args>      Additional arguments to pass to clang when linking the final executable")
 	fmt.Println("  -L <path>          Add library search path (can specify multiple times)")
 	fmt.Println("  -no-emit           Do not emit any output files, just check for errors")
+}
+
+func printVersion() {
+	fmt.Println("qk compiler version (in development)")
 }
 
 func finaliseArgs(args *Args) error {
@@ -369,6 +382,10 @@ func finaliseArgs(args *Args) error {
 				return fmt.Errorf("cannot infer output type from extension: %s", ext)
 			}
 		}
+	}
+
+	if args.run && args.outputType != OutputExecutable {
+		return fmt.Errorf("cannot run non-executable output")
 	}
 
 	return nil
