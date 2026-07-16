@@ -5,9 +5,7 @@ import (
 
 	"github.com/marzeq/qk/codegen/irgen"
 	"github.com/marzeq/qk/ir"
-	"github.com/marzeq/qk/parser"
 	"github.com/marzeq/qk/sema"
-	"github.com/marzeq/qk/shared"
 )
 
 func ComputeModuleOrder(mods map[string]*ModuleInfo) ([]string, []error) {
@@ -74,10 +72,6 @@ func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, o
 
 	warnings = append(warnings, validator.Warnings()...)
 
-	if errs := checkExternConflicts(mods, order); len(errs) > 0 {
-		return errs, nil
-	}
-
 	if verbose && debug {
 		fmt.Println("completed validation phase")
 	}
@@ -124,46 +118,4 @@ func GenerateIRModules(mods map[string]*ModuleInfo, mainModule string, order []s
 	}
 
 	return irMods, nil
-}
-
-func checkExternConflicts(mods map[string]*ModuleInfo, order []string) []error {
-	type firstExtern struct {
-		module string
-	}
-
-	seen := make(map[string]firstExtern)
-	var errs []error
-
-	for _, moduleName := range order {
-		info := mods[moduleName]
-		if info == nil {
-			continue
-		}
-
-		for _, root := range info.Roots {
-			for _, node := range root.Body {
-				fn, ok := node.(*parser.FunctionDefNode)
-				if !ok || !fn.Extern {
-					continue
-				}
-
-				if prev, exists := seen[fn.Name]; exists && prev.module != moduleName {
-					errs = append(errs, shared.NewError(
-						fn.GetLoc(),
-						"extern function %q conflicts across modules %q and %q; extern functions are not mangled",
-						fn.Name,
-						prev.module,
-						moduleName,
-					))
-					continue
-				}
-
-				if _, exists := seen[fn.Name]; !exists {
-					seen[fn.Name] = firstExtern{module: moduleName}
-				}
-			}
-		}
-	}
-
-	return errs
 }

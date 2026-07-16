@@ -19,7 +19,6 @@ type Symbol struct {
 	Kind       SymbolKind
 	Mutable    bool
 	Public     bool
-	Extern     bool
 	Attributes attributes.Attributes
 
 	Type      types.Type         // for SymbolKindVariable

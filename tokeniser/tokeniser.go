@@ -223,7 +223,6 @@ func (t *Tokeniser) AddToken(ttype TokenKind, loc shared.Location, _value ...str
 var keywords = map[string]struct{}{
 	string(KeywordLet):      {},
 	string(KeywordMut):      {},
-	string(KeywordExtern):   {},
 	string(KeywordStruct):   {},
 	string(KeywordType):     {},
 	string(KeywordIf):       {},

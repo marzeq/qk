@@ -65,7 +65,6 @@ type KeywordKind string
 const (
 	KeywordLet      KeywordKind = "let"
 	KeywordMut      KeywordKind = "mut"
-	KeywordExtern   KeywordKind = "extern"
 	KeywordStruct   KeywordKind = "struct"
 	KeywordType     KeywordKind = "type"
 	KeywordIf       KeywordKind = "if"

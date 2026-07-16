@@ -66,7 +66,6 @@ func (a *Analyser) collectFunctionSignature(n *parser.FunctionDefNode) {
 		Kind:       symbols.SymbolKindFunction,
 		Signature:  sig,
 		Public:     n.Pub,
-		Extern:     n.Extern,
 		Attributes: n.Attributes,
 	}
 

@@ -54,7 +54,7 @@ func (a *Attributor) attributeNode(node parser.Node) {
 		foreignAttr := n.Attributes.Get(attributes.AttributeTypeForeign)
 
 		if foreignAttr != nil && n.RetTypeNode == nil {
-			a.errorf(n, "extern function must have a return type annotation")
+			a.errorf(n, "foreign function must have a return type annotation")
 		}
 
 		if n.Symbol.Signature.ReturnType == nil {

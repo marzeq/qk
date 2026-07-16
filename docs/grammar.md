@@ -42,12 +42,19 @@ program        = { sep }, [ top_item, { sep, top_item } ], { sep } ;
 top_item       = module_decl
                | import_decl
                | let_top_item
-               | extern_fn_def
                | pub_top_item ;
 
-pub_top_item   = "pub", ( let_top_item | extern_fn_def ) ;
+pub_top_item   = "pub", let_top_item ;
 
-module_decl    = "module", identifier ;
+module_decl    = "module", identifier, { opt_newlines, module_attribute } ;
+
+module_attribute = links_attribute ;
+links_attribute  = "@", "links", "(", opt_newlines,
+                   link_entry,
+                   { ",", opt_newlines, link_entry },
+                   [ "," ], opt_newlines,
+                   ")" ;
+link_entry       = ( "lib" | "path" | "search" ), string_lit ;
 
 import_decl    = "import", (
                    identifier
@@ -70,7 +77,6 @@ block          = "{", opt_newlines,
 
 statement      = declaration
                | fn_def
-               | extern_fn_def
                | type_alias
                | assignment
                | index_assignment
@@ -115,16 +121,13 @@ type_alias     = "let", identifier, "=", "type", type_expr ;
 fn_def         = "let", identifier,
                  "(", [ fn_param_list | "..." ], ")",
                  [ ":", type_expr ],
-                 "=", opt_newlines,
-                 ( block | expression | extern_binding ) ;
+                 { function_attribute },
+                 ( block | "=", opt_newlines, expression | foreign_attribute ) ;
 
-extern_fn_def  = "extern", "let", identifier,
-                 "(", [ fn_param_list | "..." ], ")",
-                 [ ":", type_expr ],
-                 "=", opt_newlines,
-                 ( block | expression | extern_binding ) ;
-
-extern_binding = "extern", "(", string_lit, ")" ;
+function_attribute = "@", ( "inline" | "noinline" | "noreturn" )
+                   | foreign_attribute
+                   | "@", "export", "(", string_lit, ")" ;
+foreign_attribute  = "@", "foreign", [ "(", string_lit, ")" ] ;
 
 fn_param_list  = fn_param, { ",", fn_param } ;
 fn_param       = [ "mut" ], identifier, ":", type_expr ;
@@ -250,7 +253,7 @@ named_type     = identifier
 ### 1. Tokenisation model
 
 - Identifiers start with a letter or underscore and then continue with letters, digits, or underscore.
-- Keywords include: `let`, `mut`, `extern`, `struct`, `type`, `if`, `else`, `given`, `for`, `in`, `break`, `continue`, `return`, `import`, `module`, `pub`, `and`, `or`, `not`, `true`, `false`, `nil`, `as`, `sizeof`.
+- Keywords include: `let`, `mut`, `struct`, `type`, `if`, `else`, `given`, `for`, `in`, `break`, `continue`, `return`, `import`, `module`, `pub`, `and`, `or`, `not`, `true`, `false`, `nil`, `as`, `sizeof`.
 - Integer tokens are decimal with optional leading minus.
 - Floating-point literals are assembled by the parser from integer tokens separated by a dot (for example `12.34`, `12.`, `.34`).
 - Strings and chars support escape sequences: `\\`, `\"`, `\n`, `\r`, `\t`, `\b`, `\f`, `\v`, `\a`, `\0`.
@@ -260,8 +263,8 @@ named_type     = identifier
 ### 2. Program structure
 
 - A file is a sequence of top-level items separated by newline or semicolon.
-- Accepted top-level forms are: `module`, `import`, `let ...` definitions/declarations/type aliases, and `extern let ...` function definitions.
-- `pub` is only accepted before `let ...` or `extern let ...` forms that result in function, declaration, or type-alias nodes.
+- Accepted top-level forms are: `module`, `import`, and `let ...` definitions/declarations/type aliases.
+- `pub` is only accepted before `let ...` forms that result in function, declaration, or type-alias nodes.
 
 ### 3. Functions
 
@@ -270,9 +273,10 @@ named_type     = identifier
   - `let name(args): Ret = { ... }`
 - Parameters are `name: Type` with optional `mut`.
 - Variadic marker `...` is accepted in parameter lists.
-- External symbol binding is expressed in function body position:
-  - `let puts(...): i32 = extern("puts")`
-- Current parser behavior rejects variadics unless using the `extern("...")` binding form.
+- Foreign functions use the `@foreign` attribute and have no body:
+  - `let puts(...): i32 @foreign("puts")`
+- Variadic functions must be foreign.
+- Defined functions can expose a stable linker symbol with `@export("symbol_name")`.
 
 ### 4. Statements and separators
 

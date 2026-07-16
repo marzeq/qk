@@ -7,29 +7,56 @@ const (
 	AttributeTypeInline   AttributeType = "inline"
 	AttributeTypeNoInline AttributeType = "noinline"
 	AttributeTypeForeign  AttributeType = "foreign"
+	AttributeTypeLinks    AttributeType = "links"
+	AttributeTypeExport   AttributeType = "export"
 )
 
 type Attribute interface {
 	GetType() AttributeType // marker method
 }
 
-type FunctionAttributeNoReturn struct{}
+type AttributeNoReturn struct{}
 
-func (a FunctionAttributeNoReturn) GetType() AttributeType { return AttributeTypeNoReturn }
+func (a AttributeNoReturn) GetType() AttributeType { return AttributeTypeNoReturn }
 
-type FunctionAttributeInline struct{}
+type AttributeInline struct{}
 
-func (a FunctionAttributeInline) GetType() AttributeType { return AttributeTypeInline }
+func (a AttributeInline) GetType() AttributeType { return AttributeTypeInline }
 
-type FunctionAttributeNoInline struct{}
+type AttributeNoInline struct{}
 
-func (a FunctionAttributeNoInline) GetType() AttributeType { return AttributeTypeNoInline }
+func (a AttributeNoInline) GetType() AttributeType { return AttributeTypeNoInline }
 
 type FunctionAttributeForeign struct {
 	From string
 }
 
 func (a FunctionAttributeForeign) GetType() AttributeType { return AttributeTypeForeign }
+
+type LinkKind uint8
+
+const (
+	LinkLibrary LinkKind = iota
+	LinkPath
+	LinkSearchPath
+)
+
+type Link struct {
+	Kind  LinkKind
+	Value string
+}
+
+type ModuleAttributeLinks struct {
+	Links []Link
+}
+
+func (a ModuleAttributeLinks) GetType() AttributeType { return AttributeTypeLinks }
+
+type FunctionAttributeExport struct {
+	As string
+}
+
+func (a FunctionAttributeExport) GetType() AttributeType { return AttributeTypeExport }
 
 type Attributes []Attribute
 

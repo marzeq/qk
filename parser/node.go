@@ -388,8 +388,9 @@ type ImportNode struct {
 func (n ImportNode) GetLoc() shared.Location { return n.Loc }
 
 type ModuleNode struct {
-	Name string
-	Loc  shared.Location
+	Name       string
+	Attributes attributes.Attributes
+	Loc        shared.Location
 }
 
 func (n ModuleNode) GetLoc() shared.Location { return n.Loc }
@@ -409,7 +410,6 @@ type FunctionDefNode struct {
 	RetTypeNode TypeNode
 	Body        Node
 	HasVariadic bool
-	Extern      bool
 	Pub         bool
 	Attributes  attributes.Attributes
 	Loc         shared.Location

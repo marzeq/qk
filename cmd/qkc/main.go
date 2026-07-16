@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/marzeq/qk/attributes"
 	"github.com/marzeq/qk/codegen/llvm"
 	"github.com/marzeq/qk/ir"
 	"github.com/marzeq/qk/loader"
@@ -155,7 +156,13 @@ func main() {
 		}
 	}
 
-	err = linkObjects(objFiles, args)
+	var moduleLinks []attributes.Link
+	for _, moduleName := range order {
+		if module := modules[moduleName]; module != nil {
+			moduleLinks = append(moduleLinks, module.Links...)
+		}
+	}
+	err = linkObjects(objFiles, moduleLinks, args)
 	check(err)
 
 	if args.keepBuildDir {
@@ -390,8 +397,8 @@ func compileLLVMModules(buildDir string, order []string, args *Args) ([]string, 
 	return objFiles, nil
 }
 
-func linkObjects(objFiles []string, config *Args) error {
-	args, err := buildLinkArgs(objFiles, config)
+func linkObjects(objFiles []string, moduleLinks []attributes.Link, config *Args) error {
+	args, err := buildLinkArgs(objFiles, moduleLinks, config)
 	if err != nil {
 		return err
 	}
@@ -408,7 +415,7 @@ func linkObjects(objFiles []string, config *Args) error {
 	return nil
 }
 
-func buildLinkArgs(objFiles []string, config *Args) ([]string, error) {
+func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, config *Args) ([]string, error) {
 	args := append([]string{}, objFiles...)
 
 	switch config.outputType {
@@ -438,6 +445,18 @@ func buildLinkArgs(objFiles []string, config *Args) ([]string, error) {
 
 	if len(config.linkArgs) > 0 {
 		args = append(args, config.linkArgs...)
+	}
+	for _, link := range moduleLinks {
+		switch link.Kind {
+		case attributes.LinkLibrary:
+			args = append(args, "-l"+link.Value)
+		case attributes.LinkPath:
+			args = append(args, link.Value)
+		case attributes.LinkSearchPath:
+			args = append(args, "-L"+link.Value)
+		default:
+			return nil, fmt.Errorf("unknown module link kind %d", link.Kind)
+		}
 	}
 
 	for _, lib := range config.libs {

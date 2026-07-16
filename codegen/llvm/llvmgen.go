@@ -20,7 +20,7 @@ type Emitter struct {
 	TargetTriple string
 	Executable   bool
 	currentFn    *ir.Function
-	externMap    map[string]string // qk name -> actual external symbol name for functions with body extern("...")
+	externMap    map[string]string // qk name -> actual symbol name for @foreign functions
 	stringMap    map[string]string // literal value -> global name
 	stringDefs   []string
 	abiTemp      int
@@ -162,6 +162,7 @@ func (e *Emitter) EmitFunction(out *strings.Builder, fn *ir.Function) {
 			out.WriteString("alwaysinline ")
 		case attributes.AttributeTypeNoReturn:
 			out.WriteString("noreturn ")
+		case attributes.AttributeTypeExport:
 		default:
 			panic(fmt.Sprintf("unsupported attribute type for function: %s", at))
 		}

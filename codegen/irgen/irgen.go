@@ -156,10 +156,14 @@ func (g *Generator) generateGlobalInitializer(expr parser.ExpressionNode) ir.Ope
 
 func (g *Generator) GenerateFunction(fn *parser.FunctionDefNode) {
 	name := fn.Name
-	if !fn.Extern && !g.isProgramEntryFunction(fn.Name) {
+	exported := false
+	if export, ok := fn.Attributes.Get(attributes.AttributeTypeExport).(attributes.FunctionAttributeExport); ok {
+		name = export.As
+		exported = true
+	} else if !g.isProgramEntryFunction(fn.Name) {
 		name = g.mangleFunctionName(g.ModuleName, fn.Name)
 	}
-	irFn := ir.NewFunction(name, fn.Extern, fn.Attributes)
+	irFn := ir.NewFunction(name, exported, fn.Attributes)
 	irFn.Signature = g.buildFunctionSignature(fn)
 	g.Module.AddFunction(irFn)
 
@@ -1052,7 +1056,9 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 			g.addExternForCall(node.Symbol.Name, callSig, foreign.From)
 		}
 
-		if !node.Symbol.Extern && foreignAttr == nil {
+		if export, ok := node.Symbol.Attributes.Get(attributes.AttributeTypeExport).(attributes.FunctionAttributeExport); ok {
+			name = export.As
+		} else if foreignAttr == nil {
 			callModule := g.ModuleName
 			if node.Name != nil && node.Name.Module != "" {
 				callModule = node.Name.Module

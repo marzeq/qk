@@ -238,8 +238,7 @@ func (p *Parser) parseTopLevel() (Node, error) {
 	isPublic := p.Peek().Value == string(tokeniser.KeywordPub)
 	if isPublic {
 		p.Inc()
-		if !p.Match(tokeniser.TokenKeyword) ||
-			(p.Peek().Value != string(tokeniser.KeywordLet) && p.Peek().Value != string(tokeniser.KeywordExtern)) {
+		if !p.Match(tokeniser.TokenKeyword) || p.Peek().Value != string(tokeniser.KeywordLet) {
 			return nil, e
 		}
 	}
@@ -247,7 +246,7 @@ func (p *Parser) parseTopLevel() (Node, error) {
 	var node Node
 	var err error
 	switch p.Peek().Value {
-	case string(tokeniser.KeywordLet), string(tokeniser.KeywordExtern):
+	case string(tokeniser.KeywordLet):
 		node, _, err = p.ParseStatement()
 	case string(tokeniser.KeywordImport):
 		node, err = p.ParseImport()
@@ -281,7 +280,7 @@ func isTopLevelStart(tok tokeniser.Token) bool {
 	}
 	switch tok.Value {
 	case string(tokeniser.KeywordPub), string(tokeniser.KeywordLet),
-		string(tokeniser.KeywordExtern), string(tokeniser.KeywordImport), string(tokeniser.KeywordModule):
+		string(tokeniser.KeywordImport), string(tokeniser.KeywordModule):
 		return true
 	default:
 		return false
