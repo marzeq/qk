@@ -1188,6 +1188,21 @@ func (p *Parser) ParseStructType() (*StructTypeNode, error) {
 
 	var fields []StructField
 	for !p.Match(tokeniser.TokenCloseCurly) {
+		if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordUnion) {
+			fieldType, err := p.ParseUnionType()
+			if err != nil {
+				return nil, err
+			}
+			fields = append(fields, StructField{Type: fieldType})
+			if !p.Match(tokeniser.TokenComma, tokeniser.TokenNewline) {
+				break
+			}
+			p.Inc()
+			for p.Match(tokeniser.TokenNewline) {
+				p.Inc()
+			}
+			continue
+		}
 		fieldName, err := p.ParseIdent()
 		if err != nil {
 			return nil, err

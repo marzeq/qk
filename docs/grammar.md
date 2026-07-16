@@ -253,11 +253,13 @@ slice_type     = "[", opt_newlines, type_expr,
                  opt_newlines, "]" ;
 
 struct_type    = "struct", "{", opt_newlines,
-                 [ struct_field,
-                   { ( "," | newline ), opt_newlines, struct_field },
+                 [ struct_member,
+                   { ( "," | newline ), opt_newlines, struct_member },
                    [ "," | newline ]
                  ],
                  "}" ;
+
+struct_member  = struct_field | union_type ;
 
 struct_field   = identifier, ":", type_expr ;
 

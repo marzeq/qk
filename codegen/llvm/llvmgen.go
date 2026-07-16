@@ -240,6 +240,15 @@ func (e *Emitter) structFieldIndex(ty types.Type, field string) int {
 		if entry.L == field {
 			return i
 		}
+		if entry.L == "" {
+			if embedded, ok := entry.R.(types.UnionType); ok {
+				for _, unionField := range embedded.Fields {
+					if unionField.L == field {
+						return i
+					}
+				}
+			}
+		}
 	}
 	panic("field not found")
 }
@@ -1039,7 +1048,7 @@ func (e *Emitter) CastEmit(out *strings.Builder, c ir.Cast) {
 		return
 	}
 
-	panic("unsupported cast")
+	panic(fmt.Sprintf("unsupported cast from %v (%T) to %v (%T)", from, from, to, to))
 }
 
 func (e *Emitter) SizeofEmit(out *strings.Builder, s ir.Sizeof) {

@@ -444,6 +444,20 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 					found = true
 					break
 				}
+				if field.L == "" {
+					if embedded, ok := field.R.(types.UnionType); ok {
+						for _, unionField := range embedded.Fields {
+							if unionField.L == n.Field.Name {
+								n.SetType(unionField.R)
+								found = true
+								break
+							}
+						}
+					}
+				}
+				if found {
+					break
+				}
 			}
 			if !found {
 				a.errorf(n, "struct type %v does not have a field named %s", t, n.Field)

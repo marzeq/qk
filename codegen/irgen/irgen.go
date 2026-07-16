@@ -362,12 +362,17 @@ func (g *Generator) generateAssignment(node *parser.AssignmentNode) {
 		}
 
 	case *parser.FieldAccessNode:
-		base := g.GenerateExpr(n.Subject)
+		base := g.generateAddressOfExpr(n.Subject)
 		fieldPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: n.GetType()})
 		g.Emit(ir.FieldAddress{
 			Dest:  fieldPtrID,
 			Base:  base,
 			Field: n.Field.Name,
+		})
+		value := g.GenerateExpr(node.Value)
+		g.Emit(ir.StorePtr{
+			Ptr:   ir.ValueOperand(fieldPtrID, types.PointerType{Base: n.GetType()}),
+			Value: value,
 		})
 
 	case *parser.IndexExprNode:
@@ -774,6 +779,13 @@ func (g *Generator) generateCastExpr(node *parser.CastNode) ir.Operand {
 	if from.Type.Equals(targetType) {
 		return from
 	}
+	if fromSlice, ok := from.Type.(types.SliceType); ok {
+		if toSlice, ok := targetType.(types.SliceType); ok && fromSlice.Base.Equals(toSlice.Base) {
+			// Fixed-size and dynamic slices have the same runtime representation.
+			from.Type = targetType
+			return from
+		}
+	}
 
 	dst := g.currentFunction.NewValueOfType(targetType)
 	g.Emit(ir.Cast{Dest: dst, From: from, To: targetType})
@@ -928,6 +940,16 @@ func (g *Generator) generateStructLiteralIntoSlot(slot ir.SlotID, node *parser.S
 				if f.L == field.L {
 					fieldTy = f.R
 					break
+				}
+				if f.L == "" {
+					if embedded, ok := f.R.(types.UnionType); ok {
+						for _, unionField := range embedded.Fields {
+							if unionField.L == field.L {
+								fieldTy = unionField.R
+								break
+							}
+						}
+					}
 				}
 			}
 		case types.UnionType:

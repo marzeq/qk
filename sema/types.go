@@ -52,10 +52,25 @@ func (a *Analyser) resolveTypeNode(n parser.TypeNode) types.Type {
 
 	case *parser.StructTypeNode:
 		fields := []shared.Pair[string, types.Type]{}
+		fieldNames := make(map[string]struct{})
 		for _, f := range t.Fields {
+			resolved := a.resolveTypeNode(f.Type)
+			if f.Name != "" {
+				if _, exists := fieldNames[f.Name]; exists {
+					a.errorf(f.Type, "duplicate struct field %q", f.Name)
+				}
+				fieldNames[f.Name] = struct{}{}
+			} else if embedded, ok := resolved.(types.UnionType); ok {
+				for _, member := range embedded.Fields {
+					if _, exists := fieldNames[member.L]; exists {
+						a.errorf(f.Type, "embedded union field %q conflicts with another struct field", member.L)
+					}
+					fieldNames[member.L] = struct{}{}
+				}
+			}
 			fields = append(fields, shared.Pair[string, types.Type]{
 				L: f.Name,
-				R: a.resolveTypeNode(f.Type),
+				R: resolved,
 			})
 		}
 		return types.StructType{

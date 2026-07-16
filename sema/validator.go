@@ -436,8 +436,19 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		}
 
 	case *parser.BinaryOpNode:
-		v.validateExpr(n.Operand1)
-		v.validateExpr(n.Operand2)
+		_, leftEnumShorthand := n.Operand1.(*parser.EnumLiteralNode)
+		_, rightEnumShorthand := n.Operand2.(*parser.EnumLiteralNode)
+		switch {
+		case leftEnumShorthand && !rightEnumShorthand:
+			v.validateExpr(n.Operand2)
+			n.Operand1 = v.validateExprWithExpected(n.Operand1, n.Operand2.GetType())
+		case rightEnumShorthand && !leftEnumShorthand:
+			v.validateExpr(n.Operand1)
+			n.Operand2 = v.validateExprWithExpected(n.Operand2, n.Operand1.GetType())
+		default:
+			v.validateExpr(n.Operand1)
+			v.validateExpr(n.Operand2)
+		}
 
 		t1 := n.Operand1.GetType()
 		t2 := n.Operand2.GetType()
@@ -585,9 +596,25 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			return
 		}
 		fieldIndex := -1
+		var fieldType types.Type
 		for i, field := range structType.Fields {
 			if field.L == n.Field.Name {
 				fieldIndex = i
+				fieldType = field.R
+				break
+			}
+			if field.L == "" {
+				if embedded, ok := field.R.(types.UnionType); ok {
+					for _, unionField := range embedded.Fields {
+						if unionField.L == n.Field.Name {
+							fieldIndex = i
+							fieldType = unionField.R
+							break
+						}
+					}
+				}
+			}
+			if fieldIndex != -1 {
 				break
 			}
 		}
@@ -595,7 +622,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			v.errorf(n, "struct type has no field %q", n.Field)
 			return
 		}
-		n.SetType(structType.Fields[fieldIndex].R)
+		n.SetType(fieldType)
 
 	case *parser.IfExprNode:
 		v.validateExpr(n.IfBranch.Condition)
@@ -909,6 +936,14 @@ func (v *Validator) validateStructLiteralWithExpected(n *parser.StructLiteralNod
 
 	fieldTypes := make(map[string]types.Type, len(structType.Fields))
 	for _, field := range structType.Fields {
+		if field.L == "" {
+			if embedded, ok := field.R.(types.UnionType); ok {
+				for _, unionField := range embedded.Fields {
+					fieldTypes[unionField.L] = unionField.R
+				}
+			}
+			continue
+		}
 		fieldTypes[field.L] = field.R
 	}
 
@@ -931,6 +966,22 @@ func (v *Validator) validateStructLiteralWithExpected(n *parser.StructLiteralNod
 
 	missingFields := []string{}
 	for _, field := range structType.Fields {
+		if field.L == "" {
+			if embedded, ok := field.R.(types.UnionType); ok {
+				initialized := 0
+				for _, unionField := range embedded.Fields {
+					if _, ok := seen[unionField.L]; ok {
+						initialized++
+					}
+				}
+				if initialized == 0 {
+					missingFields = append(missingFields, "<embedded union>")
+				} else if initialized > 1 {
+					v.errorf(n, "embedded union must initialize exactly one field")
+				}
+			}
+			continue
+		}
 		if _, ok := seen[field.L]; !ok {
 			missingFields = append(missingFields, field.L)
 		}

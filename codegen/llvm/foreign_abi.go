@@ -227,6 +227,9 @@ func (e *Emitter) typeSizeAlign(ty types.Type) (int, int) {
 		}
 	case types.PointerType:
 		return 8, 8
+	case types.SliceType:
+		// Slices are represented as { data pointer, length }.
+		return 16, 8
 	case types.EnumType:
 		return 4, 4
 	case types.StructType:
