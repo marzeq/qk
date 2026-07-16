@@ -79,6 +79,10 @@ func (a *Analyser) collectTypeAlias(n *parser.TypeAliasNode) {
 		enum.Name = n.Name
 		enum.Module = a.currentMod
 	}
+	if union, ok := n.Type.(*parser.UnionTypeNode); ok {
+		union.Name = n.Name
+		union.Module = a.currentMod
+	}
 	sym := &symbols.Symbol{
 		Name:   n.Name,
 		Kind:   symbols.SymbolKindType,

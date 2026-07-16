@@ -1036,8 +1036,59 @@ func (p *Parser) ParseType() (TypeNode, error) {
 	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordEnum) {
 		return p.ParseEnumType()
 	}
+	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordUnion) {
+		return p.ParseUnionType()
+	}
 
 	return p.ParseNamedType()
+}
+
+func (p *Parser) ParseUnionType() (*UnionTypeNode, error) {
+	beginLoc := p.CurrLoc()
+	if !p.Match(tokeniser.TokenKeyword) || p.Peek().Value != string(tokeniser.KeywordUnion) {
+		return nil, shared.NewError(p.CurrLoc(), "expected 'union'")
+	}
+	p.Inc()
+	if !p.Expect(tokeniser.TokenOpenCurly) {
+		return nil, shared.NewError(p.PrevLoc(), "expected '{' after union")
+	}
+	for p.Match(tokeniser.TokenNewline) {
+		p.Inc()
+	}
+	fields := []StructField{}
+	seen := map[string]struct{}{}
+	for !p.Match(tokeniser.TokenCloseCurly) {
+		name, err := p.ParseIdent()
+		if err != nil {
+			return nil, err
+		}
+		if _, exists := seen[name.Name]; exists {
+			return nil, shared.NewError(name.Loc, "duplicate union field %q", name.Name)
+		}
+		seen[name.Name] = struct{}{}
+		if !p.Expect(tokeniser.TokenColon) {
+			return nil, shared.NewError(p.PrevLoc(), "expected ':' after union field")
+		}
+		fieldType, err := p.ParseType()
+		if err != nil {
+			return nil, err
+		}
+		fields = append(fields, StructField{Name: name.Name, Type: fieldType})
+		if !p.Match(tokeniser.TokenComma, tokeniser.TokenNewline) {
+			break
+		}
+		p.Inc()
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+	}
+	if !p.Expect(tokeniser.TokenCloseCurly) {
+		return nil, shared.NewError(p.PrevLoc(), "expected '}' after union")
+	}
+	if len(fields) == 0 {
+		return nil, shared.NewError(beginLoc, "union must declare at least one field")
+	}
+	return &UnionTypeNode{Fields: fields, Loc: beginLoc}, nil
 }
 
 func (p *Parser) ParseEnumType() (*EnumTypeNode, error) {

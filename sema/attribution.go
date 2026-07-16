@@ -449,6 +449,19 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 				a.errorf(n, "struct type %v does not have a field named %s", t, n.Field)
 				n.SetType(types.ErrorType{})
 			}
+		case types.UnionType:
+			found := false
+			for _, field := range t.Fields {
+				if field.L == n.Field.Name {
+					n.SetType(field.R)
+					found = true
+					break
+				}
+			}
+			if !found {
+				a.errorf(n, "union type %v does not have a field named %s", t, n.Field)
+				n.SetType(types.ErrorType{})
+			}
 		default:
 			a.errorf(n, "cannot access field of type %v", n.Subject.GetType())
 			n.SetType(types.ErrorType{})

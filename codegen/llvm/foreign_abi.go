@@ -237,6 +237,14 @@ func (e *Emitter) typeSizeAlign(ty types.Type) (int, int) {
 			maxAlign = max(maxAlign, align)
 		}
 		return alignTo(offset, maxAlign), maxAlign
+	case types.UnionType:
+		maxSize, maxAlign := 0, 1
+		for _, field := range t.Fields {
+			size, align := e.typeSizeAlign(field.R)
+			maxSize = max(maxSize, size)
+			maxAlign = max(maxAlign, align)
+		}
+		return alignTo(maxSize, maxAlign), maxAlign
 	default:
 		panic(fmt.Sprintf("unsupported C ABI type %T", ty))
 	}
@@ -261,6 +269,10 @@ func (e *Emitter) classifyAggregate(
 			e.classifyAggregate(field.R, base+offset, classes, floats)
 			size, _ := e.typeSizeAlign(field.R)
 			offset += size
+		}
+	case types.UnionType:
+		for _, field := range t.Fields {
+			e.classifyAggregate(field.R, base, classes, floats)
 		}
 	case types.PointerType:
 		e.markAggregateClass(base, 8, abiClassInteger, classes)

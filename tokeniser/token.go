@@ -72,6 +72,7 @@ const (
 	KeywordMut      KeywordKind = "mut"
 	KeywordStruct   KeywordKind = "struct"
 	KeywordEnum     KeywordKind = "enum"
+	KeywordUnion    KeywordKind = "union"
 	KeywordType     KeywordKind = "type"
 	KeywordIf       KeywordKind = "if"
 	KeywordElse     KeywordKind = "else"

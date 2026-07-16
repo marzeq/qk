@@ -274,6 +274,7 @@ var keywords = map[string]struct{}{
 	string(KeywordMut):      {},
 	string(KeywordStruct):   {},
 	string(KeywordEnum):     {},
+	string(KeywordUnion):    {},
 	string(KeywordType):     {},
 	string(KeywordIf):       {},
 	string(KeywordElse):     {},

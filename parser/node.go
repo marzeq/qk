@@ -102,6 +102,16 @@ type EnumTypeNode struct {
 func (n EnumTypeNode) GetLoc() shared.Location { return n.Loc }
 func (n EnumTypeNode) _type()                  {}
 
+type UnionTypeNode struct {
+	Name   string
+	Module string
+	Fields []StructField
+	Loc    shared.Location
+}
+
+func (n UnionTypeNode) GetLoc() shared.Location { return n.Loc }
+func (n UnionTypeNode) _type()                  {}
+
 type SliceTypeNode struct {
 	ElementType TypeNode
 	Size        int

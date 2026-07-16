@@ -179,6 +179,25 @@ type EnumType struct {
 	Values   []string
 }
 
+type UnionType struct {
+	Module string
+	Name   string
+	Fields []shared.Pair[string, Type]
+}
+
+func (u UnionType) Equals(other Type) bool {
+	o, ok := other.(UnionType)
+	return ok && u.Module == o.Module && u.Name == o.Name
+}
+func (u UnionType) CanCoerceTo(other Type) bool { return u.Equals(other) }
+func (u UnionType) CanCastTo(other Type) bool   { return u.Equals(other) }
+func (u UnionType) String() string {
+	if u.Module == "" {
+		return u.Name
+	}
+	return u.Module + ":" + u.Name
+}
+
 func (e EnumType) Equals(other Type) bool {
 	o, ok := other.(EnumType)
 	return ok && e.Module == o.Module && e.Name == o.Name

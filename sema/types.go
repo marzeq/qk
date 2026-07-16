@@ -68,6 +68,13 @@ func (a *Analyser) resolveTypeNode(n parser.TypeNode) types.Type {
 			Variants: append([]string(nil), t.Variants...),
 			Values:   append([]string(nil), t.Values...),
 		}
+
+	case *parser.UnionTypeNode:
+		fields := make([]shared.Pair[string, types.Type], 0, len(t.Fields))
+		for _, field := range t.Fields {
+			fields = append(fields, shared.Pair[string, types.Type]{L: field.Name, R: a.resolveTypeNode(field.Type)})
+		}
+		return types.UnionType{Module: t.Module, Name: t.Name, Fields: fields}
 	}
 
 	a.errorf(n, "unsupported type node")

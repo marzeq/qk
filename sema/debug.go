@@ -189,6 +189,11 @@ func (w *debugWalker) checkType(t types.Type) {
 
 	case types.EnumType:
 
+	case types.UnionType:
+		for _, field := range tt.Fields {
+			w.checkType(field.R)
+		}
+
 	case types.FunctionType:
 		for _, p := range tt.Parameters {
 			w.checkType(p)

@@ -296,6 +296,9 @@ func (e *Emitter) TypeEmit(ty types.Type) string {
 		}
 		sb.WriteString(" }")
 		return sb.String()
+	case types.UnionType:
+		size, align := e.typeSizeAlign(ty)
+		return fmt.Sprintf("[%d x i%d]", size/align, align*8)
 	case types.SliceType:
 		return "{ ptr, i64 }"
 	case types.FunctionType:
@@ -732,6 +735,10 @@ func (e *Emitter) FieldAddressEmit(out *strings.Builder, f ir.FieldAddress) {
 	baseTy := f.Base.Type
 	if ptr, ok := baseTy.(types.PointerType); ok {
 		baseTy = ptr.Base
+	}
+	if _, ok := baseTy.(types.UnionType); ok {
+		fmt.Fprintf(out, "%s = getelementptr inbounds %s, ptr %s, i32 0", e.ValueIDEmit(f.Dest), e.TypeEmit(baseTy), e.OperandEmit(f.Base))
+		return
 	}
 	fieldIndex := e.structFieldIndex(baseTy, f.Field)
 	fmt.Fprintf(out, "%s = getelementptr inbounds %s, ptr %s, i32 0, i32 %d", e.ValueIDEmit(f.Dest), e.TypeEmit(baseTy), e.OperandEmit(f.Base), fieldIndex)

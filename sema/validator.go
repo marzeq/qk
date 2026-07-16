@@ -569,6 +569,16 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		}
 		v.validateExpr(n.Subject)
 		subjectType := n.Subject.GetType()
+		if unionType, ok := subjectType.(types.UnionType); ok {
+			for _, field := range unionType.Fields {
+				if field.L == n.Field.Name {
+					n.SetType(field.R)
+					return
+				}
+			}
+			v.errorf(n, "union type has no field %q", n.Field)
+			return
+		}
 		structType, ok := subjectType.(types.StructType)
 		if !ok {
 			v.errorf(n, "cannot access field of non-struct type")
@@ -872,6 +882,24 @@ func (v *Validator) validateSliceLiteralWithExpected(n *parser.SliceLiteralNode,
 }
 
 func (v *Validator) validateStructLiteralWithExpected(n *parser.StructLiteralNode, expected types.Type) {
+	if unionType, ok := expected.(types.UnionType); ok {
+		if len(n.Fields) != 1 {
+			v.errorf(n, "union literal must initialize exactly one field")
+			n.SetType(types.ErrorType{})
+			return
+		}
+		field := n.Fields[0]
+		for _, unionField := range unionType.Fields {
+			if unionField.L == field.L {
+				n.Fields[0].R = v.validateExprWithExpected(field.R, unionField.R)
+				n.SetType(unionType)
+				return
+			}
+		}
+		v.errorf(n, "unknown field %q in union literal", field.L)
+		n.SetType(types.ErrorType{})
+		return
+	}
 	structType, ok := expected.(types.StructType)
 	if !ok {
 		v.errorf(n, "cannot use struct literal for non-struct type %v", expected)

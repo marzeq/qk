@@ -922,8 +922,16 @@ func (g *Generator) generateStructLiteralIntoSlot(slot ir.SlotID, node *parser.S
 
 	for _, field := range node.Fields {
 		fieldTy := node.GetType()
-		if st, ok := node.GetType().(types.StructType); ok {
-			for _, f := range st.Fields {
+		switch composite := node.GetType().(type) {
+		case types.StructType:
+			for _, f := range composite.Fields {
+				if f.L == field.L {
+					fieldTy = f.R
+					break
+				}
+			}
+		case types.UnionType:
+			for _, f := range composite.Fields {
 				if f.L == field.L {
 					fieldTy = f.R
 					break
