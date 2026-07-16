@@ -126,7 +126,7 @@ fn_def         = "let", identifier,
 
 function_attribute = "@", ( "inline" | "noinline" | "noreturn" )
                    | foreign_attribute
-                   | "@", "export", "(", string_lit, ")" ;
+                   | "@", "export", [ "(", string_lit, ")" ] ;
 foreign_attribute  = "@", "foreign", [ "(", string_lit, ")" ] ;
 
 fn_param_list  = fn_param, { ",", fn_param } ;
@@ -276,7 +276,7 @@ named_type     = identifier
 - Foreign functions use the `@foreign` attribute and have no body:
   - `let puts(...): i32 @foreign("puts")`
 - Variadic functions must be foreign.
-- Defined functions can expose a stable linker symbol with `@export("symbol_name")`.
+- Defined functions can expose a linker symbol with `@export` (using the local function name) or `@export("symbol_name")`.
 
 ### 4. Statements and separators
 

@@ -109,7 +109,7 @@ func main() {
 		}
 	}
 	if !foundMain && args.outputType == OutputExecutable {
-		fatal("main function not found in main module (%s)", args.mainModule)
+		fatal("main function not found in primary module \"%s\"", args.mainModule)
 	}
 
 	if args.noEmit {

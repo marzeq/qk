@@ -238,14 +238,18 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 			attrs = append(attrs, attributes.FunctionAttributeForeign{From: fgnNameStr})
 			expectsBody = false
 		case attributes.AttributeTypeExport:
-			if len(attrArgs) != 1 {
-				return nil, shared.NewError(p.PrevLoc(), "export attribute requires one string argument")
+			exportName := name.Value
+			if len(attrArgs) > 1 {
+				return nil, shared.NewError(p.PrevLoc(), "export attribute takes at most one string argument")
 			}
-			exportName, ok := attrArgs[0].(*StringLiteralNode)
-			if !ok || exportName.Value == "" {
-				return nil, shared.NewError(p.PrevLoc(), "export attribute requires a non-empty string argument")
+			if len(attrArgs) == 1 {
+				exportNameNode, ok := attrArgs[0].(*StringLiteralNode)
+				if !ok || exportNameNode.Value == "" {
+					return nil, shared.NewError(p.PrevLoc(), "export attribute argument must be a non-empty string")
+				}
+				exportName = exportNameNode.Value
 			}
-			attrs = append(attrs, attributes.FunctionAttributeExport{As: exportName.Value})
+			attrs = append(attrs, attributes.FunctionAttributeExport{As: exportName})
 		default:
 			return nil, shared.NewError(p.PrevLoc(), "unknown function attribute: %s", attrName)
 		}
