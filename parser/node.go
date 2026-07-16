@@ -24,6 +24,11 @@ type RootNode struct {
 
 func (n RootNode) GetLoc() shared.Location { return n.Loc }
 
+type IdentOrModAccessNode interface {
+	GetSymbol() *symbols.Symbol
+	ExpressionNode
+}
+
 type IdentifierNode struct {
 	Name   string
 	Loc    shared.Location
@@ -39,6 +44,7 @@ func (n *IdentifierNode) GetType() types.Type {
 	}
 	return n.Symbol.Type
 }
+func (n *IdentifierNode) GetSymbol() *symbols.Symbol { return n.Symbol }
 
 type ModuleAccessNode struct {
 	ModName string
@@ -55,8 +61,9 @@ func (n ModuleAccessNode) String() string {
 	}
 	return n.ModName + ":" + n.Ident.String()
 }
-func (n *ModuleAccessNode) SetType(t types.Type) { n.Type = t }
-func (n *ModuleAccessNode) GetType() types.Type  { return n.Type }
+func (n *ModuleAccessNode) SetType(t types.Type)       { n.Type = t }
+func (n *ModuleAccessNode) GetType() types.Type        { return n.Type }
+func (n *ModuleAccessNode) GetSymbol() *symbols.Symbol { return n.Symbol }
 
 type FieldAccessNode struct {
 	Subject ExpressionNode

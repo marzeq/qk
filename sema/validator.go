@@ -151,16 +151,18 @@ func (v *Validator) validateAssignment(n *parser.AssignmentNode) {
 func (v *Validator) validateLValue(expr parser.ExpressionNode) bool {
 	switch e := expr.(type) {
 
-	case *parser.IdentifierNode:
-		if !e.Symbol.Mutable {
+	case parser.IdentOrModAccessNode:
+		if !e.GetSymbol().Mutable {
 			v.errorf(e, "cannot assign to immutable symbol")
 			return false
 		}
+		v.validateExpr(e)
 
 	case *parser.UnaryOpNode:
 		switch e.Op {
 		case parser.UnaryOpDereference:
-			if ptrType, ok := e.Operand.GetType().(types.PointerType); ok {
+			switch ptrType := e.Operand.GetType().(type) {
+			case types.PointerType:
 				if ptrType.Base.Equals(types.PrimitiveVoid) {
 					v.errorf(e, "cannot assign to dereferenced void pointer")
 					return false
@@ -169,9 +171,9 @@ func (v *Validator) validateLValue(expr parser.ExpressionNode) bool {
 					v.errorf(e, "cannot assign to dereferenced immutable pointer")
 					return false
 				}
-			} else if _, ok := e.Operand.GetType().(types.ErrorType); ok {
+			case types.ErrorType:
 				// do nothing, error already reported
-			} else {
+			default:
 				panic(fmt.Sprintf("unreachable: dereference of non-pointer type %T", e.Operand.GetType()))
 			}
 			v.validateExpr(e.Operand)
@@ -181,48 +183,34 @@ func (v *Validator) validateLValue(expr parser.ExpressionNode) bool {
 		}
 
 	case *parser.FieldAccessNode:
-		panic("todo: validate assignment to field access expression")
+		if !v.validateLValue(e.Subject) {
+			return false
+		}
 
 	case *parser.IndexExprNode:
-		switch subject := e.Subject.(type) {
-		case *parser.IdentifierNode, *parser.ModuleAccessNode:
-			var symbol *symbols.Symbol
-			switch s := subject.(type) {
-			case *parser.IdentifierNode:
-				symbol = s.Symbol
-			case *parser.ModuleAccessNode:
-				symbol = s.Symbol
-			}
-			if !symbol.Mutable {
-				v.errorf(e, "cannot assign to index of immutable symbol")
+		// A slice's mutability comes from the place that holds the slice,
+		// whereas a pointer carries the mutability of the pointed-to data.
+		switch subjectType := e.Subject.GetType().(type) {
+		case types.SliceType:
+			if !v.validateLValue(e.Subject) {
 				return false
 			}
-			v.validateExpr(subject)
 
-		case *parser.UnaryOpNode:
-			switch subject.Op {
-			case parser.UnaryOpDereference:
-				if ptrType, ok := subject.Operand.GetType().(types.PointerType); ok {
-					if ptrType.Base.Equals(types.PrimitiveVoid) {
-						v.errorf(e, "cannot assign to dereferenced void pointer")
-						return false
-					}
-					if !ptrType.Mutable {
-						v.errorf(e, "cannot assign to dereferenced immutable pointer")
-						return false
-					}
-				} else if _, ok := subject.Operand.GetType().(types.ErrorType); ok {
-					// do nothing, error already reported
-				} else {
-					panic(fmt.Sprintf("unreachable: dereference of non-pointer type %T", subject.Operand.GetType()))
-				}
-				v.validateExpr(subject.Operand)
-			default:
-				v.errorf(expr, "cannot assign to index of this expression")
+		case types.PointerType:
+			if subjectType.Base.Equals(types.PrimitiveVoid) {
+				v.errorf(e, "cannot assign to dereferenced void pointer")
 				return false
 			}
+			if !subjectType.Mutable {
+				v.errorf(e, "cannot assign to dereferenced immutable pointer")
+				return false
+			}
+
+		case types.ErrorType:
+			// Do not add an lvalue error after attribution has already reported one.
 		default:
-			panic("todo")
+			v.errorf(e, "cannot assign to index of non-slice type")
+			return false
 		}
 
 	default:

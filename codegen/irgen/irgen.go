@@ -285,21 +285,10 @@ func (g *Generator) generateDeclaration(node *parser.DeclarationNode) {
 
 func (g *Generator) generateAssignment(node *parser.AssignmentNode) {
 	switch n := node.Assignee.(type) {
-	case *parser.IdentifierNode, *parser.ModuleAccessNode:
-		var symbol *symbols.Symbol
-		switch n := n.(type) {
-		case *parser.IdentifierNode:
-			symbol = n.Symbol
-		case *parser.ModuleAccessNode:
-			symbol = n.Symbol
-		}
-		if symbol == nil {
-			panic("assignment symbol is nil")
-		}
-
-		slot, ok := g.currentEnv.Lookup(symbol)
+	case parser.IdentOrModAccessNode:
+		slot, ok := g.currentEnv.Lookup(n.GetSymbol())
 		if !ok {
-			global, exists := g.globals[symbol]
+			global, exists := g.globals[n.GetSymbol()]
 			if !exists {
 				panic("assignment slot not found")
 			}
