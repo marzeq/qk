@@ -652,12 +652,30 @@ func (e *Emitter) CallEmit(out *strings.Builder, c ir.Call) {
 		}
 	}
 
+	callType := e.TypeEmit(c.Signature.ReturnType)
+	if c.Signature.Variadic {
+		var params strings.Builder
+		for i, param := range c.Signature.ParamTypes {
+			if i > 0 {
+				params.WriteString(", ")
+			}
+			params.WriteString(e.TypeEmit(param))
+		}
+		if len(c.Signature.ParamTypes) > 0 {
+			params.WriteString(", ")
+		}
+		params.WriteString("...")
+		callType += " (" + params.String() + ")"
+	}
+
 	if c.Signature.ReturnType.Equals(types.PrimitiveVoid) {
-		out.WriteString("call void @")
+		out.WriteString("call ")
+		out.WriteString(callType)
+		out.WriteString(" @")
 		out.WriteString(fnName)
 		out.WriteString("(")
 	} else {
-		fmt.Fprintf(out, "%s = call %s @%s(", e.ValueIDEmit(c.Dest), e.TypeEmit(c.Signature.ReturnType), fnName)
+		fmt.Fprintf(out, "%s = call %s @%s(", e.ValueIDEmit(c.Dest), callType, fnName)
 	}
 	for i, arg := range c.Args {
 		if i > 0 {
