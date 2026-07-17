@@ -110,11 +110,7 @@ Notes
 
 ## Docs
 
-- `docs/grammar.md` for an EBNF grammar and parser-accurate syntax notes.
-- `docs/types.go` for a reference of the type system and type syntax.
-
-For now, even if not detailed and comprehensive, these are the only docs available.
-The reason for that is that I don't want to spend too much time writing docs for a language that is still in the early stages of design and implementation, and that I am not sure will even be usable in the end.
+- [`docs/docs.md`](docs/docs.md) is the language and compiler reference.
 
 ## Contributing
 
