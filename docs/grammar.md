@@ -244,9 +244,9 @@ field_init     = identifier, "=", opt_newlines, expression ;
 
 enum_shorthand = ".", identifier ;
 
-slice_literal  = "[", expression,
+slice_literal  = "[", opt_newlines, [ expression,
                  { ( "," | newline ), opt_newlines, expression },
-                 [ "," | newline ],
+                 [ "," | newline ], opt_newlines ],
                  "]" ;
 
 (* ======================== *)
@@ -347,5 +347,5 @@ From lowest to highest precedence:
 ### 7. Parser-specific caveats
 
 - Compound assignments support `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, and `>>=`.
-- Slice literal parsing currently requires at least one element in practice.
+- Empty slice literals (`[]`) take their element type from the expected context.
 - A module-qualified access uses `:` consistently for both value and type positions.

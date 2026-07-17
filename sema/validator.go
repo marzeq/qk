@@ -394,6 +394,10 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		}
 
 	case *parser.CastNode:
+		if literal, ok := n.Operand.(*parser.SliceLiteralNode); ok && len(literal.Elements) == 0 && literal.RepeatValue == nil {
+			v.validateSliceLiteralWithExpected(literal, n.Type)
+			break
+		}
 		v.validateExpr(n.Operand)
 
 		if types.IsUntyped(n.Operand.GetType()) {
@@ -696,10 +700,8 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		var common types.Type = nil
 
 		if len(n.Elements) == 0 {
-			n.Type = types.SliceType{
-				Base: types.PrimitiveVoid,
-				Size: 0,
-			}
+			v.errorf(n, "cannot infer element type of empty slice literal")
+			n.SetType(types.ErrorType{})
 			break
 		}
 
