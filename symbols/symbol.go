@@ -29,9 +29,10 @@ type Symbol struct {
 }
 
 type FunctionSignature struct {
-	Parameters []types.Type
-	ReturnType types.Type
-	Variadic   bool
+	Parameters         []types.Type
+	RequiredParameters int
+	ReturnType         types.Type
+	Variadic           bool
 }
 
 func NewVariable(name string, typ types.Type) *Symbol {

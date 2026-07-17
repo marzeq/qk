@@ -72,14 +72,29 @@ func (v *Validator) validateNode(node parser.Node) {
 		prev := v.currentFunction
 		v.currentFunction = n.Symbol
 
-		if n.Symbol.Signature.Variadic && n.Symbol.Attributes.Get(attributes.AttributeTypeForeign) == nil {
-			v.errorf(n, "non-foreign functions cannot be variadic")
+		foreign, isForeign := n.Symbol.Attributes.Get(attributes.AttributeTypeForeign).(attributes.FunctionAttributeForeign)
+		usesQKABI := !isForeign || foreign.ABI == attributes.ForeignABIQK
+		if n.Symbol.Signature.Variadic && usesQKABI {
+			v.errorf(n, "functions using the qk ABI cannot be variadic")
 		}
 
+		seenDefault := false
 		for i, param := range n.Symbol.Signature.Parameters {
 			if !types.IsComplete(param) {
 				v.errorf(n.Args[i].Type, "function parameter cannot have incomplete type %v", param)
 			}
+			arg := n.Args[i]
+			if arg.Default == nil {
+				if seenDefault {
+					v.errorf(arg, "parameter without a default cannot follow a parameter with a default")
+				}
+				continue
+			}
+			seenDefault = true
+			if isForeign && foreign.ABI != attributes.ForeignABIQK {
+				v.errorf(arg.Default, "functions using the c ABI cannot have default parameters")
+			}
+			arg.Default = v.validateExprWithExpected(arg.Default, param)
 		}
 		if ret := n.Symbol.Signature.ReturnType; ret != nil && !types.IsComplete(ret) {
 			v.errorf(n, "function return cannot have incomplete type %v", ret)
@@ -406,11 +421,16 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		}
 
 		got, expected := len(n.Args), len(params)
+		required := expected
+		if n.Symbol != nil && n.Symbol.Kind == symbols.SymbolKindFunction {
+			required = n.Symbol.Signature.RequiredParameters
+		}
 		if n.Method {
 			got--
 			expected--
+			required--
 		}
-		if (!variadic && got != expected) || (variadic && got < expected) {
+		if got < required || (!variadic && got > expected) {
 			callable := "callable expression"
 			if n.Symbol != nil {
 				kind := "function"
@@ -423,7 +443,10 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			}
 			if variadic {
 				v.errorf(n, "%s expects at least %d %s, but %d %s provided",
-					callable, expected, argumentWord(expected), got, wasWere(got))
+					callable, required, argumentWord(required), got, wasWere(got))
+			} else if required != expected {
+				v.errorf(n, "%s expects between %d and %d arguments, but %d %s provided",
+					callable, required, expected, got, wasWere(got))
 			} else {
 				v.errorf(n, "%s expects %d %s, but %d %s provided",
 					callable, expected, argumentWord(expected), got, wasWere(got))
@@ -994,6 +1017,11 @@ func (v *Validator) createCast(node parser.ExpressionNode, target types.Type) pa
 
 func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expected types.Type) parser.ExpressionNode {
 	switch n := node.(type) {
+	case *parser.NilLiteralNode:
+		if types.IsPointer(expected) {
+			n.SetType(expected)
+			return n
+		}
 	case *parser.EnumLiteralNode:
 		enumType, ok := types.Underlying(expected).(types.EnumType)
 		if !ok {

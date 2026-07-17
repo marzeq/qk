@@ -88,6 +88,7 @@ func (g *Generator) Generate(root *parser.RootNode) *ir.Module {
 				sig := g.buildFunctionSignature(node)
 				name := node.Name
 				g.Module.AddExtern(ir.ExternDecl{Name: name, Signature: sig, From: externFrom})
+				g.generateDefaultWrappers(node, name)
 				continue
 			}
 			g.GenerateFunction(node)
@@ -218,6 +219,69 @@ func (g *Generator) GenerateFunction(fn *parser.FunctionDefNode) {
 	g.currentBlock = nil
 	g.currentFunction = nil
 	g.deferScopes = nil
+
+	g.generateDefaultWrappers(fn, name)
+}
+
+func (g *Generator) generateDefaultWrappers(fn *parser.FunctionDefNode, targetName string) {
+	required := fn.Symbol.Signature.RequiredParameters
+	total := len(fn.Args)
+	external := fn.Pub || fn.Attributes.Get(attributes.AttributeTypeExport) != nil
+	for arity := required; arity < total; arity++ {
+		wrapper := ir.NewFunction(g.defaultWrapperName(targetName, arity), external, nil)
+		wrapper.Signature = ir.FunctionSignature{
+			ParamTypes: append([]types.Type(nil), fn.Symbol.Signature.Parameters[:arity]...),
+			ReturnType: fn.Symbol.Signature.ReturnType,
+		}
+		g.Module.AddFunction(wrapper)
+
+		g.currentFunction = wrapper
+		g.currentBlock = wrapper.NewBlock("entry")
+		wrapper.Entry = g.currentBlock.ID
+		g.currentEnv = NewEnv(nil)
+		g.deferScopes = nil
+
+		args := make([]ir.Operand, 0, total)
+		for i := 0; i < arity; i++ {
+			arg := fn.Args[i]
+			slot := wrapper.NewSlot(arg.Symbol.Type, fmt.Sprintf("arg%d", i))
+			wrapper.AddParameter(arg.Name, arg.Symbol.Type, slot)
+			g.currentEnv.Variables[arg.Symbol] = slot
+			g.Emit(ir.Alloca{Slot: slot})
+			incoming := wrapper.NewValueOfType(arg.Symbol.Type)
+			g.Emit(ir.Store{Slot: slot, Value: ir.ValueOperand(incoming, arg.Symbol.Type)})
+			args = append(args, g.generateIdentifierExpr(&parser.IdentifierNode{Symbol: arg.Symbol, Type: arg.Symbol.Type}))
+		}
+		for i := arity; i < total; i++ {
+			value := g.GenerateExpr(fn.Args[i].Default)
+			args = append(args, value)
+
+			// Later defaults can refer to the value produced by this default.
+			slot := wrapper.NewSlot(fn.Args[i].Symbol.Type, fmt.Sprintf("default%d", i))
+			g.currentEnv.Variables[fn.Args[i].Symbol] = slot
+			g.Emit(ir.Alloca{Slot: slot})
+			g.Emit(ir.Store{Slot: slot, Value: value})
+		}
+
+		callSig := g.buildFunctionSignature(fn)
+		if callSig.ReturnType == nil || callSig.ReturnType.Equals(types.PrimitiveVoid) {
+			g.Emit(ir.Call{Name: targetName, Args: args, Signature: callSig})
+			g.Emit(ir.Return{})
+		} else {
+			dst := wrapper.NewValueOfType(callSig.ReturnType)
+			g.Emit(ir.Call{Dest: dst, Name: targetName, Args: args, Signature: callSig})
+			g.Emit(ir.Return{HasValue: true, Value: ir.ValueOperand(dst, callSig.ReturnType)})
+		}
+
+		g.currentEnv = nil
+		g.currentBlock = nil
+		g.currentFunction = nil
+		g.deferScopes = nil
+	}
+}
+
+func (g *Generator) defaultWrapperName(targetName string, arity int) string {
+	return fmt.Sprintf("%s__default_%d", targetName, arity)
 }
 
 func (g *Generator) emitFunctionParams(fn *parser.FunctionDefNode) {
@@ -431,7 +495,7 @@ func (g *Generator) generateAssignment(node *parser.AssignmentNode) {
 		}
 
 	case *parser.FieldAccessNode:
-		base := g.generateAddressOfExpr(n.Subject)
+		base := g.generateFieldSubjectAddress(n.Subject)
 		fieldPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: n.GetType()})
 		g.Emit(ir.FieldAddress{
 			Dest:  fieldPtrID,
@@ -1338,6 +1402,16 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 
 		if node.Name != nil && node.Name.Module != "" && foreignAttr == nil {
 			g.addExternForCall(name, callSig, "")
+		}
+
+		if len(node.Args) < len(node.Symbol.Signature.Parameters) {
+			name = g.defaultWrapperName(name, len(node.Args))
+			callSig.ParamTypes = append([]types.Type(nil), node.Symbol.Signature.Parameters[:len(node.Args)]...)
+			callSig.Variadic = false
+			callSig.Attributes = nil
+			if node.Name != nil && node.Name.Module != "" {
+				g.addExternForCall(name, callSig, "")
+			}
 		}
 	}
 

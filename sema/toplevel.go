@@ -58,9 +58,13 @@ func (a *Analyser) collectFunctionSignature(n *parser.FunctionDefNode) {
 
 func (a *Analyser) collectPlainFunctionSignature(n *parser.FunctionDefNode) {
 	paramTypes := make([]types.Type, len(n.Args))
+	requiredParameters := len(n.Args)
 
 	for i, arg := range n.Args {
 		paramTypes[i] = a.resolveTypeNode(arg.Type)
+		if arg.Default != nil && requiredParameters == len(n.Args) {
+			requiredParameters = i
+		}
 	}
 
 	var retType types.Type
@@ -69,9 +73,10 @@ func (a *Analyser) collectPlainFunctionSignature(n *parser.FunctionDefNode) {
 	}
 
 	sig := &symbols.FunctionSignature{
-		Parameters: paramTypes,
-		ReturnType: retType,
-		Variadic:   n.HasVariadic,
+		Parameters:         paramTypes,
+		RequiredParameters: requiredParameters,
+		ReturnType:         retType,
+		Variadic:           n.HasVariadic,
 	}
 
 	sym := &symbols.Symbol{
@@ -115,15 +120,19 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 		return
 	}
 	paramTypes := make([]types.Type, len(n.Args))
+	requiredParameters := len(n.Args)
 	for i, arg := range n.Args {
 		paramTypes[i] = a.resolveTypeNode(arg.Type)
+		if arg.Default != nil && requiredParameters == len(n.Args) {
+			requiredParameters = i
+		}
 	}
 	var ret types.Type
 	if n.RetTypeNode != nil {
 		ret = a.resolveTypeNode(n.RetTypeNode)
 	}
 	sym := &symbols.Symbol{Name: n.MethodOwner + "." + n.Name, Kind: symbols.SymbolKindFunction,
-		Signature: &symbols.FunctionSignature{Parameters: paramTypes, ReturnType: ret, Variadic: n.HasVariadic},
+		Signature: &symbols.FunctionSignature{Parameters: paramTypes, RequiredParameters: requiredParameters, ReturnType: ret, Variadic: n.HasVariadic},
 		Public:    n.Pub, Attributes: n.Attributes, StaticMethod: n.Receiver == parser.MethodReceiverNone}
 	a.methods[key][n.Name] = sym
 	n.Symbol = sym

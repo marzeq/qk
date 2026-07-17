@@ -255,7 +255,7 @@ func (e *Emitter) structFieldIndex(ty types.Type, field string) int {
 
 	st, ok := ty.(types.StructType)
 	if !ok {
-		panic("expected struct type")
+		panic(fmt.Sprintf("expected struct type, got %T (%v) for field %q", ty, ty, field))
 	}
 	for i, entry := range st.Fields {
 		if entry.L == field {
@@ -795,11 +795,10 @@ func (e *Emitter) StorePtrEmit(out *strings.Builder, s ir.StorePtr) {
 }
 
 func (e *Emitter) FieldAddressEmit(out *strings.Builder, f ir.FieldAddress) {
-	baseTy := f.Base.Type
+	baseTy := types.Underlying(f.Base.Type)
 	if ptr, ok := baseTy.(types.PointerType); ok {
-		baseTy = ptr.Base
+		baseTy = types.Underlying(ptr.Base)
 	}
-	baseTy = types.Underlying(baseTy)
 	if _, ok := baseTy.(types.UnionType); ok {
 		fmt.Fprintf(out, "%s = getelementptr inbounds %s, ptr %s, i32 0", e.ValueIDEmit(f.Dest), e.TypeEmit(baseTy), e.OperandEmit(f.Base))
 		return

@@ -203,9 +203,19 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 			return nil, err
 		}
 
+		var defaultValue ExpressionNode
+		if p.Match(tokeniser.TokenEquals) {
+			p.Inc()
+			defaultValue, err = p.ParseExpression()
+			if err != nil {
+				return nil, err
+			}
+		}
+
 		args = append(args, &FunctionNodeArg{
 			Name:    arg.Name,
 			Type:    argType,
+			Default: defaultValue,
 			Mutable: mutable,
 		})
 

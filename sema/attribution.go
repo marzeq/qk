@@ -56,6 +56,11 @@ func (a *Attributor) attributeNode(node parser.Node) {
 		// pass
 
 	case *parser.FunctionDefNode:
+		for _, arg := range n.Args {
+			if arg.Default != nil {
+				a.attributeExpr(arg.Default)
+			}
+		}
 		if n.Body != nil {
 			a.attributeNode(n.Body)
 		}
@@ -301,10 +306,29 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		}
 		if n.Symbol == nil {
 			a.attributeExpr(n.Callee)
+			if member, ok := n.Callee.(*parser.FieldAccessNode); ok && member.MethodSymbol != nil && member.MethodSymbol.StaticMethod {
+				n.Symbol = member.MethodSymbol
+				n.Name = &parser.IdentifierNode{
+					Name:   member.MethodSymbol.Name,
+					Symbol: member.MethodSymbol,
+					Loc:    member.Loc,
+				}
+				if member.MethodModule != a.analyser.currentMod {
+					n.Name.Module = member.MethodModule
+					n.Name.ResolvedModuleName = member.MethodModule
+				}
+			}
 		} else if n.Symbol.Signature.ReturnType != nil {
 			n.SetType(n.Symbol.Signature.ReturnType)
 		} else {
 			n.SetType(types.PrimitiveVoid)
+		}
+		if n.Symbol != nil {
+			if n.Symbol.Signature.ReturnType != nil {
+				n.SetType(n.Symbol.Signature.ReturnType)
+			} else {
+				n.SetType(types.PrimitiveVoid)
+			}
 		}
 
 		for _, arg := range n.Args {

@@ -70,6 +70,9 @@ func (a *Analyser) visitFunction(n *parser.FunctionDefNode) {
 	a.current = symbols.NewScope(prev)
 
 	for i, arg := range n.Args {
+		if arg.Default != nil {
+			a.visitExpression(arg.Default)
+		}
 		paramSym := &symbols.Symbol{
 			Name:    arg.Name,
 			Kind:    symbols.SymbolKindVariable,

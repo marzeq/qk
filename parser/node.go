@@ -512,6 +512,7 @@ func (n ModuleNode) GetLoc() shared.Location { return n.Loc }
 type FunctionNodeArg struct {
 	Name    string
 	Type    TypeNode
+	Default ExpressionNode
 	Mutable bool
 	Symbol  *symbols.Symbol
 }

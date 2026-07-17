@@ -35,6 +35,11 @@ func (w *debugWalker) walkNode(node parser.Node) {
 		if n.Symbol == nil || n.Symbol.Signature == nil {
 			w.errors = append(w.errors, "function symbol has nil type")
 		}
+		for _, arg := range n.Args {
+			if arg.Default != nil {
+				w.walkExpr(arg.Default)
+			}
+		}
 		if n.Body != nil {
 			w.walkNode(n.Body)
 		}
