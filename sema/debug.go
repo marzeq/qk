@@ -88,7 +88,7 @@ func (w *debugWalker) walkNode(node parser.Node) {
 
 func (w *debugWalker) walkExpr(expr parser.ExpressionNode) {
 	if expr.GetType() == nil {
-		w.errors = append(w.errors, "expression has nil type")
+		w.errors = append(w.errors, fmt.Sprintf("expression %T at %v has nil type", expr, expr.GetLoc()))
 		return
 	}
 
@@ -119,7 +119,12 @@ func (w *debugWalker) walkExpr(expr parser.ExpressionNode) {
 		w.walkExpr(n.Operand2)
 
 	case *parser.FunctionCallNode:
-		w.walkExpr(n.Callee)
+		// Instance method calls are resolved directly to their function symbol;
+		// the member-shaped callee is syntax for receiver dispatch, not a bound
+		// method expression with its own type.
+		if n.Symbol == nil {
+			w.walkExpr(n.Callee)
+		}
 		for _, arg := range n.Args {
 			w.walkExpr(arg)
 		}
@@ -129,7 +134,9 @@ func (w *debugWalker) walkExpr(expr parser.ExpressionNode) {
 		w.walkExpr(n.Index)
 
 	case *parser.FieldAccessNode:
-		w.walkExpr(n.Subject)
+		if n.MethodSymbol == nil {
+			w.walkExpr(n.Subject)
+		}
 
 	case *parser.SliceLiteralNode:
 		if n.RepeatValue != nil {
