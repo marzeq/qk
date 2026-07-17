@@ -8,11 +8,15 @@ import (
 )
 
 func (a *Analyser) resolveTypeNode(n parser.TypeNode) types.Type {
+	return a.resolveTypeNodeAt(n, false)
+}
+
+func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Type {
 	switch t := n.(type) {
 
 	case *parser.NamedTypeNode:
 		if info, ok := a.aliases[t.Name]; ok {
-			return a.resolveAlias(info, t)
+			return a.resolveAlias(info, t, indirect)
 		}
 
 		if t.ModName == "" {
@@ -40,20 +44,20 @@ func (a *Analyser) resolveTypeNode(n parser.TypeNode) types.Type {
 
 	case *parser.PointerTypeNode:
 		return types.PointerType{
-			Base:    a.resolveTypeNode(t.BaseType),
+			Base:    a.resolveTypeNodeAt(t.BaseType, true),
 			Mutable: t.Mutable,
 		}
 
 	case *parser.FunctionTypeNode:
 		params := make([]types.Type, len(t.Parameters))
 		for i, param := range t.Parameters {
-			params[i] = a.resolveTypeNode(param)
+			params[i] = a.resolveTypeNodeAt(param, indirect)
 		}
-		return types.FunctionType{Parameters: params, ReturnType: a.resolveTypeNode(t.ReturnType)}
+		return types.FunctionType{Parameters: params, ReturnType: a.resolveTypeNodeAt(t.ReturnType, indirect)}
 
 	case *parser.SliceTypeNode:
 		return types.SliceType{
-			Base: a.resolveTypeNode(t.ElementType),
+			Base: a.resolveTypeNodeAt(t.ElementType, indirect),
 			Size: t.Size,
 		}
 
@@ -61,7 +65,7 @@ func (a *Analyser) resolveTypeNode(n parser.TypeNode) types.Type {
 		fields := []shared.Pair[string, types.Type]{}
 		fieldNames := make(map[string]struct{})
 		for _, f := range t.Fields {
-			resolved := a.resolveTypeNode(f.Type)
+			resolved := a.resolveTypeNodeAt(f.Type, indirect)
 			if f.Name != "" {
 				if _, exists := fieldNames[f.Name]; exists {
 					a.errorf(f.Type, "duplicate struct field %q", f.Name)
@@ -94,7 +98,7 @@ func (a *Analyser) resolveTypeNode(n parser.TypeNode) types.Type {
 	case *parser.UnionTypeNode:
 		fields := make([]shared.Pair[string, types.Type], 0, len(t.Fields))
 		for _, field := range t.Fields {
-			fields = append(fields, shared.Pair[string, types.Type]{L: field.Name, R: a.resolveTypeNode(field.Type)})
+			fields = append(fields, shared.Pair[string, types.Type]{L: field.Name, R: a.resolveTypeNodeAt(field.Type, indirect)})
 		}
 		return types.UnionType{Module: t.Module, Name: t.Name, Fields: fields}
 	}

@@ -32,7 +32,7 @@ func (a *Analyser) collectTopLevel(root *parser.RootNode) {
 func (a *Analyser) resolveBodies(root *parser.RootNode) {
 	for _, info := range a.aliases {
 		if info.state == aliasUnseen {
-			a.resolveAlias(info, info.node)
+			a.resolveAlias(info, info.node, false)
 		}
 	}
 

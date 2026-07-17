@@ -449,7 +449,11 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		}
 
 		a.attributeExpr(n.Subject)
-		switch t := types.Underlying(n.Subject.GetType()).(type) {
+		subjectType := types.Underlying(n.Subject.GetType())
+		if ptr, ok := subjectType.(types.PointerType); ok {
+			subjectType = types.Underlying(ptr.Base)
+		}
+		switch t := subjectType.(type) {
 		case types.StructType:
 			found := false
 			for _, field := range t.Fields {

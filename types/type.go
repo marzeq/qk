@@ -23,9 +23,41 @@ type DefinedType struct {
 	Underlying Type
 }
 
+// AliasRef represents a recursive reference to a named type while that type is
+// being resolved. It is only constructed for cycles behind pointer indirection.
+type AliasRef struct {
+	Module string
+	Name   string
+	Target *Type
+}
+
+func (r *AliasRef) Equals(other Type) bool {
+	if o, ok := other.(*AliasRef); ok {
+		return r.Module == o.Module && r.Name == o.Name
+	}
+	if d, ok := other.(DefinedType); ok {
+		return r.Module == d.Module && r.Name == d.Name
+	}
+	return false
+}
+func (r *AliasRef) CanCoerceTo(other Type) bool { return r.Equals(other) }
+func (r *AliasRef) CanCastTo(other Type) bool   { return castCompatible(r, other) }
+func (r *AliasRef) String() string {
+	if r.Module == "" {
+		return r.Name
+	}
+	return r.Module + ":" + r.Name
+}
+
 func (d DefinedType) Equals(other Type) bool {
-	o, ok := other.(DefinedType)
-	return ok && d.Module == o.Module && d.Name == o.Name
+	switch o := other.(type) {
+	case DefinedType:
+		return d.Module == o.Module && d.Name == o.Name
+	case *AliasRef:
+		return d.Module == o.Module && d.Name == o.Name
+	default:
+		return false
+	}
 }
 func (d DefinedType) CanCoerceTo(other Type) bool { return d.Equals(other) }
 func (d DefinedType) CanCastTo(other Type) bool {
@@ -40,11 +72,17 @@ func (d DefinedType) String() string {
 
 func Underlying(t Type) Type {
 	for {
-		d, ok := t.(DefinedType)
-		if !ok {
+		switch d := t.(type) {
+		case DefinedType:
+			t = d.Underlying
+		case *AliasRef:
+			if d.Target == nil || *d.Target == nil {
+				return d
+			}
+			t = *d.Target
+		default:
 			return t
 		}
-		t = d.Underlying
 	}
 }
 

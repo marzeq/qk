@@ -614,6 +614,9 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		}
 		v.validateExpr(n.Subject)
 		subjectType := types.Underlying(n.Subject.GetType())
+		if ptr, ok := subjectType.(types.PointerType); ok {
+			subjectType = types.Underlying(ptr.Base)
+		}
 		if unionType, ok := subjectType.(types.UnionType); ok {
 			for _, field := range unionType.Fields {
 				if field.L == n.Field.Name {

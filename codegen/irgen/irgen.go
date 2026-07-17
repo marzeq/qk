@@ -1144,7 +1144,7 @@ func (g *Generator) generateFieldAccessExpr(node *parser.FieldAccessNode) ir.Ope
 	if node.IsEnumValue {
 		return ir.IntConstOperand(node.EnumValue, node.GetType())
 	}
-	basePtr := g.generateAddressOfExpr(node.Subject)
+	basePtr := g.generateFieldSubjectAddress(node.Subject)
 
 	fieldPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: node.GetType()})
 	g.Emit(ir.FieldAddress{Dest: fieldPtrID, Base: basePtr, Field: node.Field.Name})
@@ -1152,6 +1152,13 @@ func (g *Generator) generateFieldAccessExpr(node *parser.FieldAccessNode) ir.Ope
 	dst := g.currentFunction.NewValueOfType(node.GetType())
 	g.Emit(ir.LoadPtr{Dest: dst, Ptr: ir.ValueOperand(fieldPtrID, types.PointerType{Base: node.GetType()})})
 	return ir.ValueOperand(dst, node.GetType())
+}
+
+func (g *Generator) generateFieldSubjectAddress(subject parser.ExpressionNode) ir.Operand {
+	if _, ok := types.Underlying(subject.GetType()).(types.PointerType); ok {
+		return g.GenerateExpr(subject)
+	}
+	return g.generateAddressOfExpr(subject)
 }
 
 func (g *Generator) generateIfExpr(node *parser.IfExprNode) ir.Operand {
@@ -1240,7 +1247,7 @@ func (g *Generator) generateAddressOfExpr(expr parser.ExpressionNode) ir.Operand
 		g.Emit(ir.AddressOf{Dest: addr, Slot: slot})
 		return ir.ValueOperand(addr, types.PointerType{Base: ident.GetType()})
 	case *parser.FieldAccessNode:
-		base := g.generateAddressOfExpr(node.Subject)
+		base := g.generateFieldSubjectAddress(node.Subject)
 		dest := g.currentFunction.NewValueOfType(types.PointerType{Base: node.GetType()})
 		g.Emit(ir.FieldAddress{Dest: dest, Base: base, Field: node.Field.Name})
 		return ir.ValueOperand(dest, types.PointerType{Base: node.GetType()})
