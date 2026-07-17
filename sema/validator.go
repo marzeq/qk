@@ -388,8 +388,29 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			params = fn.Parameters
 		}
 
-		if !variadic && len(n.Args) != len(params) {
-			v.errorf(n, "wrong number of arguments")
+		got, expected := len(n.Args), len(params)
+		if n.Method {
+			got--
+			expected--
+		}
+		if (!variadic && got != expected) || (variadic && got < expected) {
+			callable := "callable expression"
+			if n.Symbol != nil {
+				kind := "function"
+				if n.Method {
+					kind = "method"
+				}
+				callable = fmt.Sprintf("%s %q", kind, n.Symbol.Name)
+			} else if n.Callee != nil {
+				callable = fmt.Sprintf("callable of type %v", n.Callee.GetType())
+			}
+			if variadic {
+				v.errorf(n, "%s expects at least %d %s, but %d %s provided",
+					callable, expected, argumentWord(expected), got, wasWere(got))
+			} else {
+				v.errorf(n, "%s expects %d %s, but %d %s provided",
+					callable, expected, argumentWord(expected), got, wasWere(got))
+			}
 			return
 		}
 
@@ -790,6 +811,20 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		panic(fmt.Sprintf("unhandled expression type %T", n))
 	}
 
+}
+
+func argumentWord(count int) string {
+	if count == 1 {
+		return "argument"
+	}
+	return "arguments"
+}
+
+func wasWere(count int) string {
+	if count == 1 {
+		return "was"
+	}
+	return "were"
 }
 
 func hasOffsetField(operand types.Type, name string) bool {
