@@ -2,6 +2,7 @@ package irgen
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/marzeq/qk/attributes"
@@ -45,11 +46,13 @@ type Generator struct {
 	currentEnv      *Env
 	globals         map[*symbols.Symbol]string
 	loopTargets     []loopTargets
+	deferScopes     [][]parser.Node
 }
 
 type loopTargets struct {
 	breakTarget    ir.BlockID
 	continueTarget ir.BlockID
+	cleanupDepth   int
 }
 
 func (g *Generator) Emit(instruction ir.Instr) {
@@ -184,6 +187,7 @@ func (g *Generator) GenerateFunction(fn *parser.FunctionDefNode) {
 	g.currentBlock = irFn.NewBlock("entry")
 	irFn.Entry = g.currentBlock.ID
 	g.currentEnv = NewEnv(nil)
+	g.deferScopes = nil
 
 	g.emitFunctionParams(fn)
 
@@ -211,6 +215,7 @@ func (g *Generator) GenerateFunction(fn *parser.FunctionDefNode) {
 	g.currentEnv = nil
 	g.currentBlock = nil
 	g.currentFunction = nil
+	g.deferScopes = nil
 }
 
 func (g *Generator) emitFunctionParams(fn *parser.FunctionDefNode) {
@@ -282,6 +287,8 @@ func (g *Generator) GenerateNode(node parser.Node) {
 		g.generateAssignment(n)
 	case *parser.ControlKeywordNode:
 		g.generateControlKeyword(n)
+	case *parser.DeferNode:
+		g.registerDefer(n)
 	case *parser.IfNode:
 		g.generateIf(n)
 	case *parser.ForNode:
@@ -302,7 +309,9 @@ func (g *Generator) GenerateNode(node parser.Node) {
 func (g *Generator) generateBlock(node *parser.BlockNode) {
 	prev := g.currentEnv
 	g.currentEnv = NewEnv(prev)
+	g.deferScopes = append(g.deferScopes, nil)
 	defer func() {
+		g.deferScopes = g.deferScopes[:len(g.deferScopes)-1]
 		g.currentEnv = prev
 	}()
 
@@ -311,6 +320,54 @@ func (g *Generator) generateBlock(node *parser.BlockNode) {
 			break
 		}
 		g.GenerateNode(child)
+	}
+	if !g.currentBlockHasTerminator() {
+		g.emitCurrentScopeDefers()
+	}
+}
+
+func (g *Generator) registerDefer(node *parser.DeferNode) {
+	if len(g.deferScopes) == 0 {
+		panic("defer outside a lexical scope")
+	}
+	last := len(g.deferScopes) - 1
+	g.deferScopes[last] = append(g.deferScopes[last], node.Action)
+}
+
+func (g *Generator) emitDeferredAction(action parser.Node) {
+	if expr, ok := action.(parser.ExpressionNode); ok {
+		g.GenerateExpr(expr)
+		return
+	}
+	g.GenerateNode(action)
+}
+
+func (g *Generator) emitCurrentScopeDefers() {
+	if len(g.deferScopes) == 0 {
+		return
+	}
+	g.emitScopeDefers(len(g.deferScopes) - 1)
+}
+
+func (g *Generator) emitDefersUntil(depth int) {
+	for i := len(g.deferScopes) - 1; i >= depth; i-- {
+		g.emitScopeDefers(i)
+		if g.currentBlockHasTerminator() {
+			return
+		}
+	}
+}
+
+func (g *Generator) emitScopeDefers(scope int) {
+	actions := g.deferScopes[scope]
+	defer func() { g.deferScopes[scope] = actions }()
+	for i, action := range slices.Backward(actions) {
+		// If this action transfers control, only the earlier actions remain pending.
+		g.deferScopes[scope] = actions[:i]
+		g.emitDeferredAction(action)
+		if g.currentBlockHasTerminator() {
+			return
+		}
 	}
 }
 
@@ -396,17 +453,32 @@ func (g *Generator) generateAssignment(node *parser.AssignmentNode) {
 func (g *Generator) generateControlKeyword(node *parser.ControlKeywordNode) {
 	switch node.Keyword {
 	case tokeniser.KeywordReturn:
+		var value ir.Operand
+		if node.ReturnValue != nil {
+			value = g.GenerateExpr(node.ReturnValue)
+		}
+		g.emitDefersUntil(0)
+		if g.currentBlockHasTerminator() {
+			return
+		}
 		if node.ReturnValue == nil {
 			g.Emit(ir.Return{})
 			return
 		}
-		value := g.GenerateExpr(node.ReturnValue)
 		g.Emit(ir.Return{HasValue: true, Value: value})
 	case tokeniser.KeywordBreak:
 		targets := g.currentLoopTargets()
+		g.emitDefersUntil(targets.cleanupDepth)
+		if g.currentBlockHasTerminator() {
+			return
+		}
 		g.Emit(ir.Jump{Target: targets.breakTarget})
 	case tokeniser.KeywordContinue:
 		targets := g.currentLoopTargets()
+		g.emitDefersUntil(targets.cleanupDepth)
+		if g.currentBlockHasTerminator() {
+			return
+		}
 		g.Emit(ir.Jump{Target: targets.continueTarget})
 	default:
 		panic(fmt.Sprintf("unsupported control keyword %q", node.Keyword))
@@ -421,7 +493,9 @@ func (g *Generator) currentLoopTargets() loopTargets {
 }
 
 func (g *Generator) pushLoopTargets(breakTarget, continueTarget ir.BlockID) func() {
-	g.loopTargets = append(g.loopTargets, loopTargets{breakTarget: breakTarget, continueTarget: continueTarget})
+	g.loopTargets = append(g.loopTargets, loopTargets{
+		breakTarget: breakTarget, continueTarget: continueTarget, cleanupDepth: len(g.deferScopes),
+	})
 	return func() { g.loopTargets = g.loopTargets[:len(g.loopTargets)-1] }
 }
 
@@ -724,16 +798,7 @@ func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
 }
 
 func (g *Generator) generateGivenExpr(node *parser.GivenExprNode) ir.Operand {
-	prev := g.currentEnv
-	g.currentEnv = NewEnv(prev)
-	defer func() { g.currentEnv = prev }()
-
-	for _, child := range node.Block.Body {
-		if g.currentBlockHasTerminator() {
-			break
-		}
-		g.GenerateNode(child)
-	}
+	g.generateBlock(node.Block)
 	if g.currentBlockHasTerminator() {
 		// Keep generating a well-formed value in an unreachable block. This lets a
 		// given expression contain return, break, or continue without its enclosing
