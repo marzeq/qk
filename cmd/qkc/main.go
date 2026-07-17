@@ -113,6 +113,16 @@ func main() {
 	}
 
 	if args.noEmit {
+		if args.dumpAsm {
+			buildDir, err := emitLLVMFiles(llvmOutputs, order)
+			check(err)
+			defer os.RemoveAll(buildDir)
+
+			err = emitAssemblyFiles(buildDir, order, args)
+			check(err)
+			err = dumpAssemblyFiles(buildDir, order)
+			check(err)
+		}
 		return
 	}
 

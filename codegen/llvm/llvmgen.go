@@ -67,7 +67,7 @@ func (e *Emitter) EmitModule(out *strings.Builder, m *ir.Module) {
 		}
 		e.externMap[ex.Name] = llvmName
 
-		foreign := ex.Signature.Attributes.Get(attributes.AttributeTypeForeign) != nil
+		foreign := attributes.UsesCABI(ex.Signature.Attributes)
 		returnType := e.TypeEmit(ex.Signature.ReturnType)
 		if foreign {
 			returnType = e.foreignABIReturnType(ex.Signature.ReturnType)
@@ -832,7 +832,7 @@ func (e *Emitter) CallEmit(out *strings.Builder, c ir.Call) {
 		callTarget = e.OperandEmit(*c.Callee)
 	}
 
-	foreign := c.Signature.Attributes.Get(attributes.AttributeTypeForeign) != nil
+	foreign := attributes.UsesCABI(c.Signature.Attributes)
 	callType := e.TypeEmit(c.Signature.ReturnType)
 	if foreign {
 		callType = e.foreignABIReturnType(c.Signature.ReturnType)

@@ -440,8 +440,9 @@ func (p *Parser) parseNoReturnAttribute() (attributes.Attribute, error) {
 }
 
 func (p *Parser) parseForeignAttribute(defaultName string) (attributes.Attribute, error) {
+	result := attributes.FunctionAttributeForeign{From: defaultName, ABI: attributes.ForeignABIC}
 	if !p.Match(tokeniser.TokenOpenParen) {
-		return attributes.FunctionAttributeForeign{From: defaultName}, nil
+		return result, nil
 	}
 	p.Inc()
 	for p.Match(tokeniser.TokenNewline) {
@@ -449,19 +450,66 @@ func (p *Parser) parseForeignAttribute(defaultName string) (attributes.Attribute
 	}
 	if p.Match(tokeniser.TokenCloseParen) {
 		p.Inc()
-		return attributes.FunctionAttributeForeign{From: defaultName}, nil
+		return result, nil
 	}
-	name, ok := p.ExpectGet(tokeniser.TokenString)
-	if !ok {
-		return nil, shared.NewError(p.PrevLoc(), "foreign attribute argument must be a string literal")
+	seenABI, seenSymbol := false, false
+	for {
+		option, ok := p.ExpectGet(tokeniser.TokenIdentifier)
+		if !ok {
+			return nil, shared.NewError(p.PrevLoc(), "expected 'abi' or 'symbol' in @foreign")
+		}
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+		value, ok := p.ExpectGet(tokeniser.TokenString)
+		if !ok {
+			return nil, shared.NewError(p.PrevLoc(), "expected string after %s in @foreign", option.Value)
+		}
+		switch option.Value {
+		case "abi":
+			if seenABI {
+				return nil, shared.NewError(option.Loc, "duplicate abi option in @foreign")
+			}
+			seenABI = true
+			switch value.Value {
+			case "c":
+				result.ABI = attributes.ForeignABIC
+			case "qk":
+				result.ABI = attributes.ForeignABIQK
+			default:
+				return nil, shared.NewError(value.Loc, "unknown foreign ABI %q; expected 'c' or 'qk'", value.Value)
+			}
+		case "symbol":
+			if seenSymbol {
+				return nil, shared.NewError(option.Loc, "duplicate symbol option in @foreign")
+			}
+			seenSymbol = true
+			if value.Value == "" {
+				return nil, shared.NewError(value.Loc, "foreign symbol cannot be empty")
+			}
+			result.From = value.Value
+		default:
+			return nil, shared.NewError(option.Loc, "unknown @foreign option %q; expected 'abi' or 'symbol'", option.Value)
+		}
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+		if p.Match(tokeniser.TokenCloseParen) {
+			p.Inc()
+			break
+		}
+		if !p.Expect(tokeniser.TokenComma) {
+			return nil, shared.NewError(p.PrevLoc(), "expected ',' or ')' in @foreign")
+		}
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+		if p.Match(tokeniser.TokenCloseParen) {
+			p.Inc()
+			break
+		}
 	}
-	for p.Match(tokeniser.TokenNewline) {
-		p.Inc()
-	}
-	if !p.Expect(tokeniser.TokenCloseParen) {
-		return nil, shared.NewError(p.PrevLoc(), "foreign attribute takes at most one string argument")
-	}
-	return attributes.FunctionAttributeForeign{From: name.Value}, nil
+	return result, nil
 }
 
 func (p *Parser) parseExportAttribute(defaultName string) (attributes.Attribute, error) {

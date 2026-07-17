@@ -29,9 +29,22 @@ func (a AttributeNoInline) GetType() AttributeType { return AttributeTypeNoInlin
 
 type FunctionAttributeForeign struct {
 	From string
+	ABI  ForeignABI
 }
 
+type ForeignABI uint8
+
+const (
+	ForeignABIC ForeignABI = iota
+	ForeignABIQK
+)
+
 func (a FunctionAttributeForeign) GetType() AttributeType { return AttributeTypeForeign }
+
+func UsesCABI(attrs Attributes) bool {
+	foreign, ok := attrs.Get(AttributeTypeForeign).(FunctionAttributeForeign)
+	return ok && foreign.ABI == ForeignABIC
+}
 
 type LinkKind uint8
 

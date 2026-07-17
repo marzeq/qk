@@ -37,8 +37,13 @@ func (a *Analyser) resolveBodies(root *parser.RootNode) {
 	}
 
 	for _, node := range root.Body {
-		if fn, ok := node.(*parser.FunctionDefNode); ok {
-			a.visitFunction(fn)
+		switch n := node.(type) {
+		case *parser.FunctionDefNode:
+			a.visitFunction(n)
+		case *parser.DeclarationNode:
+			if n.Value != nil {
+				a.visitExpression(n.Value)
+			}
 		}
 	}
 }
