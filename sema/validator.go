@@ -368,20 +368,33 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		n.SetType(types.ErrorType{})
 
 	case *parser.FunctionCallNode:
-		if n.Symbol == nil || n.Symbol.Kind != symbols.SymbolKindFunction {
-			v.errorf(n, "not callable")
-			return
+		var params []types.Type
+		variadic := false
+		if n.Symbol != nil && n.Symbol.Kind == symbols.SymbolKindFunction {
+			params = n.Symbol.Signature.Parameters
+			variadic = n.Symbol.Signature.Variadic
+		} else {
+			v.validateExpr(n.Callee)
+			ptr, ok := types.Underlying(n.Callee.GetType()).(types.PointerType)
+			if !ok {
+				v.errorf(n, "expression of type %s is not callable", n.Callee.GetType())
+				return
+			}
+			fn, ok := types.Underlying(ptr.Base).(types.FunctionType)
+			if !ok {
+				v.errorf(n, "expression of type %s is not callable", n.Callee.GetType())
+				return
+			}
+			params = fn.Parameters
 		}
 
-		sig := n.Symbol.Signature
-
-		if !sig.Variadic && len(n.Args) != len(sig.Parameters) {
+		if !variadic && len(n.Args) != len(params) {
 			v.errorf(n, "wrong number of arguments")
 			return
 		}
 
 		for i, arg := range n.Args {
-			if i >= len(sig.Parameters) {
+			if i >= len(params) {
 				v.validateExpr(arg)
 				if types.HasUntyped(arg.GetType()) {
 					v.errorf(arg, "cannot infer type for variadic argument from untyped numeric value; add a cast")
@@ -389,7 +402,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 				continue
 			}
 
-			paramType := sig.Parameters[i]
+			paramType := params[i]
 			n.Args[i] = v.validateExprWithExpected(arg, paramType)
 		}
 

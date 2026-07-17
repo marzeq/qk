@@ -39,17 +39,19 @@ func (a *Analyser) resolveIdentifier(n *parser.IdentifierNode) (*symbols.Symbol,
 }
 
 func (a *Analyser) resolveFunctionCall(n *parser.FunctionCallNode) {
-	sym, ok := a.resolveIdentifier(n.Name)
-	if !ok {
-		return
+	if n.Name != nil {
+		sym, ok := a.resolveIdentifier(n.Name)
+		if !ok {
+			return
+		}
+		if sym.Kind == symbols.SymbolKindFunction {
+			n.Symbol = sym
+		} else {
+			n.Name = nil
+		}
+	} else {
+		a.visitExpression(n.Callee)
 	}
-
-	if sym.Kind != symbols.SymbolKindFunction {
-		a.errorf(n, "%q is not a function", sym.Name)
-		return
-	}
-
-	n.Symbol = sym
 
 	for _, arg := range n.Args {
 		a.visitExpression(arg)

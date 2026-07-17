@@ -130,6 +130,15 @@ type PointerTypeNode struct {
 func (n PointerTypeNode) GetLoc() shared.Location { return n.Loc }
 func (n PointerTypeNode) _type()                  {}
 
+type FunctionTypeNode struct {
+	Parameters []TypeNode
+	ReturnType TypeNode
+	Loc        shared.Location
+}
+
+func (n FunctionTypeNode) GetLoc() shared.Location { return n.Loc }
+func (n FunctionTypeNode) _type()                  {}
+
 type TypeNode interface {
 	Node
 
@@ -230,6 +239,9 @@ func (n *SliceLiteralNode) SetType(t types.Type)   { n.Type = t }
 func (n *SliceLiteralNode) GetType() types.Type    { return n.Type }
 
 type FunctionCallNode struct {
+	Callee ExpressionNode
+	// Name and Symbol are populated for direct calls, preserving linkage and
+	// foreign-ABI information that is not part of a callable value's type.
 	Name   *IdentifierNode
 	Args   []ExpressionNode
 	Loc    shared.Location
@@ -239,14 +251,20 @@ type FunctionCallNode struct {
 func (n FunctionCallNode) GetLoc() shared.Location { return n.Loc }
 func (n *FunctionCallNode) SetType(t types.Type)   {}
 func (n *FunctionCallNode) GetType() types.Type {
-	if n.Symbol == nil || n.Symbol.Kind != symbols.SymbolKindFunction ||
-		n.Symbol.Signature == nil {
-		panic("invalid function call node")
+	if n.Symbol != nil && n.Symbol.Kind == symbols.SymbolKindFunction && n.Symbol.Signature != nil {
+		if n.Symbol.Signature.ReturnType == nil {
+			return types.PrimitiveVoid
+		}
+		return n.Symbol.Signature.ReturnType
 	}
-	if n.Symbol.Signature.ReturnType == nil {
-		return types.PrimitiveVoid
+	if n.Callee != nil {
+		if ptr, ok := types.Underlying(n.Callee.GetType()).(types.PointerType); ok {
+			if fn, ok := types.Underlying(ptr.Base).(types.FunctionType); ok {
+				return fn.ReturnType
+			}
+		}
 	}
-	return n.Symbol.Signature.ReturnType
+	return types.ErrorType{}
 }
 
 type IfExprBranch struct {

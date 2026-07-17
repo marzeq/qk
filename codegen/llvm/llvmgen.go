@@ -386,6 +386,12 @@ func (e *Emitter) OperandEmit(op ir.Operand) string {
 		}
 		length := len(op.StringValue) + 1
 		return fmt.Sprintf("getelementptr inbounds ([%d x i8], ptr %s, i64 0, i64 0)", length, global)
+	case ir.OperandFunctionConst:
+		name := op.FunctionName
+		if mapped, ok := e.externMap[name]; ok && mapped != "" {
+			name = mapped
+		}
+		return "@" + name
 	default:
 		panic("unreachable")
 	}
@@ -821,6 +827,10 @@ func (e *Emitter) CallEmit(out *strings.Builder, c ir.Call) {
 			fnName = mapped
 		}
 	}
+	callTarget := "@" + fnName
+	if c.Callee != nil {
+		callTarget = e.OperandEmit(*c.Callee)
+	}
 
 	foreign := c.Signature.Attributes.Get(attributes.AttributeTypeForeign) != nil
 	callType := e.TypeEmit(c.Signature.ReturnType)
@@ -863,13 +873,13 @@ func (e *Emitter) CallEmit(out *strings.Builder, c ir.Call) {
 	if c.Signature.ReturnType.Equals(types.PrimitiveVoid) {
 		out.WriteString("call ")
 		out.WriteString(callType)
-		out.WriteString(" @")
-		out.WriteString(fnName)
+		out.WriteString(" ")
+		out.WriteString(callTarget)
 		out.WriteString("(")
 	} else if callResult != "" {
-		fmt.Fprintf(out, "%s = call %s @%s(", callResult, callType, fnName)
+		fmt.Fprintf(out, "%s = call %s %s(", callResult, callType, callTarget)
 	} else {
-		fmt.Fprintf(out, "%s = call %s @%s(", e.ValueIDEmit(c.Dest), callType, fnName)
+		fmt.Fprintf(out, "%s = call %s %s(", e.ValueIDEmit(c.Dest), callType, callTarget)
 	}
 	for i := range c.Args {
 		for j, lowered := range loweredArgs[i] {

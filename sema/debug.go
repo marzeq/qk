@@ -119,6 +119,7 @@ func (w *debugWalker) walkExpr(expr parser.ExpressionNode) {
 		w.walkExpr(n.Operand2)
 
 	case *parser.FunctionCallNode:
+		w.walkExpr(n.Callee)
 		for _, arg := range n.Args {
 			w.walkExpr(arg)
 		}

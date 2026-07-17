@@ -321,6 +321,12 @@ func (p *Parser) ParsePostfix() (ExpressionNode, error) {
 
 	for {
 		switch {
+		case p.Match(tokeniser.TokenOpenParen):
+			call, err := p.ParseCall(expr)
+			if err != nil {
+				return nil, err
+			}
+			expr = call
 		case p.Match(tokeniser.TokenIncrement):
 			return nil, shared.NewError(p.CurrLoc(), "use ... += 1 instead")
 		case p.Match(tokeniser.TokenDecrement):
@@ -788,6 +794,15 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 }
 
 func (p *Parser) ParseFunctionCall(name *IdentifierNode) (*FunctionCallNode, error) {
+	call, err := p.ParseCall(name)
+	if err != nil {
+		return nil, err
+	}
+	call.Name = name
+	return call, nil
+}
+
+func (p *Parser) ParseCall(callee ExpressionNode) (*FunctionCallNode, error) {
 	var args []ExpressionNode
 
 	if !p.Expect(tokeniser.TokenOpenParen) {
@@ -830,9 +845,9 @@ func (p *Parser) ParseFunctionCall(name *IdentifierNode) (*FunctionCallNode, err
 	}
 
 	return &FunctionCallNode{
-		Name: name,
-		Args: args,
-		Loc:  name.Loc,
+		Callee: callee,
+		Args:   args,
+		Loc:    callee.GetLoc(),
 	}, nil
 }
 
@@ -1409,9 +1424,20 @@ func (p *Parser) ParsePointerType() (*PointerTypeNode, error) {
 		mutable = true
 	}
 
-	tpe, err := p.ParseType()
+	var tpe TypeNode
+	var err error
+	if p.Match(tokeniser.TokenOpenParen) {
+		tpe, err = p.ParseFunctionType()
+	} else {
+		tpe, err = p.ParseType()
+	}
 	if err != nil {
 		return nil, err
+	}
+	if mutable {
+		if _, ok := tpe.(*FunctionTypeNode); ok {
+			return nil, shared.NewError(beginLoc, "function pointers cannot be mutable pointers")
+		}
 	}
 
 	return &PointerTypeNode{
@@ -1419,6 +1445,34 @@ func (p *Parser) ParsePointerType() (*PointerTypeNode, error) {
 		Mutable:  mutable,
 		Loc:      beginLoc,
 	}, nil
+}
+
+func (p *Parser) ParseFunctionType() (*FunctionTypeNode, error) {
+	beginLoc := p.CurrLoc()
+	p.Inc() // (
+	var params []TypeNode
+	for !p.Match(tokeniser.TokenCloseParen) {
+		param, err := p.ParseType()
+		if err != nil {
+			return nil, err
+		}
+		params = append(params, param)
+		if !p.Match(tokeniser.TokenComma) {
+			break
+		}
+		p.Inc()
+	}
+	if !p.Expect(tokeniser.TokenCloseParen) {
+		return nil, shared.NewError(p.PrevLoc(), "expected ')' in function pointer type")
+	}
+	if !p.Expect(tokeniser.TokenColon) {
+		return nil, shared.NewError(p.PrevLoc(), "expected ':' and return type in function pointer type")
+	}
+	ret, err := p.ParseType()
+	if err != nil {
+		return nil, err
+	}
+	return &FunctionTypeNode{Parameters: params, ReturnType: ret, Loc: beginLoc}, nil
 }
 
 func (p *Parser) ParseNamedType() (*NamedTypeNode, error) {

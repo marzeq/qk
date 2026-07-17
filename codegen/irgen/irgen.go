@@ -1263,6 +1263,11 @@ func (g *Generator) generateAddressOfExpr(expr parser.ExpressionNode) ir.Operand
 }
 
 func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.Operand {
+	var callee *ir.Operand
+	if node.Symbol == nil {
+		value := g.GenerateExpr(node.Callee)
+		callee = &value
+	}
 	args := make([]ir.Operand, 0, len(node.Args))
 	for _, arg := range node.Args {
 		args = append(args, g.GenerateExpr(arg))
@@ -1270,7 +1275,10 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 	callSig := g.buildCallSignature(node)
 	args = g.promoteVariadicArgs(args, callSig)
 
-	name := node.Name.String()
+	name := ""
+	if node.Name != nil {
+		name = node.Name.String()
+	}
 	if node.Symbol != nil {
 		name = node.Symbol.Name
 
@@ -1305,6 +1313,7 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 	if node.GetType().Equals(types.PrimitiveVoid) {
 		g.Emit(ir.Call{
 			Name:      name,
+			Callee:    callee,
 			Args:      args,
 			Signature: callSig,
 		})
@@ -1312,7 +1321,7 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 	}
 
 	dst := g.currentFunction.NewValueOfType(node.GetType())
-	g.Emit(ir.Call{Dest: dst, Name: name, Args: args, Signature: callSig})
+	g.Emit(ir.Call{Dest: dst, Name: name, Callee: callee, Args: args, Signature: callSig})
 	return ir.ValueOperand(dst, node.GetType())
 }
 
@@ -1398,6 +1407,12 @@ func (g *Generator) buildCallSignature(node *parser.FunctionCallNode) ir.Functio
 		sig.Variadic = node.Symbol.Signature.Variadic
 		sig.Attributes = node.Symbol.Attributes
 	}
+	if node.Symbol == nil {
+		ptr := types.Underlying(node.Callee.GetType()).(types.PointerType)
+		fn := types.Underlying(ptr.Base).(types.FunctionType)
+		sig.ParamTypes = append([]types.Type(nil), fn.Parameters...)
+		sig.ReturnType = fn.ReturnType
+	}
 
 	return sig
 }
@@ -1405,6 +1420,17 @@ func (g *Generator) buildCallSignature(node *parser.FunctionCallNode) ir.Functio
 func (g *Generator) generateIdentifierExpr(node *parser.IdentifierNode) ir.Operand {
 	if node.Symbol == nil {
 		panic("identifier symbol is nil")
+	}
+	if node.Symbol.Kind == symbols.SymbolKindFunction {
+		name, sig := g.functionValueName(node)
+		if node.Module != "" {
+			from := ""
+			if foreign, ok := node.Symbol.Attributes.Get(attributes.AttributeTypeForeign).(attributes.FunctionAttributeForeign); ok {
+				from = foreign.From
+			}
+			g.addExternForCall(name, sig, from)
+		}
+		return ir.FunctionConstOperand(name, node.GetType())
 	}
 	if node.Module != "" {
 		return g.generateModuleIdentifierExpr(node)
@@ -1425,6 +1451,31 @@ func (g *Generator) generateIdentifierExpr(node *parser.IdentifierNode) ir.Opera
 	g.Emit(ir.Load{Dest: dst, Slot: slot})
 
 	return ir.ValueOperand(dst, node.GetType())
+}
+
+func (g *Generator) functionValueName(node *parser.IdentifierNode) (string, ir.FunctionSignature) {
+	sym := node.Symbol
+	ret := sym.Signature.ReturnType
+	if ret == nil {
+		ret = types.PrimitiveVoid
+	}
+	sig := ir.FunctionSignature{ParamTypes: append([]types.Type(nil), sym.Signature.Parameters...), ReturnType: ret, Variadic: sym.Signature.Variadic, Attributes: sym.Attributes}
+	name := sym.Name
+	if export, ok := sym.Attributes.Get(attributes.AttributeTypeExport).(attributes.FunctionAttributeExport); ok {
+		name = export.As
+	} else if foreign := sym.Attributes.Get(attributes.AttributeTypeForeign); foreign == nil {
+		module := g.ModuleName
+		if node.Module != "" {
+			module = node.Module
+		}
+		if node.ResolvedModuleName != "" {
+			module = node.ResolvedModuleName
+		}
+		if !g.isProgramEntryFunction(sym.Name) {
+			name = g.mangleFunctionName(module, sym.Name)
+		}
+	}
+	return name, sig
 }
 
 func (g *Generator) generateModuleIdentifierExpr(node *parser.IdentifierNode) ir.Operand {

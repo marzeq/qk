@@ -113,11 +113,15 @@ func formatInstr(inst ir.Instr) string {
 			}
 			args.WriteString(formatOperand(arg))
 		}
+		target := i.Name
+		if i.Callee != nil {
+			target = formatOperand(*i.Callee)
+		}
 		sig := formatSignatureParams(i.Signature.ParamTypes) + " -> " + formatType(i.Signature.ReturnType)
 		if i.Dest == 0 {
-			return fmt.Sprintf("call %s(%s) ; sig %s", i.Name, args.String(), sig)
+			return fmt.Sprintf("call %s(%s) ; sig %s", target, args.String(), sig)
 		}
-		return fmt.Sprintf("v%d = call %s(%s) ; sig %s", i.Dest, i.Name, args.String(), sig)
+		return fmt.Sprintf("v%d = call %s(%s) ; sig %s", i.Dest, target, args.String(), sig)
 	case ir.Jump:
 		return fmt.Sprintf("jmp b%d", i.Target)
 	case ir.Branch:
@@ -166,6 +170,8 @@ func formatOperand(op ir.Operand) string {
 		return "null" + valueSuffix
 	case ir.OperandCStringConst:
 		return fmt.Sprintf("cstrconst %q%s", op.StringValue, valueSuffix)
+	case ir.OperandFunctionConst:
+		return "@" + op.FunctionName + valueSuffix
 	default:
 		return "<unknown-op>"
 	}

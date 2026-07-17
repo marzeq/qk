@@ -186,7 +186,13 @@ func (a *Attributor) attributeNode(node parser.Node) {
 func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 	switch n := node.(type) {
 	case *parser.IdentifierNode:
-		if n.Symbol == nil || n.Symbol.Type == nil {
+		if n.Symbol != nil && n.Symbol.Kind == symbols.SymbolKindFunction && n.Symbol.Signature != nil {
+			ret := n.Symbol.Signature.ReturnType
+			if ret == nil {
+				ret = types.PrimitiveVoid
+			}
+			n.SetType(types.PointerType{Base: types.FunctionType{Parameters: n.Symbol.Signature.Parameters, ReturnType: ret}})
+		} else if n.Symbol == nil || n.Symbol.Type == nil {
 			a.errorf(n, "undefined identifier: %s", n.String())
 			n.SetType(types.ErrorType{})
 		} else {
@@ -281,7 +287,9 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		}
 
 	case *parser.FunctionCallNode:
-		if n.Symbol.Signature.ReturnType != nil {
+		if n.Symbol == nil {
+			a.attributeExpr(n.Callee)
+		} else if n.Symbol.Signature.ReturnType != nil {
 			n.SetType(n.Symbol.Signature.ReturnType)
 		} else {
 			n.SetType(types.PrimitiveVoid)

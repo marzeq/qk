@@ -44,6 +44,13 @@ func (a *Analyser) resolveTypeNode(n parser.TypeNode) types.Type {
 			Mutable: t.Mutable,
 		}
 
+	case *parser.FunctionTypeNode:
+		params := make([]types.Type, len(t.Parameters))
+		for i, param := range t.Parameters {
+			params[i] = a.resolveTypeNode(param)
+		}
+		return types.FunctionType{Parameters: params, ReturnType: a.resolveTypeNode(t.ReturnType)}
+
 	case *parser.SliceTypeNode:
 		return types.SliceType{
 			Base: a.resolveTypeNode(t.ElementType),

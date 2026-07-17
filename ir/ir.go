@@ -19,6 +19,7 @@ const (
 	OperandNullConst
 	OperandStructConst
 	OperandCStringConst
+	OperandFunctionConst
 )
 
 type Operand struct {
@@ -27,11 +28,12 @@ type Operand struct {
 
 	Value ValueID
 
-	IntValue    string
-	FloatValue  string
-	BoolValue   bool
-	Fields      []Operand
-	StringValue string
+	IntValue     string
+	FloatValue   string
+	BoolValue    bool
+	Fields       []Operand
+	StringValue  string
+	FunctionName string
 }
 
 func ValueOperand(id ValueID, ty types.Type) Operand {
@@ -62,6 +64,10 @@ func CStringConstOperand(value string) Operand {
 	return Operand{
 		Kind: OperandCStringConst, Type: types.PointerType{Base: types.PrimitiveChar}, StringValue: value,
 	}
+}
+
+func FunctionConstOperand(name string, ty types.Type) Operand {
+	return Operand{Kind: OperandFunctionConst, Type: ty, FunctionName: name}
 }
 
 type Slot struct {
@@ -445,6 +451,7 @@ func (ElementAddress) isInstr() {}
 type Call struct {
 	Dest      ValueID
 	Name      string
+	Callee    *Operand
 	Args      []Operand
 	Signature FunctionSignature
 }
