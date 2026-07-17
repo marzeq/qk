@@ -431,21 +431,9 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			}
 
 		case parser.UnaryOpReference:
-			fallthrough
+			v.validateReferenceTarget(n, n.Operand, false)
 		case parser.UnaryOpMutableReference:
-
-			switch op := n.Operand.(type) {
-			case *parser.IdentifierNode:
-				if n.Op == parser.UnaryOpMutableReference && op.Symbol != nil && !op.Symbol.Mutable {
-					v.errorf(n, "taking mutable reference of immutable variable")
-				}
-			case *parser.FieldAccessNode:
-				panic(fmt.Sprintf("todo: taking reference of field access expression %T", n.Operand))
-			case *parser.IndexExprNode:
-				panic(fmt.Sprintf("todo: taking reference of index expression %T", n.Operand))
-			default:
-				v.errorf(n, "cannot take reference of this expression")
-			}
+			v.validateReferenceTarget(n, n.Operand, true)
 
 		case parser.UnaryOpDereference:
 			if ptrType, ok := types.Underlying(operandType).(types.PointerType); ok {
@@ -763,6 +751,63 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		panic(fmt.Sprintf("unhandled expression type %T", n))
 	}
 
+}
+
+func (v *Validator) validateReferenceTarget(node *parser.UnaryOpNode, target parser.ExpressionNode, mutable bool) bool {
+	switch target := target.(type) {
+	case *parser.IdentifierNode:
+		if target.Symbol == nil || target.Symbol.Kind != symbols.SymbolKindVariable {
+			v.errorf(node, "cannot take reference of this expression")
+			return false
+		}
+		if mutable && !target.Symbol.Mutable {
+			v.errorf(node, "taking mutable reference of immutable variable")
+			return false
+		}
+		return true
+
+	case *parser.UnaryOpNode:
+		if target.Op != parser.UnaryOpDereference {
+			v.errorf(node, "cannot take reference of this expression")
+			return false
+		}
+		pointer, ok := types.Underlying(target.Operand.GetType()).(types.PointerType)
+		if !ok || pointer.Base.Equals(types.PrimitiveVoid) {
+			v.errorf(node, "cannot take reference of dereferenced void pointer")
+			return false
+		}
+		if mutable && !pointer.Mutable {
+			v.errorf(node, "taking mutable reference through immutable pointer")
+			return false
+		}
+		return true
+
+	case *parser.FieldAccessNode:
+		return v.validateReferenceTarget(node, target.Subject, mutable)
+
+	case *parser.IndexExprNode:
+		switch subjectType := types.Underlying(target.Subject.GetType()).(type) {
+		case types.SliceType:
+			return v.validateReferenceTarget(node, target.Subject, mutable)
+		case types.PointerType:
+			if subjectType.Base.Equals(types.PrimitiveVoid) {
+				v.errorf(node, "cannot take reference of index into void pointer")
+				return false
+			}
+			if mutable && !subjectType.Mutable {
+				v.errorf(node, "taking mutable reference through immutable pointer")
+				return false
+			}
+			return true
+		default:
+			v.errorf(node, "cannot take reference of this expression")
+			return false
+		}
+
+	default:
+		v.errorf(node, "cannot take reference of this expression")
+		return false
+	}
 }
 
 func (v *Validator) createCast(node parser.ExpressionNode, target types.Type) parser.ExpressionNode {
