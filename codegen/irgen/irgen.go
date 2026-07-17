@@ -1417,6 +1417,10 @@ func (g *Generator) globalNameForIdentifier(node *parser.IdentifierNode) string 
 }
 
 func (g *Generator) generateBinaryExpr(node *parser.BinaryOpNode) ir.Operand {
+	if node.Op == parser.BinaryOpLogicalAnd || node.Op == parser.BinaryOpLogicalOr {
+		return g.generateShortCircuitExpr(node)
+	}
+
 	left := g.GenerateExpr(node.Operand1)
 	right := g.GenerateExpr(node.Operand2)
 	dst := g.currentFunction.NewValueOfType(node.GetType())
@@ -1463,6 +1467,39 @@ func (g *Generator) generateBinaryExpr(node *parser.BinaryOpNode) ir.Operand {
 	}
 
 	return ir.ValueOperand(dst, node.GetType())
+}
+
+func (g *Generator) generateShortCircuitExpr(node *parser.BinaryOpNode) ir.Operand {
+	resultSlot := g.currentFunction.NewSlot(types.PrimitiveBool, "short.circuit.result")
+	g.Emit(ir.Alloca{Slot: resultSlot})
+
+	left := g.GenerateExpr(node.Operand1)
+	rightBlock := g.currentFunction.NewBlock("short.circuit.right")
+	shortBlock := g.currentFunction.NewBlock("short.circuit.skip")
+	mergeBlock := g.currentFunction.NewBlock("short.circuit.merge")
+
+	if node.Op == parser.BinaryOpLogicalAnd {
+		g.Emit(ir.Branch{Cond: left, Then: rightBlock.ID, Else: shortBlock.ID})
+	} else {
+		g.Emit(ir.Branch{Cond: left, Then: shortBlock.ID, Else: rightBlock.ID})
+	}
+
+	g.currentBlock = shortBlock
+	shortValue := node.Op == parser.BinaryOpLogicalOr
+	g.Emit(ir.Store{Slot: resultSlot, Value: ir.BoolConstOperand(shortValue)})
+	g.Emit(ir.Jump{Target: mergeBlock.ID})
+
+	g.currentBlock = rightBlock
+	right := g.GenerateExpr(node.Operand2)
+	if !g.currentBlockHasTerminator() {
+		g.Emit(ir.Store{Slot: resultSlot, Value: right})
+		g.Emit(ir.Jump{Target: mergeBlock.ID})
+	}
+
+	g.currentBlock = mergeBlock
+	result := g.currentFunction.NewValueOfType(types.PrimitiveBool)
+	g.Emit(ir.Load{Dest: result, Slot: resultSlot})
+	return ir.ValueOperand(result, types.PrimitiveBool)
 }
 
 func (g *Generator) generateUnaryExpr(node *parser.UnaryOpNode) ir.Operand {
