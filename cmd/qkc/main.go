@@ -172,7 +172,7 @@ func main() {
 			moduleLinks = append(moduleLinks, module.Links...)
 		}
 	}
-	err = linkObjects(objFiles, moduleLinks, args)
+	err = linkObjects(objFiles, moduleLinks, objectRoots(irModules, args.mainModule), args)
 	check(err)
 
 	if args.keepBuildDir {
@@ -377,7 +377,13 @@ func compileLLVMModules(buildDir string, order []string, args *Args) ([]string, 
 		}
 
 		objPath := filepath.Join(buildDir, safeModuleFileName(name)+".o")
-		clangArgs := []string{"-c", llPath, "-o", objPath, fmt.Sprintf("-O%s", args.optLevel)}
+		clangArgs := []string{
+			"-c", llPath, "-o", objPath,
+			fmt.Sprintf("-O%s", args.optLevel),
+			"-ffunction-sections",
+			"-fdata-sections",
+		}
+		clangArgs = append(clangArgs, "-flto=thin")
 		if args.target != "" {
 			clangArgs = append([]string{"-target", args.target}, clangArgs...)
 		}
@@ -407,8 +413,8 @@ func compileLLVMModules(buildDir string, order []string, args *Args) ([]string, 
 	return objFiles, nil
 }
 
-func linkObjects(objFiles []string, moduleLinks []attributes.Link, config *Args) error {
-	args, err := buildLinkArgs(objFiles, moduleLinks, config)
+func linkObjects(objFiles []string, moduleLinks []attributes.Link, objectRoots []string, config *Args) error {
+	args, err := buildLinkArgs(objFiles, moduleLinks, objectRoots, config)
 	if err != nil {
 		return err
 	}
@@ -425,7 +431,7 @@ func linkObjects(objFiles []string, moduleLinks []attributes.Link, config *Args)
 	return nil
 }
 
-func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, config *Args) ([]string, error) {
+func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, objectRoots []string, config *Args) ([]string, error) {
 	args := append([]string{}, objFiles...)
 
 	switch config.outputType {
@@ -439,6 +445,12 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, config *Arg
 		args = append(args, "-shared")
 	default:
 		return nil, fmt.Errorf("unknown output type")
+	}
+	args = append(args, "-flto=thin", deadStripLinkerFlag(config.target))
+	if config.outputType == OutputObject {
+		for _, root := range objectRoots {
+			args = append(args, retainSymbolLinkerFlag(config.target, root))
+		}
 	}
 
 	if config.static {
@@ -486,6 +498,43 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, config *Arg
 	args = append(args, "-fuse-ld=lld")
 
 	return args, nil
+}
+
+func objectRoots(modules map[string]*ir.Module, mainModule string) []string {
+	var roots []string
+	for moduleName, module := range modules {
+		for _, fn := range module.Functions {
+			if fn.Linkage == ir.LinkageExternal && (moduleName == mainModule || fn.Visibility == ir.VisibilityDefault) {
+				roots = append(roots, fn.Name)
+			}
+		}
+		for _, global := range module.Globals {
+			if global.Linkage == ir.LinkageExternal && (moduleName == mainModule || global.Visibility == ir.VisibilityDefault) {
+				roots = append(roots, global.Name)
+			}
+		}
+	}
+	return roots
+}
+
+func retainSymbolLinkerFlag(target string, symbol string) string {
+	target = strings.ToLower(target)
+	if strings.Contains(target, "windows") || strings.Contains(target, "mingw") || strings.Contains(target, "msvc") {
+		return "-Wl,/INCLUDE:" + symbol
+	}
+	return "-Wl,-u," + symbol
+}
+
+func deadStripLinkerFlag(target string) string {
+	target = strings.ToLower(target)
+	switch {
+	case strings.Contains(target, "darwin"), strings.Contains(target, "apple"), strings.Contains(target, "macos"), strings.Contains(target, "ios"):
+		return "-Wl,-dead_strip"
+	case strings.Contains(target, "windows"), strings.Contains(target, "mingw"), strings.Contains(target, "msvc"):
+		return "-Wl,/OPT:REF"
+	default:
+		return "-Wl,--gc-sections"
+	}
 }
 
 func safeModuleFileName(name string) string {

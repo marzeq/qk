@@ -134,10 +134,7 @@ func (e *Emitter) GlobalEmit(out *strings.Builder, global ir.Global) {
 	if global.Mutable {
 		kind = "global"
 	}
-	linkage := "internal "
-	if global.Public {
-		linkage = ""
-	}
+	linkage := e.linkageEmit(global.Linkage, global.Visibility)
 	fmt.Fprintf(out, "@%s = %s%s %s %s", global.Name, linkage, kind, e.TypeEmit(global.Type), e.OperandEmit(global.Value))
 }
 
@@ -152,12 +149,12 @@ func (e *Emitter) EmitFunction(out *strings.Builder, fn *ir.Function) {
 	if cABI {
 		returnTypeText = e.foreignABIReturnType(returnType)
 	}
-	linkage := "internal"
-	if fn.Extern || e.isLLVMMainFunction(fn) {
-		linkage = "external"
+	linkage := e.linkageEmit(fn.Linkage, fn.Visibility)
+	if e.isLLVMMainFunction(fn) {
+		linkage = ""
 	}
 
-	fmt.Fprintf(out, "define %s %s @%s(", linkage, returnTypeText, fn.Name)
+	fmt.Fprintf(out, "define %s%s @%s(", linkage, returnTypeText, fn.Name)
 	paramTypes := fn.Signature.ParamTypes
 	if len(paramTypes) == 0 && len(fn.Parameters) > 0 {
 		paramTypes = make([]types.Type, len(fn.Parameters))
@@ -221,6 +218,16 @@ func (e *Emitter) EmitFunction(out *strings.Builder, fn *ir.Function) {
 	}
 
 	out.WriteString("}\n")
+}
+
+func (e *Emitter) linkageEmit(linkage ir.Linkage, visibility ir.Visibility) string {
+	if linkage == ir.LinkageInternal {
+		return "internal "
+	}
+	if visibility == ir.VisibilityHidden {
+		return "hidden "
+	}
+	return ""
 }
 
 func (e *Emitter) EmitBlock(out *strings.Builder, block *ir.Block) {

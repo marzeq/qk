@@ -117,11 +117,12 @@ func (g *Generator) generateGlobalDeclaration(node *parser.DeclarationNode) {
 	}
 
 	g.Module.AddGlobal(ir.Global{
-		Name:    g.mangleGlobalName(g.ModuleName, node.Name),
-		Type:    node.Symbol.Type,
-		Mutable: node.Mutable,
-		Public:  node.Pub,
-		Value:   g.generateGlobalInitializer(node.Value),
+		Name:       g.mangleGlobalName(g.ModuleName, node.Name),
+		Type:       node.Symbol.Type,
+		Mutable:    node.Mutable,
+		Linkage:    linkageForPublic(node.Pub),
+		Visibility: visibilityForPublic(node.Pub),
+		Value:      g.generateGlobalInitializer(node.Value),
 	})
 	g.globals[node.Symbol] = g.Module.Globals[len(g.Module.Globals)-1].Name
 }
@@ -175,14 +176,16 @@ func (g *Generator) generateGlobalInitializer(expr parser.ExpressionNode) ir.Ope
 
 func (g *Generator) GenerateFunction(fn *parser.FunctionDefNode) {
 	name := fn.Symbol.Name
-	exported := fn.Pub
+	linkage := linkageForPublic(fn.Pub)
+	visibility := visibilityForPublic(fn.Pub)
 	if export, ok := fn.Attributes.Get(attributes.AttributeTypeExport).(attributes.FunctionAttributeExport); ok {
 		name = export.As
-		exported = true
+		linkage = ir.LinkageExternal
+		visibility = ir.VisibilityDefault
 	} else if !g.isProgramEntryFunction(fn.Symbol.Name) {
 		name = g.mangleFunctionName(g.ModuleName, fn.Symbol.Name)
 	}
-	irFn := ir.NewFunction(name, exported, fn.Attributes)
+	irFn := ir.NewFunction(name, linkage, visibility, fn.Attributes)
 	irFn.Signature = g.buildFunctionSignature(fn)
 	g.Module.AddFunction(irFn)
 
@@ -226,9 +229,14 @@ func (g *Generator) GenerateFunction(fn *parser.FunctionDefNode) {
 func (g *Generator) generateDefaultWrappers(fn *parser.FunctionDefNode, targetName string) {
 	required := fn.Symbol.Signature.RequiredParameters
 	total := len(fn.Args)
-	external := fn.Pub || fn.Attributes.Get(attributes.AttributeTypeExport) != nil
+	linkage := linkageForPublic(fn.Pub)
+	visibility := visibilityForPublic(fn.Pub)
+	if fn.Attributes.Get(attributes.AttributeTypeExport) != nil {
+		linkage = ir.LinkageExternal
+		visibility = ir.VisibilityDefault
+	}
 	for arity := required; arity < total; arity++ {
-		wrapper := ir.NewFunction(g.defaultWrapperName(targetName, arity), external, nil)
+		wrapper := ir.NewFunction(g.defaultWrapperName(targetName, arity), linkage, visibility, nil)
 		wrapper.Signature = ir.FunctionSignature{
 			ParamTypes: append([]types.Type(nil), fn.Symbol.Signature.Parameters[:arity]...),
 			ReturnType: fn.Symbol.Signature.ReturnType,
@@ -1477,6 +1485,20 @@ func (g *Generator) mangleGlobalName(moduleName, globalName string) string {
 
 func (g *Generator) isProgramEntryFunction(fnName string) bool {
 	return g.ModuleName == g.MainModule && fnName == "main"
+}
+
+func linkageForPublic(public bool) ir.Linkage {
+	if public {
+		return ir.LinkageExternal
+	}
+	return ir.LinkageInternal
+}
+
+func visibilityForPublic(public bool) ir.Visibility {
+	if public {
+		return ir.VisibilityHidden
+	}
+	return ir.VisibilityDefault
 }
 
 func sanitizeName(name string) string {
