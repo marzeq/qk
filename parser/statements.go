@@ -194,30 +194,74 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 			return nil, err
 		}
 
-		if !p.Expect(tokeniser.TokenColon) {
-			return nil, shared.NewError(p.PrevLoc(), "expected ':'")
+		group := []*FunctionNodeArg{{
+			Name:    arg.Name,
+			Mutable: mutable,
+		}}
+		if p.Match(tokeniser.TokenEquals) {
+			p.Inc()
+			group[0].Default, err = p.ParseExpression()
+			if err != nil {
+				return nil, err
+			}
 		}
+		for !p.Match(tokeniser.TokenColon) {
+			if !p.Expect(tokeniser.TokenComma) {
+				return nil, shared.NewError(p.PrevLoc(), "expected ':' or ','")
+			}
+			for p.Match(tokeniser.TokenNewline) {
+				p.Inc()
+			}
+
+			mutable = false
+			if p.Match(tokeniser.TokenKeyword) {
+				kw := p.Consume().Value
+				if kw == string(tokeniser.KeywordMut) {
+					mutable = true
+				} else {
+					return nil, shared.NewError(p.CurrLoc(),
+						"expected either 'mut' or argument name")
+				}
+			}
+
+			arg, err = p.ParseIdent()
+			if err != nil {
+				return nil, err
+			}
+			group = append(group, &FunctionNodeArg{
+				Name:    arg.Name,
+				Mutable: mutable,
+			})
+			if p.Match(tokeniser.TokenEquals) {
+				p.Inc()
+				group[len(group)-1].Default, err = p.ParseExpression()
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
+		p.Inc()
 
 		argType, err := p.ParseType()
 		if err != nil {
 			return nil, err
 		}
 
-		var defaultValue ExpressionNode
 		if p.Match(tokeniser.TokenEquals) {
+			if group[len(group)-1].Default != nil {
+				return nil, shared.NewError(p.CurrLoc(), "parameter default cannot be specified both before and after its type")
+			}
 			p.Inc()
-			defaultValue, err = p.ParseExpression()
+			group[len(group)-1].Default, err = p.ParseExpression()
 			if err != nil {
 				return nil, err
 			}
 		}
 
-		args = append(args, &FunctionNodeArg{
-			Name:    arg.Name,
-			Type:    argType,
-			Default: defaultValue,
-			Mutable: mutable,
-		})
+		for _, groupedArg := range group {
+			groupedArg.Type = argType
+		}
+		args = append(args, group...)
 
 		if !p.Match(tokeniser.TokenComma) {
 			break
