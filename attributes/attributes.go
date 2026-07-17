@@ -43,7 +43,11 @@ func (a FunctionAttributeForeign) GetType() AttributeType { return AttributeType
 
 func UsesCABI(attrs Attributes) bool {
 	foreign, ok := attrs.Get(AttributeTypeForeign).(FunctionAttributeForeign)
-	return ok && foreign.ABI == ForeignABIC
+	if ok {
+		return foreign.ABI == ForeignABIC
+	}
+	exported, ok := attrs.Get(AttributeTypeExport).(FunctionAttributeExport)
+	return ok && exported.ABI == ForeignABIC
 }
 
 type LinkKind uint8
@@ -67,7 +71,8 @@ type ModuleAttributeLink struct {
 func (a ModuleAttributeLink) GetType() AttributeType { return AttributeTypeLink }
 
 type FunctionAttributeExport struct {
-	As string
+	As  string
+	ABI ForeignABI
 }
 
 func (a FunctionAttributeExport) GetType() AttributeType { return AttributeTypeExport }

@@ -73,7 +73,10 @@ func (v *Validator) validateNode(node parser.Node) {
 		v.currentFunction = n.Symbol
 
 		foreign, isForeign := n.Symbol.Attributes.Get(attributes.AttributeTypeForeign).(attributes.FunctionAttributeForeign)
-		usesQKABI := !isForeign || foreign.ABI == attributes.ForeignABIQK
+		exported, isExported := n.Symbol.Attributes.Get(attributes.AttributeTypeExport).(attributes.FunctionAttributeExport)
+		usesCABI := (isForeign && foreign.ABI == attributes.ForeignABIC) ||
+			(isExported && exported.ABI == attributes.ForeignABIC)
+		usesQKABI := !usesCABI
 		if n.Symbol.Signature.Variadic && usesQKABI {
 			v.errorf(n, "functions using the qk ABI cannot be variadic")
 		}
@@ -91,7 +94,7 @@ func (v *Validator) validateNode(node parser.Node) {
 				continue
 			}
 			seenDefault = true
-			if isForeign && foreign.ABI != attributes.ForeignABIQK {
+			if usesCABI {
 				v.errorf(arg.Default, "functions using the c ABI cannot have default parameters")
 			}
 			arg.Default = v.validateExprWithExpected(arg.Default, param)

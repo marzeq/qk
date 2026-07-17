@@ -464,9 +464,15 @@ func (p *Parser) parseForeignAttribute(defaultName string) (attributes.Attribute
 	}
 	seenABI, seenSymbol := false, false
 	for {
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
 		option, ok := p.ExpectGet(tokeniser.TokenIdentifier)
 		if !ok {
 			return nil, shared.NewError(p.PrevLoc(), "expected 'abi' or 'symbol' in @foreign")
+		}
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
 		}
 		for p.Match(tokeniser.TokenNewline) {
 			p.Inc()
@@ -523,8 +529,9 @@ func (p *Parser) parseForeignAttribute(defaultName string) (attributes.Attribute
 }
 
 func (p *Parser) parseExportAttribute(defaultName string) (attributes.Attribute, error) {
+	result := attributes.FunctionAttributeExport{As: defaultName, ABI: attributes.ForeignABIQK}
 	if !p.Match(tokeniser.TokenOpenParen) {
-		return attributes.FunctionAttributeExport{As: defaultName}, nil
+		return result, nil
 	}
 	p.Inc()
 	for p.Match(tokeniser.TokenNewline) {
@@ -532,19 +539,70 @@ func (p *Parser) parseExportAttribute(defaultName string) (attributes.Attribute,
 	}
 	if p.Match(tokeniser.TokenCloseParen) {
 		p.Inc()
-		return attributes.FunctionAttributeExport{As: defaultName}, nil
+		return result, nil
 	}
-	name, ok := p.ExpectGet(tokeniser.TokenString)
-	if !ok || name.Value == "" {
-		return nil, shared.NewError(p.PrevLoc(), "export attribute argument must be a non-empty string")
+	if p.Match(tokeniser.TokenString) {
+		name := p.Consume()
+		if name.Value == "" {
+			return nil, shared.NewError(name.Loc, "export attribute argument must be a non-empty string")
+		}
+		result.As = name.Value
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+		if !p.Expect(tokeniser.TokenCloseParen) {
+			return nil, shared.NewError(p.PrevLoc(), "export attribute takes either one string argument or named options")
+		}
+		return result, nil
 	}
-	for p.Match(tokeniser.TokenNewline) {
-		p.Inc()
+	seenABI, seenSymbol := false, false
+	for {
+		option, ok := p.ExpectGet(tokeniser.TokenIdentifier)
+		if !ok {
+			return nil, shared.NewError(p.PrevLoc(), "expected 'abi' or 'symbol' in @export")
+		}
+		value, ok := p.ExpectGet(tokeniser.TokenString)
+		if !ok {
+			return nil, shared.NewError(p.PrevLoc(), "expected string after %s in @export", option.Value)
+		}
+		switch option.Value {
+		case "abi":
+			if seenABI {
+				return nil, shared.NewError(option.Loc, "duplicate abi option in @export")
+			}
+			seenABI = true
+			switch value.Value {
+			case "c":
+				result.ABI = attributes.ForeignABIC
+			case "qk":
+				result.ABI = attributes.ForeignABIQK
+			default:
+				return nil, shared.NewError(value.Loc, "unknown export ABI %q; expected 'c' or 'qk'", value.Value)
+			}
+		case "symbol":
+			if seenSymbol {
+				return nil, shared.NewError(option.Loc, "duplicate symbol option in @export")
+			}
+			seenSymbol = true
+			if value.Value == "" {
+				return nil, shared.NewError(value.Loc, "export symbol must be non-empty")
+			}
+			result.As = value.Value
+		default:
+			return nil, shared.NewError(option.Loc, "unknown @export option %q; expected 'abi' or 'symbol'", option.Value)
+		}
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+		if p.Match(tokeniser.TokenCloseParen) {
+			p.Inc()
+			break
+		}
+		if !p.Expect(tokeniser.TokenComma) {
+			return nil, shared.NewError(p.PrevLoc(), "expected ',' or ')' in @export")
+		}
 	}
-	if !p.Expect(tokeniser.TokenCloseParen) {
-		return nil, shared.NewError(p.PrevLoc(), "export attribute takes at most one string argument")
-	}
-	return attributes.FunctionAttributeExport{As: name.Value}, nil
+	return result, nil
 }
 
 func (p *Parser) ParseTypeAlias() (*TypeAliasNode, error) {

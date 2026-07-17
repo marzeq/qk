@@ -144,15 +144,20 @@ func (e *Emitter) GlobalEmit(out *strings.Builder, global ir.Global) {
 func (e *Emitter) EmitFunction(out *strings.Builder, fn *ir.Function) {
 	e.currentFn = fn
 	returnType := fn.Signature.ReturnType
+	cABI := attributes.UsesCABI(fn.Attributes)
 	if e.isLLVMMainFunction(fn) {
 		returnType = types.PrimitiveI32
+	}
+	returnTypeText := e.TypeEmit(returnType)
+	if cABI {
+		returnTypeText = e.foreignABIReturnType(returnType)
 	}
 	linkage := "internal"
 	if fn.Extern || e.isLLVMMainFunction(fn) {
 		linkage = "external"
 	}
 
-	fmt.Fprintf(out, "define %s %s @%s(", linkage, e.TypeEmit(returnType), fn.Name)
+	fmt.Fprintf(out, "define %s %s @%s(", linkage, returnTypeText, fn.Name)
 	paramTypes := fn.Signature.ParamTypes
 	if len(paramTypes) == 0 && len(fn.Parameters) > 0 {
 		paramTypes = make([]types.Type, len(fn.Parameters))
@@ -160,15 +165,30 @@ func (e *Emitter) EmitFunction(out *strings.Builder, fn *ir.Function) {
 			paramTypes[i] = param.Type
 		}
 	}
+	writtenParams := 0
 	for i, paramType := range paramTypes {
-		if i > 0 {
-			out.WriteString(", ")
-		}
 		paramName := fmt.Sprintf("arg%d", i)
 		if i < len(fn.Parameters) && fn.Parameters[i].Name != "" {
 			paramName = fn.Parameters[i].Name
 		}
-		fmt.Fprintf(out, "%s %%%s", e.TypeEmit(paramType), paramName)
+		abiTypes := e.callABIParamTypes(paramType, cABI)
+		for j, abiType := range abiTypes {
+			if writtenParams > 0 {
+				out.WriteString(", ")
+			}
+			name := paramName
+			if len(abiTypes) > 1 || (cABI && len(e.foreignABIChunks(paramType)) > 0) {
+				name = fmt.Sprintf("%s.abi%d", paramName, j)
+			}
+			fmt.Fprintf(out, "%s %%%s", abiType, name)
+			writtenParams++
+		}
+	}
+	if fn.Signature.Variadic {
+		if writtenParams > 0 {
+			out.WriteString(", ")
+		}
+		out.WriteString("...")
 	}
 	out.WriteString(") ")
 
@@ -206,10 +226,48 @@ func (e *Emitter) EmitFunction(out *strings.Builder, fn *ir.Function) {
 func (e *Emitter) EmitBlock(out *strings.Builder, block *ir.Block) {
 	label := e.blockLabel(block.ID, block.Name)
 	fmt.Fprintf(out, "%s:\n", label)
+	if e.currentFn != nil && block.ID == e.currentFn.Entry && attributes.UsesCABI(e.currentFn.Attributes) {
+		e.emitCABIParameterPrologue(out)
+	}
 
 	for _, instr := range block.Instr {
 		e.InstrEmit(out, instr)
 		out.WriteString("\n")
+	}
+}
+
+func (e *Emitter) emitCABIParameterPrologue(out *strings.Builder) {
+	for i, param := range e.currentFn.Parameters {
+		chunks := e.foreignABIChunks(param.Type)
+		if len(chunks) == 0 {
+			continue
+		}
+		name := param.Name
+		if name == "" {
+			name = fmt.Sprintf("arg%d", i)
+		}
+		if len(chunks) == 1 && chunks[0].offset == -1 {
+			fmt.Fprintf(out, "  %%%s = load %s, ptr %%%s.abi0\n", name, e.TypeEmit(param.Type), name)
+			continue
+		}
+		allocationType := e.TypeEmit(param.Type)
+		if st, ok := types.Underlying(param.Type).(types.StructType); ok && len(chunks) == 1 && chunks[0].offset == 0 && chunks[0].typeName == "i64" {
+			size, _ := e.typeSizeAlign(st)
+			if size < 8 {
+				allocationType = "i64"
+			}
+		}
+		slot := e.nextABITemp()
+		fmt.Fprintf(out, "  %s = alloca %s\n", slot, allocationType)
+		for j, chunk := range chunks {
+			ptr := slot
+			if chunk.offset != 0 {
+				ptr = e.nextABITemp()
+				fmt.Fprintf(out, "  %s = getelementptr i8, ptr %s, i64 %d\n", ptr, slot, chunk.offset)
+			}
+			fmt.Fprintf(out, "  store %s %%%s.abi%d, ptr %s, align 1\n", chunk.typeName, name, j, ptr)
+		}
+		fmt.Fprintf(out, "  %%%s = load %s, ptr %s\n", name, e.TypeEmit(param.Type), slot)
 	}
 }
 
@@ -985,10 +1043,44 @@ func (e *Emitter) ReturnEmit(out *strings.Builder, r ir.Return) {
 	}
 
 	if r.HasValue {
+		if attributes.UsesCABI(e.currentFn.Attributes) {
+			e.emitCABIReturn(out, r.Value)
+			return
+		}
 		fmt.Fprintf(out, "ret %s %s", e.TypeEmit(r.Value.Type), e.OperandEmit(r.Value))
 		return
 	}
 	out.WriteString("ret void")
+}
+
+func (e *Emitter) emitCABIReturn(out *strings.Builder, value ir.Operand) {
+	chunks := e.foreignABIChunks(value.Type)
+	if len(chunks) == 0 {
+		fmt.Fprintf(out, "ret %s %s", e.TypeEmit(value.Type), e.OperandEmit(value))
+		return
+	}
+	slot := e.nextABITemp()
+	fmt.Fprintf(out, "%s = alloca %s\n  store %s %s, ptr %s", slot, e.TypeEmit(value.Type), e.TypeEmit(value.Type), e.OperandEmit(value), slot)
+	values := make([]string, len(chunks))
+	for i, chunk := range chunks {
+		ptr := slot
+		if chunk.offset != 0 {
+			ptr = e.nextABITemp()
+			fmt.Fprintf(out, "\n  %s = getelementptr i8, ptr %s, i64 %d", ptr, slot, chunk.offset)
+		}
+		values[i] = e.nextABITemp()
+		fmt.Fprintf(out, "\n  %s = load %s, ptr %s, align 1", values[i], chunk.typeName, ptr)
+	}
+	if len(values) == 1 {
+		fmt.Fprintf(out, "\n  ret %s %s", chunks[0].typeName, values[0])
+		return
+	}
+	retType := e.foreignABIReturnType(value.Type)
+	first := e.nextABITemp()
+	second := e.nextABITemp()
+	fmt.Fprintf(out, "\n  %s = insertvalue %s undef, %s %s, 0", first, retType, chunks[0].typeName, values[0])
+	fmt.Fprintf(out, "\n  %s = insertvalue %s %s, %s %s, 1", second, retType, first, chunks[1].typeName, values[1])
+	fmt.Fprintf(out, "\n  ret %s %s", retType, second)
 }
 
 func (e *Emitter) isLLVMMainFunction(fn *ir.Function) bool {
