@@ -134,7 +134,7 @@ func (e *Emitter) GlobalEmit(out *strings.Builder, global ir.Global) {
 	if global.Mutable {
 		kind = "global"
 	}
-	linkage := e.linkageEmit(global.Linkage, global.Visibility)
+	linkage := e.linkageEmit(global.Linkage)
 	fmt.Fprintf(out, "@%s = %s%s %s %s", global.Name, linkage, kind, e.TypeEmit(global.Type), e.OperandEmit(global.Value))
 }
 
@@ -149,7 +149,7 @@ func (e *Emitter) EmitFunction(out *strings.Builder, fn *ir.Function) {
 	if cABI {
 		returnTypeText = e.foreignABIReturnType(returnType)
 	}
-	linkage := e.linkageEmit(fn.Linkage, fn.Visibility)
+	linkage := e.linkageEmit(fn.Linkage)
 	if e.isLLVMMainFunction(fn) {
 		linkage = ""
 	}
@@ -220,12 +220,9 @@ func (e *Emitter) EmitFunction(out *strings.Builder, fn *ir.Function) {
 	out.WriteString("}\n")
 }
 
-func (e *Emitter) linkageEmit(linkage ir.Linkage, visibility ir.Visibility) string {
+func (e *Emitter) linkageEmit(linkage ir.Linkage) string {
 	if linkage == ir.LinkageInternal {
 		return "internal "
-	}
-	if visibility == ir.VisibilityHidden {
-		return "hidden "
 	}
 	return ""
 }

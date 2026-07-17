@@ -66,17 +66,17 @@ func main() {
 		fmt.Println("semantic analysis completed successfully")
 	}
 
-	irModules, errs := loader.GenerateIRModules(modules, args.mainModule, order, args.verbose, args.debug)
+	irModule, errs := loader.GenerateIRModule(modules, args.mainModule, order, args.verbose, args.debug)
 	checkErrs(errs)
 
-	llvmOutputs := buildLLVMModules(irModules, args.mainModule, order, args.outputType == OutputExecutable, args.target)
+	llvmOutput := buildLLVMModule(irModule, args.mainModule, args.outputType == OutputExecutable, args.target)
 
 	if args.dumpIR {
-		dumpIRModules(irModules)
+		dumpIRModule(irModule)
 	}
 
 	if args.dumpLLVM {
-		dumpLLVMModules(llvmOutputs, order)
+		dumpLLVMModule(llvmOutput)
 	}
 
 	if _, ok := modules[args.mainModule]; !ok {
@@ -114,19 +114,19 @@ func main() {
 
 	if args.noEmit {
 		if args.dumpAsm {
-			buildDir, err := emitLLVMFiles(llvmOutputs, order)
+			buildDir, err := emitLLVMFile(llvmOutput)
 			check(err)
 			defer os.RemoveAll(buildDir)
 
-			err = emitAssemblyFiles(buildDir, order, args)
+			err = emitAssemblyFile(buildDir, args)
 			check(err)
-			err = dumpAssemblyFiles(buildDir, order)
+			err = dumpAssemblyFile(buildDir)
 			check(err)
 		}
 		return
 	}
 
-	buildDir, err := emitLLVMFiles(llvmOutputs, order)
+	buildDir, err := emitLLVMFile(llvmOutput)
 	check(err)
 
 	if !args.keepBuildDir {
@@ -138,14 +138,14 @@ func main() {
 	}
 
 	if args.dumpAsm {
-		err := emitAssemblyFiles(buildDir, order, args)
+		err := emitAssemblyFile(buildDir, args)
 		check(err)
 
-		err = dumpAssemblyFiles(buildDir, order)
+		err = dumpAssemblyFile(buildDir)
 		check(err)
 	}
 
-	objFiles, err := compileLLVMModules(buildDir, order, args)
+	objFile, err := compileLLVMModule(buildDir, args)
 	check(err)
 
 	stat, err := os.Stat(args.output)
@@ -172,7 +172,7 @@ func main() {
 			moduleLinks = append(moduleLinks, module.Links...)
 		}
 	}
-	err = linkObjects(objFiles, moduleLinks, objectRoots(irModules, args.mainModule), args)
+	err = linkObjects([]string{objFile}, moduleLinks, args)
 	check(err)
 
 	if args.keepBuildDir {
@@ -308,113 +308,84 @@ func fatal(format string, args ...any) {
 	os.Exit(1)
 }
 
-func buildLLVMModules(mods map[string]*ir.Module, mainModule string, order []string, isExecutable bool, targetTriple string) map[string]string {
-	outputs := make(map[string]string, len(mods))
-
-	for _, name := range order {
-		mod := mods[name]
-		if mod == nil {
-			continue
-		}
-
-		emitter := &llvm.Emitter{ModuleName: name, Executable: isExecutable, MainModule: mainModule, TargetTriple: targetTriple}
-		var output strings.Builder
-		emitter.EmitModule(&output, mod)
-		outputs[name] = output.String()
-	}
-
-	return outputs
+func buildLLVMModule(mod *ir.Module, mainModule string, isExecutable bool, targetTriple string) string {
+	emitter := &llvm.Emitter{ModuleName: mainModule, Executable: isExecutable, MainModule: mainModule, TargetTriple: targetTriple}
+	var output strings.Builder
+	emitter.EmitModule(&output, mod)
+	return output.String()
 }
 
-func dumpLLVMModules(mods map[string]string, order []string) {
-	for i, name := range order {
-		output, ok := mods[name]
-		if !ok {
-			continue
-		}
-
-		if i > 0 {
-			fmt.Println()
-		}
-		fmt.Print(output)
-		if !strings.HasSuffix(output, "\n") {
-			fmt.Println()
-		}
+func dumpLLVMModule(output string) {
+	fmt.Print(output)
+	if !strings.HasSuffix(output, "\n") {
+		fmt.Println()
 	}
 }
 
-func emitLLVMFiles(mods map[string]string, order []string) (string, error) {
+func emitLLVMFile(output string) (string, error) {
 	buildDir, err := os.MkdirTemp("/tmp", "qk-build-")
 	if err != nil {
 		return "", err
 	}
 
-	for _, name := range order {
-		output, ok := mods[name]
-		if !ok {
-			continue
-		}
-
-		llPath := filepath.Join(buildDir, safeModuleFileName(name)+".ll")
-		if err := os.WriteFile(llPath, []byte(output), 0o644); err != nil {
-			return "", err
-		}
+	llPath := filepath.Join(buildDir, "module.ll")
+	if err := os.WriteFile(llPath, []byte(output), 0o644); err != nil {
+		return "", err
 	}
 
 	return buildDir, nil
 }
 
-func compileLLVMModules(buildDir string, order []string, args *Args) ([]string, error) {
-	objFiles := make([]string, 0, len(order))
-
-	for _, name := range order {
-		llPath := filepath.Join(buildDir, safeModuleFileName(name)+".ll")
-		if _, err := os.Stat(llPath); err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return nil, err
-		}
-
-		objPath := filepath.Join(buildDir, safeModuleFileName(name)+".o")
-		clangArgs := []string{
-			"-c", llPath, "-o", objPath,
-			fmt.Sprintf("-O%s", args.optLevel),
-			"-ffunction-sections",
-			"-fdata-sections",
-		}
-		clangArgs = append(clangArgs, "-flto=thin")
-		if args.target != "" {
-			clangArgs = append([]string{"-target", args.target}, clangArgs...)
-		}
-		if args.sysroot != "" {
-			clangArgs = append(clangArgs, "--sysroot="+args.sysroot)
-		}
-		if len(args.clangArgs) > 0 {
-			clangArgs = append(clangArgs, args.clangArgs...)
-		}
-
-		if args.verbose {
-			fmt.Printf("> clang %s\n", strings.Join(clangArgs, " "))
-		}
-		cmd := exec.Command("clang", clangArgs...)
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			return nil, fmt.Errorf("clang failed for module %q: %w\n%s", name, err, string(out))
-		}
-
-		objFiles = append(objFiles, objPath)
+func compileLLVMModule(buildDir string, args *Args) (string, error) {
+	optimizedPath, err := optimizeLLVMModule(buildDir, args)
+	if err != nil {
+		return "", err
 	}
 
-	if len(objFiles) == 0 {
-		return nil, fmt.Errorf("no object files were produced")
+	objPath := filepath.Join(buildDir, "module.o")
+	clangArgs := []string{
+		"-c", optimizedPath, "-o", objPath,
+		fmt.Sprintf("-O%s", args.optLevel),
+		"-ffunction-sections",
+		"-fdata-sections",
+	}
+	if args.target != "" {
+		clangArgs = append([]string{"-target", args.target}, clangArgs...)
+	}
+	if args.sysroot != "" {
+		clangArgs = append(clangArgs, "--sysroot="+args.sysroot)
+	}
+	if len(args.clangArgs) > 0 {
+		clangArgs = append(clangArgs, args.clangArgs...)
 	}
 
-	return objFiles, nil
+	if args.verbose {
+		fmt.Printf("> clang %s\n", strings.Join(clangArgs, " "))
+	}
+	out, err := exec.Command("clang", clangArgs...).CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("clang failed: %w\n%s", err, string(out))
+	}
+
+	return objPath, nil
 }
 
-func linkObjects(objFiles []string, moduleLinks []attributes.Link, objectRoots []string, config *Args) error {
-	args, err := buildLinkArgs(objFiles, moduleLinks, objectRoots, config)
+func optimizeLLVMModule(buildDir string, args *Args) (string, error) {
+	llPath := filepath.Join(buildDir, "module.ll")
+	optimizedPath := filepath.Join(buildDir, "module.opt.ll")
+	optArgs := []string{"-passes=globaldce", "-S", llPath, "-o", optimizedPath}
+	if args.verbose {
+		fmt.Printf("> opt %s\n", strings.Join(optArgs, " "))
+	}
+	out, err := exec.Command("opt", optArgs...).CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("LLVM global dead-code elimination failed: %w\n%s", err, string(out))
+	}
+	return optimizedPath, nil
+}
+
+func linkObjects(objFiles []string, moduleLinks []attributes.Link, config *Args) error {
+	args, err := buildLinkArgs(objFiles, moduleLinks, config)
 	if err != nil {
 		return err
 	}
@@ -431,7 +402,7 @@ func linkObjects(objFiles []string, moduleLinks []attributes.Link, objectRoots [
 	return nil
 }
 
-func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, objectRoots []string, config *Args) ([]string, error) {
+func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, config *Args) ([]string, error) {
 	args := append([]string{}, objFiles...)
 
 	switch config.outputType {
@@ -446,11 +417,8 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, objectRoots
 	default:
 		return nil, fmt.Errorf("unknown output type")
 	}
-	args = append(args, "-flto=thin", deadStripLinkerFlag(config.target))
-	if config.outputType == OutputObject {
-		for _, root := range objectRoots {
-			args = append(args, retainSymbolLinkerFlag(config.target, root))
-		}
+	if config.outputType != OutputObject {
+		args = append(args, deadStripLinkerFlag(config.target))
 	}
 
 	if config.static {
@@ -500,31 +468,6 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, objectRoots
 	return args, nil
 }
 
-func objectRoots(modules map[string]*ir.Module, mainModule string) []string {
-	var roots []string
-	for moduleName, module := range modules {
-		for _, fn := range module.Functions {
-			if fn.Linkage == ir.LinkageExternal && (moduleName == mainModule || fn.Visibility == ir.VisibilityDefault) {
-				roots = append(roots, fn.Name)
-			}
-		}
-		for _, global := range module.Globals {
-			if global.Linkage == ir.LinkageExternal && (moduleName == mainModule || global.Visibility == ir.VisibilityDefault) {
-				roots = append(roots, global.Name)
-			}
-		}
-	}
-	return roots
-}
-
-func retainSymbolLinkerFlag(target string, symbol string) string {
-	target = strings.ToLower(target)
-	if strings.Contains(target, "windows") || strings.Contains(target, "mingw") || strings.Contains(target, "msvc") {
-		return "-Wl,/INCLUDE:" + symbol
-	}
-	return "-Wl,-u," + symbol
-}
-
 func deadStripLinkerFlag(target string) string {
 	target = strings.ToLower(target)
 	switch {
@@ -537,103 +480,41 @@ func deadStripLinkerFlag(target string) string {
 	}
 }
 
-func safeModuleFileName(name string) string {
-	if name == "" {
-		return "module"
+func emitAssemblyFile(buildDir string, args *Args) error {
+	llPath, err := optimizeLLVMModule(buildDir, args)
+	if err != nil {
+		return err
 	}
+	asmPath := filepath.Join(buildDir, "module.s")
+	clangArgs := []string{"-S", llPath, "-o", asmPath, fmt.Sprintf("-O%s", args.optLevel)}
 
-	var b strings.Builder
-	b.Grow(len(name))
-	for i, r := range name {
-		valid := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || r == '_' || (r >= '0' && r <= '9')
-		if !valid {
-			b.WriteByte('_')
-			continue
-		}
-		if i == 0 && r >= '0' && r <= '9' {
-			b.WriteByte('_')
-		}
-		b.WriteRune(r)
+	if args.target != "" {
+		clangArgs = append([]string{"-target", args.target}, clangArgs...)
 	}
-
-	if b.Len() == 0 {
-		return "module"
+	if args.sysroot != "" {
+		clangArgs = append(clangArgs, "--sysroot="+args.sysroot)
 	}
-
-	return b.String()
-}
-
-func emitAssemblyFiles(buildDir string, order []string, args *Args) error {
-	for _, name := range order {
-		llPath := filepath.Join(buildDir, safeModuleFileName(name)+".ll")
-
-		if _, err := os.Stat(llPath); err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return err
-		}
-
-		asmPath := filepath.Join(buildDir, safeModuleFileName(name)+".s")
-
-		clangArgs := []string{
-			"-S",
-			llPath,
-			"-o", asmPath,
-			fmt.Sprintf("-O%s", args.optLevel),
-		}
-
-		if args.target != "" {
-			clangArgs = append([]string{"-target", args.target}, clangArgs...)
-		}
-
-		if args.sysroot != "" {
-			clangArgs = append(clangArgs, "--sysroot="+args.sysroot)
-		}
-
-		if len(args.clangArgs) > 0 {
-			clangArgs = append(clangArgs, args.clangArgs...)
-		}
-
-		if args.verbose {
-			fmt.Printf("> clang %s\n", strings.Join(clangArgs, " "))
-		}
-
-		cmd := exec.Command("clang", clangArgs...)
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("clang failed while generating assembly for module %q: %w\n%s",
-				name, err, string(out))
-		}
+	if len(args.clangArgs) > 0 {
+		clangArgs = append(clangArgs, args.clangArgs...)
 	}
-
+	if args.verbose {
+		fmt.Printf("> clang %s\n", strings.Join(clangArgs, " "))
+	}
+	out, err := exec.Command("clang", clangArgs...).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("clang failed while generating assembly: %w\n%s", err, string(out))
+	}
 	return nil
 }
 
-func dumpAssemblyFiles(buildDir string, order []string) error {
-	first := true
-
-	for _, name := range order {
-		asmPath := filepath.Join(buildDir, safeModuleFileName(name)+".s")
-
-		data, err := os.ReadFile(asmPath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return err
-		}
-
-		if !first {
-			fmt.Println()
-		}
-		first = false
-
-		fmt.Print(string(data))
-		if len(data) > 0 && data[len(data)-1] != '\n' {
-			fmt.Println()
-		}
+func dumpAssemblyFile(buildDir string) error {
+	data, err := os.ReadFile(filepath.Join(buildDir, "module.s"))
+	if err != nil {
+		return err
 	}
-
+	fmt.Print(string(data))
+	if len(data) > 0 && data[len(data)-1] != '\n' {
+		fmt.Println()
+	}
 	return nil
 }

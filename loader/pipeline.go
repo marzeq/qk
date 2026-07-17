@@ -87,12 +87,11 @@ func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, o
 	return nil, warnings
 }
 
-func GenerateIRModules(mods map[string]*ModuleInfo, mainModule string, order []string, verbose bool, debug bool) (map[string]*ir.Module, []error) {
-	irMods := map[string]*ir.Module{}
+func GenerateIRModule(mods map[string]*ModuleInfo, mainModule string, order []string, verbose bool, debug bool) (*ir.Module, []error) {
+	out := &ir.Module{}
 
 	for _, name := range order {
 		info := mods[name]
-		out := &ir.Module{}
 
 		for _, root := range info.Roots {
 			gen := &irgen.Generator{ModuleName: name, MainModule: mainModule}
@@ -104,13 +103,48 @@ func GenerateIRModules(mods map[string]*ModuleInfo, mainModule string, order []s
 				out.Externs = append(out.Externs, modIR.Externs...)
 			}
 		}
-
-		irMods[name] = out
 	}
+	deduplicateIRDeclarations(out)
 
 	if verbose && debug {
 		fmt.Println("completed ir generation phase")
 	}
 
-	return irMods, nil
+	return out, nil
+}
+
+func deduplicateIRDeclarations(module *ir.Module) {
+	definedFunctions := make(map[string]bool, len(module.Functions))
+	for _, fn := range module.Functions {
+		definedFunctions[fn.Name] = true
+	}
+	seenFunctions := make(map[string]bool)
+	externs := module.Externs[:0]
+	for _, extern := range module.Externs {
+		name := extern.Name
+		if extern.From != "" {
+			name = extern.From
+		}
+		if definedFunctions[name] || seenFunctions[name] {
+			continue
+		}
+		seenFunctions[name] = true
+		externs = append(externs, extern)
+	}
+	module.Externs = externs
+
+	definedGlobals := make(map[string]bool, len(module.Globals))
+	for _, global := range module.Globals {
+		definedGlobals[global.Name] = true
+	}
+	seenGlobals := make(map[string]bool)
+	externGlobals := module.ExternGlobals[:0]
+	for _, global := range module.ExternGlobals {
+		if definedGlobals[global.Name] || seenGlobals[global.Name] {
+			continue
+		}
+		seenGlobals[global.Name] = true
+		externGlobals = append(externGlobals, global)
+	}
+	module.ExternGlobals = externGlobals
 }

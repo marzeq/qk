@@ -2,60 +2,50 @@ package main
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/marzeq/qk/ir"
 	"github.com/marzeq/qk/types"
 )
 
-func dumpIRModules(mods map[string]*ir.Module) {
-	names := make([]string, 0, len(mods))
-	for name := range mods {
-		names = append(names, name)
+func dumpIRModule(mod *ir.Module) {
+	fmt.Println("module")
+
+	for _, global := range mod.Globals {
+		kind := "const"
+		if global.Mutable {
+			kind = "mut"
+		}
+		fmt.Printf("  %s %s %s = %s\n", kind, formatType(global.Type), global.Name, formatOperand(global.Value))
 	}
-	sort.Strings(names)
 
-	for _, name := range names {
-		mod := mods[name]
-		fmt.Printf("module %s\n", name)
+	for _, fn := range mod.Functions {
+		fmt.Printf("  fn %s%s -> %s (entry=b%d)\n", fn.Name, formatSignatureParams(fn.Signature.ParamTypes), formatType(fn.Signature.ReturnType), fn.Entry)
 
-		for _, global := range mod.Globals {
-			kind := "const"
-			if global.Mutable {
-				kind = "mut"
+		for _, param := range fn.Parameters {
+			typeName := "<nil>"
+			if param.Type != nil {
+				typeName = param.Type.String()
 			}
-			fmt.Printf("  %s %s %s = %s\n", kind, formatType(global.Type), global.Name, formatOperand(global.Value))
+			fmt.Printf("    param %d %s %s -> s%d\n", param.Index, typeName, param.Name, param.Slot)
 		}
 
-		for _, fn := range mod.Functions {
-			fmt.Printf("  fn %s%s -> %s (entry=b%d)\n", fn.Name, formatSignatureParams(fn.Signature.ParamTypes), formatType(fn.Signature.ReturnType), fn.Entry)
-
-			for _, param := range fn.Parameters {
-				typeName := "<nil>"
-				if param.Type != nil {
-					typeName = param.Type.String()
-				}
-				fmt.Printf("    param %d %s %s -> s%d\n", param.Index, typeName, param.Name, param.Slot)
+		for _, slot := range fn.Slots {
+			typeName := "<nil>"
+			if slot.Type != nil {
+				typeName = slot.Type.String()
 			}
+			fmt.Printf("    slot s%d %s %s\n", slot.ID, typeName, slot.Name)
+		}
 
-			for _, slot := range fn.Slots {
-				typeName := "<nil>"
-				if slot.Type != nil {
-					typeName = slot.Type.String()
-				}
-				fmt.Printf("    slot s%d %s %s\n", slot.ID, typeName, slot.Name)
-			}
+		for _, attr := range fn.Attributes {
+			fmt.Printf("    attr %s\n", attr.GetType())
+		}
 
-			for _, attr := range fn.Attributes {
-				fmt.Printf("    attr %s\n", attr.GetType())
-			}
-
-			for _, block := range fn.Blocks {
-				fmt.Printf("    b%d (%s):\n", block.ID, block.Name)
-				for _, inst := range block.Instr {
-					fmt.Printf("      %s\n", formatInstr(inst))
-				}
+		for _, block := range fn.Blocks {
+			fmt.Printf("    b%d (%s):\n", block.ID, block.Name)
+			for _, inst := range block.Instr {
+				fmt.Printf("      %s\n", formatInstr(inst))
 			}
 		}
 	}
