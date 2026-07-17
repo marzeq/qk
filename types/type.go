@@ -697,10 +697,3 @@ func widerUnsigned(a, b PrimitiveType) PrimitiveType {
 	}
 	return b
 }
-
-type UnknownType struct{}
-
-func (u UnknownType) Equals(other Type) bool      { return false }
-func (u UnknownType) CanCoerceTo(other Type) bool { return false }
-func (u UnknownType) CanCastTo(other Type) bool   { return false }
-func (u UnknownType) String() string              { return "<unknown>" }

@@ -51,9 +51,24 @@ func (v *Validator) validateNode(node parser.Node) {
 			v.validateNode(stmt)
 		}
 
-	case *parser.ImportNode, *parser.ModuleNode:
+	case *parser.ImportNode:
+
+	case *parser.ModuleNode:
+		v.validateAttributes(n, n.Attributes, "module", attributes.AttributeTypeLinks)
 
 	case *parser.FunctionDefNode:
+		v.validateAttributes(n, n.Attributes, "function",
+			attributes.AttributeTypeInline,
+			attributes.AttributeTypeNoInline,
+			attributes.AttributeTypeNoReturn,
+			attributes.AttributeTypeForeign,
+			attributes.AttributeTypeExport,
+		)
+		if n.Attributes.Get(attributes.AttributeTypeForeign) != nil &&
+			n.Attributes.Get(attributes.AttributeTypeExport) != nil {
+			v.errorf(n, "function cannot be both foreign and exported")
+		}
+
 		prev := v.currentFunction
 		v.currentFunction = n.Symbol
 
@@ -69,15 +84,11 @@ func (v *Validator) validateNode(node parser.Node) {
 
 	case *parser.BlockNode:
 		for _, stmt := range n.Body {
-			switch s := stmt.(type) {
-			case *parser.DeclarationNode:
-				v.finaliseDeclaration(s)
-			default:
-				v.validateNode(s)
-			}
+			v.validateNode(stmt)
 		}
 
 	case *parser.DeclarationNode:
+		v.validateAttributes(n, n.Attributes, "declaration", attributes.AttributeTypeForeign)
 		v.finaliseDeclaration(n)
 
 	case *parser.AssignmentNode:
@@ -108,6 +119,21 @@ func (v *Validator) validateNode(node parser.Node) {
 
 	default:
 		panic(fmt.Sprintf("unhandled node type %T", n))
+	}
+}
+
+func (v *Validator) validateAttributes(node parser.Node, attrs attributes.Attributes, entity string, allowed ...attributes.AttributeType) {
+	for _, attr := range attrs {
+		valid := false
+		for _, attrType := range allowed {
+			if attr.GetType() == attrType {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			v.errorf(node, "@%s attribute does not apply to %ss", attr.GetType(), entity)
+		}
 	}
 }
 

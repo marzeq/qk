@@ -82,14 +82,14 @@ func (a *Attributor) attributeNode(node parser.Node) {
 						if types.IsNumeric(current) && types.IsNumeric(t) {
 							got := types.PromoteNumeric(current, t)
 							if current.Equals(types.ErrorType{}) {
-								a.errorf(returnNode, "inconsistent return types: %v and %v", got, t)
+								a.errorf(returnNode, "inconsistent return types: expected %v, got %v", current, t)
 							}
 							current = got
 							continue
 						}
 
 						if !current.Equals(t) {
-							a.errorf(returnNode, "inconsistent return types: %v and %v", current, t)
+							a.errorf(returnNode, "inconsistent return types: expected %v, got %v", current, t)
 							current = types.ErrorType{}
 							break
 						}
@@ -259,7 +259,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 			for _, t := range typs[1:] {
 				got := types.PromoteNumeric(currentType, t)
 				if got.Equals(types.ErrorType{}) {
-					a.errorf(n, "inconsistent slice element types: %v and %v", got, t)
+					a.errorf(n, "inconsistent slice element types: expected %v, got %v", currentType, t)
 				}
 				currentType = got
 			}
@@ -324,7 +324,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		}
 
 		if current.Equals(types.ErrorType{}) {
-			a.errorf(n, "inconsistent types in if expression branches")
+			a.errorf(n, "inconsistent types in if expression branches: expected %v, got %v", current, n.GetType())
 		}
 		n.SetType(current)
 
@@ -340,14 +340,14 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 			if types.IsSigned(n.Operand.GetType()) || types.IsFloat(n.Operand.GetType()) {
 				n.SetType(n.Operand.GetType())
 			} else {
-				a.errorf(n, "negation operator requires a signed integer or float operand")
+				a.errorf(n, "cannot apply negation operator to non-numeric type: %v", n.Operand.GetType())
 				n.SetType(types.ErrorType{})
 			}
 		case parser.UnaryOpLogicalNot:
 			if n.Operand.GetType().Equals(types.PrimitiveBool) {
 				n.SetType(types.PrimitiveBool)
 			} else {
-				a.errorf(n, "logical not operator requires a boolean operand")
+				a.errorf(n, "cannot apply logical not operator to non-boolean type: %v", n.Operand.GetType())
 				n.SetType(types.ErrorType{})
 			}
 		case parser.UnaryOpReference:
@@ -364,7 +364,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 			if ptr, ok := types.Underlying(n.Operand.GetType()).(types.PointerType); ok {
 				n.SetType(ptr.Base)
 			} else {
-				a.errorf(n, "cannot dereference non-pointer type")
+				a.errorf(n, "cannot dereference non-pointer type: %v", n.Operand.GetType())
 				n.SetType(types.ErrorType{})
 			}
 		case parser.UnaryOpSliceLen:
@@ -372,14 +372,14 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 			case types.SliceType:
 				n.SetType(types.PrimitiveUsz)
 			default:
-				a.errorf(n, "slice length operator requires a slice operand")
+				a.errorf(n, "cannot get length of non-slice type: %v", n.Operand.GetType())
 				n.SetType(types.ErrorType{})
 			}
 		case parser.UnaryOpBitwiseNot:
 			if types.IsInteger(n.Operand.GetType()) {
 				n.SetType(n.Operand.GetType())
 			} else {
-				a.errorf(n, "bitwise not operator requires an integer operand")
+				a.errorf(n, "cannot apply bitwise not operator to non-integer type: %v", n.Operand.GetType())
 				n.SetType(types.ErrorType{})
 			}
 		default:
@@ -515,7 +515,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 					n.SetType(got)
 				}
 			} else {
-				a.errorf(n, "arithmetic operators require numeric operands")
+				a.errorf(n, "cannot apply arithmetic operator to non-numeric types: %v and %v", t1, t2)
 				n.SetType(types.ErrorType{})
 			}
 		case parser.BinaryOpEqual, parser.BinaryOpNotEqual, parser.BinaryOpLess, parser.BinaryOpLessEqual, parser.BinaryOpGreater, parser.BinaryOpGreaterEqual:
@@ -526,14 +526,14 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 			} else if types.IsPointer(t1) && types.IsPointer(t2) {
 				n.SetType(types.PrimitiveBool)
 			} else {
-				a.errorf(n, "comparison operators require operands of the same type or both numeric types")
+				a.errorf(n, "cannot compare values of types %v and %v", t1, t2)
 				n.SetType(types.ErrorType{})
 			}
 		case parser.BinaryOpLogicalAnd, parser.BinaryOpLogicalOr:
 			if t1.Equals(types.PrimitiveBool) && t2.Equals(types.PrimitiveBool) {
 				n.SetType(types.PrimitiveBool)
 			} else {
-				a.errorf(n, "logical operators require boolean operands")
+				a.errorf(n, "cannot apply logical operator to non-boolean types: %v and %v", t1, t2)
 				n.SetType(types.ErrorType{})
 			}
 		case parser.BinaryOpBitwiseAnd, parser.BinaryOpBitwiseXor, parser.BinaryOpBitwiseOr,
@@ -547,7 +547,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 					n.SetType(got)
 				}
 			} else {
-				a.errorf(n, "bitwise operators require integer operands")
+				a.errorf(n, "cannot apply bitwise operator to non-integer types: %v and %v", t1, t2)
 				n.SetType(types.ErrorType{})
 			}
 		default:
