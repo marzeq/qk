@@ -534,6 +534,31 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			parser.BinaryOpMultiply,
 			parser.BinaryOpDivide,
 			parser.BinaryOpModulo:
+			leftPtr, leftIsPtr := types.Underlying(t1).(types.PointerType)
+			rightPtr, rightIsPtr := types.Underlying(t2).(types.PointerType)
+			if n.Op == parser.BinaryOpAdd && leftIsPtr && types.IsInteger(t2) {
+				v.validatePointerArithmeticBase(n, leftPtr.Base)
+				n.Operand2 = v.validateExprWithExpected(n.Operand2, types.PrimitiveIsz)
+				break
+			}
+			if n.Op == parser.BinaryOpAdd && types.IsInteger(t1) && rightIsPtr {
+				v.validatePointerArithmeticBase(n, rightPtr.Base)
+				n.Operand1 = v.validateExprWithExpected(n.Operand1, types.PrimitiveIsz)
+				break
+			}
+			if n.Op == parser.BinaryOpSubtract && leftIsPtr && types.IsInteger(t2) {
+				v.validatePointerArithmeticBase(n, leftPtr.Base)
+				n.Operand2 = v.validateExprWithExpected(n.Operand2, types.PrimitiveIsz)
+				break
+			}
+			if n.Op == parser.BinaryOpSubtract && leftIsPtr && rightIsPtr {
+				if !leftPtr.Base.Equals(rightPtr.Base) {
+					v.errorf(n, "cannot subtract pointers to different types %v and %v", leftPtr.Base, rightPtr.Base)
+				} else {
+					v.validatePointerArithmeticBase(n, leftPtr.Base)
+				}
+				break
+			}
 
 			if !types.IsNumeric(t1) || !types.IsNumeric(t2) {
 				v.errorf(n, "arithmetic operators require numeric operands")
@@ -847,6 +872,17 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 
 }
 
+func (v *Validator) validatePointerArithmeticBase(node parser.Node, base types.Type) {
+	underlying := types.Underlying(base)
+	if underlying.Equals(types.PrimitiveVoid) {
+		v.errorf(node, "cannot perform arithmetic on void pointer")
+	} else if !types.IsComplete(base) {
+		v.errorf(node, "cannot perform arithmetic on pointer to incomplete type %v", base)
+	} else if _, function := underlying.(types.FunctionType); function {
+		v.errorf(node, "cannot perform arithmetic on function pointer")
+	}
+}
+
 func argumentWord(count int) string {
 	if count == 1 {
 		return "argument"
@@ -994,7 +1030,10 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 			return n
 		}
 	case *parser.BinaryOpNode:
-		if types.IsNumeric(expected) && (isArithmeticOperator(n.Op) || isBitwiseOperator(n.Op)) {
+		leftIsPointer := types.IsPointer(n.Operand1.GetType())
+		rightIsPointer := types.IsPointer(n.Operand2.GetType())
+		if types.IsNumeric(expected) && !leftIsPointer && !rightIsPointer &&
+			(isArithmeticOperator(n.Op) || isBitwiseOperator(n.Op)) {
 			n.Operand1 = v.validateExprWithExpected(n.Operand1, expected)
 			n.Operand2 = v.validateExprWithExpected(n.Operand2, expected)
 			n.SetType(expected)

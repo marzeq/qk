@@ -539,7 +539,17 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 
 		switch n.Op {
 		case parser.BinaryOpAdd, parser.BinaryOpSubtract, parser.BinaryOpMultiply, parser.BinaryOpDivide, parser.BinaryOpModulo:
-			if types.IsNumeric(t1) && types.IsNumeric(t2) {
+			p1, pointer1 := types.Underlying(t1).(types.PointerType)
+			p2, pointer2 := types.Underlying(t2).(types.PointerType)
+			if n.Op == parser.BinaryOpAdd && pointer1 && types.IsInteger(t2) {
+				n.SetType(t1)
+			} else if n.Op == parser.BinaryOpAdd && types.IsInteger(t1) && pointer2 {
+				n.SetType(t2)
+			} else if n.Op == parser.BinaryOpSubtract && pointer1 && types.IsInteger(t2) {
+				n.SetType(t1)
+			} else if n.Op == parser.BinaryOpSubtract && pointer1 && pointer2 && p1.Base.Equals(p2.Base) {
+				n.SetType(types.PrimitiveIsz)
+			} else if types.IsNumeric(t1) && types.IsNumeric(t2) {
 				got := types.PromoteNumeric(t1, t2)
 				if got.Equals(types.ErrorType{}) {
 					a.errorf(n, "incompatible types for binary operator: %v and %v", t1, t2)

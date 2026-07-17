@@ -1552,10 +1552,68 @@ func (g *Generator) generateBinaryExpr(node *parser.BinaryOpNode) ir.Operand {
 	if node.Op == parser.BinaryOpLogicalAnd || node.Op == parser.BinaryOpLogicalOr {
 		return g.generateShortCircuitExpr(node)
 	}
+	leftPtr, leftIsPtr := types.Underlying(node.Operand1.GetType()).(types.PointerType)
+	_, rightIsPtr := types.Underlying(node.Operand2.GetType()).(types.PointerType)
+	if node.Op == parser.BinaryOpAdd && (leftIsPtr || rightIsPtr) {
+		return g.generatePointerOffset(node, false)
+	}
+	if node.Op == parser.BinaryOpSubtract && leftIsPtr && rightIsPtr {
+		return g.generatePointerDifference(node, leftPtr.Base)
+	}
+	if node.Op == parser.BinaryOpSubtract && leftIsPtr {
+		return g.generatePointerOffset(node, true)
+	}
 
 	left := g.GenerateExpr(node.Operand1)
 	right := g.GenerateExpr(node.Operand2)
 	return g.emitBinaryOperation(node.Op, left, right, node.GetType())
+}
+
+func (g *Generator) generatePointerOffset(node *parser.BinaryOpNode, subtract bool) ir.Operand {
+	pointerNode, offsetNode := node.Operand1, node.Operand2
+	if _, leftIsPtr := types.Underlying(pointerNode.GetType()).(types.PointerType); !leftIsPtr {
+		pointerNode, offsetNode = offsetNode, pointerNode
+	}
+
+	pointer := g.GenerateExpr(pointerNode)
+	offset := g.GenerateExpr(offsetNode)
+	if subtract {
+		negated := g.currentFunction.NewValueOfType(offset.Type)
+		g.Emit(ir.Negate{Dest: negated, Operand: offset})
+		offset = ir.ValueOperand(negated, offset.Type)
+	}
+
+	pointerType := types.Underlying(pointer.Type).(types.PointerType)
+	dest := g.currentFunction.NewValueOfType(node.GetType())
+	g.Emit(ir.ElementAddress{Dest: dest, Base: pointer, Index: offset, Element: pointerType.Base})
+	return ir.ValueOperand(dest, node.GetType())
+}
+
+func (g *Generator) generatePointerDifference(node *parser.BinaryOpNode, elementType types.Type) ir.Operand {
+	left := g.GenerateExpr(node.Operand1)
+	right := g.GenerateExpr(node.Operand2)
+
+	leftIntID := g.currentFunction.NewValueOfType(types.PrimitiveIsz)
+	g.Emit(ir.Cast{Dest: leftIntID, From: left, To: types.PrimitiveIsz})
+	rightIntID := g.currentFunction.NewValueOfType(types.PrimitiveIsz)
+	g.Emit(ir.Cast{Dest: rightIntID, From: right, To: types.PrimitiveIsz})
+
+	bytesID := g.currentFunction.NewValueOfType(types.PrimitiveIsz)
+	g.Emit(ir.Sub{
+		Dest:  bytesID,
+		Left:  ir.ValueOperand(leftIntID, types.PrimitiveIsz),
+		Right: ir.ValueOperand(rightIntID, types.PrimitiveIsz),
+	})
+
+	sizeID := g.currentFunction.NewValueOfType(types.PrimitiveIsz)
+	g.Emit(ir.Sizeof{Dest: sizeID, Type: elementType})
+	elementsID := g.currentFunction.NewValueOfType(types.PrimitiveIsz)
+	g.Emit(ir.Div{
+		Dest:  elementsID,
+		Left:  ir.ValueOperand(bytesID, types.PrimitiveIsz),
+		Right: ir.ValueOperand(sizeID, types.PrimitiveIsz),
+	})
+	return ir.ValueOperand(elementsID, types.PrimitiveIsz)
 }
 
 func (g *Generator) emitBinaryOperation(op parser.BinaryOpKind, left, right ir.Operand, resultType types.Type) ir.Operand {
