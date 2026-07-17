@@ -52,7 +52,7 @@ hi def link qkFloat Float
 hi def link qkBoolean Boolean
 hi def link qkConstant Constant
 hi def link qkDeclaration Statement
-hi def link qkTypeKeyword Type
+hi def link qkTypeKeyword Keyword
 hi def link qkConditional Conditional
 hi def link qkRepeat Repeat
 hi def link qkStatement Statement
