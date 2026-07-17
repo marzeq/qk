@@ -44,6 +44,9 @@ func (w *debugWalker) walkNode(node parser.Node) {
 			w.walkNode(stmt)
 		}
 
+	case *parser.DeferNode:
+		w.walkNode(n.Action)
+
 	case *parser.DeclarationNode:
 		if n.Symbol == nil || n.Symbol.Type == nil {
 			w.errors = append(w.errors, "declaration symbol has nil type")

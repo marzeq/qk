@@ -172,6 +172,9 @@ func (a *Attributor) attributeNode(node parser.Node) {
 			a.attributeExpr(n.ReturnValue)
 		}
 
+	case *parser.DeferNode:
+		a.attributeNode(n.Action)
+
 	case parser.ExpressionNode:
 		a.attributeExpr(n)
 

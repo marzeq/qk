@@ -39,11 +39,25 @@ func (a *Analyser) visit(node parser.Node) {
 	case *parser.ControlKeywordNode:
 		a.visitControlKeyword(n)
 
+	case *parser.DeferNode:
+		a.visitDefer(n)
+
 	case parser.ExpressionNode:
 		a.visitExpression(n)
 
 	default:
 		a.errorf(n, "unsupported node type %T", n)
+	}
+}
+
+func (a *Analyser) visitDefer(n *parser.DeferNode) {
+	switch action := n.Action.(type) {
+	case *parser.BlockNode:
+		a.visitBlock(action)
+	case parser.ExpressionNode:
+		a.visitExpression(action)
+	default:
+		a.errorf(n, "unsupported deferred action %T", action)
 	}
 }
 

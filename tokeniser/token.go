@@ -82,6 +82,7 @@ const (
 	KeywordBreak    KeywordKind = "break"
 	KeywordContinue KeywordKind = "continue"
 	KeywordReturn   KeywordKind = "return"
+	KeywordDefer    KeywordKind = "defer"
 	KeywordImport   KeywordKind = "import"
 	KeywordModule   KeywordKind = "module"
 	KeywordPub      KeywordKind = "pub"

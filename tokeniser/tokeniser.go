@@ -284,6 +284,7 @@ var keywords = map[string]struct{}{
 	string(KeywordBreak):    {},
 	string(KeywordContinue): {},
 	string(KeywordReturn):   {},
+	string(KeywordDefer):    {},
 	string(KeywordImport):   {},
 	string(KeywordModule):   {},
 	string(KeywordPub):      {},

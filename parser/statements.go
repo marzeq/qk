@@ -97,7 +97,8 @@ func isStatementStart(tok tokeniser.Token) bool {
 	switch tok.Value {
 	case string(tokeniser.KeywordLet),
 		string(tokeniser.KeywordReturn), string(tokeniser.KeywordBreak),
-		string(tokeniser.KeywordContinue), string(tokeniser.KeywordIf), string(tokeniser.KeywordFor):
+		string(tokeniser.KeywordContinue), string(tokeniser.KeywordDefer),
+		string(tokeniser.KeywordIf), string(tokeniser.KeywordFor):
 		return true
 	default:
 		return false
@@ -634,6 +635,9 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 			string(tokeniser.KeywordContinue):
 			node, err := p.ParseControlKeyword()
 			return node, true, err
+		case string(tokeniser.KeywordDefer):
+			node, err := p.ParseDefer()
+			return node, true, err
 		case string(tokeniser.KeywordIf):
 			node, err := p.ParseIfStatement()
 			return node, false, err
@@ -678,6 +682,33 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 	default:
 		return nil, false, shared.NewError(p.CurrLoc(), "expected a valid statement")
 	}
+}
+
+func (p *Parser) ParseDefer() (*DeferNode, error) {
+	loc := p.CurrLoc()
+	kw, ok := p.ExpectGet(tokeniser.TokenKeyword)
+	if !ok || kw.Value != string(tokeniser.KeywordDefer) {
+		return nil, shared.NewError(p.PrevLoc(), "expected 'defer'")
+	}
+	for p.Match(tokeniser.TokenNewline) {
+		p.Inc()
+	}
+
+	var action Node
+	if p.Match(tokeniser.TokenOpenCurly) {
+		block, err := p.ParseBlock()
+		if err != nil {
+			return nil, err
+		}
+		action = block
+	} else {
+		expr, err := p.ParseExpression()
+		if err != nil {
+			return nil, err
+		}
+		action = expr
+	}
+	return &DeferNode{Action: action, Loc: loc}, nil
 }
 
 func (p *Parser) ParseDeclaration() (*DeclarationNode, error) {

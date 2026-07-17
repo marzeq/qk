@@ -532,6 +532,13 @@ type ControlKeywordNode struct {
 
 func (n ControlKeywordNode) GetLoc() shared.Location { return n.Loc }
 
+type DeferNode struct {
+	Action Node
+	Loc    shared.Location
+}
+
+func (n DeferNode) GetLoc() shared.Location { return n.Loc }
+
 type DeclarationNode struct {
 	Name       string
 	Mutable    bool

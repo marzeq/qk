@@ -44,6 +44,12 @@ type Generator struct {
 	currentBlock    *ir.Block
 	currentEnv      *Env
 	globals         map[*symbols.Symbol]string
+	loopTargets     []loopTargets
+}
+
+type loopTargets struct {
+	breakTarget    ir.BlockID
+	continueTarget ir.BlockID
 }
 
 func (g *Generator) Emit(instruction ir.Instr) {
@@ -286,6 +292,8 @@ func (g *Generator) GenerateNode(node parser.Node) {
 		g.generateForEach(n)
 	case *parser.FunctionCallNode:
 		g.generateFunctionCallExpr(n)
+	case parser.ExpressionNode:
+		g.GenerateExpr(n)
 	default:
 		panic(fmt.Sprintf("todo: generate node %T", n))
 	}
@@ -330,10 +338,7 @@ func (g *Generator) generateAssignment(node *parser.AssignmentNode) {
 	case *parser.IdentifierNode:
 		slot, ok := g.currentEnv.Lookup(n.GetSymbol())
 		if !ok {
-			global, exists := g.globals[n.GetSymbol()]
-			if !exists {
-				panic("assignment slot not found")
-			}
+			global := g.globalNameForIdentifier(n)
 			rhs := g.GenerateExpr(node.Value)
 			g.Emit(ir.StoreGlobal{Name: global, Value: rhs})
 			return
@@ -397,9 +402,27 @@ func (g *Generator) generateControlKeyword(node *parser.ControlKeywordNode) {
 		}
 		value := g.GenerateExpr(node.ReturnValue)
 		g.Emit(ir.Return{HasValue: true, Value: value})
+	case tokeniser.KeywordBreak:
+		targets := g.currentLoopTargets()
+		g.Emit(ir.Jump{Target: targets.breakTarget})
+	case tokeniser.KeywordContinue:
+		targets := g.currentLoopTargets()
+		g.Emit(ir.Jump{Target: targets.continueTarget})
 	default:
-		panic("todo")
+		panic(fmt.Sprintf("unsupported control keyword %q", node.Keyword))
 	}
+}
+
+func (g *Generator) currentLoopTargets() loopTargets {
+	if len(g.loopTargets) == 0 {
+		panic("loop control keyword outside a loop")
+	}
+	return g.loopTargets[len(g.loopTargets)-1]
+}
+
+func (g *Generator) pushLoopTargets(breakTarget, continueTarget ir.BlockID) func() {
+	g.loopTargets = append(g.loopTargets, loopTargets{breakTarget: breakTarget, continueTarget: continueTarget})
+	return func() { g.loopTargets = g.loopTargets[:len(g.loopTargets)-1] }
 }
 
 func (g *Generator) generateFor(node *parser.ForNode) {
@@ -472,7 +495,15 @@ func (g *Generator) generateFor(node *parser.ForNode) {
 	}
 
 	g.currentBlock = bodyBlock
+	continueTarget := bodyBlock.ID
+	if postBlock != nil {
+		continueTarget = postBlock.ID
+	} else if conditionBlock != nil {
+		continueTarget = conditionBlock.ID
+	}
+	popLoop := g.pushLoopTargets(endBlock.ID, continueTarget)
 	g.generateBlock(node.Body)
+	popLoop()
 	if !g.currentBlockHasTerminator() {
 		if postBlock != nil {
 			g.Emit(ir.Jump{Target: postBlock.ID})
@@ -534,7 +565,9 @@ func (g *Generator) generateRangeFor(node *parser.RangeForNode) {
 	g.Emit(ir.Branch{Cond: ir.ValueOperand(condition, types.PrimitiveBool), Then: bodyBlock.ID, Else: endBlock.ID})
 
 	g.currentBlock = bodyBlock
+	popLoop := g.pushLoopTargets(endBlock.ID, postBlock.ID)
 	g.generateBlock(node.Body)
+	popLoop()
 	if !g.currentBlockHasTerminator() {
 		g.Emit(ir.Jump{Target: postBlock.ID})
 	}
@@ -586,7 +619,9 @@ func (g *Generator) generateForEach(node *parser.ForEachNode) {
 
 	g.currentBlock = bodyBlock
 	g.storeForEachElement(sliceSlot, sliceType, index, elementSlot)
+	popLoop := g.pushLoopTargets(endBlock.ID, postBlock.ID)
 	g.generateBlock(node.Body)
+	popLoop()
 	if !g.currentBlockHasTerminator() {
 		g.Emit(ir.Jump{Target: postBlock.ID})
 	}
@@ -654,6 +689,8 @@ func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
 		return g.generateIdentifierExpr(n)
 	case *parser.IfExprNode:
 		return g.generateIfExpr(n)
+	case *parser.GivenExprNode:
+		return g.generateGivenExpr(n)
 	case *parser.BinaryOpNode:
 		return g.generateBinaryExpr(n)
 	case *parser.UnaryOpNode:
@@ -684,6 +721,26 @@ func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
 		fmt.Printf("todo: generate expr %T\n", n)
 		panic("todo")
 	}
+}
+
+func (g *Generator) generateGivenExpr(node *parser.GivenExprNode) ir.Operand {
+	prev := g.currentEnv
+	g.currentEnv = NewEnv(prev)
+	defer func() { g.currentEnv = prev }()
+
+	for _, child := range node.Block.Body {
+		if g.currentBlockHasTerminator() {
+			break
+		}
+		g.GenerateNode(child)
+	}
+	if g.currentBlockHasTerminator() {
+		// Keep generating a well-formed value in an unreachable block. This lets a
+		// given expression contain return, break, or continue without its enclosing
+		// expression trying to append instructions after the terminator.
+		g.currentBlock = g.currentFunction.NewBlock("given.unreachable")
+	}
+	return g.GenerateExpr(node.FinalExpr)
 }
 
 func (g *Generator) generateIndexExpr(node *parser.IndexExprNode) ir.Operand {
@@ -1053,17 +1110,16 @@ func (g *Generator) generateIfExpr(node *parser.IfExprNode) ir.Operand {
 }
 
 func (g *Generator) generateAddressOfExpr(expr parser.ExpressionNode) ir.Operand {
-	if ident, ok := expr.(*parser.IdentifierNode); ok {
+	switch node := expr.(type) {
+	case *parser.IdentifierNode:
+		ident := node
 		if ident.Symbol == nil {
 			panic("identifier symbol is nil")
 		}
 
 		slot, ok := g.currentEnv.Lookup(ident.Symbol)
 		if !ok {
-			global, exists := g.globals[ident.Symbol]
-			if !exists {
-				panic("identifier slot not found")
-			}
+			global := g.globalNameForIdentifier(ident)
 			addr := g.currentFunction.NewValueOfType(types.PointerType{Base: ident.GetType()})
 			g.Emit(ir.AddressOfGlobal{Dest: addr, Name: global, Type: ident.GetType()})
 			return ir.ValueOperand(addr, types.PointerType{Base: ident.GetType()})
@@ -1072,6 +1128,17 @@ func (g *Generator) generateAddressOfExpr(expr parser.ExpressionNode) ir.Operand
 		addr := g.currentFunction.NewValueOfType(types.PointerType{Base: ident.GetType()})
 		g.Emit(ir.AddressOf{Dest: addr, Slot: slot})
 		return ir.ValueOperand(addr, types.PointerType{Base: ident.GetType()})
+	case *parser.FieldAccessNode:
+		base := g.generateAddressOfExpr(node.Subject)
+		dest := g.currentFunction.NewValueOfType(types.PointerType{Base: node.GetType()})
+		g.Emit(ir.FieldAddress{Dest: dest, Base: base, Field: node.Field.Name})
+		return ir.ValueOperand(dest, types.PointerType{Base: node.GetType()})
+	case *parser.IndexExprNode:
+		return g.generateIndexAddress(node)
+	case *parser.UnaryOpNode:
+		if node.Op == parser.UnaryOpDereference {
+			return g.GenerateExpr(node.Operand)
+		}
 	}
 
 	value := g.GenerateExpr(expr)
@@ -1250,19 +1317,7 @@ func (g *Generator) generateModuleIdentifierExpr(node *parser.IdentifierNode) ir
 		panic("module access is not a variable")
 	}
 
-	moduleName := node.Module
-	if node.ResolvedModuleName != "" {
-		moduleName = node.ResolvedModuleName
-	}
-	name := g.mangleGlobalName(moduleName, node.Symbol.Name)
-	if foreign, ok := node.Symbol.Attributes.Get(attributes.AttributeTypeForeign).(attributes.FunctionAttributeForeign); ok {
-		name = foreign.From
-	}
-	g.Module.AddExternGlobal(ir.ExternGlobal{
-		Name:    name,
-		Type:    node.GetType(),
-		Mutable: node.Symbol.Mutable,
-	})
+	name := g.globalNameForIdentifier(node)
 
 	dst := g.currentFunction.NewValueOfType(node.GetType())
 	g.Emit(ir.LoadGlobal{
@@ -1271,6 +1326,29 @@ func (g *Generator) generateModuleIdentifierExpr(node *parser.IdentifierNode) ir
 		Type: node.GetType(),
 	})
 	return ir.ValueOperand(dst, node.GetType())
+}
+
+func (g *Generator) globalNameForIdentifier(node *parser.IdentifierNode) string {
+	if node.Symbol == nil {
+		panic("identifier symbol is nil")
+	}
+	if node.Module == "" {
+		if name, ok := g.globals[node.Symbol]; ok {
+			return name
+		}
+		panic("identifier slot not found")
+	}
+
+	moduleName := node.Module
+	if node.ResolvedModuleName != "" {
+		moduleName = node.ResolvedModuleName
+	}
+	name := g.mangleGlobalName(moduleName, node.Symbol.Name)
+	if foreign, ok := node.Symbol.Attributes.Get(attributes.AttributeTypeForeign).(attributes.FunctionAttributeForeign); ok {
+		name = foreign.From
+	}
+	g.Module.AddExternGlobal(ir.ExternGlobal{Name: name, Type: node.GetType(), Mutable: node.Symbol.Mutable})
+	return name
 }
 
 func (g *Generator) generateBinaryExpr(node *parser.BinaryOpNode) ir.Operand {

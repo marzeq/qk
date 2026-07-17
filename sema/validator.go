@@ -111,6 +111,9 @@ func (v *Validator) validateNode(node parser.Node) {
 			v.validateReturn(n)
 		}
 
+	case *parser.DeferNode:
+		v.validateNode(n.Action)
+
 	case parser.ExpressionNode:
 		v.validateExpr(n)
 
@@ -454,7 +457,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			case types.SliceType:
 				// OK
 			default:
-				v.errorf(n, "[] operator requires slice or pointer")
+				v.errorf(n, "slice length operator requires a slice operand")
 			}
 
 		default:
