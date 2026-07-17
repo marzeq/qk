@@ -10,16 +10,18 @@ type aarch64ABIGenerator struct {
 	linux bool
 }
 
-func (g aarch64ABIGenerator) aggregateChunks(e *Emitter, st types.StructType) []abiChunk {
-	if element, count, ok := homogeneousFloatAggregate(st); ok && count <= 4 {
-		chunk := abiChunk{typeName: fmt.Sprintf("[%d x %s]", count, element)}
-		if g.linux && count > 1 {
-			chunk.attributes = " alignstack(8)"
+func (g aarch64ABIGenerator) aggregateChunks(e *Emitter, aggregate types.Type) []abiChunk {
+	if st, isStruct := aggregate.(types.StructType); isStruct {
+		if element, count, ok := homogeneousFloatAggregate(st); ok && count <= 4 {
+			chunk := abiChunk{typeName: fmt.Sprintf("[%d x %s]", count, element)}
+			if g.linux && count > 1 {
+				chunk.attributes = " alignstack(8)"
+			}
+			return []abiChunk{chunk}
 		}
-		return []abiChunk{chunk}
 	}
 
-	size, _ := e.typeSizeAlign(st)
+	size, _ := e.typeSizeAlign(aggregate)
 	switch {
 	case size <= 8:
 		return []abiChunk{{typeName: "i64"}}
@@ -30,8 +32,8 @@ func (g aarch64ABIGenerator) aggregateChunks(e *Emitter, st types.StructType) []
 	}
 }
 
-func (aarch64ABIGenerator) requiresSRet(e *Emitter, st types.StructType) bool {
-	size, _ := e.typeSizeAlign(st)
+func (aarch64ABIGenerator) requiresSRet(e *Emitter, aggregate types.Type) bool {
+	size, _ := e.typeSizeAlign(aggregate)
 	return size > 16
 }
 
@@ -39,6 +41,7 @@ func homogeneousFloatAggregate(st types.StructType) (element string, count int, 
 	var primitive types.PrimitiveType
 	var visit func(types.Type) bool
 	visit = func(ty types.Type) bool {
+		ty = types.Underlying(ty)
 		switch t := ty.(type) {
 		case types.PrimitiveType:
 			if t != types.PrimitiveF32 && t != types.PrimitiveF64 {

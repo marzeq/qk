@@ -15,21 +15,22 @@ type abiChunk struct {
 }
 
 type foreignABIGenerator interface {
-	aggregateChunks(*Emitter, types.StructType) []abiChunk
-	requiresSRet(*Emitter, types.StructType) bool
+	aggregateChunks(*Emitter, types.Type) []abiChunk
+	requiresSRet(*Emitter, types.Type) bool
 }
 
 func (e *Emitter) foreignABIChunks(ty types.Type) []abiChunk {
 	ty = types.Underlying(ty)
-	st, ok := ty.(types.StructType)
-	if !ok {
+	switch ty.(type) {
+	case types.StructType, types.UnionType, types.SliceType:
+	default:
 		return nil
 	}
 	generator := e.foreignABIGenerator()
 	if generator == nil {
 		panic(fmt.Sprintf("C aggregate ABI lowering is not implemented for target %q", e.targetTriple()))
 	}
-	return generator.aggregateChunks(e, st)
+	return generator.aggregateChunks(e, ty)
 }
 
 func (e *Emitter) foreignABIParamTypes(ty types.Type) []string {
@@ -45,10 +46,8 @@ func (e *Emitter) foreignABIParamTypes(ty types.Type) []string {
 }
 
 func (e *Emitter) foreignABIReturnType(ty types.Type) string {
-	if st, ok := types.Underlying(ty).(types.StructType); ok {
-		if generator := e.foreignABIGenerator(); generator != nil && generator.requiresSRet(e, st) {
-			panic(fmt.Sprintf("Win64 aggregate return %v requires sret lowering", ty))
-		}
+	if e.foreignABIReturnUsesSRet(ty) {
+		return "void"
 	}
 	chunks := e.foreignABIChunks(ty)
 	if len(chunks) == 0 {
@@ -58,6 +57,26 @@ func (e *Emitter) foreignABIReturnType(ty types.Type) string {
 		return chunks[0].typeName
 	}
 	return fmt.Sprintf("{ %s, %s }", chunks[0].typeName, chunks[1].typeName)
+}
+
+func (e *Emitter) foreignABIReturnUsesSRet(ty types.Type) bool {
+	aggregate := types.Underlying(ty)
+	switch aggregate.(type) {
+	case types.StructType, types.UnionType, types.SliceType:
+	default:
+		return false
+	}
+	generator := e.foreignABIGenerator()
+	return generator != nil && generator.requiresSRet(e, aggregate)
+}
+
+func (e *Emitter) foreignABISRetArgument(ty types.Type, value string) string {
+	_, align := e.typeSizeAlign(ty)
+	argument := fmt.Sprintf("ptr sret(%s) align %d", e.TypeEmit(ty), align)
+	if value != "" {
+		argument += " " + value
+	}
+	return argument
 }
 
 func (e *Emitter) targetTriple() string {

@@ -16,14 +16,18 @@ const (
 	abiClassInteger
 )
 
-func (sysVAMD64ABIGenerator) aggregateChunks(e *Emitter, st types.StructType) []abiChunk {
-	size, _ := e.typeSizeAlign(st)
+func (sysVAMD64ABIGenerator) aggregateChunks(e *Emitter, aggregate types.Type) []abiChunk {
+	size, align := e.typeSizeAlign(aggregate)
 	if size > 16 {
-		panic(fmt.Sprintf("C aggregate %v is larger than 16 bytes; byval/sret lowering is not implemented", st))
+		return []abiChunk{{
+			typeName:   "ptr",
+			attributes: fmt.Sprintf(" byval(%s) align %d", e.TypeEmit(aggregate), align),
+			offset:     -1,
+		}}
 	}
 	classes := make([]abiClass, (size+7)/8)
 	floats := make([][]types.PrimitiveType, len(classes))
-	e.classifySysVAggregate(st, 0, classes, floats)
+	e.classifySysVAggregate(aggregate, 0, classes, floats)
 	chunks := make([]abiChunk, len(classes))
 	for i, class := range classes {
 		bytes := min(size-i*8, 8)
@@ -43,17 +47,17 @@ func (sysVAMD64ABIGenerator) aggregateChunks(e *Emitter, st types.StructType) []
 				floatFields[1] == types.PrimitiveF32:
 				chunks[i].typeName = "<2 x float>"
 			default:
-				panic(fmt.Sprintf("unsupported C SSE aggregate chunk in %v", st))
+				panic(fmt.Sprintf("unsupported C SSE aggregate chunk in %v", aggregate))
 			}
 		default:
-			panic(fmt.Sprintf("invalid C aggregate chunk in %v", st))
+			panic(fmt.Sprintf("invalid C aggregate chunk in %v", aggregate))
 		}
 	}
 	return chunks
 }
 
-func (sysVAMD64ABIGenerator) requiresSRet(e *Emitter, st types.StructType) bool {
-	size, _ := e.typeSizeAlign(st)
+func (sysVAMD64ABIGenerator) requiresSRet(e *Emitter, aggregate types.Type) bool {
+	size, _ := e.typeSizeAlign(aggregate)
 	return size > 16
 }
 
@@ -78,6 +82,10 @@ func (e *Emitter) classifySysVAggregate(
 		for _, field := range t.Fields {
 			e.classifySysVAggregate(field.R, base, classes, floats)
 		}
+	case types.SliceType:
+		pointerSize := e.pointerBytes()
+		e.markSysVAggregateClass(base, pointerSize, abiClassInteger, classes)
+		e.markSysVAggregateClass(base+pointerSize, pointerSize, abiClassInteger, classes)
 	case types.PointerType:
 		e.markSysVAggregateClass(base, 8, abiClassInteger, classes)
 	case types.EnumType:
