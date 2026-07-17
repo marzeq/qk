@@ -280,10 +280,17 @@ func (u UnionType) Equals(other Type) bool {
 func (u UnionType) CanCoerceTo(other Type) bool { return u.Equals(other) }
 func (u UnionType) CanCastTo(other Type) bool   { return u.Equals(other) }
 func (u UnionType) String() string {
-	if u.Module == "" {
-		return u.Name
+	if u.Name != "" {
+		if u.Module == "" {
+			return u.Name
+		}
+		return u.Module + ":" + u.Name
 	}
-	return u.Module + ":" + u.Name
+	var result strings.Builder
+	result.WriteString("union { ")
+	writeFields(&result, u.Fields)
+	result.WriteString(" }")
+	return result.String()
 }
 
 func (e EnumType) Equals(other Type) bool {
@@ -293,10 +300,13 @@ func (e EnumType) Equals(other Type) bool {
 func (e EnumType) CanCoerceTo(other Type) bool { return e.Equals(other) }
 func (e EnumType) CanCastTo(other Type) bool   { return e.Equals(other) }
 func (e EnumType) String() string {
-	if e.Module == "" {
-		return e.Name
+	if e.Name != "" {
+		if e.Module == "" {
+			return e.Name
+		}
+		return e.Module + ":" + e.Name
 	}
-	return e.Module + ":" + e.Name
+	return "enum { " + strings.Join(e.Variants, ", ") + " }"
 }
 func (e EnumType) VariantValue(name string) (string, bool) {
 	for i, variant := range e.Variants {
@@ -338,16 +348,22 @@ func (s StructType) CanCastTo(other Type) bool {
 func (s StructType) String() string {
 	var result strings.Builder
 	result.WriteString("struct { ")
-	for i, field := range s.Fields {
-		result.WriteString(field.L)
-		result.WriteString(": ")
+	writeFields(&result, s.Fields)
+	result.WriteString(" }")
+	return result.String()
+}
+
+func writeFields(result *strings.Builder, fields []shared.Pair[string, Type]) {
+	for i, field := range fields {
+		if field.L != "" {
+			result.WriteString(field.L)
+			result.WriteString(": ")
+		}
 		result.WriteString(field.R.String())
-		if i < len(s.Fields)-1 {
+		if i < len(fields)-1 {
 			result.WriteString(", ")
 		}
 	}
-	result.WriteString(" }")
-	return result.String()
 }
 
 type PointerType struct {

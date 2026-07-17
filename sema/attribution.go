@@ -493,7 +493,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 				}
 			}
 			if !found {
-				a.errorf(n, "struct type %v does not have a field named %s", t, n.Field)
+				a.errorf(n, "type %v does not have a field named %q", fieldOwnerDisplayType(n.Subject.GetType()), n.Field.Name)
 				n.SetType(types.ErrorType{})
 			}
 		case types.UnionType:
@@ -506,7 +506,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 				}
 			}
 			if !found {
-				a.errorf(n, "union type %v does not have a field named %s", t, n.Field)
+				a.errorf(n, "type %v does not have a field named %q", fieldOwnerDisplayType(n.Subject.GetType()), n.Field.Name)
 				n.SetType(types.ErrorType{})
 			}
 		default:
@@ -621,6 +621,13 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 	if node.GetType() == nil {
 		panic("expression without type")
 	}
+}
+
+func fieldOwnerDisplayType(t types.Type) types.Type {
+	if ptr, ok := types.Underlying(t).(types.PointerType); ok {
+		return ptr.Base
+	}
+	return t
 }
 
 func (a *Attributor) attributeMethodValue(n *parser.FieldAccessNode) bool {

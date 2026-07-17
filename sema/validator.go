@@ -767,7 +767,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 	case *parser.AlignOfNode:
 		switch operand := types.Underlying(n.OperandType).(type) {
 		case types.FunctionType:
-			v.errorf(n, "alignof requires an object type, got %v", operand)
+			v.errorf(n, "alignof requires an object type, got %v", n.OperandType)
 		case types.PrimitiveType:
 			if operand == types.PrimitiveVoid {
 				v.errorf(n, "alignof requires an object type, got void")
