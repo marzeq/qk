@@ -410,7 +410,10 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 			}
 			continue
 		case '<':
-			if t.Next() == '<' {
+			if t.Next() == '<' && t.pos+2 < len(t.text) && t.text[t.pos+2] == '=' {
+				t.AddToken(TokenShiftLeftBy, t.GetLoc())
+				t.Inc().Inc().Inc()
+			} else if t.Next() == '<' {
 				t.AddToken(TokenShiftLeft, t.GetLoc())
 				t.Inc().Inc()
 			} else if t.Next() == '=' {
@@ -422,7 +425,10 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 			}
 			continue
 		case '>':
-			if t.Next() == '>' {
+			if t.Next() == '>' && t.pos+2 < len(t.text) && t.text[t.pos+2] == '=' {
+				t.AddToken(TokenShiftRightBy, t.GetLoc())
+				t.Inc().Inc().Inc()
+			} else if t.Next() == '>' {
 				t.AddToken(TokenShiftRight, t.GetLoc())
 				t.Inc().Inc()
 			} else if t.Next() == '=' {
@@ -500,16 +506,31 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 			}
 			continue
 		case '&':
-			t.AddToken(TokenAmpersand, t.GetLoc())
-			t.Inc()
+			if t.Next() == '=' {
+				t.AddToken(TokenBitwiseAndBy, t.GetLoc())
+				t.Inc().Inc()
+			} else {
+				t.AddToken(TokenAmpersand, t.GetLoc())
+				t.Inc()
+			}
 			continue
 		case '|':
-			t.AddToken(TokenPipe, t.GetLoc())
-			t.Inc()
+			if t.Next() == '=' {
+				t.AddToken(TokenBitwiseOrBy, t.GetLoc())
+				t.Inc().Inc()
+			} else {
+				t.AddToken(TokenPipe, t.GetLoc())
+				t.Inc()
+			}
 			continue
 		case '^':
-			t.AddToken(TokenCaret, t.GetLoc())
-			t.Inc()
+			if t.Next() == '=' {
+				t.AddToken(TokenBitwiseXorBy, t.GetLoc())
+				t.Inc().Inc()
+			} else {
+				t.AddToken(TokenCaret, t.GetLoc())
+				t.Inc()
+			}
 			continue
 		case '~':
 			t.AddToken(TokenTilde, t.GetLoc())

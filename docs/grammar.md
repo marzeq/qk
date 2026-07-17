@@ -87,6 +87,7 @@ statement      = declaration
                | fn_def
                | type_alias
                | assignment
+               | compound_assignment
                | index_assignment
                | pointer_assignment
                | call_stmt
@@ -144,6 +145,10 @@ fn_param_list  = fn_param, { ",", fn_param } ;
 fn_param       = [ "mut" ], identifier, ":", type_expr ;
 
 assignment        = identifier, "=", opt_newlines, expression ;
+compound_assignment = expression,
+                      ( "+=" | "-=" | "*=" | "/=" | "%="
+                      | "&=" | "|=" | "^=" | "<<=" | ">>=" ),
+                      opt_newlines, expression ;
 index_assignment  = identifier, "[", expression, "]", "=", opt_newlines, expression ;
 pointer_assignment= "*", expression, "=", opt_newlines, expression ;
 
@@ -341,6 +346,6 @@ From lowest to highest precedence:
 
 ### 7. Parser-specific caveats
 
-- Compound assignment tokens (`+=`, `-=`, `*=`, `/=`, `%=`) are tokenised but are not currently parsed as assignment statements.
+- Compound assignments support `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, and `>>=`.
 - Slice literal parsing currently requires at least one element in practice.
 - A module-qualified access uses `:` consistently for both value and type positions.

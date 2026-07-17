@@ -53,6 +53,11 @@ const (
 	TokenMulBy
 	TokenDivBy
 	TokenModBy
+	TokenBitwiseAndBy
+	TokenBitwiseOrBy
+	TokenBitwiseXorBy
+	TokenShiftLeftBy
+	TokenShiftRightBy
 
 	TokenSemicolon
 	TokenComma
@@ -176,6 +181,16 @@ func (t Token) String() string {
 		return "/="
 	case TokenModBy:
 		return "%="
+	case TokenBitwiseAndBy:
+		return "&="
+	case TokenBitwiseOrBy:
+		return "|="
+	case TokenBitwiseXorBy:
+		return "^="
+	case TokenShiftLeftBy:
+		return "<<="
+	case TokenShiftRightBy:
+		return ">>="
 	case TokenSemicolon:
 		return ";"
 	case TokenComma:

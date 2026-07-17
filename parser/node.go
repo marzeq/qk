@@ -555,6 +555,7 @@ func (n DeclarationNode) GetLoc() shared.Location { return n.Loc }
 type AssignmentNode struct {
 	Assignee ExpressionNode
 	Value    ExpressionNode
+	Compound bool
 	Loc      shared.Location
 }
 

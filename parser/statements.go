@@ -668,7 +668,9 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 		return parsed, true, nil
 	}
 
-	if p.Match(tokeniser.TokenIncBy, tokeniser.TokenDecBy, tokeniser.TokenMulBy, tokeniser.TokenDivBy, tokeniser.TokenModBy) {
+	if p.Match(tokeniser.TokenIncBy, tokeniser.TokenDecBy, tokeniser.TokenMulBy, tokeniser.TokenDivBy,
+		tokeniser.TokenModBy, tokeniser.TokenBitwiseAndBy, tokeniser.TokenBitwiseOrBy,
+		tokeniser.TokenBitwiseXorBy, tokeniser.TokenShiftLeftBy, tokeniser.TokenShiftRightBy) {
 		parsed, err := p.ParseCompoundAssignment(p.Consume(), expr)
 		if err != nil {
 			return nil, false, err
@@ -809,6 +811,16 @@ func (p *Parser) ParseCompoundAssignment(opTok tokeniser.Token, subj ExpressionN
 		op = BinaryOpDivide
 	case tokeniser.TokenModBy:
 		op = BinaryOpModulo
+	case tokeniser.TokenBitwiseAndBy:
+		op = BinaryOpBitwiseAnd
+	case tokeniser.TokenBitwiseOrBy:
+		op = BinaryOpBitwiseOr
+	case tokeniser.TokenBitwiseXorBy:
+		op = BinaryOpBitwiseXor
+	case tokeniser.TokenShiftLeftBy:
+		op = BinaryOpShiftLeft
+	case tokeniser.TokenShiftRightBy:
+		op = BinaryOpShiftRight
 	default:
 		return nil, shared.NewError(opTok.Loc, "unexpected compound assignment operator %s", opTok)
 	}
@@ -824,6 +836,7 @@ func (p *Parser) ParseCompoundAssignment(opTok tokeniser.Token, subj ExpressionN
 
 	return &AssignmentNode{
 		Assignee: subj,
+		Compound: true,
 		Value: &BinaryOpNode{
 			Op:       op,
 			Operand1: subj,

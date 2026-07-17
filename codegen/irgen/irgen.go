@@ -391,6 +391,11 @@ func (g *Generator) generateDeclaration(node *parser.DeclarationNode) {
 }
 
 func (g *Generator) generateAssignment(node *parser.AssignmentNode) {
+	if node.Compound {
+		g.generateCompoundAssignment(node)
+		return
+	}
+
 	switch n := node.Assignee.(type) {
 	case *parser.IdentifierNode:
 		slot, ok := g.currentEnv.Lookup(n.GetSymbol())
@@ -448,6 +453,21 @@ func (g *Generator) generateAssignment(node *parser.AssignmentNode) {
 	default:
 		panic(fmt.Sprintf("todo: assignment assignee %T", n))
 	}
+}
+
+func (g *Generator) generateCompoundAssignment(node *parser.AssignmentNode) {
+	binary, ok := node.Value.(*parser.BinaryOpNode)
+	if !ok {
+		panic("compound assignment value is not a binary operation")
+	}
+
+	address := g.generateAddressOfExpr(node.Assignee)
+	currentID := g.currentFunction.NewValueOfType(node.Assignee.GetType())
+	g.Emit(ir.LoadPtr{Dest: currentID, Ptr: address})
+	left := ir.ValueOperand(currentID, node.Assignee.GetType())
+	right := g.GenerateExpr(binary.Operand2)
+	result := g.emitBinaryOperation(binary.Op, left, right, node.Assignee.GetType())
+	g.Emit(ir.StorePtr{Ptr: address, Value: result})
 }
 
 func (g *Generator) generateControlKeyword(node *parser.ControlKeywordNode) {
@@ -1423,9 +1443,13 @@ func (g *Generator) generateBinaryExpr(node *parser.BinaryOpNode) ir.Operand {
 
 	left := g.GenerateExpr(node.Operand1)
 	right := g.GenerateExpr(node.Operand2)
-	dst := g.currentFunction.NewValueOfType(node.GetType())
+	return g.emitBinaryOperation(node.Op, left, right, node.GetType())
+}
 
-	switch node.Op {
+func (g *Generator) emitBinaryOperation(op parser.BinaryOpKind, left, right ir.Operand, resultType types.Type) ir.Operand {
+	dst := g.currentFunction.NewValueOfType(resultType)
+
+	switch op {
 	case parser.BinaryOpAdd:
 		g.Emit(ir.Add{Dest: dst, Left: left, Right: right})
 	case parser.BinaryOpSubtract:
@@ -1463,10 +1487,10 @@ func (g *Generator) generateBinaryExpr(node *parser.BinaryOpNode) ir.Operand {
 	case parser.BinaryOpShiftRight:
 		g.Emit(ir.ShiftRight{Dest: dst, Left: left, Right: right})
 	default:
-		panic(fmt.Sprintf("todo: generate binary expr for op %s", node.Op))
+		panic(fmt.Sprintf("todo: generate binary expr for op %s", op))
 	}
 
-	return ir.ValueOperand(dst, node.GetType())
+	return ir.ValueOperand(dst, resultType)
 }
 
 func (g *Generator) generateShortCircuitExpr(node *parser.BinaryOpNode) ir.Operand {
