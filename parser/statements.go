@@ -529,7 +529,7 @@ func (p *Parser) parseForeignAttribute(defaultName string) (attributes.Attribute
 }
 
 func (p *Parser) parseExportAttribute(defaultName string) (attributes.Attribute, error) {
-	result := attributes.FunctionAttributeExport{As: defaultName, ABI: attributes.ForeignABIQK}
+	result := attributes.FunctionAttributeExport{As: defaultName, ABI: attributes.ForeignABIC}
 	if !p.Match(tokeniser.TokenOpenParen) {
 		return result, nil
 	}
