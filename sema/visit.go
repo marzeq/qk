@@ -209,8 +209,13 @@ func (a *Analyser) visitExpression(expr parser.ExpressionNode) {
 		a.resolveTypeNode(e.Operand)
 
 	case *parser.GivenExprNode:
-		a.visitBlock(e.Block)
+		prev := a.current
+		a.current = symbols.NewScope(prev)
+		for _, stmt := range e.Block.Body {
+			a.visit(stmt)
+		}
 		a.visitExpression(e.FinalExpr)
+		a.current = prev
 
 	case *parser.IntegerLiteralNode,
 		*parser.FloatLiteralNode,

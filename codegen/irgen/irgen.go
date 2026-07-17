@@ -826,14 +826,31 @@ func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
 }
 
 func (g *Generator) generateGivenExpr(node *parser.GivenExprNode) ir.Operand {
-	g.generateBlock(node.Block)
+	prev := g.currentEnv
+	g.currentEnv = NewEnv(prev)
+	g.deferScopes = append(g.deferScopes, nil)
+	defer func() {
+		g.deferScopes = g.deferScopes[:len(g.deferScopes)-1]
+		g.currentEnv = prev
+	}()
+
+	for _, child := range node.Block.Body {
+		if g.currentBlockHasTerminator() {
+			break
+		}
+		g.GenerateNode(child)
+	}
 	if g.currentBlockHasTerminator() {
 		// Keep generating a well-formed value in an unreachable block. This lets a
 		// given expression contain return, break, or continue without its enclosing
 		// expression trying to append instructions after the terminator.
 		g.currentBlock = g.currentFunction.NewBlock("given.unreachable")
 	}
-	return g.GenerateExpr(node.FinalExpr)
+	result := g.GenerateExpr(node.FinalExpr)
+	if !g.currentBlockHasTerminator() {
+		g.emitCurrentScopeDefers()
+	}
+	return result
 }
 
 func (g *Generator) generateIndexExpr(node *parser.IndexExprNode) ir.Operand {
