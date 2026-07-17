@@ -176,6 +176,16 @@ func (n StringLiteralNode) GetLoc() shared.Location { return n.Loc }
 func (n *StringLiteralNode) SetType(t types.Type)   { n.Type = t }
 func (n *StringLiteralNode) GetType() types.Type    { return n.Type }
 
+type CStringLiteralNode struct {
+	Value string
+	Loc   shared.Location
+	Type  types.Type
+}
+
+func (n CStringLiteralNode) GetLoc() shared.Location { return n.Loc }
+func (n *CStringLiteralNode) SetType(t types.Type)   { n.Type = t }
+func (n *CStringLiteralNode) GetType() types.Type    { return n.Type }
+
 type CharLiteralNode struct {
 	Value byte
 	Loc   shared.Location

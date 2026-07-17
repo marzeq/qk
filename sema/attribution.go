@@ -208,6 +208,9 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 			Size: len(n.Value),
 		})
 
+	case *parser.CStringLiteralNode:
+		n.SetType(types.PointerType{Base: types.PrimitiveChar})
+
 	case *parser.CharLiteralNode:
 		n.SetType(types.PrimitiveChar)
 

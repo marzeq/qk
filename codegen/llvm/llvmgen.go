@@ -21,9 +21,14 @@ type Emitter struct {
 	Executable   bool
 	currentFn    *ir.Function
 	externMap    map[string]string // qk name -> actual symbol name for @foreign functions
-	stringMap    map[string]string // literal value -> global name
+	stringMap    map[stringLiteralKey]string
 	stringDefs   []string
 	abiTemp      int
+}
+
+type stringLiteralKey struct {
+	value          string
+	nullTerminated bool
 }
 
 func (e *Emitter) EmitModule(out *strings.Builder, m *ir.Module) {
@@ -33,7 +38,7 @@ func (e *Emitter) EmitModule(out *strings.Builder, m *ir.Module) {
 	}
 
 	e.externMap = make(map[string]string)
-	e.stringMap = make(map[string]string)
+	e.stringMap = make(map[stringLiteralKey]string)
 	e.stringDefs = e.collectStringDefs(m)
 	e.abiTemp = 0
 	for _, def := range e.stringDefs {
@@ -373,6 +378,14 @@ func (e *Emitter) OperandEmit(op ir.Operand) string {
 		}
 		fields.WriteString(" }")
 		return fields.String()
+	case ir.OperandCStringConst:
+		key := stringLiteralKey{value: op.StringValue, nullTerminated: true}
+		global, ok := e.stringMap[key]
+		if !ok {
+			panic("missing C string constant definition")
+		}
+		length := len(op.StringValue) + 1
+		return fmt.Sprintf("getelementptr inbounds ([%d x i8], ptr %s, i64 0, i64 0)", length, global)
 	default:
 		panic("unreachable")
 	}
@@ -532,6 +545,21 @@ func (e *Emitter) InstrEmit(out *strings.Builder, instr ir.Instr) {
 
 func (e *Emitter) collectStringDefs(m *ir.Module) []string {
 	defs := []string{}
+	add := func(value string, nullTerminated bool) {
+		key := stringLiteralKey{value: value, nullTerminated: nullTerminated}
+		if _, exists := e.stringMap[key]; exists {
+			return
+		}
+		global := fmt.Sprintf("@.str.%d", len(e.stringMap))
+		e.stringMap[key] = global
+		encoded := encodeLLVMString(value)
+		length := len(value)
+		if nullTerminated {
+			encoded += "\\00"
+			length++
+		}
+		defs = append(defs, fmt.Sprintf("%s = private unnamed_addr constant [%d x i8] c\"%s\", align 1", global, length, encoded))
+	}
 	for _, fn := range m.Functions {
 		for _, block := range fn.Blocks {
 			for _, instr := range block.Instr {
@@ -539,17 +567,13 @@ func (e *Emitter) collectStringDefs(m *ir.Module) []string {
 				if !ok {
 					continue
 				}
-				if _, exists := e.stringMap[s.Value]; exists {
-					continue
-				}
-
-				global := fmt.Sprintf("@.str.%d", len(e.stringMap))
-				e.stringMap[s.Value] = global
-
-				encoded := encodeLLVMString(s.Value)
-				length := len(s.Value)
-				defs = append(defs, fmt.Sprintf("%s = private unnamed_addr constant [%d x i8] c\"%s\", align 1", global, length, encoded))
+				add(s.Value, s.NullTerminated)
 			}
+		}
+	}
+	for _, global := range m.Globals {
+		if global.Value.Kind == ir.OperandCStringConst {
+			add(global.Value.StringValue, true)
 		}
 	}
 	return defs
@@ -564,11 +588,15 @@ func encodeLLVMString(value string) string {
 }
 
 func (e *Emitter) StringConstEmit(out *strings.Builder, s ir.StringConst) {
-	global, ok := e.stringMap[s.Value]
+	key := stringLiteralKey{value: s.Value, nullTerminated: s.NullTerminated}
+	global, ok := e.stringMap[key]
 	if !ok {
 		panic("missing string constant definition")
 	}
 	length := len(s.Value)
+	if s.NullTerminated {
+		length++
+	}
 	fmt.Fprintf(out, "%s = getelementptr inbounds [%d x i8], ptr %s, i64 0, i64 0", e.ValueIDEmit(s.Dest), length, global)
 }
 

@@ -779,6 +779,11 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 		}, nil
 	}
 
+	if p.Match(tokeniser.TokenCString) {
+		literal := p.Consume()
+		return &CStringLiteralNode{Value: literal.Value, Loc: beginLoc}, nil
+	}
+
 	return nil, shared.NewError(p.CurrLoc(), "unexpected token %s", p.Peek())
 }
 

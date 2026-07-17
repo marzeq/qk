@@ -102,6 +102,7 @@ func (w *debugWalker) walkExpr(expr parser.ExpressionNode) {
 		*parser.FloatLiteralNode,
 		*parser.BoolLiteralNode,
 		*parser.StringLiteralNode,
+		*parser.CStringLiteralNode,
 		*parser.CharLiteralNode,
 		*parser.NilLiteralNode,
 		*parser.EnumLiteralNode:

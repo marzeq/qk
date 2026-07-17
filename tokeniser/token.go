@@ -17,6 +17,7 @@ const (
 	TokenIdentifier
 	TokenNumber
 	TokenString
+	TokenCString
 	TokenChar
 
 	TokenOpenParen

@@ -18,6 +18,7 @@ const (
 	OperandBoolConst
 	OperandNullConst
 	OperandStructConst
+	OperandCStringConst
 )
 
 type Operand struct {
@@ -26,10 +27,11 @@ type Operand struct {
 
 	Value ValueID
 
-	IntValue   string
-	FloatValue string
-	BoolValue  bool
-	Fields     []Operand
+	IntValue    string
+	FloatValue  string
+	BoolValue   bool
+	Fields      []Operand
+	StringValue string
 }
 
 func ValueOperand(id ValueID, ty types.Type) Operand {
@@ -54,6 +56,12 @@ func NullConstOperand(ty types.Type) Operand {
 
 func StructConstOperand(ty types.Type, fields []Operand) Operand {
 	return Operand{Kind: OperandStructConst, Type: ty, Fields: fields}
+}
+
+func CStringConstOperand(value string) Operand {
+	return Operand{
+		Kind: OperandCStringConst, Type: types.PointerType{Base: types.PrimitiveChar}, StringValue: value,
+	}
 }
 
 type Slot struct {
@@ -494,8 +502,9 @@ type Offsetof struct {
 func (Offsetof) isInstr() {}
 
 type StringConst struct {
-	Dest  ValueID
-	Value string
+	Dest           ValueID
+	Value          string
+	NullTerminated bool
 }
 
 func (StringConst) isInstr() {}

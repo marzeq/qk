@@ -134,7 +134,11 @@ func formatInstr(inst ir.Instr) string {
 		}
 		return fmt.Sprintf("v%d = cast %s to %s", i.Dest, formatOperand(i.From), to)
 	case ir.StringConst:
-		return fmt.Sprintf("v%d = strconst %q", i.Dest, i.Value)
+		kind := "strconst"
+		if i.NullTerminated {
+			kind = "cstrconst"
+		}
+		return fmt.Sprintf("v%d = %s %q", i.Dest, kind, i.Value)
 	default:
 		return fmt.Sprintf("<unknown %T>", i)
 	}
@@ -160,6 +164,8 @@ func formatOperand(op ir.Operand) string {
 		return "false" + valueSuffix
 	case ir.OperandNullConst:
 		return "null" + valueSuffix
+	case ir.OperandCStringConst:
+		return fmt.Sprintf("cstrconst %q%s", op.StringValue, valueSuffix)
 	default:
 		return "<unknown-op>"
 	}

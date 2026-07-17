@@ -321,6 +321,17 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 			continue
 		}
 
+		if c == 'c' && t.Next() == '"' {
+			pos := t.GetLoc()
+			t.Inc()
+			s, err := t.ReadString()
+			if err != nil {
+				return nil, err
+			}
+			t.AddToken(TokenCString, pos, s)
+			continue
+		}
+
 		if IsLegalWordStart(c) {
 			pos := t.GetLoc()
 			w := t.ReadWord()

@@ -32,6 +32,7 @@ octal_int      = "0", ( "o" | "O" ), octal_digit, { octal_digit } ;
 hex_int        = "0", ( "x" | "X" ), hex_digit, { hex_digit } ;
 number         = [ "-" ], ( decimal_int | binary_int | octal_int | hex_int ) ;
 string_lit     = '"', { string_char }, '"' ;
+c_string_lit   = "c", '"', { string_char }, '"' ;
 char_lit       = "'", char_char, "'" ;
 
 (* float literals are parsed, not tokenised directly *)
@@ -215,6 +216,7 @@ term           = "(", opt_newlines, expression, opt_newlines, ")"
                | number
                | float_lit
                | string_lit
+               | c_string_lit
                | char_lit ;
 
 if_expr        = "if", opt_newlines, expression, opt_newlines, block_expr,

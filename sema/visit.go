@@ -215,6 +215,7 @@ func (a *Analyser) visitExpression(expr parser.ExpressionNode) {
 	case *parser.IntegerLiteralNode,
 		*parser.FloatLiteralNode,
 		*parser.StringLiteralNode,
+		*parser.CStringLiteralNode,
 		*parser.BoolLiteralNode,
 		*parser.CharLiteralNode,
 		*parser.NilLiteralNode,

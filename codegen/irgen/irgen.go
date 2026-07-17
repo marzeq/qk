@@ -138,6 +138,8 @@ func (g *Generator) generateGlobalInitializer(expr parser.ExpressionNode) ir.Ope
 		return ir.BoolConstOperand(node.Value == string(tokeniser.KeywordTrue))
 	case *parser.CharLiteralNode:
 		return ir.IntConstOperand(fmt.Sprint(int(node.Value)), node.GetType())
+	case *parser.CStringLiteralNode:
+		return ir.CStringConstOperand(node.Value)
 	case *parser.NilLiteralNode:
 		return ir.NullConstOperand(node.GetType())
 	case *parser.EnumLiteralNode:
@@ -811,6 +813,8 @@ func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
 		return g.generateOffsetOfExpr(n)
 	case *parser.StringLiteralNode:
 		return g.generateStringLiteralExpr(n)
+	case *parser.CStringLiteralNode:
+		return g.generateCStringLiteralExpr(n)
 	case *parser.CharLiteralNode:
 		return ir.IntConstOperand(fmt.Sprint(int(n.Value)), n.GetType())
 	case *parser.NilLiteralNode:
@@ -904,6 +908,12 @@ func (g *Generator) generateStringLiteralExpr(node *parser.StringLiteralNode) ir
 	loaded := g.currentFunction.NewValueOfType(sliceType)
 	g.Emit(ir.Load{Dest: loaded, Slot: tmpSlot})
 	return ir.ValueOperand(loaded, sliceType)
+}
+
+func (g *Generator) generateCStringLiteralExpr(node *parser.CStringLiteralNode) ir.Operand {
+	dst := g.currentFunction.NewValueOfType(node.GetType())
+	g.Emit(ir.StringConst{Dest: dst, Value: node.Value, NullTerminated: true})
+	return ir.ValueOperand(dst, node.GetType())
 }
 
 func (g *Generator) generateNilLiteralExpr(node *parser.NilLiteralNode) ir.Operand {
