@@ -260,6 +260,45 @@ type StructType struct {
 	Fields []shared.Pair[string, Type]
 }
 
+// OpaqueType is an incomplete type with no known value representation. It is
+// used as the underlying type of a nominal DefinedType and may only be used
+// behind pointer indirection.
+type OpaqueType struct{}
+
+func (OpaqueType) Equals(other Type) bool        { _, ok := other.(OpaqueType); return ok }
+func (o OpaqueType) CanCoerceTo(other Type) bool { return o.Equals(other) }
+func (o OpaqueType) CanCastTo(other Type) bool   { return o.Equals(other) }
+func (OpaqueType) String() string                { return "opaque" }
+
+func IsOpaque(t Type) bool {
+	_, ok := Underlying(t).(OpaqueType)
+	return ok
+}
+
+// IsComplete reports whether a type has a known by-value representation.
+// Pointer representation never depends on the completeness of its base type.
+func IsComplete(t Type) bool {
+	switch t := Underlying(t).(type) {
+	case OpaqueType:
+		return false
+	case StructType:
+		for _, field := range t.Fields {
+			if !IsComplete(field.R) {
+				return false
+			}
+		}
+	case UnionType:
+		for _, field := range t.Fields {
+			if !IsComplete(field.R) {
+				return false
+			}
+		}
+	case SliceType:
+		return IsComplete(t.Base)
+	}
+	return true
+}
+
 type EnumType struct {
 	Module   string
 	Name     string

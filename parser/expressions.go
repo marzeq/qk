@@ -32,7 +32,12 @@ func (p *Parser) ParseSizeOfExpression() (ExpressionNode, error) {
 
 	p.PushPos()
 	node, err = p.ParseType()
-	if err != nil {
+	if err == nil {
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+	}
+	if err != nil || !p.Match(tokeniser.TokenCloseParen) {
 		p.PopPos()
 		node, err = p.ParseExpression()
 		if err != nil {
@@ -47,7 +52,7 @@ func (p *Parser) ParseSizeOfExpression() (ExpressionNode, error) {
 	}
 
 	if !p.Expect(tokeniser.TokenCloseParen) {
-		return nil, shared.NewError(p.PrevLoc(), "expected ')' after 'sizeof' type")
+		return nil, shared.NewError(p.PrevLoc(), "expected ')' after 'sizeof' operand")
 	}
 
 	switch node := node.(type) {
@@ -1147,6 +1152,11 @@ func (p *Parser) ParseType() (TypeNode, error) {
 	}
 	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordUnion) {
 		return p.ParseUnionType()
+	}
+	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordOpaque) {
+		loc := p.CurrLoc()
+		p.Inc()
+		return &OpaqueTypeNode{Loc: loc}, nil
 	}
 
 	return p.ParseNamedType()

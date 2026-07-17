@@ -76,6 +76,15 @@ func (v *Validator) validateNode(node parser.Node) {
 			v.errorf(n, "non-foreign functions cannot be variadic")
 		}
 
+		for i, param := range n.Symbol.Signature.Parameters {
+			if !types.IsComplete(param) {
+				v.errorf(n.Args[i].Type, "function parameter cannot have incomplete type %v", param)
+			}
+		}
+		if ret := n.Symbol.Signature.ReturnType; ret != nil && !types.IsComplete(ret) {
+			v.errorf(n, "function return cannot have incomplete type %v", ret)
+		}
+
 		if n.Body != nil {
 			v.validateNode(n.Body)
 		}
@@ -90,6 +99,9 @@ func (v *Validator) validateNode(node parser.Node) {
 	case *parser.DeclarationNode:
 		v.validateAttributes(n, n.Attributes, "declaration", attributes.AttributeTypeForeign)
 		v.finaliseDeclaration(n)
+		if n.Symbol.Type != nil && !types.IsComplete(n.Symbol.Type) {
+			v.errorf(n, "cannot declare a value of incomplete type %v", n.Symbol.Type)
+		}
 
 	case *parser.AssignmentNode:
 		v.validateAssignment(n)
@@ -118,7 +130,12 @@ func (v *Validator) validateNode(node parser.Node) {
 		v.validateExpr(n)
 
 	case *parser.TypeAliasNode:
-		// pass
+		underlying := types.Underlying(n.Symbol.TypeInfo)
+		if n.Transparent && types.IsOpaque(n.Symbol.TypeInfo) {
+			v.errorf(n, "opaque type %q cannot be a transparent alias", n.Name)
+		} else if _, opaque := underlying.(types.OpaqueType); !opaque && !types.IsComplete(underlying) {
+			v.errorf(n, "type %q contains an incomplete type by value", n.Name)
+		}
 
 	default:
 		panic(fmt.Sprintf("unhandled node type %T", n))
@@ -473,6 +490,8 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			if ptrType, ok := types.Underlying(operandType).(types.PointerType); ok {
 				if ptrType.Base.Equals(types.PrimitiveVoid) {
 					v.errorf(n, "cannot dereference void pointer")
+				} else if !types.IsComplete(ptrType.Base) {
+					v.errorf(n, "cannot dereference pointer to incomplete type %v", ptrType.Base)
 				}
 			} else {
 				v.errorf(n, "cannot dereference non-pointer type")
@@ -608,7 +627,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			v.errorf(n, "index must be integer")
 		}
 
-		switch types.Underlying(n.Subject.GetType()).(type) {
+		switch subjectType := types.Underlying(n.Subject.GetType()).(type) {
 		case types.SliceType:
 			if t, ok := types.Underlying(n.Subject.GetType()).(types.SliceType); ok {
 				if t.Size != -1 {
@@ -624,7 +643,9 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			}
 
 		case types.PointerType:
-			// OK
+			if !types.IsComplete(subjectType.Base) {
+				v.errorf(n, "cannot index pointer to incomplete type %v", subjectType.Base)
+			}
 		default:
 			v.errorf(n, "cannot index into non-slice type")
 		}
@@ -780,12 +801,25 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		*parser.CStringLiteralNode,
 		*parser.CharLiteralNode,
 		*parser.NilLiteralNode,
-		*parser.IdentifierNode,
-		*parser.SizeOfNode,
-		*parser.SizeOfExprNode:
+		*parser.IdentifierNode:
 		// nothing to validate
 
+	case *parser.SizeOfNode:
+		if !types.IsComplete(n.OperandType) {
+			v.errorf(n, "sizeof requires a complete type, got %v", n.OperandType)
+		}
+
+	case *parser.SizeOfExprNode:
+		v.validateExpr(n.Operand)
+		if !types.IsComplete(n.OperandType) {
+			v.errorf(n, "sizeof requires a complete type, got %v", n.OperandType)
+		}
+
 	case *parser.AlignOfNode:
+		if !types.IsComplete(n.OperandType) {
+			v.errorf(n, "alignof requires a complete type, got %v", n.OperandType)
+			break
+		}
 		switch operand := types.Underlying(n.OperandType).(type) {
 		case types.FunctionType:
 			v.errorf(n, "alignof requires an object type, got %v", n.OperandType)

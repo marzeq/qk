@@ -48,6 +48,9 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 			Mutable: t.Mutable,
 		}
 
+	case *parser.OpaqueTypeNode:
+		return types.OpaqueType{}
+
 	case *parser.FunctionTypeNode:
 		params := make([]types.Type, len(t.Parameters))
 		for i, param := range t.Parameters {

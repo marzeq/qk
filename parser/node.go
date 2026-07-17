@@ -114,6 +114,13 @@ type UnionTypeNode struct {
 func (n UnionTypeNode) GetLoc() shared.Location { return n.Loc }
 func (n UnionTypeNode) _type()                  {}
 
+type OpaqueTypeNode struct {
+	Loc shared.Location
+}
+
+func (n OpaqueTypeNode) GetLoc() shared.Location { return n.Loc }
+func (n OpaqueTypeNode) _type()                  {}
+
 type SliceTypeNode struct {
 	ElementType TypeNode
 	Size        int

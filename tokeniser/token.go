@@ -79,6 +79,7 @@ const (
 	KeywordStruct   KeywordKind = "struct"
 	KeywordEnum     KeywordKind = "enum"
 	KeywordUnion    KeywordKind = "union"
+	KeywordOpaque   KeywordKind = "opaque"
 	KeywordType     KeywordKind = "type"
 	KeywordAlias    KeywordKind = "alias"
 	KeywordIf       KeywordKind = "if"
