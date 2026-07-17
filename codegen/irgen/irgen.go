@@ -172,7 +172,7 @@ func (g *Generator) generateGlobalInitializer(expr parser.ExpressionNode) ir.Ope
 
 func (g *Generator) GenerateFunction(fn *parser.FunctionDefNode) {
 	name := fn.Name
-	exported := false
+	exported := fn.Pub
 	if export, ok := fn.Attributes.Get(attributes.AttributeTypeExport).(attributes.FunctionAttributeExport); ok {
 		name = export.As
 		exported = true
@@ -1285,6 +1285,10 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 			} else {
 				name = g.mangleFunctionName(callModule, node.Symbol.Name)
 			}
+		}
+
+		if node.Name != nil && node.Name.Module != "" && foreignAttr == nil {
+			g.addExternForCall(name, callSig, "")
 		}
 	}
 

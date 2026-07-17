@@ -62,9 +62,18 @@ func (e *Emitter) EmitModule(out *strings.Builder, m *ir.Module) {
 		}
 		e.externMap[ex.Name] = llvmName
 
-		fmt.Fprintf(out, "declare %s @%s(", e.foreignABIReturnType(ex.Signature.ReturnType), llvmName)
+		foreign := ex.Signature.Attributes.Get(attributes.AttributeTypeForeign) != nil
+		returnType := e.TypeEmit(ex.Signature.ReturnType)
+		if foreign {
+			returnType = e.foreignABIReturnType(ex.Signature.ReturnType)
+		}
+		fmt.Fprintf(out, "declare %s @%s(", returnType, llvmName)
 		for j, p := range ex.Signature.ParamTypes {
-			for k, abiType := range e.foreignABIParamTypes(p) {
+			abiTypes := []string{e.TypeEmit(p)}
+			if foreign {
+				abiTypes = e.foreignABIParamTypes(p)
+			}
+			for k, abiType := range abiTypes {
 				if j > 0 || k > 0 {
 					out.WriteString(", ")
 				}
@@ -83,6 +92,11 @@ func (e *Emitter) EmitModule(out *strings.Builder, m *ir.Module) {
 			switch at {
 			case attributes.AttributeTypeNoReturn:
 				out.WriteString(" noreturn")
+			case attributes.AttributeTypeNoInline:
+				out.WriteString(" noinline")
+			case attributes.AttributeTypeInline:
+				out.WriteString(" alwaysinline")
+			case attributes.AttributeTypeExport:
 			case attributes.AttributeTypeForeign:
 			default:
 				panic(fmt.Sprintf("unsupported attribute type for extern function: %s", at))
@@ -533,7 +547,7 @@ func (e *Emitter) collectStringDefs(m *ir.Module) []string {
 				e.stringMap[s.Value] = global
 
 				encoded := encodeLLVMString(s.Value)
-				length := len(s.Value) + 1
+				length := len(s.Value)
 				defs = append(defs, fmt.Sprintf("%s = private unnamed_addr constant [%d x i8] c\"%s\", align 1", global, length, encoded))
 			}
 		}
@@ -546,7 +560,6 @@ func encodeLLVMString(value string) string {
 	for i := 0; i < len(value); i++ {
 		fmt.Fprintf(&b, "\\%02X", value[i])
 	}
-	b.WriteString("\\00")
 	return b.String()
 }
 
@@ -555,7 +568,7 @@ func (e *Emitter) StringConstEmit(out *strings.Builder, s ir.StringConst) {
 	if !ok {
 		panic("missing string constant definition")
 	}
-	length := len(s.Value) + 1
+	length := len(s.Value)
 	fmt.Fprintf(out, "%s = getelementptr inbounds [%d x i8], ptr %s, i64 0, i64 0", e.ValueIDEmit(s.Dest), length, global)
 }
 

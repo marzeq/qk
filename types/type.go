@@ -401,8 +401,12 @@ func (a SliceType) CanCoerceTo(other Type) bool {
 	if a.Equals(other) {
 		return true
 	}
-
 	if otherPointer, ok := other.(PointerType); ok {
+		// Character slices are length-delimited strings, not NUL-terminated C
+		// strings. Crossing that boundary must be explicit.
+		if a.Base.Equals(PrimitiveChar) && otherPointer.Base.Equals(PrimitiveChar) {
+			return false
+		}
 		return a.Base.CanCoerceTo(otherPointer.Base)
 	}
 
