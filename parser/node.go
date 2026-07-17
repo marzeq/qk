@@ -48,10 +48,12 @@ type FieldAccessNode struct {
 	Subject ExpressionNode
 	Field   *IdentifierNode
 
-	Loc         shared.Location
-	Type        types.Type
-	EnumValue   string
-	IsEnumValue bool
+	Loc          shared.Location
+	Type         types.Type
+	EnumValue    string
+	IsEnumValue  bool
+	MethodSymbol *symbols.Symbol
+	MethodModule string
 }
 
 func (n FieldAccessNode) GetLoc() shared.Location { return n.Loc }
@@ -246,6 +248,7 @@ type FunctionCallNode struct {
 	Args   []ExpressionNode
 	Loc    shared.Location
 	Symbol *symbols.Symbol
+	Method bool
 }
 
 func (n FunctionCallNode) GetLoc() shared.Location { return n.Loc }
@@ -510,6 +513,8 @@ func (a FunctionNodeArg) GetLoc() shared.Location { return a.Type.GetLoc() }
 
 type FunctionDefNode struct {
 	Name        string
+	MethodOwner string
+	Receiver    MethodReceiverKind
 	Args        []*FunctionNodeArg
 	RetTypeNode TypeNode
 	Body        Node
@@ -519,6 +524,15 @@ type FunctionDefNode struct {
 	Loc         shared.Location
 	Symbol      *symbols.Symbol
 }
+
+type MethodReceiverKind uint8
+
+const (
+	MethodReceiverNone MethodReceiverKind = iota
+	MethodReceiverValue
+	MethodReceiverPointer
+	MethodReceiverMutablePointer
+)
 
 func (n FunctionDefNode) GetLoc() shared.Location { return n.Loc }
 

@@ -609,7 +609,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		}
 
 	case *parser.FieldAccessNode:
-		if n.IsEnumValue {
+		if n.IsEnumValue || n.MethodSymbol != nil {
 			return
 		}
 		v.validateExpr(n.Subject)
@@ -818,7 +818,7 @@ func (v *Validator) validateReferenceTarget(node *parser.UnaryOpNode, target par
 			return false
 		}
 		if mutable && !target.Symbol.Mutable {
-			v.errorf(node, "taking mutable reference of immutable variable")
+			v.errorf(node, "cannot take mutable reference of immutable variable")
 			return false
 		}
 		return true
@@ -834,7 +834,7 @@ func (v *Validator) validateReferenceTarget(node *parser.UnaryOpNode, target par
 			return false
 		}
 		if mutable && !pointer.Mutable {
-			v.errorf(node, "taking mutable reference through immutable pointer")
+			v.errorf(node, "cannot take mutable reference of dereferenced immutable pointer")
 			return false
 		}
 		return true
@@ -852,7 +852,7 @@ func (v *Validator) validateReferenceTarget(node *parser.UnaryOpNode, target par
 				return false
 			}
 			if mutable && !subjectType.Mutable {
-				v.errorf(node, "taking mutable reference through immutable pointer")
+				v.errorf(node, "cannot take mutable reference of index into immutable pointer")
 				return false
 			}
 			return true

@@ -173,13 +173,13 @@ func (g *Generator) generateGlobalInitializer(expr parser.ExpressionNode) ir.Ope
 }
 
 func (g *Generator) GenerateFunction(fn *parser.FunctionDefNode) {
-	name := fn.Name
+	name := fn.Symbol.Name
 	exported := fn.Pub
 	if export, ok := fn.Attributes.Get(attributes.AttributeTypeExport).(attributes.FunctionAttributeExport); ok {
 		name = export.As
 		exported = true
-	} else if !g.isProgramEntryFunction(fn.Name) {
-		name = g.mangleFunctionName(g.ModuleName, fn.Name)
+	} else if !g.isProgramEntryFunction(fn.Symbol.Name) {
+		name = g.mangleFunctionName(g.ModuleName, fn.Symbol.Name)
 	}
 	irFn := ir.NewFunction(name, exported, fn.Attributes)
 	irFn.Signature = g.buildFunctionSignature(fn)
@@ -1141,6 +1141,13 @@ func (g *Generator) generateStructLiteralIntoSlot(slot ir.SlotID, node *parser.S
 }
 
 func (g *Generator) generateFieldAccessExpr(node *parser.FieldAccessNode) ir.Operand {
+	if node.MethodSymbol != nil {
+		ident := &parser.IdentifierNode{Name: node.MethodSymbol.Name, Symbol: node.MethodSymbol, Type: node.GetType(), Loc: node.Loc}
+		if node.MethodModule != g.ModuleName {
+			ident.Module, ident.ResolvedModuleName = node.MethodModule, node.MethodModule
+		}
+		return g.generateIdentifierExpr(ident)
+	}
 	if node.IsEnumValue {
 		return ir.IntConstOperand(node.EnumValue, node.GetType())
 	}

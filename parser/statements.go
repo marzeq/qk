@@ -117,6 +117,16 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 	if !ok {
 		return nil, shared.NewError(p.PrevLoc(), "expected function name")
 	}
+	methodOwner := ""
+	if p.Match(tokeniser.TokenDot) {
+		p.Inc()
+		methodOwner = name.Value
+		methodName, ok := p.ExpectGet(tokeniser.TokenIdentifier)
+		if !ok {
+			return nil, shared.NewError(p.PrevLoc(), "expected method name after '.'")
+		}
+		name = methodName
+	}
 
 	if !p.Expect(tokeniser.TokenOpenParen) {
 		return nil, shared.NewError(p.PrevLoc(), "expected '('")
@@ -124,6 +134,39 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 
 	var args []*FunctionNodeArg
 	variadic := false
+	receiver := MethodReceiverNone
+	hasReceiver := p.Match(tokeniser.TokenAsterisk) ||
+		(p.Match(tokeniser.TokenIdentifier) && p.Peek().Value == "self")
+	if methodOwner != "" && hasReceiver {
+		pointer, mutablePointer := false, false
+		if p.Match(tokeniser.TokenAsterisk) {
+			p.Inc()
+			pointer = true
+			if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordMut) {
+				p.Inc()
+				mutablePointer = true
+			}
+		}
+		self, ok := p.ExpectGet(tokeniser.TokenIdentifier)
+		if !ok || self.Value != "self" {
+			return nil, shared.NewError(p.PrevLoc(), "method's first parameter must be self, *self, or *mut self")
+		}
+		receiver = MethodReceiverValue
+		var selfType TypeNode = &NamedTypeNode{Name: methodOwner, Loc: self.Loc}
+		if pointer {
+			receiver = MethodReceiverPointer
+			selfType = &PointerTypeNode{BaseType: selfType, Mutable: mutablePointer, Loc: self.Loc}
+			if mutablePointer {
+				receiver = MethodReceiverMutablePointer
+			}
+		}
+		args = append(args, &FunctionNodeArg{Name: "self", Type: selfType, Mutable: mutablePointer})
+		if p.Match(tokeniser.TokenComma) {
+			p.Inc()
+		} else if !p.Match(tokeniser.TokenCloseParen) {
+			return nil, shared.NewError(p.CurrLoc(), "expected ',' after method receiver")
+		}
+	}
 	for !p.Match(tokeniser.TokenCloseParen) {
 		for p.Match(tokeniser.TokenNewline) {
 			p.Inc()
@@ -239,6 +282,8 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 
 	return &FunctionDefNode{
 		Name:        name.Value,
+		MethodOwner: methodOwner,
+		Receiver:    receiver,
 		Args:        args,
 		RetTypeNode: retType,
 		Body:        body,
@@ -600,6 +645,11 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 			switch {
 			case p.Match(tokeniser.TokenOpenParen):
 				// let fn(...) = ...
+				p.PopPos()
+				node, err := p.ParseFunctionDefinition()
+				return node, true, err
+
+			case p.Match(tokeniser.TokenDot):
 				p.PopPos()
 				node, err := p.ParseFunctionDefinition()
 				return node, true, err

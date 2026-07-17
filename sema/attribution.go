@@ -26,6 +26,15 @@ func (a *Attributor) errorf(node parser.Node, format string, args ...any) {
 }
 
 func (a *Attributor) AttributeModule(root *parser.RootNode) {
+	for _, node := range root.Body {
+		if module, ok := node.(*parser.ModuleNode); ok {
+			a.analyser.currentMod = module.Name
+			if mod := a.analyser.modules[module.Name]; mod != nil {
+				a.analyser.current = mod.Scope
+			}
+			break
+		}
+	}
 	a.attributeNode(root)
 }
 
@@ -288,6 +297,9 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 
 	case *parser.FunctionCallNode:
 		if n.Symbol == nil {
+			a.attributeMethodCall(n)
+		}
+		if n.Symbol == nil {
 			a.attributeExpr(n.Callee)
 		} else if n.Symbol.Signature.ReturnType != nil {
 			n.SetType(n.Symbol.Signature.ReturnType)
@@ -426,6 +438,9 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		}
 
 	case *parser.FieldAccessNode:
+		if a.attributeMethodValue(n) {
+			break
+		}
 		if ident, ok := n.Subject.(*parser.IdentifierNode); ok && ident.Symbol != nil && ident.Symbol.Kind == symbols.SymbolKindType {
 			if enumType, ok := types.Underlying(ident.Symbol.TypeInfo).(types.EnumType); ok {
 				ident.SetType(enumType)
@@ -605,6 +620,95 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 
 	if node.GetType() == nil {
 		panic("expression without type")
+	}
+}
+
+func (a *Attributor) attributeMethodValue(n *parser.FieldAccessNode) bool {
+	ident, ok := n.Subject.(*parser.IdentifierNode)
+	if !ok || ident.Symbol == nil || ident.Symbol.Kind != symbols.SymbolKindType {
+		return false
+	}
+	module, owner, _, ok := methodOwnerIdentity(ident.Symbol.TypeInfo)
+	if !ok {
+		return false
+	}
+	method := a.analyser.methods[module+":"+owner][n.Field.Name]
+	if method == nil {
+		return false
+	}
+	if module != a.analyser.currentMod && !method.Public {
+		a.errorf(n, "method %q is not public", n.Field.Name)
+		n.SetType(types.ErrorType{})
+		return true
+	}
+	ret := method.Signature.ReturnType
+	if ret == nil {
+		ret = types.PrimitiveVoid
+	}
+	n.MethodSymbol = method
+	n.MethodModule = module
+	n.SetType(types.PointerType{Base: types.FunctionType{Parameters: method.Signature.Parameters, ReturnType: ret}})
+	return true
+}
+
+func (a *Attributor) attributeMethodCall(n *parser.FunctionCallNode) bool {
+	member, ok := n.Callee.(*parser.FieldAccessNode)
+	if !ok {
+		return false
+	}
+	if ident, ok := member.Subject.(*parser.IdentifierNode); ok && ident.Symbol != nil && ident.Symbol.Kind == symbols.SymbolKindType {
+		return false
+	}
+	a.attributeExpr(member.Subject)
+	module, owner, receiverIsPointer, ok := methodOwnerIdentity(member.Subject.GetType())
+	if !ok {
+		return false
+	}
+	method := a.analyser.methods[module+":"+owner][member.Field.Name]
+	if method == nil {
+		return false
+	}
+	if method.StaticMethod {
+		return false
+	}
+	if module != a.analyser.currentMod && !method.Public {
+		a.errorf(n, "method %q is not public", member.Field.Name)
+		n.SetType(types.ErrorType{})
+		return true
+	}
+	receiver := member.Subject
+	expected := method.Signature.Parameters[0]
+	_, expectsPointer := types.Underlying(expected).(types.PointerType)
+	if expectsPointer && !receiverIsPointer {
+		op := parser.UnaryOpReference
+		if ptr := types.Underlying(expected).(types.PointerType); ptr.Mutable {
+			op = parser.UnaryOpMutableReference
+		}
+		receiver = &parser.UnaryOpNode{Op: op, Operand: receiver, Loc: receiver.GetLoc()}
+	} else if !expectsPointer && receiverIsPointer {
+		receiver = &parser.UnaryOpNode{Op: parser.UnaryOpDereference, Operand: receiver, Loc: receiver.GetLoc()}
+	}
+	n.Args = append([]parser.ExpressionNode{receiver}, n.Args...)
+	n.Symbol = method
+	n.Method = true
+	if module != a.analyser.currentMod {
+		n.Name = &parser.IdentifierNode{Name: method.Name, Module: module, ResolvedModuleName: module, Loc: member.Loc, Symbol: method}
+	}
+	return true
+}
+
+func methodOwnerIdentity(t types.Type) (module, name string, pointer bool, ok bool) {
+	if ptr, isPointer := types.Underlying(t).(types.PointerType); isPointer {
+		t = ptr.Base
+		pointer = true
+	}
+	switch t := t.(type) {
+	case types.DefinedType:
+		return t.Module, t.Name, pointer, true
+	case *types.AliasRef:
+		return t.Module, t.Name, pointer, true
+	default:
+		return "", "", pointer, false
 	}
 }
 

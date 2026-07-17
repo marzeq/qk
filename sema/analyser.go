@@ -11,6 +11,7 @@ type Analyser struct {
 	current    *symbols.Scope
 	modules    map[string]*symbols.Module
 	aliases    map[string]*aliasInfo
+	methods    map[string]map[string]*symbols.Symbol
 	errors     []error
 	currentMod string
 }
@@ -22,6 +23,7 @@ func NewAnalyser() *Analyser {
 		universe: u,
 		modules:  make(map[string]*symbols.Module),
 		aliases:  make(map[string]*aliasInfo),
+		methods:  make(map[string]map[string]*symbols.Symbol),
 	}
 
 	a.predefineBuiltins()
@@ -37,6 +39,9 @@ func (a *Analyser) errorf(node parser.Node, format string, args ...any) {
 }
 
 func (a *Analyser) AnalyseModule(root *parser.RootNode, name string) {
+	// Aliases are module-local; method tables remain available so later modules
+	// can resolve methods exported by their imports.
+	a.aliases = make(map[string]*aliasInfo)
 	modScope := symbols.NewScope(a.universe)
 
 	mod := &symbols.Module{
