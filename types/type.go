@@ -691,17 +691,32 @@ func PromoteNumeric(a, b Type) Type {
 		return a
 	}
 
+	_, aUntypedFloat := a.(UntypedFloat)
+	_, bUntypedFloat := b.(UntypedFloat)
+	if aUntypedFloat || bUntypedFloat {
+		other := b
+		if bUntypedFloat {
+			other = a
+		}
+
+		if _, ok := other.(UntypedInt); ok {
+			return UntypedFloat{}
+		}
+		if primitive, ok := other.(PrimitiveType); ok {
+			if IsFloat(primitive) {
+				return primitive
+			}
+			if IsInteger(primitive) {
+				return PrimitiveF64
+			}
+		}
+		return ErrorType{}
+	}
+
 	if _, ok := a.(UntypedInt); ok {
 		return b
 	}
 	if _, ok := b.(UntypedInt); ok {
-		return a
-	}
-
-	if _, ok := a.(UntypedFloat); ok {
-		return b
-	}
-	if _, ok := b.(UntypedFloat); ok {
 		return a
 	}
 
