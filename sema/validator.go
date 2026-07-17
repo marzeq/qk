@@ -747,10 +747,50 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		*parser.SizeOfExprNode:
 		// nothing to validate
 
+	case *parser.AlignOfNode:
+		switch operand := types.Underlying(n.OperandType).(type) {
+		case types.FunctionType:
+			v.errorf(n, "alignof requires an object type, got %v", operand)
+		case types.PrimitiveType:
+			if operand == types.PrimitiveVoid {
+				v.errorf(n, "alignof requires an object type, got void")
+			}
+		}
+
+	case *parser.OffsetOfNode:
+		operand := types.Underlying(n.OperandType)
+		switch operand.(type) {
+		case types.StructType, types.UnionType:
+		default:
+			v.errorf(n, "offsetof requires a struct or union type")
+			return
+		}
+		if !hasOffsetField(operand, n.Field) {
+			v.errorf(n, "%v has no field %q", n.OperandType, n.Field)
+		}
+
 	default:
 		panic(fmt.Sprintf("unhandled expression type %T", n))
 	}
 
+}
+
+func hasOffsetField(operand types.Type, name string) bool {
+	var fields []shared.Pair[string, types.Type]
+	switch operand := types.Underlying(operand).(type) {
+	case types.StructType:
+		fields = operand.Fields
+	case types.UnionType:
+		fields = operand.Fields
+	default:
+		return false
+	}
+	for _, field := range fields {
+		if field.L == name || field.L == "" && hasOffsetField(field.R, name) {
+			return true
+		}
+	}
+	return false
 }
 
 func (v *Validator) validateReferenceTarget(node *parser.UnaryOpNode, target parser.ExpressionNode, mutable bool) bool {

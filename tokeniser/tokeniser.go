@@ -296,6 +296,8 @@ var keywords = map[string]struct{}{
 	string(KeywordNil):      {},
 	string(KeywordAs):       {},
 	string(KeywordSizeof):   {},
+	string(KeywordAlignof):  {},
+	string(KeywordOffsetof): {},
 	string(KeywordLen):      {},
 	string(KeywordIn):       {},
 }

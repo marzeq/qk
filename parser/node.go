@@ -431,6 +431,30 @@ func (n SizeOfExprNode) GetLoc() shared.Location { return n.Loc }
 func (n *SizeOfExprNode) SetType(t types.Type)   { n.Type = t }
 func (n *SizeOfExprNode) GetType() types.Type    { return n.Type }
 
+type AlignOfNode struct {
+	Operand     TypeNode
+	Expression  ExpressionNode
+	OperandType types.Type
+	Loc         shared.Location
+	Type        types.Type
+}
+
+func (n AlignOfNode) GetLoc() shared.Location { return n.Loc }
+func (n *AlignOfNode) SetType(t types.Type)   { n.Type = t }
+func (n *AlignOfNode) GetType() types.Type    { return n.Type }
+
+type OffsetOfNode struct {
+	Operand     TypeNode
+	OperandType types.Type
+	Field       string
+	Loc         shared.Location
+	Type        types.Type
+}
+
+func (n OffsetOfNode) GetLoc() shared.Location { return n.Loc }
+func (n *OffsetOfNode) SetType(t types.Type)   { n.Type = t }
+func (n *OffsetOfNode) GetType() types.Type    { return n.Type }
+
 type ImportNode struct {
 	Modules []string
 	Aliases []string

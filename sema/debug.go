@@ -158,6 +158,17 @@ func (w *debugWalker) walkExpr(expr parser.ExpressionNode) {
 		w.checkType(n.Operand.GetType())
 		w.checkType(n.Type)
 
+	case *parser.AlignOfNode:
+		if n.Expression != nil {
+			w.walkExpr(n.Expression)
+		}
+		w.checkType(n.OperandType)
+		w.checkType(n.Type)
+
+	case *parser.OffsetOfNode:
+		w.checkType(n.OperandType)
+		w.checkType(n.Type)
+
 	case *parser.StructLiteralNode:
 		for _, field := range n.Fields {
 			w.walkExpr(field.R)

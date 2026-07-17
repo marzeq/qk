@@ -99,6 +99,8 @@ const (
 	KeywordNil      KeywordKind = "nil"
 	KeywordAs       KeywordKind = "as"
 	KeywordSizeof   KeywordKind = "sizeof"
+	KeywordAlignof  KeywordKind = "alignof"
+	KeywordOffsetof KeywordKind = "offsetof"
 	KeywordLen      KeywordKind = "len"
 	KeywordIn       KeywordKind = "in"
 )

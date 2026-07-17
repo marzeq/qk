@@ -478,6 +478,21 @@ type Sizeof struct {
 
 func (Sizeof) isInstr() {}
 
+type Alignof struct {
+	Dest ValueID
+	Type types.Type
+}
+
+func (Alignof) isInstr() {}
+
+type Offsetof struct {
+	Dest  ValueID
+	Type  types.Type
+	Field string
+}
+
+func (Offsetof) isInstr() {}
+
 type StringConst struct {
 	Dest  ValueID
 	Value string

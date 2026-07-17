@@ -505,6 +505,10 @@ func (e *Emitter) InstrEmit(out *strings.Builder, instr ir.Instr) {
 		e.CastEmit(out, instr)
 	case ir.Sizeof:
 		e.SizeofEmit(out, instr)
+	case ir.Alignof:
+		e.AlignofEmit(out, instr)
+	case ir.Offsetof:
+		e.OffsetofEmit(out, instr)
 	case ir.StringConst:
 		e.StringConstEmit(out, instr)
 	default:
@@ -1063,6 +1067,32 @@ func (e *Emitter) SizeofEmit(out *strings.Builder, s ir.Sizeof) {
 		"%s = ptrtoint ptr getelementptr (%s, ptr null, i32 1) to %s",
 		e.ValueIDEmit(s.Dest),
 		e.TypeEmit(s.Type),
+		e.TypeEmit(types.PrimitiveUsz),
+	)
+}
+
+func (e *Emitter) AlignofEmit(out *strings.Builder, a ir.Alignof) {
+	fmt.Fprintf(
+		out,
+		"%s = ptrtoint ptr getelementptr ({ i8, %s }, ptr null, i32 0, i32 1) to %s",
+		e.ValueIDEmit(a.Dest),
+		e.TypeEmit(a.Type),
+		e.TypeEmit(types.PrimitiveUsz),
+	)
+}
+
+func (e *Emitter) OffsetofEmit(out *strings.Builder, o ir.Offsetof) {
+	if _, ok := types.Underlying(o.Type).(types.UnionType); ok {
+		fmt.Fprintf(out, "%s = add %s 0, 0", e.ValueIDEmit(o.Dest), e.TypeEmit(types.PrimitiveUsz))
+		return
+	}
+	field := e.structFieldIndex(types.Underlying(o.Type), o.Field)
+	fmt.Fprintf(
+		out,
+		"%s = ptrtoint ptr getelementptr (%s, ptr null, i32 0, i32 %d) to %s",
+		e.ValueIDEmit(o.Dest),
+		e.TypeEmit(o.Type),
+		field,
 		e.TypeEmit(types.PrimitiveUsz),
 	)
 }

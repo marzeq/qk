@@ -66,6 +66,87 @@ func (p *Parser) ParseSizeOfExpression() (ExpressionNode, error) {
 	panic("unreachable")
 }
 
+func (p *Parser) ParseAlignOfExpression() (ExpressionNode, error) {
+	beginLoc := p.CurrLoc()
+	p.Inc() // alignof
+	if !p.Expect(tokeniser.TokenOpenParen) {
+		return nil, shared.NewError(p.PrevLoc(), "expected '(' after 'alignof'")
+	}
+	for p.Match(tokeniser.TokenNewline) {
+		p.Inc()
+	}
+	var operand Node
+	p.PushPos()
+	operand, err := p.ParseType()
+	if err == nil {
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+	}
+	if err != nil || !p.Match(tokeniser.TokenCloseParen) {
+		p.PopPos()
+		operand, err = p.ParseExpression()
+		if err != nil {
+			return nil, shared.NewError(p.PrevLoc(), "expected type or expression after 'alignof('")
+		}
+	} else {
+		p.CommitPos()
+	}
+	for p.Match(tokeniser.TokenNewline) {
+		p.Inc()
+	}
+	if !p.Expect(tokeniser.TokenCloseParen) {
+		return nil, shared.NewError(p.PrevLoc(), "expected ')' after 'alignof' operand")
+	}
+	node := &AlignOfNode{Loc: beginLoc}
+	switch operand := operand.(type) {
+	case *NamedTypeNode:
+		// A bare name can denote either a type or a value. Semantic resolution
+		// chooses the visible binding without evaluating the value expression.
+		node.Operand = operand
+		node.Expression = &IdentifierNode{Name: operand.Name, Module: operand.ModName, Loc: operand.Loc}
+	case TypeNode:
+		node.Operand = operand
+	case ExpressionNode:
+		node.Expression = operand
+	default:
+		panic("unreachable")
+	}
+	return node, nil
+}
+
+func (p *Parser) ParseOffsetOfExpression() (ExpressionNode, error) {
+	beginLoc := p.CurrLoc()
+	p.Inc() // offsetof
+	if !p.Expect(tokeniser.TokenOpenParen) {
+		return nil, shared.NewError(p.PrevLoc(), "expected '(' after 'offsetof'")
+	}
+	for p.Match(tokeniser.TokenNewline) {
+		p.Inc()
+	}
+	operand, err := p.ParseType()
+	if err != nil {
+		return nil, shared.NewError(p.PrevLoc(), "expected type after 'offsetof('")
+	}
+	if !p.Expect(tokeniser.TokenComma) {
+		return nil, shared.NewError(p.PrevLoc(), "expected ',' after type in 'offsetof'")
+	}
+	for p.Match(tokeniser.TokenNewline) {
+		p.Inc()
+	}
+	field, ok := p.ExpectGet(tokeniser.TokenIdentifier)
+	if !ok {
+		return nil, shared.NewError(p.PrevLoc(), "expected field name in 'offsetof'")
+	}
+	for p.Match(tokeniser.TokenNewline) {
+		p.Inc()
+	}
+	if !p.Expect(tokeniser.TokenCloseParen) {
+		return nil, shared.NewError(p.PrevLoc(), "expected ')' after 'offsetof' field")
+	}
+	return &OffsetOfNode{Operand: operand, Field: field.Value, Loc: beginLoc}, nil
+}
+
 func (p *Parser) ParseLogicalOr() (ExpressionNode, error) {
 	beginLoc := p.CurrLoc()
 	left, err := p.ParseLogicalAnd()
@@ -499,6 +580,14 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 			return nil, err
 		}
 		return expr, nil
+	}
+
+	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordAlignof) {
+		return p.ParseAlignOfExpression()
+	}
+
+	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordOffsetof) {
+		return p.ParseOffsetOfExpression()
 	}
 
 	if p.Match(tokeniser.TokenOpenParen) {

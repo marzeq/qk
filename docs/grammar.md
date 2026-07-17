@@ -203,6 +203,8 @@ term           = "(", opt_newlines, expression, opt_newlines, ")"
                | if_expr
                | given_expr
                | sizeof_expr
+               | alignof_expr
+               | offsetof_expr
                | struct_literal
                | slice_literal
                | module_access
@@ -226,7 +228,11 @@ given_expr     = "given", opt_newlines, block, opt_newlines,
 
 block_expr     = "{", opt_newlines, expression, opt_newlines, "}" ;
 
-sizeof_expr    = "sizeof", opt_newlines, type_expr ;
+sizeof_expr    = "sizeof", "(", opt_newlines,
+                 ( type_expr | expression ), opt_newlines, ")" ;
+alignof_expr   = "alignof", "(", opt_newlines,
+	         ( type_expr | expression ), opt_newlines, ")" ;
+offsetof_expr  = "offsetof", "(", type_expr, ",", identifier, ")" ;
 
 arg_list       = expression, { ",", opt_newlines, expression } ;
 
@@ -291,7 +297,7 @@ named_type     = identifier
 ### 1. Tokenisation model
 
 - Identifiers start with a letter or underscore and then continue with letters, digits, or underscore.
-- Keywords include: `let`, `mut`, `struct`, `union`, `enum`, `type`, `alias`, `if`, `else`, `given`, `for`, `in`, `break`, `continue`, `return`, `defer`, `import`, `module`, `pub`, `and`, `or`, `not`, `true`, `false`, `nil`, `as`, `sizeof`.
+- Keywords include: `let`, `mut`, `struct`, `union`, `enum`, `type`, `alias`, `if`, `else`, `given`, `for`, `in`, `break`, `continue`, `return`, `defer`, `import`, `module`, `pub`, `and`, `or`, `not`, `true`, `false`, `nil`, `as`, `sizeof`, `alignof`, `offsetof`.
 - Integer tokens are decimal with optional leading minus.
 - Floating-point literals are assembled by the parser from integer tokens separated by a dot (for example `12.34`, `12.`, `.34`).
 - Strings and chars support escape sequences: `\\`, `\"`, `\n`, `\r`, `\t`, `\b`, `\f`, `\v`, `\a`, `\0`.

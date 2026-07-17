@@ -805,6 +805,10 @@ func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
 		return g.generateSizeOfExpr(n)
 	case *parser.SizeOfExprNode:
 		return g.generateSizeOfExprExpr(n)
+	case *parser.AlignOfNode:
+		return g.generateAlignOfExpr(n)
+	case *parser.OffsetOfNode:
+		return g.generateOffsetOfExpr(n)
 	case *parser.StringLiteralNode:
 		return g.generateStringLiteralExpr(n)
 	case *parser.CharLiteralNode:
@@ -947,6 +951,18 @@ func (g *Generator) generateSizeOfExpr(node *parser.SizeOfNode) ir.Operand {
 func (g *Generator) generateSizeOfExprExpr(node *parser.SizeOfExprNode) ir.Operand {
 	dst := g.currentFunction.NewValueOfType(types.PrimitiveUsz)
 	g.Emit(ir.Sizeof{Dest: dst, Type: node.Operand.GetType()})
+	return ir.ValueOperand(dst, types.PrimitiveUsz)
+}
+
+func (g *Generator) generateAlignOfExpr(node *parser.AlignOfNode) ir.Operand {
+	dst := g.currentFunction.NewValueOfType(types.PrimitiveUsz)
+	g.Emit(ir.Alignof{Dest: dst, Type: node.OperandType})
+	return ir.ValueOperand(dst, types.PrimitiveUsz)
+}
+
+func (g *Generator) generateOffsetOfExpr(node *parser.OffsetOfNode) ir.Operand {
+	dst := g.currentFunction.NewValueOfType(types.PrimitiveUsz)
+	g.Emit(ir.Offsetof{Dest: dst, Type: node.OperandType, Field: node.Field})
 	return ir.ValueOperand(dst, types.PrimitiveUsz)
 }
 
