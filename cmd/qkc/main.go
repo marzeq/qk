@@ -451,12 +451,14 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, config *Arg
 	}
 	for _, link := range moduleLinks {
 		switch link.Kind {
-		case attributes.LinkLibrary:
+		case attributes.LinkSystem:
 			args = append(args, "-l"+link.Value)
 		case attributes.LinkPath:
 			args = append(args, link.Value)
 		case attributes.LinkSearchPath:
 			args = append(args, "-L"+link.Value)
+		case attributes.LinkFramework:
+			args = append(args, "-framework", link.Value)
 		default:
 			return nil, fmt.Errorf("unknown module link kind %d", link.Kind)
 		}

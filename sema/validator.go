@@ -54,7 +54,7 @@ func (v *Validator) validateNode(node parser.Node) {
 	case *parser.ImportNode:
 
 	case *parser.ModuleNode:
-		v.validateAttributes(n, n.Attributes, "module", attributes.AttributeTypeLinks)
+		v.validateAttributes(n, n.Attributes, "module", attributes.AttributeTypeLink)
 
 	case *parser.FunctionDefNode:
 		v.validateAttributes(n, n.Attributes, "function",

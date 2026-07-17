@@ -324,8 +324,8 @@ func (p *Parser) parseAttribute(defaultName string) (attributes.Attribute, error
 	}
 
 	switch attributes.AttributeType(nameIdent.Name) {
-	case attributes.AttributeTypeLinks:
-		return p.parseLinksAttribute()
+	case attributes.AttributeTypeLink:
+		return p.parseLinkAttribute()
 	case attributes.AttributeTypeInline:
 		return p.parseInlineAttribute()
 	case attributes.AttributeTypeNoInline:
@@ -341,9 +341,9 @@ func (p *Parser) parseAttribute(defaultName string) (attributes.Attribute, error
 	}
 }
 
-func (p *Parser) parseLinksAttribute() (attributes.Attribute, error) {
+func (p *Parser) parseLinkAttribute() (attributes.Attribute, error) {
 	if !p.Expect(tokeniser.TokenOpenParen) {
-		return nil, shared.NewError(p.PrevLoc(), "expected '(' after @links")
+		return nil, shared.NewError(p.PrevLoc(), "expected '(' after @link")
 	}
 
 	links := []attributes.Link{}
@@ -353,7 +353,7 @@ func (p *Parser) parseLinksAttribute() (attributes.Attribute, error) {
 		}
 		if p.Match(tokeniser.TokenCloseParen) {
 			if len(links) == 0 {
-				return nil, shared.NewError(p.CurrLoc(), "@links requires at least one link")
+				return nil, shared.NewError(p.CurrLoc(), "@link requires at least one link")
 			}
 			p.Inc()
 			break
@@ -361,25 +361,27 @@ func (p *Parser) parseLinksAttribute() (attributes.Attribute, error) {
 
 		kindTok, ok := p.ExpectGet(tokeniser.TokenIdentifier)
 		if !ok {
-			return nil, shared.NewError(p.PrevLoc(), "expected 'lib', 'path' or 'search' in @links")
+			return nil, shared.NewError(p.PrevLoc(), "expected 'system', 'path', 'search', or 'framework' in @link")
 		}
 		var kind attributes.LinkKind
 		switch kindTok.Value {
-		case "lib":
-			kind = attributes.LinkLibrary
+		case "system":
+			kind = attributes.LinkSystem
 		case "path":
 			kind = attributes.LinkPath
 		case "search":
 			kind = attributes.LinkSearchPath
+		case "framework":
+			kind = attributes.LinkFramework
 		default:
-			return nil, shared.NewError(kindTok.Loc, "unknown @links entry kind %q; expected 'lib', 'path' or 'search'", kindTok.Value)
+			return nil, shared.NewError(kindTok.Loc, "unknown @link entry kind %q; expected 'system', 'path', 'search', or 'framework'", kindTok.Value)
 		}
 		value, ok := p.ExpectGet(tokeniser.TokenString)
 		if !ok {
-			return nil, shared.NewError(p.PrevLoc(), "expected string after %s in @links", kindTok.Value)
+			return nil, shared.NewError(p.PrevLoc(), "expected string after %s in @link", kindTok.Value)
 		}
 		if value.Value == "" {
-			return nil, shared.NewError(value.Loc, "@links values cannot be empty")
+			return nil, shared.NewError(value.Loc, "@link values cannot be empty")
 		}
 		links = append(links, attributes.Link{Kind: kind, Value: value.Value})
 
@@ -391,11 +393,11 @@ func (p *Parser) parseLinksAttribute() (attributes.Attribute, error) {
 			continue
 		}
 		if !p.Match(tokeniser.TokenCloseParen) {
-			return nil, shared.NewError(p.CurrLoc(), "expected ',' or ')' in @links")
+			return nil, shared.NewError(p.CurrLoc(), "expected ',' or ')' in @link")
 		}
 	}
 
-	return attributes.ModuleAttributeLinks{Links: links}, nil
+	return attributes.ModuleAttributeLink{Links: links}, nil
 }
 
 func (p *Parser) parseInlineAttribute() (attributes.Attribute, error) {

@@ -7,7 +7,7 @@ const (
 	AttributeTypeInline   AttributeType = "inline"
 	AttributeTypeNoInline AttributeType = "noinline"
 	AttributeTypeForeign  AttributeType = "foreign"
-	AttributeTypeLinks    AttributeType = "links"
+	AttributeTypeLink     AttributeType = "link"
 	AttributeTypeExport   AttributeType = "export"
 )
 
@@ -36,9 +36,10 @@ func (a FunctionAttributeForeign) GetType() AttributeType { return AttributeType
 type LinkKind uint8
 
 const (
-	LinkLibrary LinkKind = iota
+	LinkSystem LinkKind = iota
 	LinkPath
 	LinkSearchPath
+	LinkFramework
 )
 
 type Link struct {
@@ -46,11 +47,11 @@ type Link struct {
 	Value string
 }
 
-type ModuleAttributeLinks struct {
+type ModuleAttributeLink struct {
 	Links []Link
 }
 
-func (a ModuleAttributeLinks) GetType() AttributeType { return AttributeTypeLinks }
+func (a ModuleAttributeLink) GetType() AttributeType { return AttributeTypeLink }
 
 type FunctionAttributeExport struct {
 	As string

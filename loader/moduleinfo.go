@@ -34,7 +34,7 @@ func CollectModuleInfo(root *parser.RootNode) (*PartialModuleInfo, error) {
 			seenModule = true
 			name = n.Name
 			for _, attr := range n.Attributes {
-				linkAttr, ok := attr.(attributes.ModuleAttributeLinks)
+				linkAttr, ok := attr.(attributes.ModuleAttributeLink)
 				if !ok {
 					continue
 				}
