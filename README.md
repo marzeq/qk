@@ -27,9 +27,8 @@ Windows support is not on the top of my priority list, I'd rather push this to a
 
 ### For compiling code with the compiler
 
-Currently I have hard-wired an assumption that the target platform is 64-bit.
-
-Aside from that restriction, the compiler should be able to target any platform supported by clang.
+The compiler supports recognised 32-bit and 64-bit target architectures. C ABI
+aggregate lowering is currently limited to the documented target families.
 
 ## Dependencies
 

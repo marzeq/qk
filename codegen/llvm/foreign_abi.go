@@ -82,8 +82,8 @@ func (sysVAMD64ABIGenerator) aggregateChunks(e *Emitter, st types.StructType) []
 	return chunks
 }
 
-func (sysVAMD64ABIGenerator) requiresSRet(_ *Emitter, st types.StructType) bool {
-	size, _ := (&Emitter{}).typeSizeAlign(st)
+func (sysVAMD64ABIGenerator) requiresSRet(e *Emitter, st types.StructType) bool {
+	size, _ := e.typeSizeAlign(st)
 	return size > 16
 }
 
@@ -224,14 +224,18 @@ func (e *Emitter) typeSizeAlign(ty types.Type) (int, int) {
 			return 2, 2
 		case types.PrimitiveI32, types.PrimitiveU32, types.PrimitiveF32:
 			return 4, 4
+		case types.PrimitiveIsz, types.PrimitiveUsz:
+			return e.pointerBytes(), e.pointerBytes()
+		case types.PrimitiveI64, types.PrimitiveU64, types.PrimitiveF64:
+			return 8, e.scalar64Align()
 		default:
-			return 8, 8
+			panic(fmt.Sprintf("unsupported primitive type %v", t))
 		}
 	case types.PointerType:
-		return 8, 8
+		return e.pointerBytes(), e.pointerBytes()
 	case types.SliceType:
 		// Slices are represented as { data pointer, length }.
-		return 16, 8
+		return e.pointerBytes() * 2, e.pointerBytes()
 	case types.EnumType:
 		return 4, 4
 	case types.StructType:

@@ -346,9 +346,9 @@ func (e *Emitter) TypeEmit(ty types.Type) string {
 		case types.PrimitiveVoid:
 			return "void"
 		case types.PrimitiveIsz:
-			return "i64"
+			return e.pointerIntType()
 		case types.PrimitiveUsz:
-			return "i64"
+			return e.pointerIntType()
 		case types.PrimitiveF32:
 			return "float"
 		case types.PrimitiveF64:
@@ -393,7 +393,7 @@ func (e *Emitter) TypeEmit(ty types.Type) string {
 		size, align := e.typeSizeAlign(ty)
 		return fmt.Sprintf("[%d x i%d]", size/align, align*8)
 	case types.SliceType:
-		return "{ ptr, i64 }"
+		return fmt.Sprintf("{ ptr, %s }", e.pointerIntType())
 	case types.FunctionType:
 		var sb strings.Builder
 		sb.WriteString(e.TypeEmit(ty.ReturnType))

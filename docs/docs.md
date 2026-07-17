@@ -45,9 +45,9 @@ go run ./cmd/qkc .
 ```
 
 `qkc` requires `clang`, LLVM's `opt`, and a usable `lld`. The compiler itself is
-intended for Unix-like hosts. QK currently assumes 64-bit targets; native code
-generation and cross-compilation use the target support exposed by the installed
-LLVM toolchain.
+intended for Unix-like hosts. QK supports recognised 32-bit and 64-bit target
+architectures; native code generation and cross-compilation use the target support
+exposed by the installed LLVM toolchain.
 
 The repository includes Vim file detection, syntax highlighting, indentation,
 and file settings under `editor_support/vim`.
@@ -752,8 +752,8 @@ fixed size.
 | Floating point | `f32`, `f64` |
 | Other | `bool`, `char`, `void` |
 
-`isz` and `usz` are pointer-sized signed and unsigned integers. QK currently
-targets 64-bit machines, so both are 64 bits in supported output.
+`isz` and `usz` are pointer-sized signed and unsigned integers. They are 32 bits
+on 32-bit targets and 64 bits on 64-bit targets.
 
 `char` is a distinct byte-sized character type, not an alias of `u8`. `bool` is a
 distinct logical type. `void` denotes no returned value or an untyped pointee; it
@@ -1522,9 +1522,11 @@ QK is intentionally small and currently has no:
 - General runtime bounds, overflow, null, or cast checks.
 - Stable language, native ABI, IR, or compiler-plugin interface.
 
-The compiler assumes 64-bit targets. C aggregate ABI lowering is implemented for
-the major currently supported 64-bit targets, not every Clang target. The host
-compiler is not currently intended for Windows.
+Target pointer width is supported for recognised 32-bit and 64-bit architectures.
+C aggregate ABI lowering is implemented for SysV AMD64, Windows x64, and AArch64;
+32-bit C aggregate parameters and returns are not yet supported. Scalar C ABI and
+ordinary QK calls work on supported 32-bit targets. The host compiler is not
+currently intended for Windows.
 
 `as` is reserved but casts use `value.(Type)`. Block comments do not nest. QK
 strings and C strings are deliberately distinct.
