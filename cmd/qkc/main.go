@@ -71,6 +71,11 @@ func main() {
 	for _, moduleName := range order {
 		llvmOutputs[moduleName] = buildLLVMModule(irModules[moduleName], moduleName, args.mainModule, args.outputType == OutputExecutable, args.target)
 	}
+	var freestandingRuntime string
+	if args.noLibc {
+		freestandingRuntime, err = buildFreestandingRuntime(args.target)
+		check(err)
+	}
 
 	if args.dumpIR {
 		for _, moduleName := range order {
@@ -81,6 +86,9 @@ func main() {
 	if args.dumpLLVM {
 		for _, moduleName := range order {
 			dumpLLVMModule(llvmOutputs[moduleName])
+		}
+		if freestandingRuntime != "" {
+			dumpLLVMModule(freestandingRuntime)
 		}
 	}
 
@@ -129,6 +137,13 @@ func main() {
 				err = dumpAssemblyFile(buildDir)
 				check(err)
 			}
+			if freestandingRuntime != "" {
+				buildDir, err := emitLLVMFile(freestandingRuntime)
+				check(err)
+				defer os.RemoveAll(buildDir)
+				check(emitAssemblyFile(buildDir, args))
+				check(dumpAssemblyFile(buildDir))
+			}
 		}
 		return
 	}
@@ -156,6 +171,21 @@ func main() {
 		}
 
 		objFile, err := compileLLVMModule(buildDir, moduleName, llvmOutputs[moduleName], args)
+		check(err)
+		objFiles = append(objFiles, objFile)
+	}
+	if freestandingRuntime != "" {
+		buildDir, err := emitLLVMFile(freestandingRuntime)
+		check(err)
+		buildDirs = append(buildDirs, buildDir)
+		if !args.keepBuildDir {
+			defer os.RemoveAll(buildDir)
+		}
+		if args.dumpAsm {
+			check(emitAssemblyFile(buildDir, args))
+			check(dumpAssemblyFile(buildDir))
+		}
+		objFile, err := compileLLVMModule(buildDir, "freestanding runtime", freestandingRuntime, args)
 		check(err)
 		objFiles = append(objFiles, objFile)
 	}
