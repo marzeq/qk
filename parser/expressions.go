@@ -840,6 +840,9 @@ func (p *Parser) ParseCall(callee ExpressionNode) (*FunctionCallNode, error) {
 			for p.Match(tokeniser.TokenNewline) {
 				p.Inc()
 			}
+			if p.Match(tokeniser.TokenCloseParen) {
+				break
+			}
 
 			arg, err := p.ParseExpression()
 			if err != nil {
@@ -1478,7 +1481,13 @@ func (p *Parser) ParseFunctionType() (*FunctionTypeNode, error) {
 	beginLoc := p.CurrLoc()
 	p.Inc() // (
 	var params []TypeNode
-	for !p.Match(tokeniser.TokenCloseParen) {
+	for {
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+		if p.Match(tokeniser.TokenCloseParen) {
+			break
+		}
 		param, err := p.ParseType()
 		if err != nil {
 			return nil, err

@@ -29,6 +29,11 @@ func (p *Processor) process() ([]tokeniser.Token, error) {
 		if tok.Type == tokeniser.TokenKeyword {
 			switch tok.Value {
 			case string(tokeniser.KeywordWhen):
+				if whenContinuesPrevious(result) {
+					for len(result) > 0 && result[len(result)-1].Type == tokeniser.TokenNewline {
+						result = result[:len(result)-1]
+					}
+				}
 				selected, err := p.processWhen()
 				if err != nil {
 					return nil, err
@@ -43,6 +48,33 @@ func (p *Processor) process() ([]tokeniser.Token, error) {
 		p.pos++
 	}
 	return result, nil
+}
+
+func whenContinuesPrevious(tokens []tokeniser.Token) bool {
+	pos := len(tokens) - 1
+	for pos >= 0 && tokens[pos].Type == tokeniser.TokenNewline {
+		pos--
+	}
+	if pos < 0 {
+		return false
+	}
+	previous := tokens[pos]
+	if previous.Type == tokeniser.TokenKeyword {
+		return previous.Value == string(tokeniser.KeywordType)
+	}
+	switch previous.Type {
+	case tokeniser.TokenEquals, tokeniser.TokenComma, tokeniser.TokenColon,
+		tokeniser.TokenOpenParen, tokeniser.TokenOpenSquare,
+		tokeniser.TokenPlus, tokeniser.TokenMinus, tokeniser.TokenAsterisk,
+		tokeniser.TokenSlash, tokeniser.TokenPercent, tokeniser.TokenAmpersand,
+		tokeniser.TokenPipe, tokeniser.TokenCaret, tokeniser.TokenShiftLeft,
+		tokeniser.TokenShiftRight, tokeniser.TokenEqualsEquals, tokeniser.TokenNotEquals,
+		tokeniser.TokenLess, tokeniser.TokenLessEquals, tokeniser.TokenGreater,
+		tokeniser.TokenGreaterEquals, tokeniser.TokenArrow:
+		return true
+	default:
+		return false
+	}
 }
 
 func (p *Processor) compilerError() error {

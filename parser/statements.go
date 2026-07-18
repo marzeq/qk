@@ -171,10 +171,16 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 		for p.Match(tokeniser.TokenNewline) {
 			p.Inc()
 		}
+		if p.Match(tokeniser.TokenCloseParen) {
+			break
+		}
 
 		if p.Match(tokeniser.Token3Dots) {
 			p.Inc()
 			variadic = true
+			if p.Match(tokeniser.TokenComma) {
+				p.Inc()
+			}
 			break
 		}
 
@@ -265,10 +271,6 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 
 		if !p.Match(tokeniser.TokenComma) {
 			break
-		}
-
-		for p.Match(tokeniser.TokenNewline) {
-			p.Inc()
 		}
 		p.Consume()
 	}
