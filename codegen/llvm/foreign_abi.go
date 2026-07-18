@@ -2,9 +2,9 @@ package llvm
 
 import (
 	"fmt"
-	"runtime"
 	"strings"
 
+	qktarget "github.com/marzeq/qk/target"
 	"github.com/marzeq/qk/types"
 )
 
@@ -97,10 +97,7 @@ func (e *Emitter) foreignABISRetArgument(ty types.Type, value string) string {
 }
 
 func (e *Emitter) targetTriple() string {
-	if e.TargetTriple != "" {
-		return e.TargetTriple
-	}
-	return runtime.GOARCH + "-" + runtime.GOOS
+	return qktarget.EffectiveTriple(e.TargetTriple)
 }
 
 func (e *Emitter) foreignABIGenerator() foreignABIGenerator {

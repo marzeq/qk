@@ -1,12 +1,13 @@
 package preprocessor
 
 import (
-	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/marzeq/qk/parser"
 	"github.com/marzeq/qk/shared"
+	qktarget "github.com/marzeq/qk/target"
 	"github.com/marzeq/qk/tokeniser"
 )
 
@@ -336,24 +337,17 @@ func validVariant(domain, variant string) bool {
 		"Arch":        {"X86", "X86_64", "ARM32", "AArch64", "Wasm32", "Wasm64"},
 		"Environment": {"GNU", "MSVC", "Musl", "Unknown"},
 	}
-	for _, value := range values[domain] {
-		if variant == value {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(values[domain], variant)
 }
 
 func targetFromTriple(triple string) targetValues {
-	if triple == "" {
-		triple = runtime.GOARCH + "-" + runtime.GOOS
-	}
+	triple = qktarget.EffectiveTriple(triple)
 	target := strings.ToLower(triple)
-	archName := target
-	if before, _, ok := strings.Cut(target, "-"); ok {
-		archName = before
-	}
+	archName := qktarget.Arch(triple)
 	values := targetValues{os: "Unknown", arch: "Unknown", environment: "Unknown"}
+	if bits, ok := qktarget.PointerBits(triple); ok {
+		values.pointerBits = int64(bits)
+	}
 	switch {
 	case strings.Contains(target, "windows"), strings.Contains(target, "mingw"), strings.Contains(target, "msvc"), strings.Contains(target, "win32"):
 		values.os = "Windows"
@@ -374,17 +368,17 @@ func targetFromTriple(triple string) targetValues {
 	}
 	switch archName {
 	case "386", "i386", "i486", "i586", "i686", "x86":
-		values.arch, values.pointerBits = "X86", 32
+		values.arch = "X86"
 	case "x86_64", "amd64":
-		values.arch, values.pointerBits = "X86_64", 64
+		values.arch = "X86_64"
 	case "arm", "armv6", "armv7", "armv7a", "armv7l", "thumb", "thumbv7", "thumbv7a":
-		values.arch, values.pointerBits = "ARM32", 32
+		values.arch = "ARM32"
 	case "aarch64", "arm64":
-		values.arch, values.pointerBits = "AArch64", 64
+		values.arch = "AArch64"
 	case "wasm32":
-		values.arch, values.pointerBits = "Wasm32", 32
+		values.arch = "Wasm32"
 	case "wasm64":
-		values.arch, values.pointerBits = "Wasm64", 64
+		values.arch = "Wasm64"
 	}
 	switch {
 	case strings.Contains(target, "msvc"):

@@ -3,29 +3,20 @@ package llvm
 import (
 	"fmt"
 	"strings"
+
+	qktarget "github.com/marzeq/qk/target"
 )
 
 func (e *Emitter) targetArch() string {
-	target := strings.ToLower(e.targetTriple())
-	if arch, _, ok := strings.Cut(target, "-"); ok {
-		return arch
-	}
-	return target
+	return qktarget.Arch(e.targetTriple())
 }
 
 func (e *Emitter) pointerBits() int {
-	arch := e.targetArch()
-	switch arch {
-	case "386", "i386", "i486", "i586", "i686", "x86",
-		"arm", "armv6", "armv7", "armv7a", "armv7l", "thumb", "thumbv7", "thumbv7a",
-		"mips", "mipsel", "powerpc", "ppc", "riscv32", "wasm32":
-		return 32
-	case "x86_64", "amd64", "aarch64", "arm64", "mips64", "mips64el",
-		"powerpc64", "powerpc64le", "ppc64", "ppc64le", "riscv64", "s390x", "sparcv9", "wasm64":
-		return 64
-	default:
+	bits, ok := qktarget.PointerBits(e.targetTriple())
+	if !ok {
 		panic(fmt.Sprintf("cannot determine pointer width for target %q", e.targetTriple()))
 	}
+	return bits
 }
 
 func (e *Emitter) pointerBytes() int {
