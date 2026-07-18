@@ -32,7 +32,7 @@ func main() {
 	var partials []*loader.PartialModuleInfo
 
 	for _, file := range files {
-		ast, err := parseFile(file)
+		ast, err := parseFile(file, args.target)
 		check(err)
 
 		info, err := loader.CollectModuleInfo(ast)

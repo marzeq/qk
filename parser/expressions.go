@@ -12,6 +12,23 @@ func (p *Parser) ParseExpression() (ExpressionNode, error) {
 	return p.ParseLogicalOr()
 }
 
+func (p *Parser) ParseWholeExpression() (ExpressionNode, error) {
+	for p.Match(tokeniser.TokenNewline) {
+		p.Inc()
+	}
+	expr, err := p.ParseExpression()
+	if err != nil {
+		return nil, err
+	}
+	for p.Match(tokeniser.TokenNewline) {
+		p.Inc()
+	}
+	if !p.Match(tokeniser.TokenEof) {
+		return nil, shared.NewError(p.CurrLoc(), "unexpected token %s after expression", p.Peek())
+	}
+	return expr, nil
+}
+
 func (p *Parser) ParseSizeOfExpression() (ExpressionNode, error) {
 	beginLoc := p.CurrLoc()
 	if !p.Match(tokeniser.TokenKeyword) || p.Peek().Value != string(tokeniser.KeywordSizeof) {

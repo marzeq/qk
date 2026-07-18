@@ -6,16 +6,21 @@ import (
 	"strings"
 
 	"github.com/marzeq/qk/parser"
+	"github.com/marzeq/qk/preprocessor"
 	"github.com/marzeq/qk/tokeniser"
 )
 
-func parseFile(path string) (*parser.RootNode, error) {
+func parseFile(path, targetTriple string) (*parser.RootNode, error) {
 	t, err := tokeniser.NewTokeniserFromFile(path)
 	if err != nil {
 		return nil, err
 	}
 
 	toks, err := t.Tokenise()
+	if err != nil {
+		return nil, err
+	}
+	toks, err = preprocessor.Process(toks, targetTriple)
 	if err != nil {
 		return nil, err
 	}
