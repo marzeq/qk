@@ -119,8 +119,20 @@ func (p *Processor) processWhen() ([]tokeniser.Token, error) {
 		break
 	}
 
+	selected = trimBoundaryNewlines(selected)
 	nested := &Processor{tokens: selected, target: p.target}
 	return nested.process()
+}
+
+func trimBoundaryNewlines(tokens []tokeniser.Token) []tokeniser.Token {
+	start, end := 0, len(tokens)
+	for start < end && tokens[start].Type == tokeniser.TokenNewline {
+		start++
+	}
+	for end > start && tokens[end-1].Type == tokeniser.TokenNewline {
+		end--
+	}
+	return tokens[start:end]
 }
 
 func (p *Processor) readCondition() ([]tokeniser.Token, error) {
@@ -193,7 +205,12 @@ func (p *Processor) skipNewlines(pos int) int {
 }
 
 func parseCondition(tokens []tokeniser.Token, fallback shared.Location) (parser.ExpressionNode, error) {
-	condition := append([]tokeniser.Token(nil), tokens...)
+	condition := make([]tokeniser.Token, 0, len(tokens)+1)
+	for _, token := range tokens {
+		if token.Type != tokeniser.TokenNewline {
+			condition = append(condition, token)
+		}
+	}
 	loc := fallback
 	if len(condition) > 0 {
 		loc = condition[len(condition)-1].Loc
