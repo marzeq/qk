@@ -34,7 +34,7 @@ syn keyword qkConditional if else given when
 syn keyword qkRepeat for in
 syn keyword qkStatement break continue return defer
 syn keyword qkOperator and or not as
-syn keyword qkBuiltin sizeof alignof offsetof len
+syn keyword qkBuiltin sizeof alignof offsetof len compiler_error
 
 " Function and module attributes.
 syn match qkAttribute "@[A-Za-z_][A-Za-z0-9_]*"
