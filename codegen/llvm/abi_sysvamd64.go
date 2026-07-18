@@ -16,7 +16,7 @@ const (
 	abiClassInteger
 )
 
-func (sysVAMD64ABIGenerator) aggregateChunks(e *Emitter, aggregate types.Type) []abiChunk {
+func (sysVAMD64ABIGenerator) aggregateParamChunks(e *Emitter, aggregate types.Type) []abiChunk {
 	size, align := e.typeSizeAlign(aggregate)
 	if size > 16 {
 		return []abiChunk{{
@@ -54,6 +54,10 @@ func (sysVAMD64ABIGenerator) aggregateChunks(e *Emitter, aggregate types.Type) [
 		}
 	}
 	return chunks
+}
+
+func (g sysVAMD64ABIGenerator) aggregateReturnChunks(e *Emitter, aggregate types.Type) []abiChunk {
+	return g.aggregateParamChunks(e, aggregate)
 }
 
 func (sysVAMD64ABIGenerator) requiresSRet(e *Emitter, aggregate types.Type) bool {

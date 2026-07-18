@@ -39,6 +39,11 @@ func (e *Emitter) pointerIntType() string {
 func (e *Emitter) scalar64Align() int {
 	switch e.targetArch() {
 	case "386", "i386", "i486", "i586", "i686", "x86":
+		target := strings.ToLower(e.targetTriple())
+		if strings.Contains(target, "windows") || strings.Contains(target, "win32") ||
+			strings.Contains(target, "mingw") || strings.Contains(target, "msvc") {
+			return 8
+		}
 		return 4
 	default:
 		return 8

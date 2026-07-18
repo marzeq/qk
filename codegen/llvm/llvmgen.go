@@ -965,7 +965,7 @@ func (e *Emitter) CallEmit(out *strings.Builder, c ir.Call) {
 
 	returnChunks := []abiChunk(nil)
 	if foreign {
-		returnChunks = e.foreignABIChunks(c.Signature.ReturnType)
+		returnChunks = e.foreignABIReturnChunks(c.Signature.ReturnType)
 	}
 	var argPrelude strings.Builder
 	sretSlot := ""
@@ -1123,7 +1123,7 @@ func (e *Emitter) emitCABIReturn(out *strings.Builder, value ir.Operand) {
 		fmt.Fprintf(out, "store %s %s, ptr %%%s\n  ret void", e.TypeEmit(value.Type), e.OperandEmit(value), e.sretParam)
 		return
 	}
-	chunks := e.foreignABIChunks(value.Type)
+	chunks := e.foreignABIReturnChunks(value.Type)
 	if len(chunks) == 0 {
 		fmt.Fprintf(out, "ret %s %s", e.TypeEmit(value.Type), e.OperandEmit(value))
 		return

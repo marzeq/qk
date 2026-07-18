@@ -15,22 +15,39 @@ type abiChunk struct {
 }
 
 type foreignABIGenerator interface {
-	aggregateChunks(*Emitter, types.Type) []abiChunk
+	aggregateParamChunks(*Emitter, types.Type) []abiChunk
+	aggregateReturnChunks(*Emitter, types.Type) []abiChunk
 	requiresSRet(*Emitter, types.Type) bool
 }
 
-func (e *Emitter) foreignABIChunks(ty types.Type) []abiChunk {
+func (e *Emitter) foreignABIAggregate(ty types.Type) (types.Type, foreignABIGenerator) {
 	ty = types.Underlying(ty)
 	switch ty.(type) {
 	case types.StructType, types.UnionType, types.SliceType:
 	default:
-		return nil
+		return nil, nil
 	}
 	generator := e.foreignABIGenerator()
 	if generator == nil {
 		panic(fmt.Sprintf("C aggregate ABI lowering is not implemented for target %q", e.targetTriple()))
 	}
-	return generator.aggregateChunks(e, ty)
+	return ty, generator
+}
+
+func (e *Emitter) foreignABIChunks(ty types.Type) []abiChunk {
+	aggregate, generator := e.foreignABIAggregate(ty)
+	if generator == nil {
+		return nil
+	}
+	return generator.aggregateParamChunks(e, aggregate)
+}
+
+func (e *Emitter) foreignABIReturnChunks(ty types.Type) []abiChunk {
+	aggregate, generator := e.foreignABIAggregate(ty)
+	if generator == nil {
+		return nil
+	}
+	return generator.aggregateReturnChunks(e, aggregate)
 }
 
 func (e *Emitter) foreignABIParamTypes(ty types.Type) []string {
@@ -49,7 +66,7 @@ func (e *Emitter) foreignABIReturnType(ty types.Type) string {
 	if e.foreignABIReturnUsesSRet(ty) {
 		return "void"
 	}
-	chunks := e.foreignABIChunks(ty)
+	chunks := e.foreignABIReturnChunks(ty)
 	if len(chunks) == 0 {
 		return e.TypeEmit(ty)
 	}
@@ -91,7 +108,15 @@ func (e *Emitter) foreignABIGenerator() foreignABIGenerator {
 	if strings.Contains(target, "aarch64") || strings.Contains(target, "arm64") {
 		return aarch64ABIGenerator{linux: strings.Contains(target, "linux")}
 	}
-	if !strings.Contains(target, "x86_64") && !strings.Contains(target, "amd64") {
+	switch e.targetArch() {
+	case "386", "i386", "i486", "i586", "i686", "x86":
+		if strings.Contains(target, "windows") || strings.Contains(target, "win32") ||
+			strings.Contains(target, "mingw") || strings.Contains(target, "msvc") {
+			return win32ABIGenerator{}
+		}
+		return sysVI386ABIGenerator{}
+	case "x86_64", "amd64":
+	default:
 		return nil
 	}
 	if strings.Contains(target, "windows") || strings.Contains(target, "win32") {

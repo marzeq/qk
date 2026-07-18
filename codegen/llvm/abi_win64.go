@@ -8,7 +8,7 @@ import (
 
 type win64ABIGenerator struct{}
 
-func (win64ABIGenerator) aggregateChunks(e *Emitter, aggregate types.Type) []abiChunk {
+func (win64ABIGenerator) aggregateParamChunks(e *Emitter, aggregate types.Type) []abiChunk {
 	size, _ := e.typeSizeAlign(aggregate)
 	switch size {
 	case 1, 2, 4, 8:
@@ -16,6 +16,10 @@ func (win64ABIGenerator) aggregateChunks(e *Emitter, aggregate types.Type) []abi
 	default:
 		return []abiChunk{{typeName: "ptr", offset: -1}}
 	}
+}
+
+func (g win64ABIGenerator) aggregateReturnChunks(e *Emitter, aggregate types.Type) []abiChunk {
+	return g.aggregateParamChunks(e, aggregate)
 }
 
 func (win64ABIGenerator) requiresSRet(e *Emitter, aggregate types.Type) bool {

@@ -10,7 +10,7 @@ type aarch64ABIGenerator struct {
 	linux bool
 }
 
-func (g aarch64ABIGenerator) aggregateChunks(e *Emitter, aggregate types.Type) []abiChunk {
+func (g aarch64ABIGenerator) aggregateParamChunks(e *Emitter, aggregate types.Type) []abiChunk {
 	if st, isStruct := aggregate.(types.StructType); isStruct {
 		if element, count, ok := homogeneousFloatAggregate(st); ok && count <= 4 {
 			chunk := abiChunk{typeName: fmt.Sprintf("[%d x %s]", count, element)}
@@ -30,6 +30,10 @@ func (g aarch64ABIGenerator) aggregateChunks(e *Emitter, aggregate types.Type) [
 	default:
 		return []abiChunk{{typeName: "ptr", offset: -1}}
 	}
+}
+
+func (g aarch64ABIGenerator) aggregateReturnChunks(e *Emitter, aggregate types.Type) []abiChunk {
+	return g.aggregateParamChunks(e, aggregate)
 }
 
 func (aarch64ABIGenerator) requiresSRet(e *Emitter, aggregate types.Type) bool {
