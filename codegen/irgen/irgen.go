@@ -66,14 +66,27 @@ func (g *Generator) Emit(instruction ir.Instr) {
 }
 
 func (g *Generator) Generate(root *parser.RootNode) *ir.Module {
+	return g.GenerateRoots([]*parser.RootNode{root})
+}
+
+func (g *Generator) GenerateRoots(roots []*parser.RootNode) *ir.Module {
 	g.Module = &ir.Module{}
 	g.globals = make(map[*symbols.Symbol]string)
 
-	for _, node := range root.Body {
-		switch node := node.(type) {
-		case *parser.DeclarationNode:
-			g.generateGlobalDeclaration(node)
-		case *parser.FunctionDefNode:
+	for _, root := range roots {
+		for _, node := range root.Body {
+			if node, ok := node.(*parser.DeclarationNode); ok {
+				g.generateGlobalDeclaration(node)
+			}
+		}
+	}
+
+	for _, root := range roots {
+		for _, rawNode := range root.Body {
+			node, ok := rawNode.(*parser.FunctionDefNode)
+			if !ok {
+				continue
+			}
 			if node.Body == nil {
 				var externFrom string
 				for _, attr := range node.Attributes {
@@ -83,7 +96,7 @@ func (g *Generator) Generate(root *parser.RootNode) *ir.Module {
 					}
 				}
 				if externFrom == "" {
-					panic("function with body must have foreign attribute")
+					panic("function without body must have foreign attribute")
 				}
 				sig := g.buildFunctionSignature(node)
 				name := node.Name
@@ -116,12 +129,19 @@ func (g *Generator) generateGlobalDeclaration(node *parser.DeclarationNode) {
 		return
 	}
 
+	linkage := ir.LinkageInternal
+	visibility := ir.VisibilityDefault
+	if node.Symbol.Public {
+		linkage = ir.LinkageExternal
+		visibility = ir.VisibilityHidden
+	}
 	g.Module.AddGlobal(ir.Global{
-		Name:    g.mangleGlobalName(g.ModuleName, node.Name),
-		Type:    node.Symbol.Type,
-		Mutable: node.Mutable,
-		Linkage: ir.LinkageInternal,
-		Value:   g.generateGlobalInitializer(node.Value),
+		Name:       g.mangleGlobalName(g.ModuleName, node.Name),
+		Type:       node.Symbol.Type,
+		Mutable:    node.Mutable,
+		Linkage:    linkage,
+		Visibility: visibility,
+		Value:      g.generateGlobalInitializer(node.Value),
 	})
 	g.globals[node.Symbol] = g.Module.Globals[len(g.Module.Globals)-1].Name
 }
@@ -176,13 +196,21 @@ func (g *Generator) generateGlobalInitializer(expr parser.ExpressionNode) ir.Ope
 func (g *Generator) GenerateFunction(fn *parser.FunctionDefNode) {
 	name := fn.Symbol.Name
 	linkage := ir.LinkageInternal
+	visibility := ir.VisibilityDefault
 	if export, ok := fn.Attributes.Get(attributes.AttributeTypeExport).(attributes.FunctionAttributeExport); ok {
 		name = export.As
 		linkage = ir.LinkageExternal
-	} else if !g.isProgramEntryFunction(fn.Symbol.Name) {
-		name = g.mangleFunctionName(g.ModuleName, fn.Symbol.Name)
+	} else {
+		if fn.Symbol.Public {
+			linkage = ir.LinkageExternal
+			visibility = ir.VisibilityHidden
+		}
+		if !g.isProgramEntryFunction(fn.Symbol.Name) {
+			name = g.mangleFunctionName(g.ModuleName, fn.Symbol.Name)
+		}
 	}
 	irFn := ir.NewFunction(name, linkage, fn.Attributes)
+	irFn.Visibility = visibility
 	irFn.Signature = g.buildFunctionSignature(fn)
 	g.Module.AddFunction(irFn)
 
@@ -227,11 +255,16 @@ func (g *Generator) generateDefaultWrappers(fn *parser.FunctionDefNode, targetNa
 	required := fn.Symbol.Signature.RequiredParameters
 	total := len(fn.Args)
 	linkage := ir.LinkageInternal
+	visibility := ir.VisibilityDefault
 	if fn.Attributes.Get(attributes.AttributeTypeExport) != nil {
 		linkage = ir.LinkageExternal
+	} else if fn.Symbol.Public {
+		linkage = ir.LinkageExternal
+		visibility = ir.VisibilityHidden
 	}
 	for arity := required; arity < total; arity++ {
 		wrapper := ir.NewFunction(g.defaultWrapperName(targetName, arity), linkage, nil)
+		wrapper.Visibility = visibility
 		wrapper.Signature = ir.FunctionSignature{
 			ParamTypes: append([]types.Type(nil), fn.Symbol.Signature.Parameters[:arity]...),
 			ReturnType: fn.Symbol.Signature.ReturnType,
@@ -1383,7 +1416,7 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 		foreignAttr := node.Symbol.Attributes.Get(attributes.AttributeTypeForeign)
 		if foreign, ok := foreignAttr.(attributes.FunctionAttributeForeign); ok &&
 			node.Name != nil && node.Name.Module != "" {
-			g.addExternForCall(node.Symbol.Name, callSig, foreign.From)
+			g.addExternForCall(node.Symbol.Name, callSig, foreign.From, false)
 		}
 
 		if export, ok := node.Symbol.Attributes.Get(attributes.AttributeTypeExport).(attributes.FunctionAttributeExport); ok {
@@ -1404,7 +1437,8 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 		}
 
 		if node.Name != nil && node.Name.Module != "" && foreignAttr == nil {
-			g.addExternForCall(name, callSig, "")
+			hidden := node.Symbol.Attributes.Get(attributes.AttributeTypeExport) == nil
+			g.addExternForCall(name, callSig, "", hidden)
 		}
 
 		if len(node.Args) < len(node.Symbol.Signature.Parameters) {
@@ -1413,7 +1447,8 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 			callSig.Variadic = false
 			callSig.Attributes = nil
 			if node.Name != nil && node.Name.Module != "" {
-				g.addExternForCall(name, callSig, "")
+				hidden := node.Symbol.Attributes.Get(attributes.AttributeTypeExport) == nil
+				g.addExternForCall(name, callSig, "", hidden)
 			}
 		}
 	}
@@ -1433,13 +1468,17 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 	return ir.ValueOperand(dst, node.GetType())
 }
 
-func (g *Generator) addExternForCall(name string, signature ir.FunctionSignature, from string) {
+func (g *Generator) addExternForCall(name string, signature ir.FunctionSignature, from string, hidden bool) {
 	for _, extern := range g.Module.Externs {
 		if extern.Name == name {
 			return
 		}
 	}
-	g.Module.AddExtern(ir.ExternDecl{Name: name, Signature: signature, From: from})
+	visibility := ir.VisibilityDefault
+	if hidden {
+		visibility = ir.VisibilityHidden
+	}
+	g.Module.AddExtern(ir.ExternDecl{Name: name, Signature: signature, From: from, Visibility: visibility})
 }
 
 func (g *Generator) promoteVariadicArgs(args []ir.Operand, sig ir.FunctionSignature) []ir.Operand {
@@ -1536,7 +1575,9 @@ func (g *Generator) generateIdentifierExpr(node *parser.IdentifierNode) ir.Opera
 			if foreign, ok := node.Symbol.Attributes.Get(attributes.AttributeTypeForeign).(attributes.FunctionAttributeForeign); ok {
 				from = foreign.From
 			}
-			g.addExternForCall(name, sig, from)
+			hidden := node.Symbol.Attributes.Get(attributes.AttributeTypeForeign) == nil &&
+				node.Symbol.Attributes.Get(attributes.AttributeTypeExport) == nil
+			g.addExternForCall(name, sig, from, hidden)
 		}
 		return ir.FunctionConstOperand(name, node.GetType())
 	}
@@ -1621,7 +1662,11 @@ func (g *Generator) globalNameForIdentifier(node *parser.IdentifierNode) string 
 	if foreign, ok := node.Symbol.Attributes.Get(attributes.AttributeTypeForeign).(attributes.FunctionAttributeForeign); ok {
 		name = foreign.From
 	}
-	g.Module.AddExternGlobal(ir.ExternGlobal{Name: name, Type: node.GetType(), Mutable: node.Symbol.Mutable})
+	visibility := ir.VisibilityHidden
+	if node.Symbol.Attributes.Get(attributes.AttributeTypeForeign) != nil {
+		visibility = ir.VisibilityDefault
+	}
+	g.Module.AddExternGlobal(ir.ExternGlobal{Name: name, Type: node.GetType(), Mutable: node.Symbol.Mutable, Visibility: visibility})
 	return name
 }
 

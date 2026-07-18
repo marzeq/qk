@@ -73,7 +73,7 @@ func (e *Emitter) EmitModule(out *strings.Builder, m *ir.Module) {
 		if foreign {
 			returnType = e.foreignABIReturnType(ex.Signature.ReturnType)
 		}
-		fmt.Fprintf(out, "declare %s @%s(", returnType, llvmName)
+		fmt.Fprintf(out, "declare %s%s @%s(", e.visibilityEmit(ex.Visibility), returnType, llvmName)
 		writtenParams := 0
 		if foreign && e.foreignABIReturnUsesSRet(ex.Signature.ReturnType) {
 			out.WriteString(e.foreignABISRetArgument(ex.Signature.ReturnType, ""))
@@ -133,7 +133,7 @@ func (e *Emitter) ExternGlobalEmit(out *strings.Builder, global ir.ExternGlobal)
 	if global.Mutable {
 		kind = "global"
 	}
-	fmt.Fprintf(out, "@%s = external %s %s", global.Name, kind, e.TypeEmit(global.Type))
+	fmt.Fprintf(out, "@%s = external %s%s %s", global.Name, e.visibilityEmit(global.Visibility), kind, e.TypeEmit(global.Type))
 }
 
 func (e *Emitter) GlobalEmit(out *strings.Builder, global ir.Global) {
@@ -142,7 +142,8 @@ func (e *Emitter) GlobalEmit(out *strings.Builder, global ir.Global) {
 		kind = "global"
 	}
 	linkage := e.linkageEmit(global.Linkage)
-	fmt.Fprintf(out, "@%s = %s%s %s %s", global.Name, linkage, kind, e.TypeEmit(global.Type), e.OperandEmit(global.Value))
+	visibility := e.visibilityEmit(global.Visibility)
+	fmt.Fprintf(out, "@%s = %s%s%s %s %s", global.Name, linkage, visibility, kind, e.TypeEmit(global.Type), e.OperandEmit(global.Value))
 }
 
 func (e *Emitter) EmitFunction(out *strings.Builder, fn *ir.Function) {
@@ -158,11 +159,13 @@ func (e *Emitter) EmitFunction(out *strings.Builder, fn *ir.Function) {
 		returnTypeText = e.foreignABIReturnType(returnType)
 	}
 	linkage := e.linkageEmit(fn.Linkage)
+	visibility := e.visibilityEmit(fn.Visibility)
 	if e.isLLVMMainFunction(fn) {
 		linkage = ""
+		visibility = ""
 	}
 
-	fmt.Fprintf(out, "define %s%s @%s(", linkage, returnTypeText, fn.Name)
+	fmt.Fprintf(out, "define %s%s%s @%s(", linkage, visibility, returnTypeText, fn.Name)
 	paramTypes := fn.Signature.ParamTypes
 	if len(paramTypes) == 0 && len(fn.Parameters) > 0 {
 		paramTypes = make([]types.Type, len(fn.Parameters))
@@ -254,6 +257,13 @@ func (e *Emitter) availableSRetParamName(fn *ir.Function) string {
 func (e *Emitter) linkageEmit(linkage ir.Linkage) string {
 	if linkage == ir.LinkageInternal {
 		return "internal "
+	}
+	return ""
+}
+
+func (e *Emitter) visibilityEmit(visibility ir.Visibility) string {
+	if visibility == ir.VisibilityHidden {
+		return "hidden "
 	}
 	return ""
 }

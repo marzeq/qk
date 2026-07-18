@@ -103,9 +103,17 @@ const (
 	LinkageExternal
 )
 
+type Visibility uint8
+
+const (
+	VisibilityDefault Visibility = iota
+	VisibilityHidden
+)
+
 type Function struct {
 	Name       string
 	Linkage    Linkage
+	Visibility Visibility
 	Signature  FunctionSignature
 	Parameters []Parameter
 	Slots      []Slot
@@ -179,9 +187,10 @@ func (m *Module) AddFunction(fn *Function) {
 }
 
 type ExternDecl struct {
-	Name      string
-	Signature FunctionSignature
-	From      string
+	Name       string
+	Signature  FunctionSignature
+	From       string
+	Visibility Visibility
 }
 
 func (m *Module) AddExtern(e ExternDecl) {
@@ -189,11 +198,12 @@ func (m *Module) AddExtern(e ExternDecl) {
 }
 
 type Global struct {
-	Name    string
-	Type    types.Type
-	Mutable bool
-	Linkage Linkage
-	Value   Operand
+	Name       string
+	Type       types.Type
+	Mutable    bool
+	Linkage    Linkage
+	Visibility Visibility
+	Value      Operand
 }
 
 func (m *Module) AddGlobal(global Global) {
@@ -201,9 +211,10 @@ func (m *Module) AddGlobal(global Global) {
 }
 
 type ExternGlobal struct {
-	Name    string
-	Type    types.Type
-	Mutable bool
+	Name       string
+	Type       types.Type
+	Mutable    bool
+	Visibility Visibility
 }
 
 func (m *Module) AddExternGlobal(global ExternGlobal) {

@@ -87,24 +87,16 @@ func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, o
 	return nil, warnings
 }
 
-func GenerateIRModule(mods map[string]*ModuleInfo, mainModule string, order []string, verbose bool, debug bool) (*ir.Module, []error) {
-	out := &ir.Module{}
+func GenerateIRModules(mods map[string]*ModuleInfo, mainModule string, order []string, verbose bool, debug bool) (map[string]*ir.Module, []error) {
+	out := make(map[string]*ir.Module, len(order))
 
 	for _, name := range order {
 		info := mods[name]
-
-		for _, root := range info.Roots {
-			gen := &irgen.Generator{ModuleName: name, MainModule: mainModule}
-			modIR := gen.Generate(root)
-			out.Functions = append(out.Functions, modIR.Functions...)
-			out.Globals = append(out.Globals, modIR.Globals...)
-			out.ExternGlobals = append(out.ExternGlobals, modIR.ExternGlobals...)
-			if len(modIR.Externs) > 0 {
-				out.Externs = append(out.Externs, modIR.Externs...)
-			}
-		}
+		gen := &irgen.Generator{ModuleName: name, MainModule: mainModule}
+		modIR := gen.GenerateRoots(info.Roots)
+		deduplicateIRDeclarations(modIR)
+		out[name] = modIR
 	}
-	deduplicateIRDeclarations(out)
 
 	if verbose && debug {
 		fmt.Println("completed ir generation phase")

@@ -66,17 +66,24 @@ func main() {
 		fmt.Println("semantic analysis completed successfully")
 	}
 
-	irModule, errs := loader.GenerateIRModule(modules, args.mainModule, order, args.verbose, args.debug)
+	irModules, errs := loader.GenerateIRModules(modules, args.mainModule, order, args.verbose, args.debug)
 	checkErrs(errs)
 
-	llvmOutput := buildLLVMModule(irModule, args.mainModule, args.outputType == OutputExecutable, args.target)
+	llvmOutputs := make(map[string]string, len(irModules))
+	for _, moduleName := range order {
+		llvmOutputs[moduleName] = buildLLVMModule(irModules[moduleName], moduleName, args.mainModule, args.outputType == OutputExecutable, args.target)
+	}
 
 	if args.dumpIR {
-		dumpIRModule(irModule)
+		for _, moduleName := range order {
+			dumpIRModule(irModules[moduleName])
+		}
 	}
 
 	if args.dumpLLVM {
-		dumpLLVMModule(llvmOutput)
+		for _, moduleName := range order {
+			dumpLLVMModule(llvmOutputs[moduleName])
+		}
 	}
 
 	if _, ok := modules[args.mainModule]; !ok {
@@ -114,39 +121,46 @@ func main() {
 
 	if args.noEmit {
 		if args.dumpAsm {
-			buildDir, err := emitLLVMFile(llvmOutput)
-			check(err)
-			defer os.RemoveAll(buildDir)
+			for _, moduleName := range order {
+				buildDir, err := emitLLVMFile(llvmOutputs[moduleName])
+				check(err)
+				defer os.RemoveAll(buildDir)
 
-			err = emitAssemblyFile(buildDir, args)
-			check(err)
-			err = dumpAssemblyFile(buildDir)
-			check(err)
+				err = emitAssemblyFile(buildDir, args)
+				check(err)
+				err = dumpAssemblyFile(buildDir)
+				check(err)
+			}
 		}
 		return
 	}
 
-	buildDir, err := emitLLVMFile(llvmOutput)
-	check(err)
-
-	if !args.keepBuildDir {
-		defer os.RemoveAll(buildDir)
-	}
-
-	if args.verbose && args.debug {
-		fmt.Printf("emitted LLVM files to %s\n", buildDir)
-	}
-
-	if args.dumpAsm {
-		err := emitAssemblyFile(buildDir, args)
+	var buildDirs []string
+	var objFiles []string
+	for _, moduleName := range order {
+		buildDir, err := emitLLVMFile(llvmOutputs[moduleName])
 		check(err)
+		buildDirs = append(buildDirs, buildDir)
 
-		err = dumpAssemblyFile(buildDir)
+		if !args.keepBuildDir {
+			defer os.RemoveAll(buildDir)
+		}
+
+		if args.verbose && args.debug {
+			fmt.Printf("emitted LLVM for module %s to %s\n", moduleName, buildDir)
+		}
+
+		if args.dumpAsm {
+			err := emitAssemblyFile(buildDir, args)
+			check(err)
+			err = dumpAssemblyFile(buildDir)
+			check(err)
+		}
+
+		objFile, err := compileLLVMModule(buildDir, args)
 		check(err)
+		objFiles = append(objFiles, objFile)
 	}
-
-	objFile, err := compileLLVMModule(buildDir, args)
-	check(err)
 
 	stat, err := os.Stat(args.output)
 
@@ -172,11 +186,28 @@ func main() {
 			moduleLinks = append(moduleLinks, module.Links...)
 		}
 	}
-	err = linkObjects([]string{objFile}, moduleLinks, args)
+	var linkRoots []string
+	if args.outputType == OutputObject {
+		for _, moduleName := range order {
+			for _, fn := range irModules[moduleName].Functions {
+				if fn.Linkage == ir.LinkageExternal && fn.Visibility == ir.VisibilityDefault {
+					linkRoots = append(linkRoots, fn.Name)
+				}
+			}
+			for _, global := range irModules[moduleName].Globals {
+				if global.Linkage == ir.LinkageExternal && global.Visibility == ir.VisibilityDefault {
+					linkRoots = append(linkRoots, global.Name)
+				}
+			}
+		}
+	}
+	err = linkObjects(objFiles, moduleLinks, linkRoots, args)
 	check(err)
 
 	if args.keepBuildDir {
-		fmt.Printf("kept build directory: %s\n", buildDir)
+		for _, buildDir := range buildDirs {
+			fmt.Printf("kept build directory: %s\n", buildDir)
+		}
 	}
 
 	if args.run {
@@ -308,8 +339,8 @@ func fatal(format string, args ...any) {
 	os.Exit(1)
 }
 
-func buildLLVMModule(mod *ir.Module, mainModule string, isExecutable bool, targetTriple string) string {
-	emitter := &llvm.Emitter{ModuleName: mainModule, Executable: isExecutable, MainModule: mainModule, TargetTriple: targetTriple}
+func buildLLVMModule(mod *ir.Module, moduleName string, mainModule string, isExecutable bool, targetTriple string) string {
+	emitter := &llvm.Emitter{ModuleName: moduleName, Executable: isExecutable, MainModule: mainModule, TargetTriple: targetTriple}
 	var output strings.Builder
 	emitter.EmitModule(&output, mod)
 	return output.String()
@@ -384,8 +415,8 @@ func optimizeLLVMModule(buildDir string, args *Args) (string, error) {
 	return optimizedPath, nil
 }
 
-func linkObjects(objFiles []string, moduleLinks []attributes.Link, config *Args) error {
-	args, err := buildLinkArgs(objFiles, moduleLinks, config)
+func linkObjects(objFiles []string, moduleLinks []attributes.Link, roots []string, config *Args) error {
+	args, err := buildLinkArgs(objFiles, moduleLinks, roots, config)
 	if err != nil {
 		return err
 	}
@@ -402,7 +433,7 @@ func linkObjects(objFiles []string, moduleLinks []attributes.Link, config *Args)
 	return nil
 }
 
-func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, config *Args) ([]string, error) {
+func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots []string, config *Args) ([]string, error) {
 	args := append([]string{}, objFiles...)
 
 	switch config.outputType {
@@ -417,8 +448,11 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, config *Arg
 	default:
 		return nil, fmt.Errorf("unknown output type")
 	}
-	if config.outputType != OutputObject {
-		args = append(args, deadStripLinkerFlag(config.target))
+	args = append(args, deadStripLinkerFlag(config.target))
+	if config.outputType == OutputObject {
+		for _, root := range roots {
+			args = append(args, linkerUndefinedFlag(config.target, root))
+		}
 	}
 
 	if config.static {
@@ -477,6 +511,18 @@ func deadStripLinkerFlag(target string) string {
 		return "-Wl,/OPT:REF"
 	default:
 		return "-Wl,--gc-sections"
+	}
+}
+
+func linkerUndefinedFlag(target, symbol string) string {
+	target = strings.ToLower(target)
+	switch {
+	case strings.Contains(target, "darwin"), strings.Contains(target, "apple"), strings.Contains(target, "macos"), strings.Contains(target, "ios"):
+		return "-Wl,-u,_" + symbol
+	case strings.Contains(target, "windows"), strings.Contains(target, "mingw"), strings.Contains(target, "msvc"):
+		return "-Wl,/INCLUDE:" + symbol
+	default:
+		return "-Wl,-u," + symbol
 	}
 }
 
