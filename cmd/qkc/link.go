@@ -33,6 +33,9 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots []str
 	case OutputExecutable:
 	case OutputObject:
 		args = append(args, "-r")
+		if isWindowsGNUTarget(config.target) {
+			args = append(args, "-nostdlib")
+		}
 	case OutputSharedLib:
 		if config.static {
 			return nil, fmt.Errorf("cannot use --static with shared lib output")
@@ -41,7 +44,9 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots []str
 	default:
 		return nil, fmt.Errorf("unknown output type")
 	}
-	args = append(args, deadStripLinkerFlag(config.target))
+	if config.outputType != OutputObject || !isWindowsGNUTarget(config.target) {
+		args = append(args, deadStripLinkerFlag(config.target))
+	}
 	if config.outputType == OutputObject {
 		for _, root := range roots {
 			args = append(args, linkerUndefinedFlag(config.target, root))
@@ -83,8 +88,20 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots []str
 		args = append(args, "-L"+path)
 	}
 
-	args = append(args, "-o", config.output, "-fuse-ld=lld")
+	linker := "lld"
+	if config.outputType == OutputObject && isWindowsGNUTarget(config.target) {
+		// LLD's COFF driver cannot produce a relocatable object. MinGW's GNU
+		// linker can, and -nostdlib above keeps it from adding CRT startup files.
+		linker = "bfd"
+	}
+	args = append(args, "-o", config.output, "-fuse-ld="+linker)
 	return args, nil
+}
+
+func isWindowsGNUTarget(target string) bool {
+	target = strings.ToLower(target)
+	windows := strings.Contains(target, "windows") || strings.Contains(target, "mingw")
+	return windows && (strings.Contains(target, "gnu") || strings.Contains(target, "mingw"))
 }
 
 func deadStripLinkerFlag(target string) string {
@@ -104,7 +121,9 @@ func linkerUndefinedFlag(target, symbol string) string {
 	switch {
 	case strings.Contains(target, "darwin"), strings.Contains(target, "apple"), strings.Contains(target, "macos"), strings.Contains(target, "ios"):
 		return "-Wl,-u,_" + symbol
-	case strings.Contains(target, "windows"), strings.Contains(target, "mingw"), strings.Contains(target, "msvc"):
+	case isWindowsGNUTarget(target):
+		return "-Wl,-u," + symbol
+	case strings.Contains(target, "windows"), strings.Contains(target, "msvc"):
 		return "-Wl,/INCLUDE:" + symbol
 	default:
 		return "-Wl,-u," + symbol

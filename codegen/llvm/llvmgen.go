@@ -54,6 +54,9 @@ func (e *Emitter) EmitModule(out *strings.Builder, m *ir.Module) {
 		e.ExternGlobalEmit(out, global)
 		out.WriteString("\n")
 	}
+	if m.Initializer != "" {
+		fmt.Fprintf(out, "@llvm.global_ctors = appending global [1 x { i32, ptr, ptr }] [{ i32, ptr, ptr } { i32 65535, ptr @%s, ptr null }]\n\n", m.Initializer)
+	}
 	if len(e.stringDefs) > 0 || len(m.Globals) > 0 || len(m.ExternGlobals) > 0 {
 		out.WriteString("\n")
 	}
@@ -129,11 +132,10 @@ func (e *Emitter) EmitModule(out *strings.Builder, m *ir.Module) {
 }
 
 func (e *Emitter) ExternGlobalEmit(out *strings.Builder, global ir.ExternGlobal) {
-	kind := "constant"
-	if global.Mutable {
-		kind = "global"
-	}
-	fmt.Fprintf(out, "@%s = external %s%s %s", global.Name, e.visibilityEmit(global.Visibility), kind, e.TypeEmit(global.Type))
+	// An immutable source global may still be assigned by another module's
+	// runtime initializer before program entry, so importing declarations must
+	// not promise LLVM that the storage is constant.
+	fmt.Fprintf(out, "@%s = external %sglobal %s", global.Name, e.visibilityEmit(global.Visibility), e.TypeEmit(global.Type))
 }
 
 func (e *Emitter) GlobalEmit(out *strings.Builder, global ir.Global) {
@@ -495,6 +497,8 @@ func (e *Emitter) OperandEmit(op ir.Operand) string {
 			name = mapped
 		}
 		return "@" + name
+	case ir.OperandZeroConst:
+		return "zeroinitializer"
 	default:
 		panic("unreachable")
 	}

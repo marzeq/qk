@@ -20,6 +20,7 @@ const (
 	OperandStructConst
 	OperandCStringConst
 	OperandFunctionConst
+	OperandZeroConst
 )
 
 type Operand struct {
@@ -68,6 +69,10 @@ func CStringConstOperand(value string) Operand {
 
 func FunctionConstOperand(name string, ty types.Type) Operand {
 	return Operand{Kind: OperandFunctionConst, Type: ty, FunctionName: name}
+}
+
+func ZeroConstOperand(ty types.Type) Operand {
+	return Operand{Kind: OperandZeroConst, Type: ty}
 }
 
 type Slot struct {
@@ -180,6 +185,7 @@ type Module struct {
 	Externs       []ExternDecl
 	Globals       []Global
 	ExternGlobals []ExternGlobal
+	Initializer   string
 }
 
 func (m *Module) AddFunction(fn *Function) {

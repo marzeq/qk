@@ -92,7 +92,16 @@ func GenerateIRModules(mods map[string]*ModuleInfo, mainModule string, order []s
 
 	for _, name := range order {
 		info := mods[name]
-		gen := &irgen.Generator{ModuleName: name, MainModule: mainModule}
+		dependencyInitializers := make([]string, 0, len(info.Imports))
+		for _, dependency := range info.Imports {
+			if dependencyIR := out[dependency]; dependencyIR != nil && dependencyIR.Initializer != "" {
+				dependencyInitializers = append(dependencyInitializers, dependencyIR.Initializer)
+			}
+		}
+		gen := &irgen.Generator{
+			ModuleName: name, MainModule: mainModule,
+			DependencyInitializers: dependencyInitializers,
+		}
 		modIR := gen.GenerateRoots(info.Roots)
 		deduplicateIRDeclarations(modIR)
 		out[name] = modIR

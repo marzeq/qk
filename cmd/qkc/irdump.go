@@ -162,6 +162,8 @@ func formatOperand(op ir.Operand) string {
 		return fmt.Sprintf("cstrconst %q%s", op.StringValue, valueSuffix)
 	case ir.OperandFunctionConst:
 		return "@" + op.FunctionName + valueSuffix
+	case ir.OperandZeroConst:
+		return "zero" + valueSuffix
 	default:
 		return "<unknown-op>"
 	}

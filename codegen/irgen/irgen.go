@@ -37,9 +37,10 @@ func (e *Env) Lookup(sym *symbols.Symbol) (ir.SlotID, bool) {
 }
 
 type Generator struct {
-	Module     *ir.Module
-	ModuleName string
-	MainModule string
+	Module                 *ir.Module
+	ModuleName             string
+	MainModule             string
+	DependencyInitializers []string
 
 	currentFunction *ir.Function
 	currentBlock    *ir.Block
@@ -47,6 +48,12 @@ type Generator struct {
 	globals         map[*symbols.Symbol]string
 	loopTargets     []loopTargets
 	deferScopes     [][]parser.Node
+	dynamicGlobals  []dynamicGlobalInitializer
+}
+
+type dynamicGlobalInitializer struct {
+	name string
+	expr parser.ExpressionNode
 }
 
 type loopTargets struct {
@@ -72,6 +79,7 @@ func (g *Generator) Generate(root *parser.RootNode) *ir.Module {
 func (g *Generator) GenerateRoots(roots []*parser.RootNode) *ir.Module {
 	g.Module = &ir.Module{}
 	g.globals = make(map[*symbols.Symbol]string)
+	g.dynamicGlobals = nil
 
 	for _, root := range roots {
 		for _, node := range root.Body {
@@ -108,6 +116,10 @@ func (g *Generator) GenerateRoots(roots []*parser.RootNode) *ir.Module {
 		}
 	}
 
+	if len(g.dynamicGlobals) > 0 || len(g.DependencyInitializers) > 0 {
+		g.generateModuleInitializer()
+	}
+
 	return g.Module
 }
 
@@ -135,45 +147,54 @@ func (g *Generator) generateGlobalDeclaration(node *parser.DeclarationNode) {
 		linkage = ir.LinkageExternal
 		visibility = ir.VisibilityHidden
 	}
+	name := g.mangleGlobalName(g.ModuleName, node.Name)
+	value, constant := g.tryGenerateGlobalInitializer(node.Value)
+	if !constant {
+		value = ir.ZeroConstOperand(node.Symbol.Type)
+		g.dynamicGlobals = append(g.dynamicGlobals, dynamicGlobalInitializer{
+			name: name,
+			expr: node.Value,
+		})
+	}
 	g.Module.AddGlobal(ir.Global{
-		Name:       g.mangleGlobalName(g.ModuleName, node.Name),
+		Name:       name,
 		Type:       node.Symbol.Type,
-		Mutable:    node.Mutable,
+		Mutable:    node.Mutable || !constant,
 		Linkage:    linkage,
 		Visibility: visibility,
-		Value:      g.generateGlobalInitializer(node.Value),
+		Value:      value,
 	})
 	g.globals[node.Symbol] = g.Module.Globals[len(g.Module.Globals)-1].Name
 }
 
-func (g *Generator) generateGlobalInitializer(expr parser.ExpressionNode) ir.Operand {
+func (g *Generator) tryGenerateGlobalInitializer(expr parser.ExpressionNode) (ir.Operand, bool) {
 	switch node := expr.(type) {
 	case *parser.IntegerLiteralNode:
 		if types.IsFloat(node.GetType()) {
-			return ir.FloatConstOperand(node.Value, node.GetType())
+			return ir.FloatConstOperand(node.Value, node.GetType()), true
 		}
-		return ir.IntConstOperand(node.Value, node.GetType())
+		return ir.IntConstOperand(node.Value, node.GetType()), true
 	case *parser.FloatLiteralNode:
-		return ir.FloatConstOperand(node.Value, node.GetType())
+		return ir.FloatConstOperand(node.Value, node.GetType()), true
 	case *parser.BoolLiteralNode:
-		return ir.BoolConstOperand(node.Value == string(tokeniser.KeywordTrue))
+		return ir.BoolConstOperand(node.Value == string(tokeniser.KeywordTrue)), true
 	case *parser.CharLiteralNode:
-		return ir.IntConstOperand(fmt.Sprint(int(node.Value)), node.GetType())
+		return ir.IntConstOperand(fmt.Sprint(int(node.Value)), node.GetType()), true
 	case *parser.CStringLiteralNode:
-		return ir.CStringConstOperand(node.Value)
+		return ir.CStringConstOperand(node.Value), true
 	case *parser.NilLiteralNode:
-		return ir.NullConstOperand(node.GetType())
+		return ir.NullConstOperand(node.GetType()), true
 	case *parser.EnumLiteralNode:
-		return ir.IntConstOperand(node.Value, node.GetType())
+		return ir.IntConstOperand(node.Value, node.GetType()), true
 	case *parser.FieldAccessNode:
 		if node.IsEnumValue {
-			return ir.IntConstOperand(node.EnumValue, node.GetType())
+			return ir.IntConstOperand(node.EnumValue, node.GetType()), true
 		}
-		panic("global field access is not an enum value")
+		return ir.Operand{}, false
 	case *parser.StructLiteralNode:
 		structType, ok := types.Underlying(node.GetType()).(types.StructType)
 		if !ok {
-			panic("global struct literal does not have a struct type")
+			return ir.Operand{}, false
 		}
 		fields := make(map[string]parser.ExpressionNode, len(node.Fields))
 		for _, field := range node.Fields {
@@ -183,14 +204,61 @@ func (g *Generator) generateGlobalInitializer(expr parser.ExpressionNode) ir.Ope
 		for i, field := range structType.Fields {
 			value, exists := fields[field.L]
 			if !exists {
-				panic(fmt.Sprintf("missing field %q in global struct literal", field.L))
+				return ir.Operand{}, false
 			}
-			values[i] = g.generateGlobalInitializer(value)
+			fieldValue, constant := g.tryGenerateGlobalInitializer(value)
+			if !constant {
+				return ir.Operand{}, false
+			}
+			values[i] = fieldValue
 		}
-		return ir.StructConstOperand(structType, values)
+		return ir.StructConstOperand(structType, values), true
 	default:
-		panic(fmt.Sprintf("global initializer must be a literal, got %T", expr))
+		return ir.Operand{}, false
 	}
+}
+
+func (g *Generator) generateModuleInitializer() {
+	name := g.mangleFunctionName(g.ModuleName, "__module_init")
+	guardName := g.mangleGlobalName(g.ModuleName, "__module_initialized")
+	g.Module.AddGlobal(ir.Global{
+		Name: guardName, Type: types.PrimitiveBool, Mutable: true,
+		Linkage: ir.LinkageInternal, Value: ir.BoolConstOperand(false),
+	})
+
+	fn := ir.NewFunction(name, ir.LinkageExternal, nil)
+	fn.Visibility = ir.VisibilityHidden
+	fn.Signature = ir.FunctionSignature{ReturnType: types.PrimitiveVoid}
+	g.Module.AddFunction(fn)
+	g.Module.Initializer = name
+
+	g.currentFunction = fn
+	g.currentEnv = NewEnv(nil)
+	g.deferScopes = nil
+	entry := fn.NewBlock("entry")
+	initialize := fn.NewBlock("initialize")
+	done := fn.NewBlock("done")
+	fn.Entry = entry.ID
+	g.currentBlock = entry
+	initialized := fn.NewValueOfType(types.PrimitiveBool)
+	g.Emit(ir.LoadGlobal{Dest: initialized, Name: guardName, Type: types.PrimitiveBool})
+	g.Emit(ir.Branch{Cond: ir.ValueOperand(initialized, types.PrimitiveBool), Then: done.ID, Else: initialize.ID})
+
+	g.currentBlock = initialize
+	g.Emit(ir.StoreGlobal{Name: guardName, Value: ir.BoolConstOperand(true)})
+	for _, dependency := range g.DependencyInitializers {
+		signature := ir.FunctionSignature{ReturnType: types.PrimitiveVoid}
+		g.Module.AddExtern(ir.ExternDecl{Name: dependency, Signature: signature, Visibility: ir.VisibilityHidden})
+		g.Emit(ir.Call{Name: dependency, Signature: signature})
+	}
+	for _, global := range g.dynamicGlobals {
+		value := g.GenerateExpr(global.expr)
+		g.Emit(ir.StoreGlobal{Name: global.name, Value: value})
+	}
+	g.Emit(ir.Jump{Target: done.ID})
+
+	g.currentBlock = done
+	g.Emit(ir.Return{})
 }
 
 func (g *Generator) GenerateFunction(fn *parser.FunctionDefNode) {
