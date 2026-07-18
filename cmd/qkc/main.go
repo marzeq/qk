@@ -1,11 +1,15 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/marzeq/qk/attributes"
 	"github.com/marzeq/qk/codegen/llvm"
@@ -21,6 +25,7 @@ import (
 func main() {
 	args, err := parseArgs()
 	check(err)
+	cleanupModuleObjectCache(args.verbose)
 
 	searchPaths := buildSearchPaths(args.baseDir)
 
@@ -157,7 +162,7 @@ func main() {
 			check(err)
 		}
 
-		objFile, err := compileLLVMModule(buildDir, args)
+		objFile, err := compileLLVMModule(buildDir, moduleName, llvmOutputs[moduleName], args)
 		check(err)
 		objFiles = append(objFiles, objFile)
 	}
@@ -367,13 +372,25 @@ func emitLLVMFile(output string) (string, error) {
 	return buildDir, nil
 }
 
-func compileLLVMModule(buildDir string, args *Args) (string, error) {
+func compileLLVMModule(buildDir, moduleName, llvmOutput string, args *Args) (string, error) {
+	objPath := filepath.Join(buildDir, "module.o")
+	cachePath := moduleObjectCachePath(llvmOutput, args)
+	if cached, err := os.ReadFile(cachePath); err == nil {
+		if err := os.WriteFile(objPath, cached, 0o644); err == nil {
+			now := time.Now()
+			_ = os.Chtimes(cachePath, now, now)
+			if args.verbose {
+				fmt.Printf("used cached module %s\n", moduleName)
+			}
+			return objPath, nil
+		}
+	}
+
 	optimizedPath, err := optimizeLLVMModule(buildDir, args)
 	if err != nil {
 		return "", err
 	}
 
-	objPath := filepath.Join(buildDir, "module.o")
 	clangArgs := []string{
 		"-c", optimizedPath, "-o", objPath,
 		fmt.Sprintf("-O%s", args.optLevel),
@@ -397,8 +414,119 @@ func compileLLVMModule(buildDir string, args *Args) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("clang failed: %w\n%s", err, string(out))
 	}
+	storeModuleObject(cachePath, objPath)
 
 	return objPath, nil
+}
+
+const (
+	moduleCacheMaxAge  = 30 * 24 * time.Hour
+	moduleCacheMaxSize = int64(512 << 20)
+)
+
+type moduleCacheEntry struct {
+	path    string
+	modTime time.Time
+	size    int64
+}
+
+func cleanupModuleObjectCache(verbose bool) {
+	cacheHome, err := os.UserCacheDir()
+	if err != nil {
+		return
+	}
+	cacheDir := filepath.Join(cacheHome, "qk", "modules")
+	entries, err := os.ReadDir(cacheDir)
+	if err != nil {
+		return
+	}
+
+	cutoff := time.Now().Add(-moduleCacheMaxAge)
+	var cached []moduleCacheEntry
+	var totalSize int64
+	removed := 0
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".o" {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		path := filepath.Join(cacheDir, entry.Name())
+		if info.ModTime().Before(cutoff) {
+			if os.Remove(path) == nil {
+				removed++
+			}
+			continue
+		}
+		cached = append(cached, moduleCacheEntry{path: path, modTime: info.ModTime(), size: info.Size()})
+		totalSize += info.Size()
+	}
+
+	sort.Slice(cached, func(i, j int) bool {
+		return cached[i].modTime.Before(cached[j].modTime)
+	})
+	for _, entry := range cached {
+		if totalSize <= moduleCacheMaxSize {
+			break
+		}
+		if os.Remove(entry.path) == nil {
+			totalSize -= entry.size
+			removed++
+		}
+	}
+	if verbose && removed > 0 {
+		fmt.Printf("removed %d stale cached modules\n", removed)
+	}
+}
+
+func moduleObjectCachePath(llvmOutput string, args *Args) string {
+	cacheHome, err := os.UserCacheDir()
+	if err != nil {
+		return ""
+	}
+	hash := sha256.New()
+	for _, value := range append([]string{
+		"qk-module-object-v1",
+		llvmOutput,
+		string(args.optLevel),
+		args.target,
+		args.sysroot,
+	}, args.clangArgs...) {
+		hash.Write([]byte(value))
+		hash.Write([]byte{0})
+	}
+	key := hex.EncodeToString(hash.Sum(nil))
+	return filepath.Join(cacheHome, "qk", "modules", key+".o")
+}
+
+func storeModuleObject(cachePath, objPath string) {
+	if cachePath == "" {
+		return
+	}
+	data, err := os.ReadFile(objPath)
+	if err != nil {
+		return
+	}
+	cacheDir := filepath.Dir(cachePath)
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		return
+	}
+	temp, err := os.CreateTemp(cacheDir, "module-*.o")
+	if err != nil {
+		return
+	}
+	tempPath := temp.Name()
+	defer os.Remove(tempPath)
+	if _, err := temp.Write(data); err != nil {
+		temp.Close()
+		return
+	}
+	if err := temp.Close(); err != nil {
+		return
+	}
+	_ = os.Rename(tempPath, cachePath)
 }
 
 func optimizeLLVMModule(buildDir string, args *Args) (string, error) {
