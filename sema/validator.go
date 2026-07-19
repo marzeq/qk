@@ -276,6 +276,9 @@ func (v *Validator) validateLValue(expr parser.ExpressionNode) bool {
 		}
 
 	case *parser.FieldAccessNode:
+		if e.ResolvedIdentifier != nil {
+			return v.validateLValue(e.ResolvedIdentifier)
+		}
 		if !v.validateLValue(e.Subject) {
 			return false
 		}
@@ -846,7 +849,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		}
 
 	case *parser.FieldAccessNode:
-		if n.IsEnumValue || n.MethodSymbol != nil {
+		if n.IsEnumValue || n.MethodSymbol != nil || n.ResolvedIdentifier != nil || n.ModulePath != "" {
 			return
 		}
 		v.validateExpr(n.Subject)
@@ -1115,6 +1118,9 @@ func (v *Validator) validateReferenceTarget(node *parser.UnaryOpNode, target par
 		return true
 
 	case *parser.FieldAccessNode:
+		if target.ResolvedIdentifier != nil {
+			return v.validateReferenceTarget(node, target.ResolvedIdentifier, mutable)
+		}
 		return v.validateReferenceTarget(node, target.Subject, mutable)
 
 	case *parser.IndexExprNode:

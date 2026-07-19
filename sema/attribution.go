@@ -463,10 +463,30 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		}
 
 	case *parser.FieldAccessNode:
+		if n.ResolvedIdentifier != nil {
+			ident := n.ResolvedIdentifier
+			switch ident.Symbol.Kind {
+			case symbols.SymbolKindVariable:
+				ident.SetType(ident.Symbol.Type)
+			case symbols.SymbolKindFunction:
+				ret := ident.Symbol.Signature.ReturnType
+				if ret == nil {
+					ret = types.PrimitiveVoid
+				}
+				ident.SetType(types.PointerType{Base: types.FunctionType{Parameters: ident.Symbol.Signature.Parameters, ReturnType: ret, TypedVariadic: ident.Symbol.Signature.TypedVariadic, VariadicElement: ident.Symbol.Signature.VariadicElement}})
+			case symbols.SymbolKindType:
+				ident.SetType(ident.Symbol.TypeInfo)
+			}
+			n.SetType(ident.GetType())
+			break
+		}
+		if n.ModulePath != "" {
+			break
+		}
 		if a.attributeMethodValue(n) {
 			break
 		}
-		if ident, ok := n.Subject.(*parser.IdentifierNode); ok && ident.Symbol != nil && ident.Symbol.Kind == symbols.SymbolKindType {
+		if ident := resolvedTypeIdentifier(n.Subject); ident != nil {
 			if enumType, ok := types.Underlying(ident.Symbol.TypeInfo).(types.EnumType); ok {
 				ident.SetType(enumType)
 				value, exists := enumType.VariantValue(n.Field.Name)
@@ -681,8 +701,8 @@ func fieldOwnerDisplayType(t types.Type) types.Type {
 }
 
 func (a *Attributor) attributeMethodValue(n *parser.FieldAccessNode) bool {
-	ident, ok := n.Subject.(*parser.IdentifierNode)
-	if !ok || ident.Symbol == nil || ident.Symbol.Kind != symbols.SymbolKindType {
+	ident := resolvedTypeIdentifier(n.Subject)
+	if ident == nil {
 		return false
 	}
 	module, owner, _, ok := methodOwnerIdentity(ident.Symbol.TypeInfo)
@@ -706,6 +726,16 @@ func (a *Attributor) attributeMethodValue(n *parser.FieldAccessNode) bool {
 	n.MethodModule = method.DefinitionModule
 	n.SetType(types.PointerType{Base: types.FunctionType{Parameters: method.Signature.Parameters, ReturnType: ret, TypedVariadic: method.Signature.TypedVariadic, VariadicElement: method.Signature.VariadicElement}})
 	return true
+}
+
+func resolvedTypeIdentifier(expr parser.ExpressionNode) *parser.IdentifierNode {
+	if ident, ok := expr.(*parser.IdentifierNode); ok && ident.Symbol != nil && ident.Symbol.Kind == symbols.SymbolKindType {
+		return ident
+	}
+	if field, ok := expr.(*parser.FieldAccessNode); ok && field.ResolvedIdentifier != nil && field.ResolvedIdentifier.Symbol.Kind == symbols.SymbolKindType {
+		return field.ResolvedIdentifier
+	}
+	return nil
 }
 
 func (a *Attributor) attributeMethodCall(n *parser.FunctionCallNode) bool {

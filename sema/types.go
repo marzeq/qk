@@ -15,7 +15,7 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 	switch t := n.(type) {
 
 	case *parser.NamedTypeNode:
-		if info, ok := a.aliases[t.Name]; ok {
+		if info, ok := a.aliases[t.Name]; ok && t.ModName == "" {
 			return a.resolveAlias(info, t, indirect)
 		}
 
@@ -28,13 +28,18 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 			return sym.TypeInfo
 		}
 
-		modSym, ok := a.current.Resolve(t.ModName)
-		if !ok || modSym.Kind != symbols.SymbolKindModule {
+		var mod *symbols.Module
+		if modSym, ok := a.current.Resolve(t.ModName); ok && modSym.Kind == symbols.SymbolKindModule {
+			mod = modSym.Module
+		} else if a.modulePathAccessible(t.ModName, true) {
+			mod = a.modules[t.ModName]
+		}
+		if mod == nil {
 			a.errorf(t, "unknown module %q", t.ModName)
 			return types.ErrorType{}
 		}
 
-		sym, ok := modSym.Module.Scope.Resolve(t.Name)
+		sym, ok := mod.Scope.Resolve(t.Name)
 		if !ok || sym.Kind != symbols.SymbolKindType {
 			a.errorf(t, "unknown type %q in module %q", t.Name, t.ModName)
 			return types.ErrorType{}

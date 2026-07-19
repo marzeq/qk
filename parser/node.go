@@ -54,6 +54,11 @@ type FieldAccessNode struct {
 	IsEnumValue  bool
 	MethodSymbol *symbols.Symbol
 	MethodModule string
+	// ResolvedIdentifier is set when this dotted access names a declaration in
+	// an imported module rather than a value field.
+	ResolvedIdentifier *IdentifierNode
+	// ModulePath is the canonical path of an intermediate module namespace.
+	ModulePath string
 }
 
 func (n FieldAccessNode) GetLoc() shared.Location { return n.Loc }

@@ -3,6 +3,7 @@ package parser
 import (
 	"math/big"
 	"strconv"
+	"strings"
 
 	"github.com/marzeq/qk/shared"
 	"github.com/marzeq/qk/tokeniser"
@@ -343,6 +344,12 @@ func (p *Parser) ParsePostfix() (ExpressionNode, error) {
 
 	for {
 		switch {
+		case p.Match(tokeniser.TokenOpenCurly) && (!p.disambiguateTrailingBlock || p.trailingBraceStartsStructLiteral()):
+			qualified, ok := dottedIdentifier(expr)
+			if !ok {
+				return expr, nil
+			}
+			return p.ParseStructLiteral(qualified)
 		case p.Match(tokeniser.TokenOpenParen):
 			call, err := p.ParseCall(expr)
 			if err != nil {
@@ -448,6 +455,25 @@ func (p *Parser) ParsePostfix() (ExpressionNode, error) {
 		}
 	}
 
+}
+
+func dottedIdentifier(expr ExpressionNode) (*IdentifierNode, bool) {
+	var parts []string
+	for {
+		switch n := expr.(type) {
+		case *FieldAccessNode:
+			parts = append([]string{n.Field.Name}, parts...)
+			expr = n.Subject
+		case *IdentifierNode:
+			parts = append([]string{n.Name}, parts...)
+			if len(parts) < 2 {
+				return nil, false
+			}
+			return &IdentifierNode{Name: parts[len(parts)-1], Module: strings.Join(parts[:len(parts)-1], "."), Loc: n.Loc}, true
+		default:
+			return nil, false
+		}
+	}
 }
 
 func (p *Parser) ParseComparison() (ExpressionNode, error) {
@@ -671,36 +697,6 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 		ident, err := p.ParseIdent()
 		if err != nil {
 			return nil, err
-		}
-
-		if p.Match(tokeniser.TokenColon) {
-			p.Inc()
-
-			for p.Match(tokeniser.TokenNewline) {
-				p.Inc()
-			}
-
-			modIdent, err := p.ParseIdent()
-			if err != nil {
-				return nil, err
-			}
-
-			qualifiedIdent := &IdentifierNode{
-				Module: ident.Name,
-				Name:   modIdent.Name,
-				Loc:    ident.Loc,
-			}
-
-			if p.Match(tokeniser.TokenOpenCurly) &&
-				(!p.disambiguateTrailingBlock || p.trailingBraceStartsStructLiteral()) {
-				return p.ParseStructLiteral(qualifiedIdent)
-			}
-
-			if p.Match(tokeniser.TokenOpenParen) {
-				return p.ParseFunctionCall(qualifiedIdent)
-			}
-
-			return qualifiedIdent, nil
 		}
 
 		if p.Match(tokeniser.TokenOpenParen) {
@@ -1667,23 +1663,26 @@ func (p *Parser) ParseNamedType() (*NamedTypeNode, error) {
 		return nil, err
 	}
 
-	if !p.Match(tokeniser.TokenColon) {
+	if !p.Match(tokeniser.TokenDot) {
 		return &NamedTypeNode{
 			ModName: "",
 			Name:    ident.Name,
 			Loc:     beginLoc,
 		}, nil
 	}
-	p.Inc()
-
-	realIdent, err := p.ParseIdent()
-	if err != nil {
-		return nil, err
+	parts := []string{ident.Name}
+	for p.Match(tokeniser.TokenDot) {
+		p.Inc()
+		realIdent, err := p.ParseIdent()
+		if err != nil {
+			return nil, err
+		}
+		parts = append(parts, realIdent.Name)
 	}
 
 	return &NamedTypeNode{
-		ModName: ident.Name,
-		Name:    realIdent.Name,
+		ModName: strings.Join(parts[:len(parts)-1], "."),
+		Name:    parts[len(parts)-1],
 		Loc:     beginLoc,
 	}, nil
 }

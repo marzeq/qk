@@ -1189,7 +1189,7 @@ func traitErasedReceiverType(method types.TraitMethod) types.PointerType {
 
 func (g *Generator) ensureTraitVTable(node *parser.CastNode, trait types.TraitType) string {
 	key := traitRuntimeName(node.ConcreteType) + "__" + trait.String()
-	name := "__qk_vtable_" + sanitizeName(key)
+	name := fmt.Sprintf("__qk_vtable_%s_%x", sanitizeName(key), stringHash(key))
 	for _, global := range g.Module.Globals {
 		if global.Name == name {
 			return name
@@ -1220,6 +1220,12 @@ func (g *Generator) ensureTraitVTable(node *parser.CastNode, trait types.TraitTy
 	}
 	g.Module.AddGlobal(ir.Global{Name: name, Type: vt, Linkage: ir.LinkageInternal, Value: ir.StructConstOperand(vt, values)})
 	return name
+}
+
+func stringHash(value string) uint64 {
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(value))
+	return h.Sum64()
 }
 
 func (g *Generator) generateValueReceiverTraitThunk(vtableName string, slot int, concrete types.Type, targetName string, method *symbols.Symbol, requirement types.TraitMethod) string {
@@ -1650,6 +1656,9 @@ func (g *Generator) generateStructLiteralIntoSlot(slot ir.SlotID, node *parser.S
 }
 
 func (g *Generator) generateFieldAccessExpr(node *parser.FieldAccessNode) ir.Operand {
+	if node.ResolvedIdentifier != nil {
+		return g.generateIdentifierExpr(node.ResolvedIdentifier)
+	}
 	if node.MethodSymbol != nil {
 		ident := &parser.IdentifierNode{Name: node.MethodSymbol.Name, Symbol: node.MethodSymbol, Type: node.GetType(), Loc: node.Loc}
 		if node.MethodModule != g.ModuleName {
@@ -1763,6 +1772,9 @@ func (g *Generator) generateAddressOfExpr(expr parser.ExpressionNode) ir.Operand
 		g.Emit(ir.AddressOf{Dest: addr, Slot: slot})
 		return ir.ValueOperand(addr, types.PointerType{Base: ident.GetType()})
 	case *parser.FieldAccessNode:
+		if node.ResolvedIdentifier != nil {
+			return g.generateAddressOfExpr(node.ResolvedIdentifier)
+		}
 		base := g.generateFieldSubjectAddress(node.Subject)
 		dest := g.currentFunction.NewValueOfType(types.PointerType{Base: node.GetType()})
 		g.Emit(ir.FieldAddress{Dest: dest, Base: base, Field: node.Field.Name})
@@ -1949,7 +1961,7 @@ func (g *Generator) promoteVariadicArgs(args []ir.Operand, sig ir.FunctionSignat
 }
 
 func (g *Generator) mangleFunctionName(moduleName, fnName string) string {
-	mod := sanitizeName(moduleName)
+	mod := encodeModuleName(moduleName)
 	fn := sanitizeName(fnName)
 	if mod == "" {
 		return "__qk_" + fn
@@ -1958,12 +1970,27 @@ func (g *Generator) mangleFunctionName(moduleName, fnName string) string {
 }
 
 func (g *Generator) mangleGlobalName(moduleName, globalName string) string {
-	mod := sanitizeName(moduleName)
+	mod := encodeModuleName(moduleName)
 	global := sanitizeName(globalName)
 	if mod == "" {
 		return "__qk_global_" + global
 	}
 	return "__qk_" + mod + "_global_" + global
+}
+
+func encodeModuleName(name string) string {
+	if name == "" {
+		return ""
+	}
+	if !strings.Contains(name, ".") {
+		return sanitizeName(name)
+	}
+	var b strings.Builder
+	b.WriteString("0_")
+	for _, component := range strings.Split(name, ".") {
+		fmt.Fprintf(&b, "%d_%s", len(component), component)
+	}
+	return b.String()
 }
 
 func (g *Generator) isProgramEntryFunction(fnName string) bool {

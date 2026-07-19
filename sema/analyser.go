@@ -17,17 +17,20 @@ type Analyser struct {
 	errors                        []error
 	currentMod                    string
 	currentTrustedStandardLibrary bool
+	currentImports                map[string]bool
+	importsByModule               map[string]map[string]bool
 }
 
 func NewAnalyser() *Analyser {
 	u := symbols.NewScope(nil)
 
 	a := &Analyser{
-		universe:      u,
-		modules:       make(map[string]*symbols.Module),
-		aliases:       make(map[string]*aliasInfo),
-		methods:       make(map[string]map[string]*symbols.Symbol),
-		concreteTypes: make(map[string]types.Type),
+		universe:        u,
+		modules:         make(map[string]*symbols.Module),
+		aliases:         make(map[string]*aliasInfo),
+		methods:         make(map[string]map[string]*symbols.Symbol),
+		concreteTypes:   make(map[string]types.Type),
+		importsByModule: make(map[string]map[string]bool),
 	}
 
 	a.predefineBuiltins()
@@ -64,6 +67,11 @@ func (a *Analyser) AnalyseModule(root *parser.RootNode, name string, trustedStan
 	a.current = mod.Scope
 	a.currentMod = name
 	a.currentTrustedStandardLibrary = trustedStandardLibrary
+	a.currentImports = a.importsByModule[name]
+	if a.currentImports == nil {
+		a.currentImports = make(map[string]bool)
+		a.importsByModule[name] = a.currentImports
+	}
 
 	a.collectTopLevel(root)
 	a.resolveBodies(root)

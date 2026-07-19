@@ -2,6 +2,7 @@ package parser
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/marzeq/qk/attributes"
 	"github.com/marzeq/qk/shared"
@@ -734,12 +735,12 @@ func (p *Parser) ParseImport() (*ImportNode, error) {
 				break
 			}
 
-			name, ok := p.ExpectGet(tokeniser.TokenIdentifier)
-			if !ok {
-				return nil, shared.NewError(p.PrevLoc(), "expected module name")
+			name, _, err := p.parseModulePath()
+			if err != nil {
+				return nil, err
 			}
-			modules = append(modules, name.Value)
-			alias := name.Value
+			modules = append(modules, name)
+			alias := ""
 			if p.Match(tokeniser.TokenIdentifier) {
 				alias = p.Consume().Value
 			}
@@ -767,12 +768,12 @@ func (p *Parser) ParseImport() (*ImportNode, error) {
 			return nil, shared.NewError(p.PrevLoc(), "expected ',', newline, or ')'")
 		}
 	} else {
-		name, ok := p.ExpectGet(tokeniser.TokenIdentifier)
-		if !ok {
-			return nil, shared.NewError(p.PrevLoc(), "expected module name")
+		name, _, err := p.parseModulePath()
+		if err != nil {
+			return nil, err
 		}
-		modules = append(modules, name.Value)
-		alias := name.Value
+		modules = append(modules, name)
+		alias := ""
 		if p.Match(tokeniser.TokenIdentifier) {
 			alias = p.Consume().Value
 		}
@@ -793,11 +794,10 @@ func (p *Parser) ParseModule() (*ModuleNode, error) {
 		return nil, shared.NewError(p.PrevLoc(), "expected 'module' keyword")
 	}
 
-	nameTok, ok := p.ExpectGet(tokeniser.TokenIdentifier)
-	if !ok {
-		return nil, shared.NewError(p.PrevLoc(), "expected module name")
+	name, _, err := p.parseModulePath()
+	if err != nil {
+		return nil, err
 	}
-	name := nameTok.Value
 	attrs, err := p.parseAttributes(name)
 	if err != nil {
 		return nil, err
@@ -808,6 +808,23 @@ func (p *Parser) ParseModule() (*ModuleNode, error) {
 		Attributes: attrs,
 		Loc:        beginLoc,
 	}, nil
+}
+
+func (p *Parser) parseModulePath() (string, string, error) {
+	first, ok := p.ExpectGet(tokeniser.TokenIdentifier)
+	if !ok {
+		return "", "", shared.NewError(p.PrevLoc(), "expected module name")
+	}
+	parts := []string{first.Value}
+	for p.Match(tokeniser.TokenDot) {
+		p.Inc()
+		part, ok := p.ExpectGet(tokeniser.TokenIdentifier)
+		if !ok {
+			return "", "", shared.NewError(p.PrevLoc(), "expected module name after '.'")
+		}
+		parts = append(parts, part.Value)
+	}
+	return strings.Join(parts, "."), parts[len(parts)-1], nil
 }
 
 func (p *Parser) ParseStatement() (Node, bool, error) {

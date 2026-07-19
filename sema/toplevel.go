@@ -1,6 +1,8 @@
 package sema
 
 import (
+	"strings"
+
 	"github.com/marzeq/qk/parser"
 	"github.com/marzeq/qk/symbols"
 	"github.com/marzeq/qk/types"
@@ -243,9 +245,13 @@ func (a *Analyser) collectImport(n *parser.ImportNode) {
 			continue
 		}
 
-		alias := name
+		a.currentImports[name] = true
+		alias := strings.Split(name, ".")[0]
 		if i < len(n.Aliases) && n.Aliases[i] != "" {
 			alias = n.Aliases[i]
+		} else if strings.Contains(name, ".") {
+			prefix := strings.Split(name, ".")[0]
+			mod = &symbols.Module{Name: prefix, Scope: symbols.NewScope(a.universe)}
 		}
 		sym := &symbols.Symbol{
 			Name:   alias,
@@ -253,6 +259,9 @@ func (a *Analyser) collectImport(n *parser.ImportNode) {
 			Module: mod,
 		}
 
+		if existing, ok := a.current.Resolve(alias); ok && existing.Kind == symbols.SymbolKindModule && existing.Module.Name == mod.Name {
+			continue
+		}
 		a.defineSymbol(sym, n)
 	}
 }

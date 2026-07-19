@@ -155,6 +155,7 @@ func (a *Analyser) visitExpression(expr parser.ExpressionNode) {
 
 	case *parser.FieldAccessNode:
 		a.visitExpression(e.Subject)
+		a.resolveModuleField(e)
 
 	case *parser.IfExprNode:
 		a.visitExpression(e.IfBranch.Condition)

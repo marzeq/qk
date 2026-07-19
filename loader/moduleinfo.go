@@ -3,6 +3,7 @@ package loader
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/marzeq/qk/attributes"
 	"github.com/marzeq/qk/parser"
@@ -58,11 +59,11 @@ func CollectModuleInfo(root *parser.RootNode, trustedStandardLibrary bool) (*Par
 	if !seenModule || name == "" {
 		return nil, fmt.Errorf("module declaration is missing or empty")
 	}
-	if name == "std" && !trustedStandardLibrary {
+	if (name == "std" || strings.HasPrefix(name, "std.")) && !trustedStandardLibrary {
 		return nil, fmt.Errorf("module name %q is reserved for compiler-trusted standard-library sources", name)
 	}
-	if trustedStandardLibrary && name != "std" {
-		return nil, fmt.Errorf("trusted standard-library source declares module %q instead of %q", name, "std")
+	if trustedStandardLibrary && name != "std" && !strings.HasPrefix(name, "std.") {
+		return nil, fmt.Errorf("trusted standard-library source declares module %q outside the reserved %q namespace", name, "std")
 	}
 
 	return &PartialModuleInfo{

@@ -166,7 +166,14 @@ module graphics
 ```
 
 All files declaring the same module contribute to one module scope. Module names
-are identifiers and do not need to match directory names.
+are dot-separated identifier paths and do not need to match directory names:
+
+```qk
+module graphics.formats.png
+```
+
+The dotted path is a canonical module name, not a visibility relationship.
+Parent, child, and sibling modules do not receive implicit access to one another.
 
 The compiler starts from a root module and processes that module and its transitive
 imports. The default root module is `main`; select another with `-m`:
@@ -188,7 +195,7 @@ import math
 An optional second identifier is the local alias:
 
 ```qk
-import long_module_name short
+import graphics.formats.png png
 ```
 
 Several modules can be imported together:
@@ -200,12 +207,19 @@ import (
 )
 ```
 
-Access imported names with `:`:
+Access imported names by chaining `.` through the canonical module path, or
+through an explicit alias:
 
 ```qk
-let angle: f64 = math:atan2(y, x)
-let file: *c:FILE
+let angle: f64 = math.atan2(y, x)
+let file: *c.FILE
 ```
+
+For example, `import std.optional` makes `std.optional.foo` available. Importing
+a child does not import its parent as a module; intermediate path components are
+namespaces used to reach the imported module. Explicit aliases replace the full
+path locally. Imports with overlapping prefixes may coexist, while aliases and
+top-level names must remain unique.
 
 Imports establish dependency order and make a module name or alias visible. They
 do not textually include a file. Unknown modules, unknown qualified symbols, and
@@ -301,7 +315,7 @@ members of the `std` namespace. Their names are globally available only inside
 ```qk
 when HasPrint {
     import std
-    std:println("available")
+    std.println("available")
 }
 ```
 
@@ -548,7 +562,7 @@ carry attributes.
 Methods are declared by qualifying a function name with a local nominal type:
 
 ```qk
-let Point.length(self): f64 = math:sqrt(self.x * self.x + self.y * self.y)
+let Point.length(self): f64 = math.sqrt(self.x * self.x + self.y * self.y)
 ```
 
 The first parameter selects the receiver form:
@@ -1443,7 +1457,7 @@ implements `Any` and an empty trait.
 
 ### 26.2 Display
 
-The standard library defines `std:Display` with one value-receiver method:
+The standard library defines `std.Display` with one value-receiver method:
 
 ```qk
 pub let Display = type trait {
@@ -1466,7 +1480,7 @@ the trait itself requires its module qualification:
 let count: i32 = 42
 count.display()
 
-let shown: *std:Display = count.&.(*std:Display)
+let shown: *std.Display = count.&.(*std.Display)
 shown.display()
 ```
 
@@ -1474,10 +1488,10 @@ The current implementations use the platform C output functions and are excluded
 from the standard library when `NoLibc` is true.
 
 The standard library also provides typed, type-safe formatting through
-`std:print`:
+`std.print`:
 
 ```qk
-std:print("hello {} {1}", foo, bar)
+std.print("hello {} {1}", foo, bar)
 ```
 
 Its signature is `print(format: str, arguments: ...*Any): void`. Each field
@@ -1486,10 +1500,10 @@ argument, while a zero-based indexed field such as `{1}` overrides the selection
 for that field without changing how the automatic position advances. Thus
 `{1} {}` selects argument 1 twice. Indexed fields allow arguments to be reordered
 or reused. If the selected argument's runtime concrete
-type implements `std:Display`, `print` dynamically calls its `display()` method;
+type implements `std.Display`, `print` dynamically calls its `display()` method;
 otherwise it writes `<?>`. A missing or out-of-range argument also writes `<?>`,
 and extra arguments are ignored. `{{` and `}}` emit literal braces; malformed
-fields are emitted literally. Formatting itself adds no newline. `std:println`
+fields are emitted literally. Formatting itself adds no newline. `std.println`
 has the same formatting behavior and appends one newline.
 
 Arguments rely on implicit concrete-to-trait borrowing. Addressable values are
@@ -1659,7 +1673,7 @@ Freestanding executable startup is currently rejected for other targets rather
 than silently emitting a binary that depends on a platform CRT. Library and
 object `-nolibc` workflows retain their existing linker behavior. Code reached by
 a freestanding executable must not call libc-backed facilities such as
-`std:print`, `std:println`, or builtin `Display` implementations.
+`std.print`, `std.println`, or builtin `Display` implementations.
 
 ### 28.6 Informational options
 
@@ -1707,7 +1721,7 @@ module main
 import helpers h
 
 let main() {
-    let result = h:square(12)
+    let result = h.square(12)
 }
 ```
 
