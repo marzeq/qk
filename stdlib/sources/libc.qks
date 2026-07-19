@@ -1,0 +1,218 @@
+module std.libc
+
+when HasLibc {
+
+pub let FILE = type opaque
+
+// -----------------------------------------------------------------------------
+// C ABI types
+// -----------------------------------------------------------------------------
+
+pub let long = type
+  when OS == .Windows { i32 }
+  else when PointerBits == 32 { i32 }
+  else when PointerBits == 64 { i64 }
+  else {
+    compiler_error("Unsupported pointer width")
+  }
+
+pub let ulong = type
+  when OS == .Windows { u32 }
+  else when PointerBits == 32 { u32 }
+  else when PointerBits == 64 { u64 }
+  else {
+    compiler_error("Unsupported pointer width")
+  }
+
+pub let time_t = type
+  when OS == .Windows
+    or OS == .MacOS
+    or OS == .FreeBSD
+    or OS == .OpenBSD
+    or OS == .NetBSD
+    or OS == .DragonFly { i64 }
+    else when OS == .Linux and PointerBits == 64 { i64 }
+    else when OS == .Linux and PointerBits == 32 { i32 }
+    else {
+    compiler_error("Unsupported time_t ABI")
+  }
+
+pub let clock_t = type
+  when OS == .Windows
+    or OS == .FreeBSD
+    or OS == .OpenBSD
+    or OS == .NetBSD
+    or OS == .DragonFly { i32 }
+    else { long }
+
+// -----------------------------------------------------------------------------
+// stdio
+// -----------------------------------------------------------------------------
+
+pub let printf(fmt: cstr, ...): i32 @foreign
+pub let fprintf(stream: *FILE, fmt: cstr, ...): i32 @foreign
+pub let sprintf(buffer: *mut char, fmt: cstr, ...): i32 @foreign
+pub let snprintf(buffer: *mut char, n: usz, fmt: cstr, ...): i32 @foreign
+
+pub let scanf(fmt: cstr, ...): i32 @foreign
+pub let fscanf(stream: *FILE, fmt: cstr, ...): i32 @foreign
+pub let sscanf(str: cstr, fmt: cstr, ...): i32 @foreign
+
+pub let putchar(ch: i32): i32 @foreign
+pub let getchar(): i32 @foreign
+pub let puts(str: cstr): i32 @foreign
+
+pub let fopen(path: cstr, mode: cstr): *FILE @foreign
+pub let fclose(file: *FILE): i32 @foreign
+
+pub let fread(
+  ptr: *mut void,
+  size: usz,
+  count: usz,
+  stream: *FILE,
+): usz @foreign
+
+pub let fwrite(
+  ptr: *void,
+  size: usz,
+  count: usz,
+  stream: *FILE,
+): usz @foreign
+
+pub let SeekOrigin = type enum {
+  Set = 0,
+  Cur = 1,
+  End = 2,
+}
+
+pub let fseek(stream: *FILE, offset: long, whence: SeekOrigin): i32 @foreign
+
+pub let ftell(stream: *FILE): long @foreign
+
+pub let rewind(stream: *FILE): void @foreign
+pub let fflush(stream: *FILE): i32 @foreign
+pub let feof(stream: *FILE): i32 @foreign
+pub let ferror(stream: *FILE): i32 @foreign
+pub let clearerr(stream: *FILE): void @foreign
+
+pub let fgets(s: *mut char, n: i32, stream: *FILE): *mut char @foreign
+pub let fputs(s: cstr, stream: *FILE): i32 @foreign
+
+pub let remove(path: cstr): i32 @foreign
+pub let rename(old: cstr, new: cstr): i32 @foreign
+pub let tmpfile(): *FILE @foreign
+
+// -----------------------------------------------------------------------------
+// memory
+// -----------------------------------------------------------------------------
+
+pub let malloc(size: usz): *mut void @foreign
+pub let calloc(count: usz, size: usz): *mut void @foreign
+pub let realloc(ptr: *void, size: usz): *mut void @foreign
+pub let free(ptr: *void): void @foreign
+
+pub let memcpy(dest: *mut void, src: *void, n: usz): *mut void @foreign
+pub let memmove(dest: *mut void, src: *void, n: usz): *mut void @foreign
+pub let memset(dest: *mut void, value: i32, n: usz): *mut void @foreign
+pub let memcmp(s1: *void, s2: *void, n: usz): i32 @foreign
+pub let memchr(ptr: *void, value: i32, n: usz): *void @foreign
+
+// -----------------------------------------------------------------------------
+// strings
+// -----------------------------------------------------------------------------
+
+pub let strlen(s: cstr): usz @foreign
+pub let strcmp(a: cstr, b: cstr): i32 @foreign
+pub let strncmp(a: cstr, b: cstr, n: usz): i32 @foreign
+
+pub let strcpy(dest: *mut char, src: cstr): *mut char @foreign
+
+pub let strncpy(dest: *mut char, src: cstr, n: usz): *mut char @foreign
+
+pub let strcat(dest: *mut char, src: cstr): *mut char @foreign
+
+pub let strncat(
+  dest: *mut char,
+  src: cstr,
+  n: usz,
+): *mut char @foreign
+
+pub let strchr(s: cstr, ch: i32): *char @foreign
+pub let strrchr(s: cstr, ch: i32): *char @foreign
+pub let strstr(haystack: cstr, needle: cstr): *char @foreign
+
+pub let strtok(str: *mut char, delim: cstr): *mut char @foreign
+
+when OS == .Windows {
+  pub let strdup(str: cstr): *mut char @foreign(symbol "_strdup")
+  pub let strcasecmp(a: cstr, b: cstr): i32 @foreign(symbol "_stricmp")
+} else {
+  pub let strdup(str: cstr): *mut char @foreign
+  pub let strcasecmp(a: cstr, b: cstr): i32 @foreign
+}
+
+// -----------------------------------------------------------------------------
+// conversion
+// -----------------------------------------------------------------------------
+
+pub let atoi(str: cstr): i32 @foreign
+pub let atol(str: cstr): long @foreign
+pub let atof(str: cstr): f64 @foreign
+
+pub let strtol(str: cstr, end: *mut *mut char, base: i32): long @foreign
+
+pub let strtoul(str: cstr, end: *mut *mut char, base: i32): ulong @foreign
+
+// -----------------------------------------------------------------------------
+// random / time
+// -----------------------------------------------------------------------------
+
+when OS == .Windows {
+  pub let time(t: *mut time_t): time_t @foreign(symbol "_time64")
+} else {
+  pub let time(t: *mut time_t): time_t @foreign
+}
+
+pub let clock(): clock_t @foreign
+
+pub let srand(seed: u32): void @foreign
+pub let rand(): i32 @foreign
+
+// -----------------------------------------------------------------------------
+// process
+// -----------------------------------------------------------------------------
+
+pub let exit(code: i32): void @foreign @noreturn
+pub let abort(): void @foreign @noreturn
+
+pub let system(command: cstr): i32 @foreign
+pub let getenv(name: cstr): *char @foreign
+
+// -----------------------------------------------------------------------------
+// standard streams
+// -----------------------------------------------------------------------------
+
+when OS == .Linux
+  or OS == .MacOS
+  or OS == .FreeBSD
+  or OS == .OpenBSD
+  or OS == .NetBSD
+  or OS == .DragonFly {
+
+  pub let stdin: *FILE @foreign
+  pub let stdout: *FILE @foreign
+  pub let stderr: *FILE @foreign
+
+} else when OS == .Windows {
+
+  let _acrt_iob_func(index: u32): *FILE @foreign(symbol "__acrt_iob_func")
+
+  pub let stdin = _acrt_iob_func(0)
+  pub let stdout = _acrt_iob_func(1)
+  pub let stderr = _acrt_iob_func(2)
+
+} else {
+  compiler_error("Unsupported OS")
+}
+
+}

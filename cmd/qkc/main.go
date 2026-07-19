@@ -32,7 +32,11 @@ func main() {
 	check(err)
 	cleanupModuleObjectCache(args.verbose)
 
-	searchPaths := buildSearchPaths(args.baseDir)
+	searchRoot := args.baseDir
+	if args.file != "" {
+		searchRoot = filepath.Dir(args.file)
+	}
+	searchPaths := buildSearchPaths(searchRoot)
 	preprocessorConfig := preprocessor.Config{TargetTriple: args.target, NoLibc: args.noLibc, NoStdlib: args.noStdlib}
 	embeddedStdlibSources, err := stdlib.ReadSources()
 	check(err)
@@ -70,13 +74,30 @@ func main() {
 	}
 
 	var partials []*loader.PartialModuleInfo
+	if args.file != "" {
+		ast, err := parseFile(args.file, preprocessorConfig)
+		check(err)
+		info, err := loader.CollectModuleInfo(ast, false)
+		check(err)
+		if args.mainModuleSet && args.mainModule != info.Name {
+			fatal("primary module specified with -m (%s) does not match module declared by -file (%s)", args.mainModule, info.Name)
+		}
+		args.mainModule = info.Name
+		partials = append(partials, info)
+	}
 
 	for _, file := range files {
+		if file == args.file {
+			continue
+		}
 		ast, err := parseFile(file, preprocessorConfig)
 		check(err)
 
 		info, err := loader.CollectModuleInfo(ast, false)
 		check(err)
+		if args.file != "" && info.Name == args.mainModule {
+			continue
+		}
 
 		partials = append(partials, info)
 	}
@@ -101,6 +122,7 @@ func main() {
 	if args.verbose && args.debug {
 		fmt.Println("parsed and collected modules")
 	}
+	check(finaliseOutputArgs(args))
 
 	modules, err := loader.BuildModules(partials)
 	check(err)

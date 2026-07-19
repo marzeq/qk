@@ -31,30 +31,32 @@ const (
 )
 
 type Args struct {
-	baseDir      string
-	excludeDirs  []string
-	output       string
-	mainModule   string
-	optLevel     OptimisationLevel
-	verbose      bool
-	debug        bool
-	dumpIR       bool
-	dumpLLVM     bool
-	dumpAsm      bool
-	keepBuildDir bool
-	static       bool
-	noLibc       bool
-	noStdlib     bool
-	stdlibPath   string
-	noEmit       bool
-	target       string
-	sysroot      string
-	outputType   OutputType
-	clangArgs    []string
-	linkArgs     []string
-	libs         []string
-	libraryPaths []string
-	run          bool
+	baseDir       string
+	file          string
+	excludeDirs   []string
+	output        string
+	mainModule    string
+	mainModuleSet bool
+	optLevel      OptimisationLevel
+	verbose       bool
+	debug         bool
+	dumpIR        bool
+	dumpLLVM      bool
+	dumpAsm       bool
+	keepBuildDir  bool
+	static        bool
+	noLibc        bool
+	noStdlib      bool
+	stdlibPath    string
+	noEmit        bool
+	target        string
+	sysroot       string
+	outputType    OutputType
+	clangArgs     []string
+	linkArgs      []string
+	libs          []string
+	libraryPaths  []string
+	run           bool
 }
 
 func parseOptLevel(level string) (OptimisationLevel, error) {
@@ -169,6 +171,13 @@ func (p *argumentParser) parseCurrent() error {
 		}
 		p.args.output = value
 
+	case tok == "-file":
+		value, err := p.nextValue(tok)
+		if err != nil {
+			return err
+		}
+		p.args.file = value
+
 	case tok == "-t":
 		value, err := p.nextValue(tok)
 		if err != nil {
@@ -190,6 +199,7 @@ func (p *argumentParser) parseCurrent() error {
 			return err
 		}
 		p.args.mainModule = value
+		p.args.mainModuleSet = true
 
 	case strings.HasPrefix(tok, "-O"):
 		value, err := p.gluedOrNextValue("-O")
@@ -314,8 +324,9 @@ func parseArgs() (*Args, error) {
 }
 
 func printUsage() {
-	fmt.Printf("Usage: %s [options] <baseDir>\n", os.Args[0])
+	fmt.Printf("Usage: %s [options] (<baseDir> | -file <file>)\n", os.Args[0])
 	fmt.Println("Options:")
+	fmt.Println("  -file <file>       Compile one file as the inferred primary module")
 	fmt.Println("  -E <dir>           Exclude directory or file from source file search (can specify multiple times)")
 	fmt.Println("  -o <file>          Output file name")
 	fmt.Println("  -run               Automatically run output executable")
@@ -340,19 +351,37 @@ func printVersion() {
 }
 
 func finaliseArgs(args *Args) error {
-	if args.baseDir == "" {
-		return fmt.Errorf("no base directory specified")
+	if args.baseDir == "" && args.file == "" {
+		return fmt.Errorf("no base directory or file specified")
+	}
+	if args.baseDir != "" && args.file != "" {
+		return fmt.Errorf("base directory and -file cannot be used together")
 	}
 
-	if _, err := os.Stat(args.baseDir); os.IsNotExist(err) {
-		return fmt.Errorf("base directory does not exist: %s", args.baseDir)
+	if args.file != "" {
+		info, err := os.Stat(args.file)
+		if err != nil || !info.Mode().IsRegular() {
+			return fmt.Errorf("source file does not exist or is not a regular file: %s", args.file)
+		}
+		if filepath.Ext(args.file) != ".qk" {
+			return fmt.Errorf("source file must have a .qk extension: %s", args.file)
+		}
+		abs, err := filepath.Abs(args.file)
+		if err != nil {
+			return fmt.Errorf("failed to get absolute path of source file: %v", err)
+		}
+		args.file = abs
+	} else {
+		info, err := os.Stat(args.baseDir)
+		if err != nil || !info.IsDir() {
+			return fmt.Errorf("base directory does not exist or is not a directory: %s", args.baseDir)
+		}
+		abs, err := filepath.Abs(args.baseDir)
+		if err != nil {
+			return fmt.Errorf("failed to get absolute path of base directory: %v", err)
+		}
+		args.baseDir = abs
 	}
-
-	abs, err := filepath.Abs(args.baseDir)
-	if err != nil {
-		return fmt.Errorf("failed to get absolute path of base directory: %v", err)
-	}
-	args.baseDir = abs
 
 	for i, e := range args.excludeDirs {
 		if _, err := os.Stat(e); os.IsNotExist(err) {
@@ -390,6 +419,10 @@ func finaliseArgs(args *Args) error {
 		args.stdlibPath = abs
 	}
 
+	return nil
+}
+
+func finaliseOutputArgs(args *Args) error {
 	if args.output == "" {
 		switch args.outputType {
 		case OutputUnspecified:
