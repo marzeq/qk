@@ -71,11 +71,8 @@ func main() {
 	for _, moduleName := range order {
 		llvmOutputs[moduleName] = buildLLVMModule(irModules[moduleName], moduleName, args.mainModule, args.outputType == OutputExecutable, args.target)
 	}
-	var freestandingRuntime string
-	if args.noLibc {
-		freestandingRuntime, err = buildFreestandingRuntime(args.target)
-		check(err)
-	}
+	freestandingRuntime, err := buildFreestandingRuntime(args.target, args.noLibc)
+	check(err)
 
 	if args.dumpIR {
 		for _, moduleName := range order {

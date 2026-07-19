@@ -7,7 +7,7 @@ import (
 	qktarget "github.com/marzeq/qk/target"
 )
 
-func buildFreestandingRuntime(targetTriple string) (string, error) {
+func buildFreestandingRuntime(targetTriple string, noLibc bool) (string, error) {
 	pointerBits, ok := qktarget.PointerBits(qktarget.EffectiveTriple(targetTriple))
 	if !ok {
 		return "", fmt.Errorf("cannot determine pointer width for target %q", targetTriple)
@@ -15,7 +15,68 @@ func buildFreestandingRuntime(targetTriple string) (string, error) {
 	usz := fmt.Sprintf("i%d", pointerBits)
 
 	var out strings.Builder
-	fmt.Fprintf(&out, `; qk freestanding runtime
+	out.WriteString("; qk thin runtime\n\n")
+	target := strings.ToLower(qktarget.EffectiveTriple(targetTriple))
+	if noLibc && (strings.Contains(target, "linux")) && (qktarget.Arch(targetTriple) == "x86_64" || qktarget.Arch(targetTriple) == "amd64") {
+		fmt.Fprintf(&out, `define hidden void @__qk_panic({ ptr, %[1]s } %%message) #1 {
+entry:
+  %%data = extractvalue { ptr, %[1]s } %%message, 0
+  %%length = extractvalue { ptr, %[1]s } %%message, 1
+  %%prefix = call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},{rsi},{rdx},~{rcx},~{r11},~{memory}"(i64 1, i64 2, ptr @__qk_panic_prefix, %[1]s 7)
+  %%written = call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},{rsi},{rdx},~{rcx},~{r11},~{memory}"(i64 1, i64 2, ptr %%data, %[1]s %%length)
+  %%newline = call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},{rsi},{rdx},~{rcx},~{r11},~{memory}"(i64 1, i64 2, ptr @__qk_panic_newline, %[1]s 1)
+  %%exit = call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
+  unreachable
+}
+
+@__qk_panic_prefix = private constant [7 x i8] c"panic: "
+@__qk_panic_newline = private constant [1 x i8] c"\0A"
+
+`, usz)
+	} else {
+		fmt.Fprintf(&out, `declare %[1]s @write(i32, ptr, %[1]s)
+declare void @abort() noreturn
+
+define hidden void @__qk_panic({ ptr, %[1]s } %%message) #1 {
+entry:
+  %%data = extractvalue { ptr, %[1]s } %%message, 0
+  %%length = extractvalue { ptr, %[1]s } %%message, 1
+  %%prefix.result = call %[1]s @write(i32 2, ptr @__qk_panic_prefix, %[1]s 7)
+  %%empty = icmp eq %[1]s %%length, 0
+  br i1 %%empty, label %%newline, label %%write
+
+write:
+  %%remaining = phi %[1]s [ %%length, %%entry ], [ %%next.remaining, %%write.continue ]
+  %%cursor = phi ptr [ %%data, %%entry ], [ %%next.cursor, %%write.continue ]
+  %%written = call %[1]s @write(i32 2, ptr %%cursor, %[1]s %%remaining)
+  %%failed = icmp sle %[1]s %%written, 0
+  br i1 %%failed, label %%terminate, label %%write.continue
+
+write.continue:
+  %%next.remaining = sub %[1]s %%remaining, %%written
+  %%next.cursor = getelementptr i8, ptr %%cursor, %[1]s %%written
+  %%finished = icmp eq %[1]s %%next.remaining, 0
+  br i1 %%finished, label %%newline, label %%write
+
+newline:
+  %%newline.result = call %[1]s @write(i32 2, ptr @__qk_panic_newline, %[1]s 1)
+  br label %%terminate
+
+terminate:
+  call void @abort()
+  unreachable
+}
+
+@__qk_panic_prefix = private constant [7 x i8] c"panic: "
+@__qk_panic_newline = private constant [1 x i8] c"\0A"
+
+`, usz)
+	}
+	if !noLibc {
+		out.WriteString("attributes #1 = { cold noinline noreturn nounwind }\n")
+		return out.String(), nil
+	}
+	fmt.Fprintf(&out, `
 
 define hidden ptr @memset(ptr %%dest, i32 %%value, %[1]s %%length) #0 {
 entry:
@@ -91,6 +152,7 @@ done:
 }
 
 attributes #0 = { noinline nounwind optnone nobuiltin }
+attributes #1 = { cold noinline noreturn nounwind }
 `, usz)
 	return out.String(), nil
 }

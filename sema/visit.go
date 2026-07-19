@@ -137,6 +137,9 @@ func (a *Analyser) visitExpression(expr parser.ExpressionNode) {
 		a.visitExpression(e.Operand1)
 		a.visitExpression(e.Operand2)
 
+	case *parser.TypeTestNode:
+		a.visitExpression(e.Operand)
+
 	case *parser.UnaryOpNode:
 		a.visitExpression(e.Operand)
 

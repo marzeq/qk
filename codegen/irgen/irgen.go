@@ -2,6 +2,7 @@ package irgen
 
 import (
 	"fmt"
+	"hash/fnv"
 	"slices"
 	"strings"
 
@@ -302,6 +303,9 @@ func (g *Generator) GenerateFunction(fn *parser.FunctionDefNode) {
 		}
 	case parser.ExpressionNode:
 		ret := g.GenerateExpr(body)
+		if g.currentBlockHasTerminator() {
+			break
+		}
 		if g.isVoidFunction(fn) {
 			g.Emit(ir.Return{})
 		} else {
@@ -440,7 +444,7 @@ func (g *Generator) currentBlockHasTerminator() bool {
 	}
 	last := g.currentBlock.Instr[len(g.currentBlock.Instr)-1]
 	switch last.(type) {
-	case ir.Return, ir.Jump, ir.Branch:
+	case ir.Return, ir.Jump, ir.Branch, ir.Unreachable:
 		return true
 	default:
 		return false
@@ -957,6 +961,8 @@ func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
 		return g.generateGivenExpr(n)
 	case *parser.BinaryOpNode:
 		return g.generateBinaryExpr(n)
+	case *parser.TypeTestNode:
+		return g.generateTypeTestExpr(n)
 	case *parser.UnaryOpNode:
 		return g.generateUnaryExpr(n)
 	case *parser.StructLiteralNode:
@@ -1107,6 +1113,12 @@ func (g *Generator) generateNilLiteralExpr(node *parser.NilLiteralNode) ir.Opera
 
 func (g *Generator) generateCastExpr(node *parser.CastNode) ir.Operand {
 	targetType := node.GetType()
+	if node.TraitConversion {
+		return g.generateTraitConversion(node)
+	}
+	if node.TraitUnwrap {
+		return g.generateTraitUnwrap(node)
+	}
 
 	if str, ok := node.Operand.(*parser.StringLiteralNode); ok {
 		if _, ok := types.Underlying(targetType).(types.PointerType); ok {
@@ -1135,6 +1147,146 @@ func (g *Generator) generateCastExpr(node *parser.CastNode) ir.Operand {
 	dst := g.currentFunction.NewValueOfType(targetType)
 	g.Emit(ir.Cast{Dest: dst, From: from, To: targetType})
 	return ir.ValueOperand(dst, targetType)
+}
+
+func traitRuntimeName(t types.Type) string {
+	switch t := t.(type) {
+	case types.DefinedType:
+		return t.Module + ":" + t.Name
+	case *types.AliasRef:
+		return t.Module + ":" + t.Name
+	default:
+		return t.String()
+	}
+}
+
+func runtimeTypeID(t types.Type) uint64 {
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(traitRuntimeName(t)))
+	return h.Sum64()
+}
+
+func traitVTableType(trait types.TraitType) types.StructType {
+	fields := []shared.Pair[string, types.Type]{{L: "type_id", R: types.PrimitiveU64}}
+	for _, method := range trait.Methods {
+		params := append([]types.Type{types.PointerType{Base: types.PrimitiveVoid, Mutable: method.Mutable}}, method.Parameters...)
+		fields = append(fields, shared.Pair[string, types.Type]{L: method.Name, R: types.PointerType{Base: types.FunctionType{Parameters: params, ReturnType: method.ReturnType}}})
+	}
+	return types.StructType{Fields: fields}
+}
+
+func (g *Generator) ensureTraitVTable(node *parser.CastNode, trait types.TraitType) string {
+	key := traitRuntimeName(node.ConcreteType) + "__" + trait.String()
+	name := "__qk_vtable_" + sanitizeName(key)
+	for _, global := range g.Module.Globals {
+		if global.Name == name {
+			return name
+		}
+	}
+	vt := traitVTableType(trait)
+	values := []ir.Operand{ir.IntConstOperand(fmt.Sprintf("%d", runtimeTypeID(node.ConcreteType)), types.PrimitiveU64)}
+	concreteModule := g.ModuleName
+	if d, ok := node.ConcreteType.(types.DefinedType); ok {
+		concreteModule = d.Module
+	}
+	for i, method := range node.TraitMethods {
+		req := trait.Methods[i]
+		params := append([]types.Type{types.PointerType{Base: types.PrimitiveVoid, Mutable: req.Mutable}}, req.Parameters...)
+		fnType := types.PointerType{Base: types.FunctionType{Parameters: params, ReturnType: req.ReturnType}}
+		fnName := g.mangleFunctionName(concreteModule, method.Name)
+		values = append(values, ir.FunctionConstOperand(fnName, fnType))
+		if concreteModule != g.ModuleName {
+			g.addExternForCall(fnName, ir.FunctionSignature{ParamTypes: method.Signature.Parameters, ReturnType: method.Signature.ReturnType}, "", true)
+		}
+	}
+	g.Module.AddGlobal(ir.Global{Name: name, Type: vt, Linkage: ir.LinkageInternal, Value: ir.StructConstOperand(vt, values)})
+	return name
+}
+
+func (g *Generator) generateTraitConversion(node *parser.CastNode) ir.Operand {
+	target := node.GetType().(types.TraitPointerType)
+	data := g.GenerateExpr(node.Operand)
+	voidPtr := types.PointerType{Base: types.PrimitiveVoid, Mutable: target.Mutable}
+	if !data.Type.Equals(voidPtr) {
+		dst := g.currentFunction.NewValueOfType(voidPtr)
+		g.Emit(ir.Cast{Dest: dst, From: data, To: voidPtr})
+		data = ir.ValueOperand(dst, voidPtr)
+	}
+	vtName := g.ensureTraitVTable(node, target.Trait)
+	vtType := traitVTableType(target.Trait)
+	vtPtrType := types.PointerType{Base: vtType}
+	vtID := g.currentFunction.NewValueOfType(vtPtrType)
+	g.Emit(ir.AddressOfGlobal{Dest: vtID, Name: vtName, Type: vtType})
+	agg := ir.ZeroConstOperand(target)
+	first := g.currentFunction.NewValueOfType(target)
+	g.Emit(ir.InsertValue{Dest: first, Aggregate: agg, Value: data, Index: 0})
+	second := g.currentFunction.NewValueOfType(target)
+	g.Emit(ir.InsertValue{Dest: second, Aggregate: ir.ValueOperand(first, target), Value: ir.ValueOperand(vtID, vtPtrType), Index: 1})
+	return ir.ValueOperand(second, target)
+}
+
+func (g *Generator) generateTraitUnwrap(node *parser.CastNode) ir.Operand {
+	traitValue := g.GenerateExpr(node.Operand)
+	traitPtr := traitValue.Type.(types.TraitPointerType)
+	vtType := traitVTableType(traitPtr.Trait)
+	vtPtrType := types.PointerType{Base: vtType}
+	vtID := g.currentFunction.NewValueOfType(vtPtrType)
+	g.Emit(ir.ExtractValue{Dest: vtID, Aggregate: traitValue, Index: 1})
+	typeIDPtr := g.currentFunction.NewValueOfType(types.PointerType{Base: types.PrimitiveU64})
+	g.Emit(ir.FieldAddress{Dest: typeIDPtr, Base: ir.ValueOperand(vtID, vtPtrType), Field: "type_id"})
+	actualID := g.currentFunction.NewValueOfType(types.PrimitiveU64)
+	g.Emit(ir.LoadPtr{Dest: actualID, Ptr: ir.ValueOperand(typeIDPtr, types.PointerType{Base: types.PrimitiveU64})})
+	matches := g.currentFunction.NewValueOfType(types.PrimitiveBool)
+	g.Emit(ir.CmpEq{Dest: matches, Left: ir.ValueOperand(actualID, types.PrimitiveU64), Right: ir.IntConstOperand(fmt.Sprintf("%d", runtimeTypeID(node.ConcreteType)), types.PrimitiveU64)})
+	success := g.currentFunction.NewBlock("trait.unwrap.success")
+	failure := g.currentFunction.NewBlock("trait.unwrap.failure")
+	g.Emit(ir.Branch{Cond: ir.ValueOperand(matches, types.PrimitiveBool), Then: success.ID, Else: failure.ID})
+	g.currentBlock = failure
+	messageText := "trait unwrap failed: expected " + traitRuntimeName(node.ConcreteType)
+	messageNode := &parser.StringLiteralNode{Value: messageText, Type: types.SliceType{Base: types.PrimitiveChar, Size: len(messageText)}, Loc: node.Loc}
+	message := g.generateStringLiteralExpr(messageNode)
+	runtimeStr := types.SliceType{Base: types.PrimitiveChar, Size: -1}
+	message.Type = runtimeStr
+	panicSig := ir.FunctionSignature{ParamTypes: []types.Type{runtimeStr}, ReturnType: types.PrimitiveVoid}
+	g.addExternForCall("__qk_panic", panicSig, "", true)
+	g.Emit(ir.Call{Name: "__qk_panic", Args: []ir.Operand{message}, Signature: panicSig})
+	g.Emit(ir.Unreachable{})
+	g.currentBlock = success
+	dataType := types.PointerType{Base: types.PrimitiveVoid, Mutable: traitPtr.Mutable}
+	dataID := g.currentFunction.NewValueOfType(dataType)
+	g.Emit(ir.ExtractValue{Dest: dataID, Aggregate: traitValue, Index: 0})
+	targetPointer, byPointer := types.Underlying(node.GetType()).(types.PointerType)
+	if !byPointer {
+		targetPointer = types.PointerType{Base: node.GetType()}
+	}
+	castID := g.currentFunction.NewValueOfType(targetPointer)
+	g.Emit(ir.Cast{Dest: castID, From: ir.ValueOperand(dataID, dataType), To: targetPointer})
+	if byPointer {
+		return ir.ValueOperand(castID, node.GetType())
+	}
+	valueID := g.currentFunction.NewValueOfType(node.GetType())
+	g.Emit(ir.LoadPtr{Dest: valueID, Ptr: ir.ValueOperand(castID, targetPointer)})
+	return ir.ValueOperand(valueID, node.GetType())
+}
+
+func (g *Generator) generateTypeTestExpr(node *parser.TypeTestNode) ir.Operand {
+	traitValue := g.GenerateExpr(node.Operand)
+	traitPtr := traitValue.Type.(types.TraitPointerType)
+	vtType := traitVTableType(traitPtr.Trait)
+	vtPtrType := types.PointerType{Base: vtType}
+	vtID := g.currentFunction.NewValueOfType(vtPtrType)
+	g.Emit(ir.ExtractValue{Dest: vtID, Aggregate: traitValue, Index: 1})
+	typeIDPtr := g.currentFunction.NewValueOfType(types.PointerType{Base: types.PrimitiveU64})
+	g.Emit(ir.FieldAddress{Dest: typeIDPtr, Base: ir.ValueOperand(vtID, vtPtrType), Field: "type_id"})
+	actualID := g.currentFunction.NewValueOfType(types.PrimitiveU64)
+	g.Emit(ir.LoadPtr{Dest: actualID, Ptr: ir.ValueOperand(typeIDPtr, types.PointerType{Base: types.PrimitiveU64})})
+	matches := g.currentFunction.NewValueOfType(types.PrimitiveBool)
+	g.Emit(ir.CmpEq{
+		Dest:  matches,
+		Left:  ir.ValueOperand(actualID, types.PrimitiveU64),
+		Right: ir.IntConstOperand(fmt.Sprintf("%d", runtimeTypeID(node.TargetType)), types.PrimitiveU64),
+	})
+	return ir.ValueOperand(matches, types.PrimitiveBool)
 }
 
 func (g *Generator) generateSizeOfExpr(node *parser.SizeOfNode) ir.Operand {
@@ -1462,6 +1614,9 @@ func (g *Generator) generateAddressOfExpr(expr parser.ExpressionNode) ir.Operand
 }
 
 func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.Operand {
+	if node.TraitCall {
+		return g.generateTraitCall(node)
+	}
 	var callee *ir.Operand
 	if node.Symbol == nil {
 		value := g.GenerateExpr(node.Callee)
@@ -1480,6 +1635,9 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 	}
 	if node.Symbol != nil {
 		name = node.Symbol.Name
+		if node.Symbol.Name == "panic" {
+			name = "__qk_panic"
+		}
 
 		foreignAttr := node.Symbol.Attributes.Get(attributes.AttributeTypeForeign)
 		if foreign, ok := foreignAttr.(attributes.FunctionAttributeForeign); ok &&
@@ -1489,7 +1647,7 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 
 		if export, ok := node.Symbol.Attributes.Get(attributes.AttributeTypeExport).(attributes.FunctionAttributeExport); ok {
 			name = export.As
-		} else if foreignAttr == nil {
+		} else if foreignAttr == nil && node.Symbol.Name != "panic" {
 			callModule := g.ModuleName
 			if node.Name != nil && node.Name.Module != "" {
 				callModule = node.Name.Module
@@ -1520,6 +1678,9 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 			}
 		}
 	}
+	if node.Symbol != nil && node.Symbol.Name == "panic" {
+		g.addExternForCall("__qk_panic", callSig, "", true)
+	}
 
 	if node.GetType().Equals(types.PrimitiveVoid) {
 		g.Emit(ir.Call{
@@ -1528,12 +1689,47 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 			Args:      args,
 			Signature: callSig,
 		})
+		if node.Symbol != nil && node.Symbol.Name == "panic" {
+			g.Emit(ir.Unreachable{})
+		}
 		return ir.NullConstOperand(types.PrimitiveVoid)
 	}
 
 	dst := g.currentFunction.NewValueOfType(node.GetType())
 	g.Emit(ir.Call{Dest: dst, Name: name, Callee: callee, Args: args, Signature: callSig})
 	return ir.ValueOperand(dst, node.GetType())
+}
+
+func (g *Generator) generateTraitCall(node *parser.FunctionCallNode) ir.Operand {
+	receiver := g.GenerateExpr(node.Args[0])
+	traitPtr := receiver.Type.(types.TraitPointerType)
+	vtType := traitVTableType(traitPtr.Trait)
+	vtPtrType := types.PointerType{Base: vtType}
+	vtID := g.currentFunction.NewValueOfType(vtPtrType)
+	g.Emit(ir.ExtractValue{Dest: vtID, Aggregate: receiver, Index: 1})
+	requirement := traitPtr.Trait.Methods[node.TraitSlot]
+	params := append([]types.Type{types.PointerType{Base: types.PrimitiveVoid, Mutable: requirement.Mutable}}, requirement.Parameters...)
+	fnType := types.PointerType{Base: types.FunctionType{Parameters: params, ReturnType: requirement.ReturnType}}
+	fnPtrPtr := g.currentFunction.NewValueOfType(types.PointerType{Base: fnType})
+	g.Emit(ir.FieldAddress{Dest: fnPtrPtr, Base: ir.ValueOperand(vtID, vtPtrType), Field: requirement.Name})
+	fnID := g.currentFunction.NewValueOfType(fnType)
+	g.Emit(ir.LoadPtr{Dest: fnID, Ptr: ir.ValueOperand(fnPtrPtr, types.PointerType{Base: fnType})})
+	dataType := params[0]
+	dataID := g.currentFunction.NewValueOfType(dataType)
+	g.Emit(ir.ExtractValue{Dest: dataID, Aggregate: receiver, Index: 0})
+	args := []ir.Operand{ir.ValueOperand(dataID, dataType)}
+	for _, arg := range node.Args[1:] {
+		args = append(args, g.GenerateExpr(arg))
+	}
+	sig := ir.FunctionSignature{ParamTypes: params, ReturnType: requirement.ReturnType}
+	callee := ir.ValueOperand(fnID, fnType)
+	if requirement.ReturnType.Equals(types.PrimitiveVoid) {
+		g.Emit(ir.Call{Callee: &callee, Args: args, Signature: sig})
+		return ir.NullConstOperand(types.PrimitiveVoid)
+	}
+	dst := g.currentFunction.NewValueOfType(requirement.ReturnType)
+	g.Emit(ir.Call{Dest: dst, Callee: &callee, Args: args, Signature: sig})
+	return ir.ValueOperand(dst, requirement.ReturnType)
 }
 
 func (g *Generator) addExternForCall(name string, signature ir.FunctionSignature, from string, hidden bool) {

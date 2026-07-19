@@ -440,6 +440,23 @@ type StorePtr struct {
 
 func (StorePtr) isInstr() {}
 
+type InsertValue struct {
+	Dest      ValueID
+	Aggregate Operand
+	Value     Operand
+	Index     int
+}
+
+func (InsertValue) isInstr() {}
+
+type ExtractValue struct {
+	Dest      ValueID
+	Aggregate Operand
+	Index     int
+}
+
+func (ExtractValue) isInstr() {}
+
 type AddressOf struct {
 	Dest ValueID
 	Slot SlotID
@@ -501,6 +518,10 @@ type Return struct {
 }
 
 func (Return) isInstr() {}
+
+type Unreachable struct{}
+
+func (Unreachable) isInstr() {}
 
 type Cast struct {
 	Dest ValueID

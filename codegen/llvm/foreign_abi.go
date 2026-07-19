@@ -144,6 +144,8 @@ func (e *Emitter) typeSizeAlign(ty types.Type) (int, int) {
 		}
 	case types.PointerType:
 		return e.pointerBytes(), e.pointerBytes()
+	case types.TraitPointerType:
+		return e.pointerBytes() * 2, e.pointerBytes()
 	case types.SliceType:
 		// Slices are represented as { data pointer, length }.
 		return e.pointerBytes() * 2, e.pointerBytes()

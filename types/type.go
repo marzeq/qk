@@ -260,6 +260,59 @@ type StructType struct {
 	Fields []shared.Pair[string, Type]
 }
 
+type TraitMethod struct {
+	Name       string
+	Mutable    bool
+	Parameters []Type
+	ReturnType Type
+}
+
+// TraitType is an unsized, nominal set of method requirements. Values exist
+// only through TraitPointerType descriptors.
+type TraitType struct {
+	Module  string
+	Name    string
+	Methods []TraitMethod
+	Any     bool
+}
+
+func (t TraitType) Equals(other Type) bool {
+	o, ok := Underlying(other).(TraitType)
+	return ok && t.Module == o.Module && t.Name == o.Name && t.Any == o.Any
+}
+func (t TraitType) CanCoerceTo(other Type) bool { return t.Equals(other) }
+func (t TraitType) CanCastTo(other Type) bool   { return t.Equals(other) }
+func (t TraitType) String() string {
+	if t.Any {
+		return "Any"
+	}
+	if t.Module == "" {
+		return t.Name
+	}
+	return t.Module + ":" + t.Name
+}
+
+type TraitPointerType struct {
+	Trait   TraitType
+	Mutable bool
+}
+
+func (p TraitPointerType) Equals(other Type) bool {
+	o, ok := other.(TraitPointerType)
+	return ok && p.Mutable == o.Mutable && p.Trait.Equals(o.Trait)
+}
+func (p TraitPointerType) CanCoerceTo(other Type) bool {
+	o, ok := other.(TraitPointerType)
+	return ok && (p.Mutable || !o.Mutable) && p.Trait.Equals(o.Trait)
+}
+func (p TraitPointerType) CanCastTo(other Type) bool { return p.CanCoerceTo(other) }
+func (p TraitPointerType) String() string {
+	if p.Mutable {
+		return "*mut " + p.Trait.String()
+	}
+	return "*" + p.Trait.String()
+}
+
 // OpaqueType is an incomplete type with no known value representation. It is
 // used as the underlying type of a nominal DefinedType and may only be used
 // behind pointer indirection.
@@ -280,6 +333,8 @@ func IsOpaque(t Type) bool {
 func IsComplete(t Type) bool {
 	switch t := Underlying(t).(type) {
 	case OpaqueType:
+		return false
+	case TraitType:
 		return false
 	case StructType:
 		for _, field := range t.Fields {
@@ -709,6 +764,8 @@ func HasUntyped(t Type) bool {
 		return HasUntyped(t.Base)
 	case PointerType:
 		return HasUntyped(t.Base)
+	case TraitPointerType:
+		return false
 	case StructType:
 		for _, field := range t.Fields {
 			if HasUntyped(field.R) {
@@ -722,6 +779,28 @@ func HasUntyped(t Type) bool {
 		return HasUntyped(t.ReturnType)
 	}
 
+	return false
+}
+
+func HasTraitPointer(t Type) bool {
+	switch t := Underlying(t).(type) {
+	case TraitPointerType:
+		return true
+	case StructType:
+		for _, field := range t.Fields {
+			if HasTraitPointer(field.R) {
+				return true
+			}
+		}
+	case UnionType:
+		for _, field := range t.Fields {
+			if HasTraitPointer(field.R) {
+				return true
+			}
+		}
+	case SliceType:
+		return HasTraitPointer(t.Base)
+	}
 	return false
 }
 

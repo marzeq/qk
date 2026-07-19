@@ -6,6 +6,8 @@ import (
 )
 
 func (a *Analyser) predefineBuiltins() {
+	any := types.TraitType{Name: "Any", Any: true}
+	a.universe.Define(symbols.NewType("Any", any))
 	a.universe.Define(symbols.NewType(string(types.PrimitiveI8), types.PrimitiveI8))
 	a.universe.Define(symbols.NewType(string(types.PrimitiveI16), types.PrimitiveI16))
 	a.universe.Define(symbols.NewType(string(types.PrimitiveI32), types.PrimitiveI32))
@@ -35,5 +37,10 @@ func (a *Analyser) predefineBuiltins() {
 
 	a.universe.Define(symbols.NewType("cstr", types.PointerType{
 		Base: types.PrimitiveChar,
+	}))
+	a.universe.Define(symbols.NewFunction("panic", &symbols.FunctionSignature{
+		Parameters:         []types.Type{types.SliceType{Base: types.PrimitiveChar, Size: -1}},
+		RequiredParameters: 1,
+		ReturnType:         types.PrimitiveVoid,
 	}))
 }

@@ -626,6 +626,11 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		target := a.analyser.resolveTypeNode(n.ToType)
 		n.SetType(target)
 
+	case *parser.TypeTestNode:
+		a.attributeExpr(n.Operand)
+		n.TargetType = a.analyser.resolveTypeNode(n.Target)
+		n.SetType(types.PrimitiveBool)
+
 	case *parser.SizeOfNode:
 		n.SetType(types.PrimitiveUsz)
 		n.OperandType = a.analyser.resolveTypeNode(n.Operand)
@@ -701,6 +706,26 @@ func (a *Attributor) attributeMethodCall(n *parser.FunctionCallNode) bool {
 		return false
 	}
 	a.attributeExpr(member.Subject)
+	if traitPtr, ok := traitPointer(member.Subject.GetType()); ok {
+		for slot, requirement := range traitPtr.Trait.Methods {
+			if requirement.Name != member.Field.Name {
+				continue
+			}
+			if requirement.Mutable && !traitPtr.Mutable {
+				a.errorf(n, "method %q requires mutable trait access", requirement.Name)
+				n.SetType(types.ErrorType{})
+				return true
+			}
+			params := append([]types.Type{member.Subject.GetType()}, requirement.Parameters...)
+			n.Symbol = symbols.NewFunction(requirement.Name, &symbols.FunctionSignature{Parameters: params, RequiredParameters: len(params), ReturnType: requirement.ReturnType})
+			n.Args = append([]parser.ExpressionNode{member.Subject}, n.Args...)
+			n.Method = true
+			n.TraitCall = true
+			n.TraitSlot = slot
+			return true
+		}
+		return false
+	}
 	module, owner, receiverIsPointer, ok := methodOwnerIdentity(member.Subject.GetType())
 	if !ok {
 		return false

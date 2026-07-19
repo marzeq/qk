@@ -121,6 +121,22 @@ type OpaqueTypeNode struct {
 func (n OpaqueTypeNode) GetLoc() shared.Location { return n.Loc }
 func (n OpaqueTypeNode) _type()                  {}
 
+type TraitMethodNode struct {
+	Name       string
+	Receiver   MethodReceiverKind
+	Args       []*FunctionNodeArg
+	ReturnType TypeNode
+	Loc        shared.Location
+}
+
+type TraitTypeNode struct {
+	Methods []TraitMethodNode
+	Loc     shared.Location
+}
+
+func (n TraitTypeNode) GetLoc() shared.Location { return n.Loc }
+func (n TraitTypeNode) _type()                  {}
+
 type SliceTypeNode struct {
 	ElementType TypeNode
 	Size        int
@@ -256,6 +272,9 @@ type FunctionCallNode struct {
 	Loc    shared.Location
 	Symbol *symbols.Symbol
 	Method bool
+
+	TraitCall bool
+	TraitSlot int
 }
 
 func (n FunctionCallNode) GetLoc() shared.Location { return n.Loc }
@@ -436,11 +455,28 @@ func (n BinaryOpNode) GetLoc() shared.Location { return n.Loc }
 func (n *BinaryOpNode) SetType(t types.Type)   { n.Type = t }
 func (n *BinaryOpNode) GetType() types.Type    { return n.Type }
 
+type TypeTestNode struct {
+	Operand    ExpressionNode
+	Target     TypeNode
+	TargetType types.Type
+	Loc        shared.Location
+	Type       types.Type
+}
+
+func (n TypeTestNode) GetLoc() shared.Location { return n.Loc }
+func (n *TypeTestNode) SetType(t types.Type)   { n.Type = t }
+func (n *TypeTestNode) GetType() types.Type    { return n.Type }
+
 type CastNode struct {
 	ToType  TypeNode
 	Operand ExpressionNode
 	Loc     shared.Location
 	Type    types.Type
+
+	TraitConversion bool
+	TraitUnwrap     bool
+	ConcreteType    types.Type
+	TraitMethods    []*symbols.Symbol
 }
 
 func (n CastNode) GetLoc() shared.Location { return n.Loc }

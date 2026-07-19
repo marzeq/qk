@@ -63,8 +63,8 @@ The reserved words are:
 
 ```text
 alias alignof and as break continue defer else enum false for
-given if import in len let module mut nil not offsetof opaque or pub
-return sizeof struct true type union
+given if import in is len let module mut nil not offsetof opaque or pub
+return sizeof struct trait true type union
 ```
 
 Primitive type names such as `i32` and `void` are predefined identifiers. They
@@ -1241,9 +1241,63 @@ Such operations inherit LLVM/native-machine behavior and may be undefined. The
 compiler performs some static checks when enough information is immediately
 available, such as literal indexing into a fixed-size slice.
 
-There is no language runtime, allocator, exception mechanism, stack unwinding,
-garbage collector, or automatic destructor system. `defer` is lexical control
+There is no allocator, exception mechanism, stack unwinding, garbage collector,
+or automatic destructor system. The thin runtime provides panic termination and,
+for freestanding builds, memory primitives. `defer` is lexical control
 flow emitted by the compiler; it is not exception-safe unwinding.
+
+### 26.1 Traits and dynamic dispatch
+
+A trait is a nominal, unsized set of pointer-receiver method requirements:
+
+```qk
+pub let Reader = type trait {
+    let position(*self): usz
+    let read(*mut self, buffer: [mut u8]): usz
+}
+```
+
+Only `*self` and `*mut self` receivers are supported. A concrete nominal type
+conforms structurally when its accessible method set contains exact matches for
+every requirement. No conformance declaration is written.
+
+Traits cannot be used by value. `*Reader` and `*mut Reader` are two-word trait
+pointers containing the concrete data address and a vtable address. Immutable
+trait pointers can call only `*self` methods; mutable trait pointers can call
+both receiver forms.
+
+`Any` is a built-in empty trait implemented by every concrete type. Trait
+pointers support trapping assertions. A pointer assertion aliases the original
+storage, while a value assertion copies the concrete value:
+
+```qk
+let erased: *Any = file.&
+let pointer = erased.(*File)
+let copy = erased.(File)
+```
+
+Assertions check nominal runtime type identity. A mismatch calls `panic` with a
+diagnostic. Trait pointers are QK-ABI-only and cannot cross a C ABI boundary.
+
+Use `is` to compare a trait pointer's runtime concrete type without unwrapping:
+
+```qk
+if erased is File {
+    let file = erased.(*File)
+}
+
+let is_file = erased is File
+```
+
+The right operand names an exact nominal concrete type, not a pointer or another
+trait. The result is `bool`; it does not perform structural conformance testing.
+
+### 26.2 Panic
+
+`panic(message: str)` writes `panic: `, the message, and a newline to standard
+error, then terminates without stack unwinding. Deferred actions are not run as
+part of panic termination. Failed trait assertions use the same thin-runtime
+entry point and therefore receive the same prefix.
 
 ## 27. Compilation and output model
 
@@ -1506,7 +1560,7 @@ qkc src \
 
 QK is intentionally small and currently has no:
 
-- Generics, templates, interfaces, traits, or inheritance.
+- Generics, templates, trait generics, or inheritance.
 - Closures or captured local functions.
 - Exceptions, coroutines, async functions, or stack unwinding.
 - Macro or compile-time metaprogramming system.

@@ -116,6 +116,10 @@ func (w *debugWalker) walkExpr(expr parser.ExpressionNode) {
 		w.walkExpr(n.Operand)
 		w.checkType(n.Type)
 
+	case *parser.TypeTestNode:
+		w.walkExpr(n.Operand)
+		w.checkType(n.TargetType)
+
 	case *parser.UnaryOpNode:
 		w.walkExpr(n.Operand)
 

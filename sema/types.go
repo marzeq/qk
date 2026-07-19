@@ -43,13 +43,25 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 		return sym.TypeInfo
 
 	case *parser.PointerTypeNode:
-		return types.PointerType{
-			Base:    a.resolveTypeNodeAt(t.BaseType, true),
-			Mutable: t.Mutable,
+		base := a.resolveTypeNodeAt(t.BaseType, true)
+		if trait, ok := types.Underlying(base).(types.TraitType); ok {
+			return types.TraitPointerType{Trait: trait, Mutable: t.Mutable}
 		}
+		return types.PointerType{Base: base, Mutable: t.Mutable}
 
 	case *parser.OpaqueTypeNode:
 		return types.OpaqueType{}
+
+	case *parser.TraitTypeNode:
+		methods := make([]types.TraitMethod, len(t.Methods))
+		for i, method := range t.Methods {
+			params := make([]types.Type, len(method.Args))
+			for j, arg := range method.Args {
+				params[j] = a.resolveTypeNode(arg.Type)
+			}
+			methods[i] = types.TraitMethod{Name: method.Name, Mutable: method.Receiver == parser.MethodReceiverMutablePointer, Parameters: params, ReturnType: a.resolveTypeNode(method.ReturnType)}
+		}
+		return types.TraitType{Methods: methods}
 
 	case *parser.FunctionTypeNode:
 		params := make([]types.Type, len(t.Parameters))

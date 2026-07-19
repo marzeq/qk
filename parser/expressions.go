@@ -456,6 +456,17 @@ func (p *Parser) ParseComparison() (ExpressionNode, error) {
 	if err != nil {
 		return nil, err
 	}
+	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordIs) {
+		p.Inc()
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+		target, err := p.ParseType()
+		if err != nil {
+			return nil, err
+		}
+		return &TypeTestNode{Operand: left, Target: target, Loc: beginLoc}, nil
+	}
 
 	for p.Match(tokeniser.TokenEqualsEquals, tokeniser.TokenNotEquals,
 		tokeniser.TokenLess, tokeniser.TokenGreater, tokeniser.TokenLessEquals, tokeniser.TokenGreaterEquals) {
@@ -1178,8 +1189,100 @@ func (p *Parser) ParseType() (TypeNode, error) {
 		p.Inc()
 		return &OpaqueTypeNode{Loc: loc}, nil
 	}
+	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordTrait) {
+		return p.ParseTraitType()
+	}
 
 	return p.ParseNamedType()
+}
+
+func (p *Parser) ParseTraitType() (*TraitTypeNode, error) {
+	begin := p.CurrLoc()
+	p.Inc()
+	if !p.Expect(tokeniser.TokenOpenCurly) {
+		return nil, shared.NewError(p.PrevLoc(), "expected '{' after trait")
+	}
+	methods := []TraitMethodNode{}
+	seen := map[string]struct{}{}
+	for {
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+		if p.Match(tokeniser.TokenCloseCurly) {
+			p.Inc()
+			break
+		}
+		loc := p.CurrLoc()
+		kw, ok := p.ExpectGet(tokeniser.TokenKeyword)
+		if !ok || kw.Value != string(tokeniser.KeywordLet) {
+			return nil, shared.NewError(p.PrevLoc(), "expected trait method declaration")
+		}
+		name, ok := p.ExpectGet(tokeniser.TokenIdentifier)
+		if !ok {
+			return nil, shared.NewError(p.PrevLoc(), "expected trait method name")
+		}
+		if _, duplicate := seen[name.Value]; duplicate {
+			return nil, shared.NewError(name.Loc, "duplicate trait method %q", name.Value)
+		}
+		seen[name.Value] = struct{}{}
+		if !p.Expect(tokeniser.TokenOpenParen) {
+			return nil, shared.NewError(p.PrevLoc(), "expected '('")
+		}
+		receiver := MethodReceiverNone
+		if p.Match(tokeniser.TokenAsterisk) {
+			p.Inc()
+			receiver = MethodReceiverPointer
+			if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordMut) {
+				p.Inc()
+				receiver = MethodReceiverMutablePointer
+			}
+			self, ok := p.ExpectGet(tokeniser.TokenIdentifier)
+			if !ok || self.Value != "self" {
+				return nil, shared.NewError(p.PrevLoc(), "trait method receiver must be *self or *mut self")
+			}
+		} else {
+			return nil, shared.NewError(p.CurrLoc(), "trait method must have a *self or *mut self receiver")
+		}
+		args := []*FunctionNodeArg{}
+		if p.Match(tokeniser.TokenComma) {
+			p.Inc()
+		}
+		for !p.Match(tokeniser.TokenCloseParen) {
+			arg, err := p.ParseIdent()
+			if err != nil {
+				return nil, err
+			}
+			if !p.Expect(tokeniser.TokenColon) {
+				return nil, shared.NewError(p.PrevLoc(), "expected ':' after trait method parameter")
+			}
+			t, err := p.ParseType()
+			if err != nil {
+				return nil, err
+			}
+			args = append(args, &FunctionNodeArg{Name: arg.Name, Type: t})
+			if !p.Match(tokeniser.TokenComma) {
+				break
+			}
+			p.Inc()
+		}
+		if !p.Expect(tokeniser.TokenCloseParen) {
+			return nil, shared.NewError(p.PrevLoc(), "expected ')'")
+		}
+		var ret TypeNode = &NamedTypeNode{Name: "void", Loc: loc}
+		if p.Match(tokeniser.TokenColon) {
+			p.Inc()
+			var err error
+			ret, err = p.ParseType()
+			if err != nil {
+				return nil, err
+			}
+		}
+		methods = append(methods, TraitMethodNode{Name: name.Value, Receiver: receiver, Args: args, ReturnType: ret, Loc: loc})
+		if p.Match(tokeniser.TokenComma, tokeniser.TokenSemicolon) {
+			p.Inc()
+		}
+	}
+	return &TraitTypeNode{Methods: methods, Loc: begin}, nil
 }
 
 func (p *Parser) ParseUnionType() (*UnionTypeNode, error) {

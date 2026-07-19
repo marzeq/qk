@@ -419,6 +419,8 @@ func (e *Emitter) TypeEmit(ty types.Type) string {
 		}
 	case types.PointerType:
 		return "ptr"
+	case types.TraitPointerType:
+		return "{ ptr, ptr }"
 	case types.EnumType:
 		return "i32"
 	case types.StructType:
@@ -633,6 +635,10 @@ func (e *Emitter) InstrEmit(out *strings.Builder, instr ir.Instr) {
 		e.LoadPtrEmit(out, instr)
 	case ir.StorePtr:
 		e.StorePtrEmit(out, instr)
+	case ir.InsertValue:
+		fmt.Fprintf(out, "%s = insertvalue %s %s, %s %s, %d", e.ValueIDEmit(instr.Dest), e.TypeEmit(instr.Aggregate.Type), e.OperandEmit(instr.Aggregate), e.TypeEmit(instr.Value.Type), e.OperandEmit(instr.Value), instr.Index)
+	case ir.ExtractValue:
+		fmt.Fprintf(out, "%s = extractvalue %s %s, %d", e.ValueIDEmit(instr.Dest), e.TypeEmit(instr.Aggregate.Type), e.OperandEmit(instr.Aggregate), instr.Index)
 	case ir.Call:
 		e.CallEmit(out, instr)
 	case ir.Jump:
@@ -641,6 +647,8 @@ func (e *Emitter) InstrEmit(out *strings.Builder, instr ir.Instr) {
 		e.BranchEmit(out, instr)
 	case ir.Return:
 		e.ReturnEmit(out, instr)
+	case ir.Unreachable:
+		out.WriteString("unreachable")
 	case ir.Cast:
 		e.CastEmit(out, instr)
 	case ir.Sizeof:

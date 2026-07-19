@@ -32,6 +32,15 @@ func (v *Validator) warnf(node parser.Node, format string, args ...any) {
 }
 
 func (v *Validator) ValidateModule(root *parser.RootNode) {
+	for _, node := range root.Body {
+		if module, ok := node.(*parser.ModuleNode); ok {
+			v.analyser.currentMod = module.Name
+			if mod := v.analyser.modules[module.Name]; mod != nil {
+				v.analyser.current = mod.Scope
+			}
+			break
+		}
+	}
 	v.validateNode(root)
 }
 
@@ -83,6 +92,9 @@ func (v *Validator) validateNode(node parser.Node) {
 
 		seenDefault := false
 		for i, param := range n.Symbol.Signature.Parameters {
+			if usesCABI && types.HasTraitPointer(param) {
+				v.errorf(n.Args[i].Type, "trait pointers cannot cross the c ABI")
+			}
 			if !types.IsComplete(param) {
 				v.errorf(n.Args[i].Type, "function parameter cannot have incomplete type %v", param)
 			}
@@ -101,6 +113,8 @@ func (v *Validator) validateNode(node parser.Node) {
 		}
 		if ret := n.Symbol.Signature.ReturnType; ret != nil && !types.IsComplete(ret) {
 			v.errorf(n, "function return cannot have incomplete type %v", ret)
+		} else if usesCABI && ret != nil && types.HasTraitPointer(ret) {
+			v.errorf(n, "trait pointers cannot cross the c ABI")
 		}
 
 		if n.Body != nil {
@@ -151,6 +165,10 @@ func (v *Validator) validateNode(node parser.Node) {
 		underlying := types.Underlying(n.Symbol.TypeInfo)
 		if n.Transparent && types.IsOpaque(n.Symbol.TypeInfo) {
 			v.errorf(n, "opaque type %q cannot be a transparent alias", n.Name)
+		} else if _, trait := underlying.(types.TraitType); trait {
+			if n.Transparent {
+				v.errorf(n, "trait %q cannot be a transparent alias", n.Name)
+			}
 		} else if _, opaque := underlying.(types.OpaqueType); !opaque && !types.IsComplete(underlying) {
 			v.errorf(n, "type %q contains an incomplete type by value", n.Name)
 		}
@@ -476,13 +494,65 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			break
 		}
 		v.validateExpr(n.Operand)
+		if conversion, ok := v.traitConversion(n.Operand, n.Type); ok {
+			n.TraitConversion = true
+			n.ConcreteType = conversion.ConcreteType
+			n.TraitMethods = conversion.TraitMethods
+			break
+		}
 
 		if types.IsUntyped(n.Operand.GetType()) {
 			n.Operand = v.createCast(n.Operand, n.Type)
 		}
 
+		if sourceTrait, ok := traitPointer(n.Operand.GetType()); ok {
+			targetPointer, pointerTarget := types.Underlying(n.Type).(types.PointerType)
+			if pointerTarget {
+				if !sourceTrait.Mutable && targetPointer.Mutable {
+					v.errorf(n, "cannot unwrap immutable %v as %v", n.Operand.GetType(), n.Type)
+				}
+				n.TraitUnwrap = true
+				n.ConcreteType = targetPointer.Base
+				probe := types.PointerType{Base: targetPointer.Base, Mutable: sourceTrait.Mutable}
+				if _, conforms := v.analyser.structuralConformance(probe, sourceTrait, n); !conforms {
+					v.errorf(n, "type %v does not conform to %v", targetPointer.Base, sourceTrait.Trait)
+				}
+				break
+			}
+			if !types.IsComplete(n.Type) {
+				v.errorf(n, "cannot unwrap incomplete type %v by value", n.Type)
+				break
+			}
+			n.TraitUnwrap = true
+			n.ConcreteType = n.Type
+			probe := types.PointerType{Base: n.Type, Mutable: sourceTrait.Mutable}
+			if _, conforms := v.analyser.structuralConformance(probe, sourceTrait, n); !conforms {
+				v.errorf(n, "type %v does not conform to %v", n.Type, sourceTrait.Trait)
+			}
+			break
+		}
 		if !types.CanExplicitCast(n.Operand.GetType(), n.Type) {
 			v.errorf(n, "cannot cast %v to %v", n.Operand.GetType(), n.Type)
+		}
+
+	case *parser.TypeTestNode:
+		v.validateExpr(n.Operand)
+		source, ok := traitPointer(n.Operand.GetType())
+		if !ok {
+			v.errorf(n, "left operand of is must be a trait pointer, got %v", n.Operand.GetType())
+			break
+		}
+		if _, trait := types.Underlying(n.TargetType).(types.TraitType); trait {
+			v.errorf(n, "right operand of is must be a concrete type, got %v", n.TargetType)
+			break
+		}
+		if _, pointer := types.Underlying(n.TargetType).(types.PointerType); pointer {
+			v.errorf(n, "right operand of is names the concrete type, not a pointer type")
+			break
+		}
+		probe := types.PointerType{Base: n.TargetType, Mutable: source.Mutable}
+		if _, conforms := v.analyser.structuralConformance(probe, source, n); !conforms {
+			v.errorf(n, "type %v does not conform to %v", n.TargetType, source.Trait)
 		}
 
 	case *parser.UnaryOpNode:
@@ -1109,6 +1179,9 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 	v.validateExpr(node)
 
 	got := node.GetType()
+	if cast, ok := v.traitConversion(node, expected); ok {
+		return cast
+	}
 	if !got.CanCoerceTo(expected) {
 		v.errorf(node, "cannot use %v as %v", got, expected)
 		return node
