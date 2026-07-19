@@ -1363,7 +1363,39 @@ the concrete types and accessible method sets in the complete program; it does
 not invoke methods or construct a new trait pointer. Every concrete value
 implements `Any` and an empty trait.
 
-### 26.2 Panic
+### 26.2 Display
+
+The standard library defines `std:Display` with one value-receiver method:
+
+```qk
+pub let Display = type trait {
+    let display(self): void
+}
+```
+
+All value-bearing builtin types implement it: signed and unsigned integers,
+pointer-sized integers, `f32`, `f64`, `char`, `bool`, `str`, and `cstr`.
+`display()` writes the value to standard output without a trailing newline.
+Numeric output uses the corresponding C formatting, booleans are `true` or
+`false`, characters are written directly, and `str` output respects its explicit
+length rather than requiring NUL termination. `void` has no values and therefore
+cannot implement a value-receiver trait.
+
+Methods are available through the implicit standard-library dependency. Naming
+the trait itself requires its module qualification:
+
+```qk
+let count: i32 = 42
+count.display()
+
+let shown: *std:Display = count.&.(*std:Display)
+shown.display()
+```
+
+The current implementations use the platform C output functions, so invoking
+them requires libc and is not supported by a `-nolibc` executable.
+
+### 26.3 Panic
 
 `panic(message: str)` writes `panic: `, the message, and a newline to standard
 error, then terminates without stack unwinding. Deferred actions are not run as
@@ -1407,12 +1439,12 @@ Exactly one base directory is required. Options may appear before or after it.
 The compiler embeds its authorized standard-library sources from
 `stdlib/sources`. Those files use the `.qks` suffix so ordinary recursive `.qk`
 source discovery cannot pick them up. The embedded `std` module is added as a
-dependency of every other module, which makes its public methods on primitive
+dependency of every other module, which makes its public methods on builtin
 types available without an explicit import.
 
 Only compiler-trusted standard-library sources may declare `module std` or attach
-methods to primitives. A project cannot acquire that authority by placing a
-`module std` file in its source tree, including in a `-nostdlib` build.
+methods to builtin value types. A project cannot acquire that authority by
+placing a `module std` file in its source tree, including in a `-nostdlib` build.
 
 While editing the standard library, either rebuild/run `qkc` to exercise the
 embedded `.qks` sources, or keep a directory of ordinary `.qk` files and pass it

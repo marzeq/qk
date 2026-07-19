@@ -1,5 +1,36 @@
 module std
 
+let _display_printf(format: cstr, ...): i32 @foreign(symbol "printf")
+let _display_putchar(character: i32): i32 @foreign(symbol "putchar")
+
 pub let Display = type trait {
   let display(self): void
 }
+
+pub let i8.display(self): void { _display_printf(c"%hhd", self) }
+pub let i16.display(self): void { _display_printf(c"%hd", self) }
+pub let i32.display(self): void { _display_printf(c"%d", self) }
+pub let i64.display(self): void { _display_printf(c"%lld", self) }
+pub let isz.display(self): void { _display_printf(c"%zd", self) }
+
+pub let u8.display(self): void { _display_printf(c"%hhu", self) }
+pub let u16.display(self): void { _display_printf(c"%hu", self) }
+pub let u32.display(self): void { _display_printf(c"%u", self) }
+pub let u64.display(self): void { _display_printf(c"%llu", self) }
+pub let usz.display(self): void { _display_printf(c"%zu", self) }
+
+pub let f32.display(self): void { _display_printf(c"%g", self) }
+pub let f64.display(self): void { _display_printf(c"%g", self) }
+
+pub let char.display(self): void { _display_putchar(self.(i32)) }
+
+pub let bool.display(self): void {
+  if self { _display_printf(c"true") }
+  else { _display_printf(c"false") }
+}
+
+pub let str.display(self): void {
+  _display_printf(c"%.*s", len(self).(i32), self.(cstr))
+}
+
+pub let cstr.display(self): void { _display_printf(c"%s", self) }

@@ -775,6 +775,12 @@ func (a *Attributor) attributeMethodCall(n *parser.FunctionCallNode) bool {
 }
 
 func methodOwnerIdentity(t types.Type) (module, name string, pointer bool, ok bool) {
+	if slice, isSlice := types.Underlying(t).(types.SliceType); isSlice && slice.Base.Equals(types.PrimitiveChar) {
+		return "builtin", "str", false, true
+	}
+	if ptr, isPointer := types.Underlying(t).(types.PointerType); isPointer && !ptr.Mutable && ptr.Base.Equals(types.PrimitiveChar) {
+		return "builtin", "cstr", true, true
+	}
 	if ptr, isPointer := types.Underlying(t).(types.PointerType); isPointer {
 		t = ptr.Base
 		pointer = true

@@ -114,16 +114,23 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 		}
 		ownerType = a.resolveAlias(info, n, false)
 	} else if builtin, ok := a.universe.Resolve(n.MethodOwner); ok && builtin.Kind == symbols.SymbolKindType {
-		primitive, primitiveOK := builtin.TypeInfo.(types.PrimitiveType)
-		if !primitiveOK {
+		if !a.currentTrustedStandardLibrary {
+			a.errorf(n, "methods on builtin type %q may only be defined by the trusted standard library", n.MethodOwner)
+			return
+		}
+		switch builtinType := builtin.TypeInfo.(type) {
+		case types.PrimitiveType:
+			if builtinType == types.PrimitiveVoid {
+				a.errorf(n, "cannot attach method to builtin type %q", n.MethodOwner)
+				return
+			}
+			ownerType = builtinType
+		case types.SliceType, types.PointerType:
+			ownerType = builtin.TypeInfo
+		default:
 			a.errorf(n, "cannot attach method to builtin type %q", n.MethodOwner)
 			return
 		}
-		if !a.currentTrustedStandardLibrary {
-			a.errorf(n, "methods on primitive type %q may only be defined by the trusted standard library", n.MethodOwner)
-			return
-		}
-		ownerType = primitive
 		ownerModule = "builtin"
 	} else {
 		a.errorf(n, "cannot attach method to unknown or imported type %q", n.MethodOwner)
