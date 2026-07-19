@@ -262,10 +262,18 @@ type StructType struct {
 
 type TraitMethod struct {
 	Name       string
-	Mutable    bool
+	Receiver   TraitReceiverKind
 	Parameters []Type
 	ReturnType Type
 }
+
+type TraitReceiverKind uint8
+
+const (
+	TraitReceiverValue TraitReceiverKind = iota
+	TraitReceiverPointer
+	TraitReceiverMutablePointer
+)
 
 // TraitType is an unsized, nominal set of method requirements. Values exist
 // only through TraitPointerType descriptors.

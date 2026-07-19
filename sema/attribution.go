@@ -711,7 +711,7 @@ func (a *Attributor) attributeMethodCall(n *parser.FunctionCallNode) bool {
 			if requirement.Name != member.Field.Name {
 				continue
 			}
-			if requirement.Mutable && !traitPtr.Mutable {
+			if requirement.Receiver == types.TraitReceiverMutablePointer && !traitPtr.Mutable {
 				a.errorf(n, "method %q requires mutable trait access", requirement.Name)
 				n.SetType(types.ErrorType{})
 				return true

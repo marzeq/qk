@@ -1229,7 +1229,10 @@ func (p *Parser) ParseTraitType() (*TraitTypeNode, error) {
 			return nil, shared.NewError(p.PrevLoc(), "expected '('")
 		}
 		receiver := MethodReceiverNone
-		if p.Match(tokeniser.TokenAsterisk) {
+		if p.Match(tokeniser.TokenIdentifier) && p.Peek().Value == "self" {
+			p.Inc()
+			receiver = MethodReceiverValue
+		} else if p.Match(tokeniser.TokenAsterisk) {
 			p.Inc()
 			receiver = MethodReceiverPointer
 			if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordMut) {
@@ -1238,10 +1241,10 @@ func (p *Parser) ParseTraitType() (*TraitTypeNode, error) {
 			}
 			self, ok := p.ExpectGet(tokeniser.TokenIdentifier)
 			if !ok || self.Value != "self" {
-				return nil, shared.NewError(p.PrevLoc(), "trait method receiver must be *self or *mut self")
+				return nil, shared.NewError(p.PrevLoc(), "trait method receiver must be self, *self, or *mut self")
 			}
 		} else {
-			return nil, shared.NewError(p.CurrLoc(), "trait method must have a *self or *mut self receiver")
+			return nil, shared.NewError(p.CurrLoc(), "trait method must have a self, *self, or *mut self receiver")
 		}
 		args := []*FunctionNodeArg{}
 		if p.Match(tokeniser.TokenComma) {

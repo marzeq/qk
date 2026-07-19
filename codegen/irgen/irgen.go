@@ -1169,10 +1169,14 @@ func runtimeTypeID(t types.Type) uint64 {
 func traitVTableType(trait types.TraitType) types.StructType {
 	fields := []shared.Pair[string, types.Type]{{L: "type_id", R: types.PrimitiveU64}}
 	for _, method := range trait.Methods {
-		params := append([]types.Type{types.PointerType{Base: types.PrimitiveVoid, Mutable: method.Mutable}}, method.Parameters...)
+		params := append([]types.Type{traitErasedReceiverType(method)}, method.Parameters...)
 		fields = append(fields, shared.Pair[string, types.Type]{L: method.Name, R: types.PointerType{Base: types.FunctionType{Parameters: params, ReturnType: method.ReturnType}}})
 	}
 	return types.StructType{Fields: fields}
+}
+
+func traitErasedReceiverType(method types.TraitMethod) types.PointerType {
+	return types.PointerType{Base: types.PrimitiveVoid, Mutable: method.Receiver == types.TraitReceiverMutablePointer}
 }
 
 func (g *Generator) ensureTraitVTable(node *parser.CastNode, trait types.TraitType) string {
@@ -1191,15 +1195,68 @@ func (g *Generator) ensureTraitVTable(node *parser.CastNode, trait types.TraitTy
 	}
 	for i, method := range node.TraitMethods {
 		req := trait.Methods[i]
-		params := append([]types.Type{types.PointerType{Base: types.PrimitiveVoid, Mutable: req.Mutable}}, req.Parameters...)
+		params := append([]types.Type{traitErasedReceiverType(req)}, req.Parameters...)
 		fnType := types.PointerType{Base: types.FunctionType{Parameters: params, ReturnType: req.ReturnType}}
 		fnName := g.mangleFunctionName(concreteModule, method.Name)
+		if req.Receiver == types.TraitReceiverValue {
+			fnName = g.generateValueReceiverTraitThunk(name, i, node.ConcreteType, fnName, method, req)
+		}
 		values = append(values, ir.FunctionConstOperand(fnName, fnType))
-		if concreteModule != g.ModuleName {
+		if concreteModule != g.ModuleName && req.Receiver != types.TraitReceiverValue {
 			g.addExternForCall(fnName, ir.FunctionSignature{ParamTypes: method.Signature.Parameters, ReturnType: method.Signature.ReturnType}, "", true)
 		}
 	}
 	g.Module.AddGlobal(ir.Global{Name: name, Type: vt, Linkage: ir.LinkageInternal, Value: ir.StructConstOperand(vt, values)})
+	return name
+}
+
+func (g *Generator) generateValueReceiverTraitThunk(vtableName string, slot int, concrete types.Type, targetName string, method *symbols.Symbol, requirement types.TraitMethod) string {
+	name := fmt.Sprintf("%s__value_%d", vtableName, slot)
+	for _, fn := range g.Module.Functions {
+		if fn.Name == name {
+			return name
+		}
+	}
+	if d, ok := concrete.(types.DefinedType); ok && d.Module != g.ModuleName {
+		g.addExternForCall(targetName, ir.FunctionSignature{ParamTypes: method.Signature.Parameters, ReturnType: method.Signature.ReturnType}, "", true)
+	}
+	fn := ir.NewFunction(name, ir.LinkageInternal, nil)
+	params := append([]types.Type{traitErasedReceiverType(requirement)}, requirement.Parameters...)
+	fn.Signature = ir.FunctionSignature{ParamTypes: params, ReturnType: requirement.ReturnType}
+	g.Module.AddFunction(fn)
+
+	previousFunction, previousBlock, previousEnv := g.currentFunction, g.currentBlock, g.currentEnv
+	previousDefers := g.deferScopes
+	g.currentFunction = fn
+	g.currentBlock = fn.NewBlock("entry")
+	fn.Entry = g.currentBlock.ID
+	g.currentEnv = NewEnv(nil)
+	g.deferScopes = nil
+
+	incoming := make([]ir.Operand, len(params))
+	for i, param := range params {
+		fn.AddParameter(fmt.Sprintf("arg%d", i), param, 0)
+		id := fn.NewValueOfType(param)
+		incoming[i] = ir.ValueOperand(id, param)
+	}
+	concretePointer := types.PointerType{Base: concrete}
+	castID := fn.NewValueOfType(concretePointer)
+	g.Emit(ir.Cast{Dest: castID, From: incoming[0], To: concretePointer})
+	valueID := fn.NewValueOfType(concrete)
+	g.Emit(ir.LoadPtr{Dest: valueID, Ptr: ir.ValueOperand(castID, concretePointer)})
+	args := append([]ir.Operand{ir.ValueOperand(valueID, concrete)}, incoming[1:]...)
+	callSig := ir.FunctionSignature{ParamTypes: method.Signature.Parameters, ReturnType: method.Signature.ReturnType}
+	if requirement.ReturnType.Equals(types.PrimitiveVoid) {
+		g.Emit(ir.Call{Name: targetName, Args: args, Signature: callSig})
+		g.Emit(ir.Return{})
+	} else {
+		result := fn.NewValueOfType(requirement.ReturnType)
+		g.Emit(ir.Call{Dest: result, Name: targetName, Args: args, Signature: callSig})
+		g.Emit(ir.Return{HasValue: true, Value: ir.ValueOperand(result, requirement.ReturnType)})
+	}
+
+	g.currentFunction, g.currentBlock, g.currentEnv = previousFunction, previousBlock, previousEnv
+	g.deferScopes = previousDefers
 	return name
 }
 
@@ -1708,7 +1765,7 @@ func (g *Generator) generateTraitCall(node *parser.FunctionCallNode) ir.Operand 
 	vtID := g.currentFunction.NewValueOfType(vtPtrType)
 	g.Emit(ir.ExtractValue{Dest: vtID, Aggregate: receiver, Index: 1})
 	requirement := traitPtr.Trait.Methods[node.TraitSlot]
-	params := append([]types.Type{types.PointerType{Base: types.PrimitiveVoid, Mutable: requirement.Mutable}}, requirement.Parameters...)
+	params := append([]types.Type{traitErasedReceiverType(requirement)}, requirement.Parameters...)
 	fnType := types.PointerType{Base: types.FunctionType{Parameters: params, ReturnType: requirement.ReturnType}}
 	fnPtrPtr := g.currentFunction.NewValueOfType(types.PointerType{Base: fnType})
 	g.Emit(ir.FieldAddress{Dest: fnPtrPtr, Base: ir.ValueOperand(vtID, vtPtrType), Field: requirement.Name})

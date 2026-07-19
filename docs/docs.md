@@ -1248,18 +1248,22 @@ flow emitted by the compiler; it is not exception-safe unwinding.
 
 ### 26.1 Traits and dynamic dispatch
 
-A trait is a nominal, unsized set of pointer-receiver method requirements:
+A trait is a nominal, unsized set of method requirements:
 
 ```qk
 pub let Reader = type trait {
+    let name(self): str
     let position(*self): usz
     let read(*mut self, buffer: [mut u8]): usz
 }
 ```
 
-Only `*self` and `*mut self` receivers are supported. A concrete nominal type
-conforms structurally when its accessible method set contains exact matches for
-every requirement. No conformance declaration is written.
+`self`, `*self`, and `*mut self` are supported and must match the concrete
+method's receiver exactly. A concrete nominal type conforms structurally when
+its accessible method set contains exact matches for every requirement. No
+conformance declaration is written. Dynamic calls to a value receiver copy the
+underlying concrete value into a compiler-generated adapter before invoking the
+method; they do not move or mutate the original value.
 
 Traits cannot be used by value. `*Reader` and `*mut Reader` are two-word trait
 pointers containing the concrete data address and a vtable address. Immutable

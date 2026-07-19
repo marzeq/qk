@@ -59,7 +59,14 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 			for j, arg := range method.Args {
 				params[j] = a.resolveTypeNode(arg.Type)
 			}
-			methods[i] = types.TraitMethod{Name: method.Name, Mutable: method.Receiver == parser.MethodReceiverMutablePointer, Parameters: params, ReturnType: a.resolveTypeNode(method.ReturnType)}
+			receiver := types.TraitReceiverValue
+			switch method.Receiver {
+			case parser.MethodReceiverPointer:
+				receiver = types.TraitReceiverPointer
+			case parser.MethodReceiverMutablePointer:
+				receiver = types.TraitReceiverMutablePointer
+			}
+			methods[i] = types.TraitMethod{Name: method.Name, Receiver: receiver, Parameters: params, ReturnType: a.resolveTypeNode(method.ReturnType)}
 		}
 		return types.TraitType{Methods: methods}
 
