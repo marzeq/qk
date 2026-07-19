@@ -1413,14 +1413,20 @@ The standard library also provides typed, type-safe formatting through
 `std:print`:
 
 ```qk
-std:print("hello % %", foo, bar)
+std:print("hello {} {1}", foo, bar)
 ```
 
-Its signature is `print(format: str, arguments: ...*Any): void`. Each `%`
-consumes one argument. If that argument's runtime concrete type implements
-`std:Display`, `print` dynamically calls its `display()` method; otherwise it
-writes `<?>`. A placeholder without a corresponding argument also writes `<?>`,
-and extra arguments are ignored. Formatting itself adds no newline.
+Its signature is `print(format: str, arguments: ...*Any): void`. Each field
+advances the automatic argument position once. `{}` selects the current automatic
+argument, while a zero-based indexed field such as `{1}` overrides the selection
+for that field without changing how the automatic position advances. Thus
+`{1} {}` selects argument 1 twice. Indexed fields allow arguments to be reordered
+or reused. If the selected argument's runtime concrete
+type implements `std:Display`, `print` dynamically calls its `display()` method;
+otherwise it writes `<?>`. A missing or out-of-range argument also writes `<?>`,
+and extra arguments are ignored. `{{` and `}}` emit literal braces; malformed
+fields are emitted literally. Formatting itself adds no newline. `std:println`
+has the same formatting behavior and appends one newline.
 
 Arguments rely on implicit concrete-to-trait borrowing. Addressable values are
 borrowed directly, while computed values are materialized in temporary storage
