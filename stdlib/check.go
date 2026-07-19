@@ -60,12 +60,16 @@ func Check(sources map[string]string, config preprocessor.Config) []error {
 	if err != nil {
 		return []error{err}
 	}
-	order, errs := loader.ComputeModuleOrder(modules, "std")
-	if len(errs) != 0 {
-		return errs
+	graph, err := loader.BuildDependencyGraph(modules)
+	if err != nil {
+		return []error{err}
+	}
+	order, err := loader.TopoSort(graph)
+	if err != nil {
+		return []error{err}
 	}
 	analyser := sema.NewAnalyser()
-	errs, _ = loader.RunSemanticPipeline(modules, analyser, order, false, false)
+	errs, _ := loader.RunSemanticPipeline(modules, analyser, order, false, false)
 	return errs
 }
 

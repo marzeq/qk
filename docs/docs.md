@@ -1562,9 +1562,22 @@ source discovery cannot pick them up. The embedded `std` module is added as a
 dependency of every other module, which makes its public methods on builtin
 types available without an explicit import.
 
-Only compiler-trusted standard-library sources may declare `module std` or attach
-methods to builtin value types. A project cannot acquire that authority by
-placing a `module std` file in its source tree, including in a `-nostdlib` build.
+Only compiler-trusted standard-library sources may declare `module std`, declare
+a module below the reserved `std.*` namespace, or attach methods to builtin value
+types. A project cannot acquire that authority by placing such a file in its
+source tree, including in a `-nostdlib` build.
+
+The embedded `std.libc` submodule provides the draft C ABI declarations when
+`HasLibc` is true. Import it explicitly before use:
+
+```qk
+import std.libc
+
+let memory = std.libc.malloc(1024)
+```
+
+In a `-nolibc` build the module still exists, but the `when HasLibc` guard removes
+its declarations.
 
 While editing the standard library, either rebuild/run `qkc` to exercise the
 embedded `.qks` sources, or keep a directory of ordinary `.qk` files and pass it
@@ -1578,7 +1591,8 @@ go build ./cmd/qkc
 The generation step does not produce generated files. It runs the embedded
 sources through tokenisation, preprocessing, parsing, module loading, semantic
 analysis, attribution, and validation, then fails the command on any diagnostic.
-It checks both the ordinary and `NoLibc` standard-library configurations.
+It checks every embedded standard-library submodule in both the ordinary and
+`NoLibc` configurations.
 Go does not run generators as part of `go build`, so compiler developers and CI
 must invoke `go generate ./stdlib` explicitly before building. The checker can
 also be run directly, with an optional target for compile-time selection:

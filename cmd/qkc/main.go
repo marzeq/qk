@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/marzeq/qk/attributes"
 	"github.com/marzeq/qk/ir"
@@ -105,7 +106,7 @@ func main() {
 	check(err)
 	if !args.noStdlib {
 		for name, module := range modules {
-			if name != "std" && !containsString(module.Imports, "std") {
+			if name != "std" && !strings.HasPrefix(name, "std.") && !containsString(module.Imports, "std") {
 				module.Imports = append(module.Imports, "std")
 			}
 		}
