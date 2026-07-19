@@ -31,6 +31,11 @@ func NewAnalyser() *Analyser {
 	}
 
 	a.predefineBuiltins()
+	for _, name := range []string{"i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64", "isz", "usz", "char", "bool", "str", "cstr"} {
+		if symbol, ok := a.universe.Resolve(name); ok {
+			a.concreteTypes["builtin:"+name] = symbol.TypeInfo
+		}
+	}
 	return a
 }
 

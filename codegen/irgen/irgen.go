@@ -1118,6 +1118,9 @@ func (g *Generator) generateNilLiteralExpr(node *parser.NilLiteralNode) ir.Opera
 
 func (g *Generator) generateCastExpr(node *parser.CastNode) ir.Operand {
 	targetType := node.GetType()
+	if node.TraitRecast {
+		return g.generateTraitRecast(node)
+	}
 	if node.TraitConversion {
 		return g.generateTraitConversion(node)
 	}
@@ -1293,6 +1296,72 @@ func (g *Generator) generateTraitConversion(node *parser.CastNode) ir.Operand {
 	second := g.currentFunction.NewValueOfType(target)
 	g.Emit(ir.InsertValue{Dest: second, Aggregate: ir.ValueOperand(first, target), Value: ir.ValueOperand(vtID, vtPtrType), Index: 1})
 	return ir.ValueOperand(second, target)
+}
+
+func (g *Generator) generateTraitRecast(node *parser.CastNode) ir.Operand {
+	sourceValue := g.GenerateExpr(node.Operand)
+	source := sourceValue.Type.(types.TraitPointerType)
+	target := node.GetType().(types.TraitPointerType)
+	sourceVT := traitVTableType(source.Trait)
+	sourceVTPtr := types.PointerType{Base: sourceVT}
+	vtID := g.currentFunction.NewValueOfType(sourceVTPtr)
+	g.Emit(ir.ExtractValue{Dest: vtID, Aggregate: sourceValue, Index: 1})
+	typeIDPtr := g.currentFunction.NewValueOfType(types.PointerType{Base: types.PrimitiveU64})
+	g.Emit(ir.FieldAddress{Dest: typeIDPtr, Base: ir.ValueOperand(vtID, sourceVTPtr), Field: "type_id"})
+	actualID := g.currentFunction.NewValueOfType(types.PrimitiveU64)
+	g.Emit(ir.LoadPtr{Dest: actualID, Ptr: ir.ValueOperand(typeIDPtr, types.PointerType{Base: types.PrimitiveU64})})
+
+	sourceDataType := types.PointerType{Base: types.PrimitiveVoid, Mutable: source.Mutable}
+	sourceDataID := g.currentFunction.NewValueOfType(sourceDataType)
+	g.Emit(ir.ExtractValue{Dest: sourceDataID, Aggregate: sourceValue, Index: 0})
+	data := ir.ValueOperand(sourceDataID, sourceDataType)
+	targetDataType := types.PointerType{Base: types.PrimitiveVoid, Mutable: target.Mutable}
+	if !data.Type.Equals(targetDataType) {
+		castID := g.currentFunction.NewValueOfType(targetDataType)
+		g.Emit(ir.Cast{Dest: castID, From: data, To: targetDataType})
+		data = ir.ValueOperand(castID, targetDataType)
+	}
+
+	resultSlot := g.currentFunction.NewSlot(target, "trait.recast")
+	g.Emit(ir.Alloca{Slot: resultSlot})
+	end := g.currentFunction.NewBlock("trait.recast.end")
+	for _, candidate := range node.TraitCandidates {
+		matches := g.currentFunction.NewValueOfType(types.PrimitiveBool)
+		g.Emit(ir.CmpEq{Dest: matches, Left: ir.ValueOperand(actualID, types.PrimitiveU64), Right: ir.IntConstOperand(fmt.Sprintf("%d", runtimeTypeID(candidate.ConcreteType)), types.PrimitiveU64)})
+		success := g.currentFunction.NewBlock("trait.recast.match")
+		next := g.currentFunction.NewBlock("trait.recast.next")
+		g.Emit(ir.Branch{Cond: ir.ValueOperand(matches, types.PrimitiveBool), Then: success.ID, Else: next.ID})
+
+		g.currentBlock = success
+		candidateCast := &parser.CastNode{ConcreteType: candidate.ConcreteType, TraitMethods: candidate.Methods}
+		vtName := g.ensureTraitVTable(candidateCast, target.Trait)
+		targetVT := traitVTableType(target.Trait)
+		targetVTPtr := types.PointerType{Base: targetVT}
+		targetVTID := g.currentFunction.NewValueOfType(targetVTPtr)
+		g.Emit(ir.AddressOfGlobal{Dest: targetVTID, Name: vtName, Type: targetVT})
+		first := g.currentFunction.NewValueOfType(target)
+		g.Emit(ir.InsertValue{Dest: first, Aggregate: ir.ZeroConstOperand(target), Value: data, Index: 0})
+		second := g.currentFunction.NewValueOfType(target)
+		g.Emit(ir.InsertValue{Dest: second, Aggregate: ir.ValueOperand(first, target), Value: ir.ValueOperand(targetVTID, targetVTPtr), Index: 1})
+		g.Emit(ir.Store{Slot: resultSlot, Value: ir.ValueOperand(second, target)})
+		g.Emit(ir.Jump{Target: end.ID})
+		g.currentBlock = next
+	}
+
+	messageText := "trait cast failed: value does not implement " + target.Trait.String()
+	messageNode := &parser.StringLiteralNode{Value: messageText, Type: types.SliceType{Base: types.PrimitiveChar, Size: len(messageText)}, Loc: node.Loc}
+	message := g.generateStringLiteralExpr(messageNode)
+	runtimeStr := types.SliceType{Base: types.PrimitiveChar, Size: -1}
+	message.Type = runtimeStr
+	panicSig := ir.FunctionSignature{ParamTypes: []types.Type{runtimeStr}, ReturnType: types.PrimitiveVoid}
+	g.addExternForCall("__qk_panic", panicSig, "", true)
+	g.Emit(ir.Call{Name: "__qk_panic", Args: []ir.Operand{message}, Signature: panicSig})
+	g.Emit(ir.Unreachable{})
+
+	g.currentBlock = end
+	result := g.currentFunction.NewValueOfType(target)
+	g.Emit(ir.Load{Dest: result, Slot: resultSlot})
+	return ir.ValueOperand(result, target)
 }
 
 func (g *Generator) generateTraitUnwrap(node *parser.CastNode) ir.Operand {

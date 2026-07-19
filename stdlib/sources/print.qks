@@ -1,0 +1,29 @@
+module std
+
+pub let print(format: str, arguments: ...*Any): void {
+  let mut argument_index: usz = 0
+  for character in format {
+    if character != '%' {
+      character.display()
+      continue
+    }
+
+    if argument_index >= len(arguments) {
+      "<?>".display()
+      continue
+    }
+
+    let argument = arguments[argument_index]
+    argument_index += 1
+    if argument implements Display {
+      argument.(*Display).display()
+    } else {
+      "<?>".display()
+    }
+  }
+}
+
+pub let println(format: str, arguments: ...*Any): void {
+  print(format, arguments...)
+  "\n".display()
+}

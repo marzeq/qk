@@ -542,6 +542,15 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		}
 
 		if sourceTrait, ok := traitPointer(n.Operand.GetType()); ok {
+			if targetTrait, targetIsTrait := traitPointer(n.Type); targetIsTrait {
+				if !sourceTrait.Mutable && targetTrait.Mutable {
+					v.errorf(n, "cannot cast immutable %v to mutable %v", n.Operand.GetType(), n.Type)
+					break
+				}
+				n.TraitRecast = true
+				n.TraitCandidates = v.analyser.runtimeTraitCastCandidates(targetTrait.Trait, targetTrait.Mutable, n)
+				break
+			}
 			targetPointer, pointerTarget := types.Underlying(n.Type).(types.PointerType)
 			if pointerTarget {
 				if !sourceTrait.Mutable && targetPointer.Mutable {
@@ -1246,6 +1255,21 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 	got := node.GetType()
 	if cast, ok := v.traitConversion(node, expected); ok {
 		return cast
+	}
+	if target, ok := traitPointer(expected); ok {
+		pointer := types.PointerType{Base: got, Mutable: target.Mutable}
+		methods, conforms := v.analyser.structuralConformance(pointer, target, node)
+		if conforms {
+			op := parser.UnaryOpReference
+			if target.Mutable {
+				op = parser.UnaryOpMutableReference
+			}
+			reference := &parser.UnaryOpNode{Op: op, Operand: node, Loc: node.GetLoc(), Type: pointer}
+			if v.validateReferenceTarget(reference, node, target.Mutable) {
+				return &parser.CastNode{Operand: reference, Loc: node.GetLoc(), Type: expected, TraitConversion: true, ConcreteType: got, TraitMethods: methods}
+			}
+			return node
+		}
 	}
 	if !got.CanCoerceTo(expected) {
 		v.errorf(node, "cannot use %v as %v", got, expected)

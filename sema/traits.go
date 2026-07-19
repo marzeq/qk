@@ -1,6 +1,8 @@
 package sema
 
 import (
+	"sort"
+
 	"github.com/marzeq/qk/parser"
 	"github.com/marzeq/qk/symbols"
 	"github.com/marzeq/qk/types"
@@ -81,10 +83,34 @@ func (a *Analyser) runtimeTraitImplementers(trait types.TraitType, at parser.Nod
 	}
 	target := types.TraitPointerType{Trait: trait}
 	result := []types.Type{}
-	for _, concrete := range a.concreteTypes {
+	for _, concrete := range a.sortedConcreteTypes() {
 		if _, ok := a.structuralConformance(types.PointerType{Base: concrete}, target, at); ok {
 			result = append(result, concrete)
 		}
+	}
+	return result
+}
+
+func (a *Analyser) runtimeTraitCastCandidates(trait types.TraitType, mutable bool, at parser.Node) []parser.TraitCastCandidate {
+	target := types.TraitPointerType{Trait: trait, Mutable: mutable}
+	result := []parser.TraitCastCandidate{}
+	for _, concrete := range a.sortedConcreteTypes() {
+		if methods, ok := a.structuralConformance(types.PointerType{Base: concrete, Mutable: mutable}, target, at); ok {
+			result = append(result, parser.TraitCastCandidate{ConcreteType: concrete, Methods: methods})
+		}
+	}
+	return result
+}
+
+func (a *Analyser) sortedConcreteTypes() []types.Type {
+	keys := make([]string, 0, len(a.concreteTypes))
+	for key := range a.concreteTypes {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	result := make([]types.Type, 0, len(keys))
+	for _, key := range keys {
+		result = append(result, a.concreteTypes[key])
 	}
 	return result
 }

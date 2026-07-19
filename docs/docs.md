@@ -1319,6 +1319,18 @@ let copy = erased.(File)
 Assertions check nominal runtime type identity. A mismatch calls `panic` with a
 diagnostic. Trait pointers are QK-ABI-only and cannot cross a C ABI boundary.
 
+When an addressable concrete value is used where a trait pointer is expected,
+QK inserts the reference and structural conversion implicitly:
+
+```qk
+let reader: *Reader = file       // file.&.(*Reader)
+consume_reader(file)             // parameter type is *Reader
+```
+
+An expected `*mut Trait` similarly inserts `.&mut.(*mut Trait)`, but only for a
+mutable place. The sugar does not make literals, temporaries, or other
+non-addressable expressions borrowable, and it never weakens mutability rules.
+
 Use `is` to compare a trait pointer's runtime concrete type without unwrapping:
 
 ```qk
@@ -1394,6 +1406,25 @@ shown.display()
 
 The current implementations use the platform C output functions, so invoking
 them requires libc and is not supported by a `-nolibc` executable.
+
+The standard library also provides typed, type-safe formatting through
+`std:print`:
+
+```qk
+std:print("hello % %", foo, bar)
+```
+
+Its signature is `print(format: str, arguments: ...*Any): void`. Each `%`
+consumes one argument. If that argument's runtime concrete type implements
+`std:Display`, `print` dynamically calls its `display()` method; otherwise it
+writes `<?>`. A placeholder without a corresponding argument also writes `<?>`,
+and extra arguments are ignored. Formatting itself adds no newline.
+
+Arguments rely on implicit concrete-to-trait borrowing, so they must be
+addressable values. A user-defined `display` method must be `pub`, because the
+call is performed by the `std` module. Converting an existing trait pointer to a
+different trait pointer performs a checked runtime recast: QK selects the target
+vtable by concrete type identity and traps if the concrete type does not conform.
 
 ### 26.3 Panic
 

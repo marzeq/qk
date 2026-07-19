@@ -498,9 +498,16 @@ type CastNode struct {
 	Type    types.Type
 
 	TraitConversion bool
+	TraitRecast     bool
 	TraitUnwrap     bool
 	ConcreteType    types.Type
 	TraitMethods    []*symbols.Symbol
+	TraitCandidates []TraitCastCandidate
+}
+
+type TraitCastCandidate struct {
+	ConcreteType types.Type
+	Methods      []*symbols.Symbol
 }
 
 func (n CastNode) GetLoc() shared.Location { return n.Loc }
