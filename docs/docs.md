@@ -1398,9 +1398,46 @@ Exactly one base directory is required. Options may appear before or after it.
 | --- | --- |
 | `-m module` | Select the root module; default `main`. |
 | `-E path` | Exclude a source file or directory tree; repeatable. |
+| `-stdlib path` | Trust and use a compiler-development standard-library source tree instead of the embedded library. |
+| `-nostdlib` | Disable standard-library loading. |
 | `-no-emit` | Check and generate internal output without writing a final file. |
 
-### 28.2 Output selection
+### 28.2 Standard-library development
+
+The compiler embeds its authorized standard-library sources from
+`stdlib/sources`. Those files use the `.qks` suffix so ordinary recursive `.qk`
+source discovery cannot pick them up. The embedded `std` module is added as a
+dependency of every other module, which makes its public methods on primitive
+types available without an explicit import.
+
+Only compiler-trusted standard-library sources may declare `module std` or attach
+methods to primitives. A project cannot acquire that authority by placing a
+`module std` file in its source tree, including in a `-nostdlib` build.
+
+While editing the standard library, either rebuild/run `qkc` to exercise the
+embedded `.qks` sources, or keep a directory of ordinary `.qk` files and pass it
+explicitly:
+
+```text
+go run ./cmd/qkc . -stdlib /path/to/qk-stdlib
+```
+
+Every file in that override tree must declare `module std`. Supplying `-stdlib`
+is an explicit compiler-developer trust decision; do not pass paths controlled by
+an untrusted project. For example, a primitive value-receiver method can be
+defined there as:
+
+```qk
+module std
+
+pub let i32.double(self) = self * 2
+```
+
+The method is then callable on typed `i32` values in normal modules. Primitive
+methods participate in the same structural trait conformance and dynamic dispatch
+rules as methods on user-defined types.
+
+### 28.3 Output selection
 
 | Option | Meaning |
 | --- | --- |
@@ -1423,7 +1460,7 @@ Object output is produced as a relocatable link (`clang -r`). `-run` is valid on
 for executables. It forwards the program's exit code and removes the generated
 executable after the run.
 
-### 28.3 Optimization and diagnostics
+### 28.4 Optimization and diagnostics
 
 | Option | Meaning |
 | --- | --- |
@@ -1433,7 +1470,7 @@ executable after the run.
 
 Numeric optimization levels above 3 are accepted, warned about, and treated as `-O3`.
 
-### 28.4 Target and toolchain control
+### 28.5 Target and toolchain control
 
 | Option | Meaning |
 | --- | --- |
@@ -1450,7 +1487,7 @@ The driver selects `lld` with `-fuse-ld=lld`. Cross-linking requires compatible
 CRT objects, libraries, and headers/sysroot outside QK. `-target` changes code
 generation; it does not install a cross toolchain.
 
-### 28.5 Informational options
+### 28.6 Informational options
 
 `-h` and `--help` print usage. `--version` prints the development version string.
 

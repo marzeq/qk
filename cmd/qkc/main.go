@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 
 	"github.com/marzeq/qk/attributes"
 	"github.com/marzeq/qk/ir"
@@ -12,8 +13,18 @@ import (
 	"github.com/marzeq/qk/parser"
 	"github.com/marzeq/qk/sema"
 	"github.com/marzeq/qk/shared"
+	"github.com/marzeq/qk/stdlib"
 	"github.com/marzeq/qk/types"
 )
+
+func containsString(values []string, wanted string) bool {
+	for _, value := range values {
+		if value == wanted {
+			return true
+		}
+	}
+	return false
+}
 
 func main() {
 	args, err := parseArgs()
@@ -22,7 +33,11 @@ func main() {
 
 	searchPaths := buildSearchPaths(args.baseDir)
 
-	files, err := collectSourceFiles(searchPaths, args.excludeDirs)
+	excludes := append([]string(nil), args.excludeDirs...)
+	if args.stdlibPath != "" {
+		excludes = append(excludes, args.stdlibPath)
+	}
+	files, err := collectSourceFiles(searchPaths, excludes)
 	check(err)
 
 	if len(files) == 0 {
@@ -35,10 +50,41 @@ func main() {
 		ast, err := parseFile(file, args.target)
 		check(err)
 
-		info, err := loader.CollectModuleInfo(ast)
+		info, err := loader.CollectModuleInfo(ast, false)
 		check(err)
 
 		partials = append(partials, info)
+	}
+	if !args.noStdlib {
+		if args.stdlibPath != "" {
+			stdlibFiles, err := collectSourceFiles([]string{args.stdlibPath}, nil)
+			check(err)
+			if len(stdlibFiles) == 0 {
+				fatal("no standard-library source files found in %s", args.stdlibPath)
+			}
+			for _, file := range stdlibFiles {
+				ast, err := parseFile(file, args.target)
+				check(err)
+				info, err := loader.CollectModuleInfo(ast, true)
+				check(err)
+				partials = append(partials, info)
+			}
+		} else {
+			sources, err := stdlib.ReadSources()
+			check(err)
+			origins := make([]string, 0, len(sources))
+			for origin := range sources {
+				origins = append(origins, origin)
+			}
+			sort.Strings(origins)
+			for _, origin := range origins {
+				ast, err := parseSource(sources[origin], origin, args.target)
+				check(err)
+				info, err := loader.CollectModuleInfo(ast, true)
+				check(err)
+				partials = append(partials, info)
+			}
+		}
 	}
 
 	if args.verbose && args.debug {
@@ -47,6 +93,13 @@ func main() {
 
 	modules, err := loader.BuildModules(partials)
 	check(err)
+	if !args.noStdlib {
+		for name, module := range modules {
+			if name != "std" && !containsString(module.Imports, "std") {
+				module.Imports = append(module.Imports, "std")
+			}
+		}
+	}
 
 	analyser := sema.NewAnalyser()
 

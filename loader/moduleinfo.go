@@ -9,13 +9,14 @@ import (
 )
 
 type PartialModuleInfo struct {
-	Name    string
-	Imports []string
-	Root    *parser.RootNode
-	Links   []attributes.Link
+	Name                   string
+	Imports                []string
+	Root                   *parser.RootNode
+	Links                  []attributes.Link
+	TrustedStandardLibrary bool
 }
 
-func CollectModuleInfo(root *parser.RootNode) (*PartialModuleInfo, error) {
+func CollectModuleInfo(root *parser.RootNode, trustedStandardLibrary bool) (*PartialModuleInfo, error) {
 	name := ""
 	imports := []string{}
 	seenModule := false
@@ -57,20 +58,28 @@ func CollectModuleInfo(root *parser.RootNode) (*PartialModuleInfo, error) {
 	if !seenModule || name == "" {
 		return nil, fmt.Errorf("module declaration is missing or empty")
 	}
+	if name == "std" && !trustedStandardLibrary {
+		return nil, fmt.Errorf("module name %q is reserved for compiler-trusted standard-library sources", name)
+	}
+	if trustedStandardLibrary && name != "std" {
+		return nil, fmt.Errorf("trusted standard-library source declares module %q instead of %q", name, "std")
+	}
 
 	return &PartialModuleInfo{
-		Name:    name,
-		Imports: imports,
-		Root:    root,
-		Links:   links,
+		Name:                   name,
+		Imports:                imports,
+		Root:                   root,
+		Links:                  links,
+		TrustedStandardLibrary: trustedStandardLibrary,
 	}, nil
 }
 
 type ModuleInfo struct {
-	Name    string
-	Imports []string
-	Roots   []*parser.RootNode
-	Links   []attributes.Link
+	Name                   string
+	Imports                []string
+	Roots                  []*parser.RootNode
+	Links                  []attributes.Link
+	TrustedStandardLibrary bool
 }
 
 func BuildModules(partials []*PartialModuleInfo) (map[string]*ModuleInfo, error) {
@@ -78,15 +87,19 @@ func BuildModules(partials []*PartialModuleInfo) (map[string]*ModuleInfo, error)
 
 	for _, p := range partials {
 		if existing, ok := modules[p.Name]; ok {
+			if existing.TrustedStandardLibrary != p.TrustedStandardLibrary {
+				return nil, fmt.Errorf("cannot mix trusted and untrusted sources in module %q", p.Name)
+			}
 			existing.Roots = append(existing.Roots, p.Root)
 			existing.Imports = mergeImports(existing.Imports, p.Imports)
 			existing.Links = append(existing.Links, p.Links...)
 		} else {
 			modules[p.Name] = &ModuleInfo{
-				Name:    p.Name,
-				Imports: unique(p.Imports),
-				Roots:   []*parser.RootNode{p.Root},
-				Links:   append([]attributes.Link(nil), p.Links...),
+				Name:                   p.Name,
+				Imports:                unique(p.Imports),
+				Roots:                  []*parser.RootNode{p.Root},
+				Links:                  append([]attributes.Link(nil), p.Links...),
+				TrustedStandardLibrary: p.TrustedStandardLibrary,
 			}
 		}
 	}

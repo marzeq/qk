@@ -1200,14 +1200,18 @@ func (g *Generator) ensureTraitVTable(node *parser.CastNode, trait types.TraitTy
 	}
 	for i, method := range node.TraitMethods {
 		req := trait.Methods[i]
+		methodModule := concreteModule
+		if method.DefinitionModule != "" {
+			methodModule = method.DefinitionModule
+		}
 		params := append([]types.Type{traitErasedReceiverType(req)}, req.Parameters...)
 		fnType := types.PointerType{Base: types.FunctionType{Parameters: params, ReturnType: req.ReturnType}}
-		fnName := g.mangleFunctionName(concreteModule, method.Name)
+		fnName := g.mangleFunctionName(methodModule, method.Name)
 		if req.Receiver == types.TraitReceiverValue {
 			fnName = g.generateValueReceiverTraitThunk(name, i, node.ConcreteType, fnName, method, req)
 		}
 		values = append(values, ir.FunctionConstOperand(fnName, fnType))
-		if concreteModule != g.ModuleName && req.Receiver != types.TraitReceiverValue {
+		if methodModule != g.ModuleName && req.Receiver != types.TraitReceiverValue {
 			g.addExternForCall(fnName, ir.FunctionSignature{ParamTypes: method.Signature.Parameters, ReturnType: method.Signature.ReturnType}, "", true)
 		}
 	}
@@ -1222,7 +1226,11 @@ func (g *Generator) generateValueReceiverTraitThunk(vtableName string, slot int,
 			return name
 		}
 	}
-	if d, ok := concrete.(types.DefinedType); ok && d.Module != g.ModuleName {
+	externalTarget := method.DefinitionModule != "" && method.DefinitionModule != g.ModuleName
+	if d, ok := concrete.(types.DefinedType); ok && method.DefinitionModule == "" {
+		externalTarget = d.Module != g.ModuleName
+	}
+	if externalTarget {
 		g.addExternForCall(targetName, ir.FunctionSignature{ParamTypes: method.Signature.Parameters, ReturnType: method.Signature.ReturnType}, "", true)
 	}
 	fn := ir.NewFunction(name, ir.LinkageInternal, nil)

@@ -1,0 +1,5 @@
+module std
+
+pub let Display = type trait {
+  let display(self): void
+}

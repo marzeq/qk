@@ -22,7 +22,7 @@ func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, o
 		info := mods[name]
 
 		for _, root := range info.Roots {
-			analyser.AnalyseModule(root, name)
+			analyser.AnalyseModule(root, name, info.TrustedStandardLibrary)
 		}
 	}
 

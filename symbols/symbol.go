@@ -21,11 +21,12 @@ type Symbol struct {
 	Public     bool
 	Attributes attributes.Attributes
 
-	Type         types.Type         // for SymbolKindVariable
-	Signature    *FunctionSignature // for SymbolKindFunction
-	TypeInfo     types.Type         // for SymbolKindTypeAlias
-	Module       *Module            // for SymbolKindModule
-	StaticMethod bool               // attached to a type without a receiver
+	Type             types.Type         // for SymbolKindVariable
+	Signature        *FunctionSignature // for SymbolKindFunction
+	TypeInfo         types.Type         // for SymbolKindTypeAlias
+	Module           *Module            // for SymbolKindModule
+	StaticMethod     bool               // attached to a type without a receiver
+	DefinitionModule string             // module that owns the function implementation
 }
 
 type FunctionSignature struct {

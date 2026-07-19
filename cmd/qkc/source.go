@@ -29,6 +29,19 @@ func parseFile(path, targetTriple string) (*parser.RootNode, error) {
 	return p.Parse()
 }
 
+func parseSource(source, origin, targetTriple string) (*parser.RootNode, error) {
+	t := tokeniser.NewTokeniser(source, origin)
+	toks, err := t.Tokenise()
+	if err != nil {
+		return nil, err
+	}
+	toks, err = preprocessor.Process(toks, targetTriple)
+	if err != nil {
+		return nil, err
+	}
+	return parser.NewParser(toks).Parse()
+}
+
 func collectSourceFiles(paths []string, exclude []string) ([]string, error) {
 	seen := map[string]struct{}{}
 	excluded := map[string]struct{}{}

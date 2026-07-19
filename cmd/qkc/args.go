@@ -44,6 +44,8 @@ type Args struct {
 	keepBuildDir bool
 	static       bool
 	noLibc       bool
+	noStdlib     bool
+	stdlibPath   string
 	noEmit       bool
 	target       string
 	sysroot      string
@@ -236,6 +238,17 @@ func (p *argumentParser) parseCurrent() error {
 		p.args.noLibc = true
 		p.index++
 
+	case tok == "-nostdlib":
+		p.args.noStdlib = true
+		p.index++
+
+	case tok == "-stdlib":
+		value, err := p.nextValue(tok)
+		if err != nil {
+			return err
+		}
+		p.args.stdlibPath = value
+
 	case tok == "-target":
 		value, err := p.nextValue(tok)
 		if err != nil {
@@ -311,6 +324,8 @@ func printUsage() {
 	fmt.Println("  -O <level>         Optimisation level (0, 1, 2, 3, s, z, fast, g)")
 	fmt.Println("  -static            Link with static libraries")
 	fmt.Println("  -nolibc            Do not link against the C standard library")
+	fmt.Println("  -nostdlib          Do not load the embedded QK standard library")
+	fmt.Println("  -stdlib <dir>      Trust and use an external QK standard-library source tree")
 	fmt.Println("  -l <lib>           Link with library <lib> (can specify multiple times)")
 	fmt.Println("  -target <triple>   Target triple for code generation")
 	fmt.Println("  -sysroot <path>    Sysroot path for target")
@@ -359,6 +374,20 @@ func finaliseArgs(args *Args) error {
 			return fmt.Errorf("failed to get absolute path of sysroot: %v", err)
 		}
 		args.sysroot = abs
+	}
+	if args.noStdlib && args.stdlibPath != "" {
+		return fmt.Errorf("-nostdlib and -stdlib cannot be used together")
+	}
+	if args.stdlibPath != "" {
+		info, err := os.Stat(args.stdlibPath)
+		if err != nil || !info.IsDir() {
+			return fmt.Errorf("standard-library path is not a directory: %s", args.stdlibPath)
+		}
+		abs, err := filepath.Abs(args.stdlibPath)
+		if err != nil {
+			return fmt.Errorf("failed to get absolute standard-library path: %v", err)
+		}
+		args.stdlibPath = abs
 	}
 
 	if args.output == "" {

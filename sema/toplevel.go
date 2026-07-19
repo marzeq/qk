@@ -87,11 +87,12 @@ func (a *Analyser) collectPlainFunctionSignature(n *parser.FunctionDefNode) {
 	}
 
 	sym := &symbols.Symbol{
-		Name:       n.Name,
-		Kind:       symbols.SymbolKindFunction,
-		Signature:  sig,
-		Public:     n.Pub,
-		Attributes: n.Attributes,
+		Name:             n.Name,
+		Kind:             symbols.SymbolKindFunction,
+		Signature:        sig,
+		Public:           n.Pub,
+		Attributes:       n.Attributes,
+		DefinitionModule: a.currentMod,
 	}
 
 	if a.defineSymbol(sym, n) {
@@ -100,25 +101,39 @@ func (a *Analyser) collectPlainFunctionSignature(n *parser.FunctionDefNode) {
 }
 
 func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
-	info, ok := a.aliases[n.MethodOwner]
-	if !ok {
+	var ownerType types.Type
+	ownerModule := a.currentMod
+	if info, ok := a.aliases[n.MethodOwner]; ok {
+		if info.node.Transparent {
+			a.errorf(n, "cannot attach method to type alias %q", n.MethodOwner)
+			return
+		}
+		if n.Pub && !info.node.Pub {
+			a.errorf(n, "public method %q requires public owner type %q", n.Name, n.MethodOwner)
+			return
+		}
+		ownerType = a.resolveAlias(info, n, false)
+	} else if builtin, ok := a.universe.Resolve(n.MethodOwner); ok && builtin.Kind == symbols.SymbolKindType {
+		primitive, primitiveOK := builtin.TypeInfo.(types.PrimitiveType)
+		if !primitiveOK {
+			a.errorf(n, "cannot attach method to builtin type %q", n.MethodOwner)
+			return
+		}
+		if !a.currentTrustedStandardLibrary {
+			a.errorf(n, "methods on primitive type %q may only be defined by the trusted standard library", n.MethodOwner)
+			return
+		}
+		ownerType = primitive
+		ownerModule = "builtin"
+	} else {
 		a.errorf(n, "cannot attach method to unknown or imported type %q", n.MethodOwner)
 		return
 	}
-	if info.node.Transparent {
-		a.errorf(n, "cannot attach method to type alias %q", n.MethodOwner)
-		return
-	}
-	if n.Pub && !info.node.Pub {
-		a.errorf(n, "public method %q requires public owner type %q", n.Name, n.MethodOwner)
-		return
-	}
-	ownerType := a.resolveAlias(info, n, false)
 	if fieldExists(types.Underlying(ownerType), n.Name) {
 		a.errorf(n, "cannot define method %q because type %q already has a field with that name", n.Name, n.MethodOwner)
 		return
 	}
-	key := a.currentMod + ":" + n.MethodOwner
+	key := ownerModule + ":" + n.MethodOwner
 	if a.methods[key] == nil {
 		a.methods[key] = make(map[string]*symbols.Symbol)
 	}
@@ -143,7 +158,8 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 	}
 	sym := &symbols.Symbol{Name: n.MethodOwner + "." + n.Name, Kind: symbols.SymbolKindFunction,
 		Signature: &symbols.FunctionSignature{Parameters: paramTypes, RequiredParameters: requiredParameters, ReturnType: ret, Variadic: n.HasVariadic, TypedVariadic: n.TypedVariadic},
-		Public:    n.Pub, Attributes: n.Attributes, StaticMethod: n.Receiver == parser.MethodReceiverNone}
+		Public:    n.Pub, Attributes: n.Attributes, StaticMethod: n.Receiver == parser.MethodReceiverNone,
+		DefinitionModule: a.currentMod}
 	a.methods[key][n.Name] = sym
 	if n.TypedVariadic {
 		sym.Signature.VariadicElement = types.Underlying(paramTypes[len(paramTypes)-1]).(types.SliceType).Base

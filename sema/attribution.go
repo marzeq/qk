@@ -31,6 +31,7 @@ func (a *Attributor) AttributeModule(root *parser.RootNode) {
 			a.analyser.currentMod = module.Name
 			if mod := a.analyser.modules[module.Name]; mod != nil {
 				a.analyser.current = mod.Scope
+				a.analyser.currentTrustedStandardLibrary = mod.TrustedStandardLibrary
 			}
 			break
 		}
@@ -692,7 +693,7 @@ func (a *Attributor) attributeMethodValue(n *parser.FieldAccessNode) bool {
 	if method == nil {
 		return false
 	}
-	if module != a.analyser.currentMod && !method.Public {
+	if method.DefinitionModule != a.analyser.currentMod && !method.Public {
 		a.errorf(n, "method %q is not public", n.Field.Name)
 		n.SetType(types.ErrorType{})
 		return true
@@ -702,7 +703,7 @@ func (a *Attributor) attributeMethodValue(n *parser.FieldAccessNode) bool {
 		ret = types.PrimitiveVoid
 	}
 	n.MethodSymbol = method
-	n.MethodModule = module
+	n.MethodModule = method.DefinitionModule
 	n.SetType(types.PointerType{Base: types.FunctionType{Parameters: method.Signature.Parameters, ReturnType: ret, TypedVariadic: method.Signature.TypedVariadic, VariadicElement: method.Signature.VariadicElement}})
 	return true
 }
@@ -747,7 +748,7 @@ func (a *Attributor) attributeMethodCall(n *parser.FunctionCallNode) bool {
 	if method.StaticMethod {
 		return false
 	}
-	if module != a.analyser.currentMod && !method.Public {
+	if method.DefinitionModule != a.analyser.currentMod && !method.Public {
 		a.errorf(n, "method %q is not public", member.Field.Name)
 		n.SetType(types.ErrorType{})
 		return true
@@ -767,8 +768,8 @@ func (a *Attributor) attributeMethodCall(n *parser.FunctionCallNode) bool {
 	n.Args = append([]parser.ExpressionNode{receiver}, n.Args...)
 	n.Symbol = method
 	n.Method = true
-	if module != a.analyser.currentMod {
-		n.Name = &parser.IdentifierNode{Name: method.Name, Module: module, ResolvedModuleName: module, Loc: member.Loc, Symbol: method}
+	if method.DefinitionModule != a.analyser.currentMod {
+		n.Name = &parser.IdentifierNode{Name: method.Name, Module: method.DefinitionModule, ResolvedModuleName: method.DefinitionModule, Loc: member.Loc, Symbol: method}
 	}
 	return true
 }
@@ -783,6 +784,8 @@ func methodOwnerIdentity(t types.Type) (module, name string, pointer bool, ok bo
 		return t.Module, t.Name, pointer, true
 	case *types.AliasRef:
 		return t.Module, t.Name, pointer, true
+	case types.PrimitiveType:
+		return "builtin", t.String(), pointer, true
 	default:
 		return "", "", pointer, false
 	}

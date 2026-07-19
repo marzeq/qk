@@ -33,6 +33,10 @@ func NewTokeniserFromFile(path string) (*Tokeniser, error) {
 	}, nil
 }
 
+func NewTokeniser(text, origin string) *Tokeniser {
+	return &Tokeniser{pos: 0, line: 1, col: 1, fileOrigin: origin, text: []rune(text)}
+}
+
 func (t *Tokeniser) Peek() rune {
 	if t.pos >= len(t.text) || t.pos < 0 {
 		return 0

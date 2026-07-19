@@ -37,6 +37,7 @@ func (v *Validator) ValidateModule(root *parser.RootNode) {
 			v.analyser.currentMod = module.Name
 			if mod := v.analyser.modules[module.Name]; mod != nil {
 				v.analyser.current = mod.Scope
+				v.analyser.currentTrustedStandardLibrary = mod.TrustedStandardLibrary
 			}
 			break
 		}
