@@ -34,7 +34,7 @@ func (a *Analyser) structuralConformance(from types.Type, target types.TraitPoin
 	selected := make([]*symbols.Symbol, len(target.Trait.Methods))
 	for i, requirement := range target.Trait.Methods {
 		method := methodSet[requirement.Name]
-		if method == nil || method.StaticMethod || (method.DefinitionModule != a.currentMod && !method.Public) {
+		if method == nil || method.StaticMethod {
 			return nil, false
 		}
 		sig := method.Signature

@@ -1328,8 +1328,10 @@ consume_reader(file)             // parameter type is *Reader
 ```
 
 An expected `*mut Trait` similarly inserts `.&mut.(*mut Trait)`, but only for a
-mutable place. The sugar does not make literals, temporaries, or other
-non-addressable expressions borrowable, and it never weakens mutability rules.
+mutable place. For immutable trait pointers, non-addressable expressions are
+materialized in compiler-owned temporary storage. Untyped numeric literals still
+need a cast because the trait alone cannot infer their concrete numeric type.
+Implicit conversion never weakens mutability rules.
 
 Use `is` to compare a trait pointer's runtime concrete type without unwrapping:
 
@@ -1420,11 +1422,14 @@ consumes one argument. If that argument's runtime concrete type implements
 writes `<?>`. A placeholder without a corresponding argument also writes `<?>`,
 and extra arguments are ignored. Formatting itself adds no newline.
 
-Arguments rely on implicit concrete-to-trait borrowing, so they must be
-addressable values. A user-defined `display` method must be `pub`, because the
-call is performed by the `std` module. Converting an existing trait pointer to a
-different trait pointer performs a checked runtime recast: QK selects the target
-vtable by concrete type identity and traps if the concrete type does not conform.
+Arguments rely on implicit concrete-to-trait borrowing. Addressable values are
+borrowed directly, while computed values are materialized in temporary storage
+for the call. A private `display` method can satisfy the trait: visibility
+still prevents another module from naming the method directly, but does not
+prevent opaque invocation through a compiler-generated trait witness. Converting
+an existing trait pointer to a different trait pointer performs a checked runtime
+recast: QK selects the target vtable by concrete type identity and traps if the
+concrete type does not conform.
 
 ### 26.3 Panic
 

@@ -1257,6 +1257,10 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 		return cast
 	}
 	if target, ok := traitPointer(expected); ok {
+		if types.HasUntyped(got) {
+			v.errorf(node, "cannot infer concrete type for trait conversion; add a type annotation or cast")
+			return node
+		}
 		pointer := types.PointerType{Base: got, Mutable: target.Mutable}
 		methods, conforms := v.analyser.structuralConformance(pointer, target, node)
 		if conforms {
@@ -1265,7 +1269,7 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 				op = parser.UnaryOpMutableReference
 			}
 			reference := &parser.UnaryOpNode{Op: op, Operand: node, Loc: node.GetLoc(), Type: pointer}
-			if v.validateReferenceTarget(reference, node, target.Mutable) {
+			if !target.Mutable || v.validateReferenceTarget(reference, node, true) {
 				return &parser.CastNode{Operand: reference, Loc: node.GetLoc(), Type: expected, TraitConversion: true, ConcreteType: got, TraitMethods: methods}
 			}
 			return node

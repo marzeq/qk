@@ -165,7 +165,7 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 	}
 	sym := &symbols.Symbol{Name: n.MethodOwner + "." + n.Name, Kind: symbols.SymbolKindFunction,
 		Signature: &symbols.FunctionSignature{Parameters: paramTypes, RequiredParameters: requiredParameters, ReturnType: ret, Variadic: n.HasVariadic, TypedVariadic: n.TypedVariadic},
-		Public:    n.Pub, Attributes: n.Attributes, StaticMethod: n.Receiver == parser.MethodReceiverNone,
+		Public:    n.Pub, Attributes: n.Attributes, Method: true, StaticMethod: n.Receiver == parser.MethodReceiverNone,
 		DefinitionModule: a.currentMod}
 	a.methods[key][n.Name] = sym
 	if n.TypedVariadic {

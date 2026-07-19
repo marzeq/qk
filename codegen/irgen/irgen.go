@@ -270,7 +270,7 @@ func (g *Generator) GenerateFunction(fn *parser.FunctionDefNode) {
 		name = export.As
 		linkage = ir.LinkageExternal
 	} else {
-		if fn.Symbol.Public {
+		if fn.Symbol.Public || fn.Symbol.Method {
 			linkage = ir.LinkageExternal
 			visibility = ir.VisibilityHidden
 		}

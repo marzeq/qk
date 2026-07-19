@@ -25,6 +25,7 @@ type Symbol struct {
 	Signature        *FunctionSignature // for SymbolKindFunction
 	TypeInfo         types.Type         // for SymbolKindTypeAlias
 	Module           *Module            // for SymbolKindModule
+	Method           bool               // function is attached to a type
 	StaticMethod     bool               // attached to a type without a receiver
 	DefinitionModule string             // module that owns the function implementation
 }
