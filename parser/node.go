@@ -473,6 +473,24 @@ func (n TypeTestNode) GetLoc() shared.Location { return n.Loc }
 func (n *TypeTestNode) SetType(t types.Type)   { n.Type = t }
 func (n *TypeTestNode) GetType() types.Type    { return n.Type }
 
+type ImplementsTestNode struct {
+	Operand       ExpressionNode
+	Concrete      TypeNode
+	ConcreteType  types.Type
+	Target        TypeNode
+	TargetType    types.Type
+	Candidates    []types.Type
+	Always        bool
+	CompileTime   bool
+	CompileResult bool
+	Loc           shared.Location
+	Type          types.Type
+}
+
+func (n ImplementsTestNode) GetLoc() shared.Location { return n.Loc }
+func (n *ImplementsTestNode) SetType(t types.Type)   { n.Type = t }
+func (n *ImplementsTestNode) GetType() types.Type    { return n.Type }
+
 type CastNode struct {
 	ToType  TypeNode
 	Operand ExpressionNode

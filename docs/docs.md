@@ -63,7 +63,7 @@ The reserved words are:
 
 ```text
 alias alignof and as break continue defer else enum false for
-given if import in is len let module mut nil not offsetof opaque or pub
+given if implements import in is len let module mut nil not offsetof opaque or pub
 return sizeof struct trait true type union
 ```
 
@@ -1331,6 +1331,37 @@ let is_file = erased is File
 
 The right operand names an exact nominal concrete type, not a pointer or another
 trait. The result is `bool`; it does not perform structural conformance testing.
+
+Use `implements` to test whether the erased concrete type structurally conforms
+to another trait:
+
+```qk
+if erased implements Printable {
+    // The dynamic concrete type has Printable's required method set.
+}
+
+let can_print = erased implements Printable
+```
+
+It also accepts a concrete type on the left and becomes a compile-time boolean
+constant, while remaining usable in ordinary expressions:
+
+```qk
+let vecs_are_printable = Vec2 implements Printable
+if Vec2 implements Printable { /* ... */ }
+```
+
+An ordinary non-erased value uses its static concrete type and is likewise a
+compile-time result:
+
+```qk
+let can_print = value implements Printable
+```
+
+Unlike `is`, the right operand of `implements` must be a trait. Runtime checks use
+the concrete types and accessible method sets in the complete program; it does
+not invoke methods or construct a new trait pointer. Every concrete value
+implements `Any` and an empty trait.
 
 ### 26.2 Panic
 

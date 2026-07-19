@@ -120,6 +120,15 @@ func (w *debugWalker) walkExpr(expr parser.ExpressionNode) {
 		w.walkExpr(n.Operand)
 		w.checkType(n.TargetType)
 
+	case *parser.ImplementsTestNode:
+		if !n.CompileTime {
+			w.walkExpr(n.Operand)
+		}
+		if n.ConcreteType != nil {
+			w.checkType(n.ConcreteType)
+		}
+		w.checkType(n.TargetType)
+
 	case *parser.UnaryOpNode:
 		w.walkExpr(n.Operand)
 

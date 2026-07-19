@@ -595,6 +595,30 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			v.errorf(n, "type %v does not conform to %v", n.TargetType, source.Trait)
 		}
 
+	case *parser.ImplementsTestNode:
+		trait, ok := types.Underlying(n.TargetType).(types.TraitType)
+		if !ok {
+			v.errorf(n, "right operand of implements must be a trait type, got %v", n.TargetType)
+			break
+		}
+		if n.CompileTime {
+			if sourceTrait, isTrait := types.Underlying(n.ConcreteType).(types.TraitType); isTrait {
+				n.CompileResult = traitImplementsTrait(sourceTrait, trait)
+				break
+			}
+			_, n.CompileResult = v.analyser.structuralConformance(types.PointerType{Base: n.ConcreteType}, types.TraitPointerType{Trait: trait}, n)
+			break
+		}
+		v.validateExpr(n.Operand)
+		if _, ok := traitPointer(n.Operand.GetType()); !ok {
+			n.CompileTime = true
+			n.ConcreteType = n.Operand.GetType()
+			_, n.CompileResult = v.analyser.structuralConformance(types.PointerType{Base: n.ConcreteType}, types.TraitPointerType{Trait: trait}, n)
+			break
+		}
+		n.Always = trait.Any || len(trait.Methods) == 0
+		n.Candidates = v.analyser.runtimeTraitImplementers(trait, n)
+
 	case *parser.UnaryOpNode:
 		v.validateExpr(n.Operand)
 

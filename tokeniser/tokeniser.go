@@ -300,6 +300,7 @@ var keywords = map[string]struct{}{
 	string(KeywordNil):           {},
 	string(KeywordAs):            {},
 	string(KeywordIs):            {},
+	string(KeywordImplements):    {},
 	string(KeywordSizeof):        {},
 	string(KeywordAlignof):       {},
 	string(KeywordOffsetof):      {},

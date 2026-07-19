@@ -35,6 +35,7 @@ syn keyword qkRepeat for in
 syn keyword qkStatement break continue return defer
 syn keyword qkOperator and or not as
 syn keyword qkOperator is
+syn keyword qkOperator implements
 syn keyword qkBuiltin sizeof alignof offsetof len compiler_error
 
 " Function and module attributes.

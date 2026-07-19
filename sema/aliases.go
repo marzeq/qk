@@ -41,6 +41,7 @@ func (a *Analyser) resolveAlias(info *aliasInfo, node parser.Node, indirect bool
 		resolved = trait
 	} else if !info.node.Transparent {
 		resolved = types.DefinedType{Module: a.currentMod, Name: info.node.Name, Underlying: resolved}
+		a.concreteTypes[a.currentMod+":"+info.node.Name] = resolved
 	}
 
 	info.node.Symbol.TypeInfo = resolved

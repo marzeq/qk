@@ -631,6 +631,16 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		n.TargetType = a.analyser.resolveTypeNode(n.Target)
 		n.SetType(types.PrimitiveBool)
 
+	case *parser.ImplementsTestNode:
+		if ident, ok := n.Operand.(*parser.IdentifierNode); ok && ident.Symbol != nil && ident.Symbol.Kind == symbols.SymbolKindType {
+			n.CompileTime = true
+			n.ConcreteType = ident.Symbol.TypeInfo
+		} else {
+			a.attributeExpr(n.Operand)
+		}
+		n.TargetType = a.analyser.resolveTypeNode(n.Target)
+		n.SetType(types.PrimitiveBool)
+
 	case *parser.SizeOfNode:
 		n.SetType(types.PrimitiveUsz)
 		n.OperandType = a.analyser.resolveTypeNode(n.Operand)

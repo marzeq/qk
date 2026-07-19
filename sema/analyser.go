@@ -4,26 +4,29 @@ import (
 	"github.com/marzeq/qk/parser"
 	"github.com/marzeq/qk/shared"
 	"github.com/marzeq/qk/symbols"
+	"github.com/marzeq/qk/types"
 )
 
 type Analyser struct {
-	universe   *symbols.Scope
-	current    *symbols.Scope
-	modules    map[string]*symbols.Module
-	aliases    map[string]*aliasInfo
-	methods    map[string]map[string]*symbols.Symbol
-	errors     []error
-	currentMod string
+	universe      *symbols.Scope
+	current       *symbols.Scope
+	modules       map[string]*symbols.Module
+	aliases       map[string]*aliasInfo
+	methods       map[string]map[string]*symbols.Symbol
+	concreteTypes map[string]types.Type
+	errors        []error
+	currentMod    string
 }
 
 func NewAnalyser() *Analyser {
 	u := symbols.NewScope(nil)
 
 	a := &Analyser{
-		universe: u,
-		modules:  make(map[string]*symbols.Module),
-		aliases:  make(map[string]*aliasInfo),
-		methods:  make(map[string]map[string]*symbols.Symbol),
+		universe:      u,
+		modules:       make(map[string]*symbols.Module),
+		aliases:       make(map[string]*aliasInfo),
+		methods:       make(map[string]map[string]*symbols.Symbol),
+		concreteTypes: make(map[string]types.Type),
 	}
 
 	a.predefineBuiltins()

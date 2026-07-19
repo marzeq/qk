@@ -74,3 +74,46 @@ func (v *Validator) traitConversion(node parser.ExpressionNode, expected types.T
 	pointer, _ := concretePointer(node.GetType())
 	return &parser.CastNode{Operand: node, Loc: node.GetLoc(), Type: expected, TraitConversion: true, ConcreteType: pointer.Base, TraitMethods: methods}, true
 }
+
+func (a *Analyser) runtimeTraitImplementers(trait types.TraitType, at parser.Node) []types.Type {
+	if trait.Any || len(trait.Methods) == 0 {
+		return nil
+	}
+	target := types.TraitPointerType{Trait: trait}
+	result := []types.Type{}
+	for _, concrete := range a.concreteTypes {
+		if _, ok := a.structuralConformance(types.PointerType{Base: concrete}, target, at); ok {
+			result = append(result, concrete)
+		}
+	}
+	return result
+}
+
+func traitImplementsTrait(source, target types.TraitType) bool {
+	if target.Any || len(target.Methods) == 0 {
+		return true
+	}
+	for _, required := range target.Methods {
+		found := false
+		for _, available := range source.Methods {
+			if available.Name != required.Name || available.Receiver != required.Receiver || !available.ReturnType.Equals(required.ReturnType) || len(available.Parameters) != len(required.Parameters) {
+				continue
+			}
+			matches := true
+			for i := range required.Parameters {
+				if !available.Parameters[i].Equals(required.Parameters[i]) {
+					matches = false
+					break
+				}
+			}
+			if matches {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}

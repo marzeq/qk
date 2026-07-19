@@ -966,6 +966,8 @@ func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
 		return g.generateBinaryExpr(n)
 	case *parser.TypeTestNode:
 		return g.generateTypeTestExpr(n)
+	case *parser.ImplementsTestNode:
+		return g.generateImplementsTestExpr(n)
 	case *parser.UnaryOpNode:
 		return g.generateUnaryExpr(n)
 	case *parser.StructLiteralNode:
@@ -1347,6 +1349,39 @@ func (g *Generator) generateTypeTestExpr(node *parser.TypeTestNode) ir.Operand {
 		Right: ir.IntConstOperand(fmt.Sprintf("%d", runtimeTypeID(node.TargetType)), types.PrimitiveU64),
 	})
 	return ir.ValueOperand(matches, types.PrimitiveBool)
+}
+
+func (g *Generator) generateImplementsTestExpr(node *parser.ImplementsTestNode) ir.Operand {
+	if node.CompileTime {
+		return ir.BoolConstOperand(node.CompileResult)
+	}
+	traitValue := g.GenerateExpr(node.Operand)
+	if node.Always {
+		return ir.BoolConstOperand(true)
+	}
+	traitPtr := traitValue.Type.(types.TraitPointerType)
+	vtType := traitVTableType(traitPtr.Trait)
+	vtPtrType := types.PointerType{Base: vtType}
+	vtID := g.currentFunction.NewValueOfType(vtPtrType)
+	g.Emit(ir.ExtractValue{Dest: vtID, Aggregate: traitValue, Index: 1})
+	typeIDPtr := g.currentFunction.NewValueOfType(types.PointerType{Base: types.PrimitiveU64})
+	g.Emit(ir.FieldAddress{Dest: typeIDPtr, Base: ir.ValueOperand(vtID, vtPtrType), Field: "type_id"})
+	actualID := g.currentFunction.NewValueOfType(types.PrimitiveU64)
+	g.Emit(ir.LoadPtr{Dest: actualID, Ptr: ir.ValueOperand(typeIDPtr, types.PointerType{Base: types.PrimitiveU64})})
+	result := ir.BoolConstOperand(false)
+	for _, candidate := range node.Candidates {
+		matches := g.currentFunction.NewValueOfType(types.PrimitiveBool)
+		g.Emit(ir.CmpEq{Dest: matches, Left: ir.ValueOperand(actualID, types.PrimitiveU64), Right: ir.IntConstOperand(fmt.Sprintf("%d", runtimeTypeID(candidate)), types.PrimitiveU64)})
+		match := ir.ValueOperand(matches, types.PrimitiveBool)
+		if result.Kind == ir.OperandBoolConst && !result.BoolValue {
+			result = match
+			continue
+		}
+		combined := g.currentFunction.NewValueOfType(types.PrimitiveBool)
+		g.Emit(ir.LogicalOr{Dest: combined, Left: result, Right: match})
+		result = ir.ValueOperand(combined, types.PrimitiveBool)
+	}
+	return result
 }
 
 func (g *Generator) generateSizeOfExpr(node *parser.SizeOfNode) ir.Operand {

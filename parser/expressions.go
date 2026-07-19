@@ -467,6 +467,21 @@ func (p *Parser) ParseComparison() (ExpressionNode, error) {
 		}
 		return &TypeTestNode{Operand: left, Target: target, Loc: beginLoc}, nil
 	}
+	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordImplements) {
+		p.Inc()
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+		target, err := p.ParseType()
+		if err != nil {
+			return nil, err
+		}
+		node := &ImplementsTestNode{Operand: left, Target: target, Loc: beginLoc}
+		if ident, ok := left.(*IdentifierNode); ok {
+			node.Concrete = &NamedTypeNode{ModName: ident.Module, Name: ident.Name, Loc: ident.Loc}
+		}
+		return node, nil
+	}
 
 	for p.Match(tokeniser.TokenEqualsEquals, tokeniser.TokenNotEquals,
 		tokeniser.TokenLess, tokeniser.TokenGreater, tokeniser.TokenLessEquals, tokeniser.TokenGreaterEquals) {

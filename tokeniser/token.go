@@ -104,6 +104,7 @@ const (
 	KeywordNil           KeywordKind = "nil"
 	KeywordAs            KeywordKind = "as"
 	KeywordIs            KeywordKind = "is"
+	KeywordImplements    KeywordKind = "implements"
 	KeywordSizeof        KeywordKind = "sizeof"
 	KeywordAlignof       KeywordKind = "alignof"
 	KeywordOffsetof      KeywordKind = "offsetof"
