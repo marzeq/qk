@@ -10,6 +10,7 @@ import (
 	"github.com/marzeq/qk/ir"
 	"github.com/marzeq/qk/loader"
 	"github.com/marzeq/qk/parser"
+	"github.com/marzeq/qk/preprocessor"
 	"github.com/marzeq/qk/sema"
 	"github.com/marzeq/qk/shared"
 	"github.com/marzeq/qk/stdlib"
@@ -31,6 +32,7 @@ func main() {
 	cleanupModuleObjectCache(args.verbose)
 
 	searchPaths := buildSearchPaths(args.baseDir)
+	preprocessorConfig := preprocessor.Config{TargetTriple: args.target, NoLibc: args.noLibc, NoStdlib: args.noStdlib}
 
 	excludes := append([]string(nil), args.excludeDirs...)
 	if args.stdlibPath != "" {
@@ -46,7 +48,7 @@ func main() {
 	var partials []*loader.PartialModuleInfo
 
 	for _, file := range files {
-		ast, err := parseFile(file, args.target)
+		ast, err := parseFile(file, preprocessorConfig)
 		check(err)
 
 		info, err := loader.CollectModuleInfo(ast, false)
@@ -62,7 +64,7 @@ func main() {
 				fatal("no standard-library source files found in %s", args.stdlibPath)
 			}
 			for _, file := range stdlibFiles {
-				ast, err := parseFile(file, args.target)
+				ast, err := parseFile(file, preprocessorConfig)
 				check(err)
 				info, err := loader.CollectModuleInfo(ast, true)
 				check(err)
@@ -71,7 +73,7 @@ func main() {
 		} else {
 			sources, err := stdlib.ReadSources()
 			check(err)
-			stdlibPartials, err := stdlib.ParseTrustedSources(sources, args.target)
+			stdlibPartials, err := stdlib.ParseTrustedSources(sources, preprocessorConfig)
 			check(err)
 			partials = append(partials, stdlibPartials...)
 		}
@@ -114,7 +116,11 @@ func main() {
 	for _, moduleName := range order {
 		llvmOutputs[moduleName] = buildLLVMModule(irModules[moduleName], moduleName, args.mainModule, args.outputType == OutputExecutable, args.target)
 	}
-	freestandingRuntime, err := buildFreestandingRuntime(args.target, args.noLibc)
+	mainInitializer := ""
+	if mainIR := irModules[args.mainModule]; mainIR != nil {
+		mainInitializer = mainIR.Initializer
+	}
+	freestandingRuntime, err := buildFreestandingRuntime(args.target, args.noLibc, args.outputType == OutputExecutable, mainInitializer)
 	check(err)
 
 	if args.dumpIR {

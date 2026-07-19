@@ -1,5 +1,6 @@
 module std
 
+when not NoLibc {
 let display_print_argument(index: usz, arguments: [*Any]): void {
   if index >= len(arguments) {
     "<?>".display()
@@ -70,4 +71,5 @@ pub let print(format: str, arguments: ...*Any): void {
 pub let println(format: str, arguments: ...*Any): void {
   print(format, arguments...)
   '\n'.display()
+}
 }

@@ -57,7 +57,11 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots []str
 		args = append(args, "-static")
 	}
 	if config.noLibc {
-		args = append(args, "-nolibc")
+		if config.outputType == OutputExecutable {
+			args = append(args, "-nostdlib", "-Wl,-e,_start")
+		} else {
+			args = append(args, "-nolibc")
+		}
 	}
 	if config.sysroot != "" {
 		args = append([]string{"--sysroot=" + config.sysroot}, args...)

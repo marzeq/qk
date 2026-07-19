@@ -7,7 +7,7 @@ import (
 	qktarget "github.com/marzeq/qk/target"
 )
 
-func buildFreestandingRuntime(targetTriple string, noLibc bool) (string, error) {
+func buildFreestandingRuntime(targetTriple string, noLibc, executable bool, mainInitializer string) (string, error) {
 	pointerBits, ok := qktarget.PointerBits(qktarget.EffectiveTriple(targetTriple))
 	if !ok {
 		return "", fmt.Errorf("cannot determine pointer width for target %q", targetTriple)
@@ -17,7 +17,29 @@ func buildFreestandingRuntime(targetTriple string, noLibc bool) (string, error) 
 	var out strings.Builder
 	out.WriteString("; qk thin runtime\n\n")
 	target := strings.ToLower(qktarget.EffectiveTriple(targetTriple))
-	if noLibc && (strings.Contains(target, "linux")) && (qktarget.Arch(targetTriple) == "x86_64" || qktarget.Arch(targetTriple) == "amd64") {
+	linuxX8664 := strings.Contains(target, "linux") && (qktarget.Arch(targetTriple) == "x86_64" || qktarget.Arch(targetTriple) == "amd64")
+	if noLibc && executable && !linuxX8664 {
+		return "", fmt.Errorf("freestanding -nolibc executables are currently supported only for Linux x86-64, not target %q", target)
+	}
+	if noLibc && linuxX8664 {
+		if executable {
+			initializerDeclaration := ""
+			initializerCall := ""
+			if mainInitializer != "" {
+				initializerDeclaration = fmt.Sprintf("declare hidden void @%s()\n", mainInitializer)
+				initializerCall = fmt.Sprintf("  call void @%s()\n", mainInitializer)
+			}
+			fmt.Fprintf(&out, `declare i32 @main()
+%s
+define void @_start() noreturn nounwind {
+entry:
+%s  %%status = call i32 @main()
+  %%exit = call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i32 %%status)
+  unreachable
+}
+
+`, initializerDeclaration, initializerCall)
+		}
 		fmt.Fprintf(&out, `define hidden void @__qk_panic({ ptr, %[1]s } %%message) #1 {
 entry:
   %%data = extractvalue { ptr, %[1]s } %%message, 0

@@ -254,6 +254,37 @@ Types and values share the module's symbol table: the same name cannot be reused
 for a type, function, global, or imported module alias in one scope. Methods are
 stored per owner type and use a separate lookup path.
 
+### 5.1 Compile-time `when`
+
+`when` selects source tokens before parsing and semantic analysis. Conditions
+support boolean literals, `not`, `and`, `or`, equality, and compiler-provided
+target and configuration values:
+
+```qk
+when NoLibc {
+    // Freestanding implementation.
+} else {
+    // libc-backed implementation.
+}
+```
+
+| Value | True when |
+| --- | --- |
+| `NoLibc` | The compiler was invoked with `-nolibc`. |
+| `NoStdlib` | The compiler was invoked with `-nostdlib`. |
+
+These booleans can be combined with `OS`, `Arch`, `Environment`, and
+`PointerBits`:
+
+```qk
+when NoLibc and OS == .Linux and Arch == .X86_64 {
+    // Linux x86-64 freestanding code.
+}
+```
+
+`NoStdlib` describes whether the QK `std` module is loaded; it is independent of
+whether the platform C library is linked.
+
 ## 6. Declarations and scope
 
 ### 6.1 Values
@@ -1406,8 +1437,8 @@ let shown: *std:Display = count.&.(*std:Display)
 shown.display()
 ```
 
-The current implementations use the platform C output functions, so invoking
-them requires libc and is not supported by a `-nolibc` executable.
+The current implementations use the platform C output functions and are excluded
+from the standard library when `NoLibc` is true.
 
 The standard library also provides typed, type-safe formatting through
 `std:print`:
@@ -1500,6 +1531,7 @@ go build ./cmd/qkc
 The generation step does not produce generated files. It runs the embedded
 sources through tokenisation, preprocessing, parsing, module loading, semantic
 analysis, attribution, and validation, then fails the command on any diagnostic.
+It checks both the ordinary and `NoLibc` standard-library configurations.
 Go does not run generators as part of `go build`, so compiler developers and CI
 must invoke `go generate ./stdlib` explicitly before building. The checker can
 also be run directly, with an optional target for compile-time selection:
@@ -1507,6 +1539,7 @@ also be run directly, with an optional target for compile-time selection:
 ```text
 go run ./cmd/qkstdlibcheck
 go run ./cmd/qkstdlibcheck -target aarch64-unknown-linux-gnu
+go run ./cmd/qkstdlibcheck -nolibc
 ```
 
 For an external development library, keep a directory of ordinary `.qk` files
@@ -1573,13 +1606,27 @@ Numeric optimization levels above 3 are accepted, warned about, and treated as `
 | `-Xcompile "args"` | Append whitespace-split arguments to Clang compilation. |
 | `-Xlink "args"` | Append whitespace-split arguments to the final link. |
 | `-static` | Request static linking; invalid for shared output. |
-| `-nolibc` | Pass `-nolibc` to the link. |
+| `-nolibc` | Build without libc; Linux x86-64 executables use QK's freestanding startup. |
 | `-lname` / `-l name` | Link a system library; repeatable. |
 | `-Lpath` / `-L path` | Add a library search directory; repeatable. |
 
 The driver selects `lld` with `-fuse-ld=lld`. Cross-linking requires compatible
 CRT objects, libraries, and headers/sysroot outside QK. `-target` changes code
 generation; it does not install a cross toolchain.
+
+On Linux x86-64, an executable built with `-nolibc` is linked with `-nostdlib`
+and uses the thin runtime's `_start` instead of a C runtime startup object.
+`_start` calls the root module initializer, which transitively initializes its
+dependencies, calls QK `main`, and terminates through the Linux `exit` syscall.
+The freestanding panic implementation writes directly through the `write`
+syscall and exits with status 101. There is currently no argument/environment
+entry API, and QK `main` returns exit status 0 normally.
+
+Freestanding executable startup is currently rejected for other targets rather
+than silently emitting a binary that depends on a platform CRT. Library and
+object `-nolibc` workflows retain their existing linker behavior. Code reached by
+a freestanding executable must not call libc-backed facilities such as
+`std:print`, `std:println`, or builtin `Display` implementations.
 
 ### 28.6 Informational options
 

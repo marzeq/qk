@@ -17,8 +17,17 @@ type Processor struct {
 	target targetValues
 }
 
-func Process(tokens []tokeniser.Token, targetTriple string) ([]tokeniser.Token, error) {
-	p := &Processor{tokens: tokens, target: targetFromTriple(targetTriple)}
+type Config struct {
+	TargetTriple string
+	NoLibc       bool
+	NoStdlib     bool
+}
+
+func Process(tokens []tokeniser.Token, config Config) ([]tokeniser.Token, error) {
+	target := targetFromTriple(config.TargetTriple)
+	target.noLibc = config.NoLibc
+	target.noStdlib = config.NoStdlib
+	p := &Processor{tokens: tokens, target: target}
 	return p.process()
 }
 
@@ -273,6 +282,8 @@ type targetValues struct {
 	arch        string
 	environment string
 	pointerBits int64
+	noLibc      bool
+	noStdlib    bool
 }
 
 func evaluate(node parser.ExpressionNode, target targetValues) (compileTimeValue, error) {
@@ -297,6 +308,10 @@ func evaluate(node parser.ExpressionNode, target targetValues) (compileTimeValue
 			return compileTimeValue{kind: valueEnum, domain: "Environment", name: target.environment}, nil
 		case "PointerBits":
 			return compileTimeValue{kind: valueInteger, integer: target.pointerBits}, nil
+		case "NoLibc":
+			return compileTimeValue{kind: valueBool, boolean: target.noLibc}, nil
+		case "NoStdlib":
+			return compileTimeValue{kind: valueBool, boolean: target.noStdlib}, nil
 		default:
 			return compileTimeValue{}, shared.NewError(n.Loc, "unknown compile-time value %q", n.Name)
 		}

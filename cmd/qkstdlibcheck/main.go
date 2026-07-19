@@ -5,18 +5,20 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/marzeq/qk/preprocessor"
 	"github.com/marzeq/qk/stdlib"
 )
 
 func main() {
 	targetTriple := flag.String("target", "", "target triple used for compile-time selection")
+	noLibc := flag.Bool("nolibc", false, "select NoLibc compile-time branches")
 	flag.Parse()
 	if flag.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: qkstdlibcheck [-target triple]")
+		fmt.Fprintln(os.Stderr, "usage: qkstdlibcheck [-target triple] [-nolibc]")
 		os.Exit(2)
 	}
 
-	errs := stdlib.CheckEmbedded(*targetTriple)
+	errs := stdlib.CheckEmbedded(preprocessor.Config{TargetTriple: *targetTriple, NoLibc: *noLibc})
 	for _, err := range errs {
 		fmt.Fprintln(os.Stderr, err)
 	}

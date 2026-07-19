@@ -12,7 +12,7 @@ import (
 
 // ParseTrustedSources runs the normal QK frontend over trusted standard-library
 // source text and returns module fragments ready for the compilation pipeline.
-func ParseTrustedSources(sources map[string]string, targetTriple string) ([]*loader.PartialModuleInfo, error) {
+func ParseTrustedSources(sources map[string]string, config preprocessor.Config) ([]*loader.PartialModuleInfo, error) {
 	origins := make([]string, 0, len(sources))
 	for origin := range sources {
 		origins = append(origins, origin)
@@ -26,7 +26,7 @@ func ParseTrustedSources(sources map[string]string, targetTriple string) ([]*loa
 		if err != nil {
 			return nil, err
 		}
-		tokens, err = preprocessor.Process(tokens, targetTriple)
+		tokens, err = preprocessor.Process(tokens, config)
 		if err != nil {
 			return nil, err
 		}
@@ -45,8 +45,8 @@ func ParseTrustedSources(sources map[string]string, targetTriple string) ([]*loa
 
 // Check typechecks trusted standard-library sources without generating IR or
 // native output. All semantic diagnostics are returned together.
-func Check(sources map[string]string, targetTriple string) []error {
-	partials, err := ParseTrustedSources(sources, targetTriple)
+func Check(sources map[string]string, config preprocessor.Config) []error {
+	partials, err := ParseTrustedSources(sources, config)
 	if err != nil {
 		return []error{err}
 	}
@@ -64,10 +64,10 @@ func Check(sources map[string]string, targetTriple string) []error {
 }
 
 // CheckEmbedded typechecks the standard library embedded in this build.
-func CheckEmbedded(targetTriple string) []error {
+func CheckEmbedded(config preprocessor.Config) []error {
 	sources, err := ReadSources()
 	if err != nil {
 		return []error{err}
 	}
-	return Check(sources, targetTriple)
+	return Check(sources, config)
 }
