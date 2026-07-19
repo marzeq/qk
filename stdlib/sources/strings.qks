@@ -1,0 +1,31 @@
+module std
+
+when HasLibc {
+
+import std.libc
+
+pub let str.to_cstr(self): *mut char {
+  let buf = std.libc.malloc(len(self) + 1).(*mut char)
+  if buf == nil {
+    return nil
+  }
+
+  std.libc.memcpy(buf, self.(*char), len(self))
+  buf[len(self)] = '\0'
+  return buf
+}
+
+pub let cstr.to_str(self): str {
+  if self == nil {
+    return ""
+  }
+
+  let n = std.libc.strlen(self)
+
+  let mut data: [char] = ['\0'; n]
+  std.libc.memcpy(data.(*mut char), self, n)
+
+  return data.(str)
+}
+
+}
