@@ -33,6 +33,29 @@ func main() {
 
 	searchPaths := buildSearchPaths(args.baseDir)
 	preprocessorConfig := preprocessor.Config{TargetTriple: args.target, NoLibc: args.noLibc, NoStdlib: args.noStdlib}
+	embeddedStdlibSources, err := stdlib.ReadSources()
+	check(err)
+	selectedStdlibSources := embeddedStdlibSources
+	var stdlibFiles []string
+	if args.stdlibPath != "" {
+		stdlibFiles, err = collectSourceFiles([]string{args.stdlibPath}, nil)
+		check(err)
+		if len(stdlibFiles) == 0 {
+			fatal("no standard-library source files found in %s", args.stdlibPath)
+		}
+		selectedStdlibSources = make(map[string]string, len(stdlibFiles))
+		for _, file := range stdlibFiles {
+			data, err := os.ReadFile(file)
+			check(err)
+			selectedStdlibSources[file] = string(data)
+		}
+	}
+	capabilitySources := selectedStdlibSources
+	if args.noStdlib {
+		capabilitySources = embeddedStdlibSources
+	}
+	preprocessorConfig.Capabilities, err = preprocessor.ResolveCapabilities(capabilitySources, preprocessorConfig, args.noStdlib)
+	check(err)
 
 	excludes := append([]string(nil), args.excludeDirs...)
 	if args.stdlibPath != "" {
@@ -57,23 +80,18 @@ func main() {
 		partials = append(partials, info)
 	}
 	if !args.noStdlib {
+		trustedConfig := preprocessorConfig
+		trustedConfig.TrustedStandardLibrary = true
 		if args.stdlibPath != "" {
-			stdlibFiles, err := collectSourceFiles([]string{args.stdlibPath}, nil)
-			check(err)
-			if len(stdlibFiles) == 0 {
-				fatal("no standard-library source files found in %s", args.stdlibPath)
-			}
 			for _, file := range stdlibFiles {
-				ast, err := parseFile(file, preprocessorConfig)
+				ast, err := parseFile(file, trustedConfig)
 				check(err)
 				info, err := loader.CollectModuleInfo(ast, true)
 				check(err)
 				partials = append(partials, info)
 			}
 		} else {
-			sources, err := stdlib.ReadSources()
-			check(err)
-			stdlibPartials, err := stdlib.ParseTrustedSources(sources, preprocessorConfig)
+			stdlibPartials, err := stdlib.ParseTrustedSources(selectedStdlibSources, trustedConfig)
 			check(err)
 			partials = append(partials, stdlibPartials...)
 		}

@@ -18,15 +18,23 @@ type Processor struct {
 }
 
 type Config struct {
-	TargetTriple string
-	NoLibc       bool
-	NoStdlib     bool
+	TargetTriple           string
+	NoLibc                 bool
+	NoStdlib               bool
+	Capabilities           map[string]bool
+	TrustedStandardLibrary bool
 }
 
 func Process(tokens []tokeniser.Token, config Config) ([]tokeniser.Token, error) {
 	target := targetFromTriple(config.TargetTriple)
 	target.noLibc = config.NoLibc
 	target.noStdlib = config.NoStdlib
+	target.capabilities = config.Capabilities
+	var err error
+	tokens, err = stripCapabilityDeclarations(tokens, config.TrustedStandardLibrary)
+	if err != nil {
+		return nil, err
+	}
 	p := &Processor{tokens: tokens, target: target}
 	return p.process()
 }
@@ -124,7 +132,7 @@ func (p *Processor) processWhen() ([]tokeniser.Token, error) {
 		if err != nil {
 			return nil, err
 		}
-		value, err := evaluate(condition, p.target)
+		value, err := evaluate(condition, p.target, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -278,15 +286,16 @@ type compileTimeValue struct {
 }
 
 type targetValues struct {
-	os          string
-	arch        string
-	environment string
-	pointerBits int64
-	noLibc      bool
-	noStdlib    bool
+	os           string
+	arch         string
+	environment  string
+	pointerBits  int64
+	noLibc       bool
+	noStdlib     bool
+	capabilities map[string]bool
 }
 
-func evaluate(node parser.ExpressionNode, target targetValues) (compileTimeValue, error) {
+func evaluate(node parser.ExpressionNode, target targetValues, resolveCapability func(string, shared.Location) (bool, error)) (compileTimeValue, error) {
 	switch n := node.(type) {
 	case *parser.BoolLiteralNode:
 		return compileTimeValue{kind: valueBool, boolean: n.Value == string(tokeniser.KeywordTrue)}, nil
@@ -313,13 +322,23 @@ func evaluate(node parser.ExpressionNode, target targetValues) (compileTimeValue
 		case "NoStdlib":
 			return compileTimeValue{kind: valueBool, boolean: target.noStdlib}, nil
 		default:
+			if resolveCapability != nil {
+				value, err := resolveCapability(n.Name, n.Loc)
+				if err == nil {
+					return compileTimeValue{kind: valueBool, boolean: value}, nil
+				}
+				return compileTimeValue{}, err
+			}
+			if value, ok := target.capabilities[n.Name]; ok {
+				return compileTimeValue{kind: valueBool, boolean: value}, nil
+			}
 			return compileTimeValue{}, shared.NewError(n.Loc, "unknown compile-time value %q", n.Name)
 		}
 	case *parser.UnaryOpNode:
 		if n.Op != parser.UnaryOpLogicalNot {
 			return compileTimeValue{}, unsupported(node)
 		}
-		operand, err := evaluate(n.Operand, target)
+		operand, err := evaluate(n.Operand, target, resolveCapability)
 		if err != nil {
 			return compileTimeValue{}, err
 		}
@@ -328,11 +347,11 @@ func evaluate(node parser.ExpressionNode, target targetValues) (compileTimeValue
 		}
 		return compileTimeValue{kind: valueBool, boolean: !operand.boolean}, nil
 	case *parser.BinaryOpNode:
-		left, err := evaluate(n.Operand1, target)
+		left, err := evaluate(n.Operand1, target, resolveCapability)
 		if err != nil {
 			return compileTimeValue{}, err
 		}
-		right, err := evaluate(n.Operand2, target)
+		right, err := evaluate(n.Operand2, target, resolveCapability)
 		if err != nil {
 			return compileTimeValue{}, err
 		}

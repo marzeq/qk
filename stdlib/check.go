@@ -46,6 +46,12 @@ func ParseTrustedSources(sources map[string]string, config preprocessor.Config) 
 // Check typechecks trusted standard-library sources without generating IR or
 // native output. All semantic diagnostics are returned together.
 func Check(sources map[string]string, config preprocessor.Config) []error {
+	capabilities, err := preprocessor.ResolveCapabilities(sources, config, false)
+	if err != nil {
+		return []error{err}
+	}
+	config.Capabilities = capabilities
+	config.TrustedStandardLibrary = true
 	partials, err := ParseTrustedSources(sources, config)
 	if err != nil {
 		return []error{err}

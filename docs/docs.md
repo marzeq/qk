@@ -285,6 +285,39 @@ when NoLibc and OS == .Linux and Arch == .X86_64 {
 `NoStdlib` describes whether the QK `std` module is loaded; it is independent of
 whether the platform C library is linked.
 
+Trusted standard-library sources can declare boolean capabilities:
+
+```qk
+module std
+
+let HasPrint = compile_time not NoLibc
+let HasFormatting = compile_time HasPrint
+```
+
+Capability declarations are preprocessing metadata, not runtime globals or
+members of the `std` namespace. Their names are globally available only inside
+`when` conditions:
+
+```qk
+when HasPrint {
+    import std
+    std:println("available")
+}
+```
+
+Only compiler-trusted embedded sources or an explicitly trusted `-stdlib` source
+tree may declare capabilities. Names must begin with `Has`, initializers must be
+boolean compile-time expressions, and declarations must be top-level. They may
+reference target/configuration values and other capabilities. Forward references
+are supported; duplicate declarations, unknown references, and dependency cycles
+are errors.
+
+With `-nostdlib`, capability names known to the embedded standard library remain
+available but evaluate to `false`. This permits project sources to guard imports
+without producing unknown-name errors, while misspelled or otherwise unknown
+capability names remain diagnostics. An external `-stdlib` tree supplies its own
+capability set while selected.
+
 ## 6. Declarations and scope
 
 ### 6.1 Values

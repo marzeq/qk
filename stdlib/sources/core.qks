@@ -1,0 +1,4 @@
+module std
+
+let HasStdlib = compile_time not NoStdlib
+let HasLibc = compile_time not NoLibc

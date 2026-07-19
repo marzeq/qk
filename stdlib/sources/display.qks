@@ -1,10 +1,12 @@
 module std
 
+let HasDisplayPrimitives = compile_time HasLibc
+
 pub let Display = type trait {
   let display(self): void
 }
 
-when not NoLibc {
+when HasDisplayPrimitives {
   let _display_printf(format: cstr, ...): i32 @foreign(symbol "printf")
   let _display_putchar(character: i32): i32 @foreign(symbol "putchar")
 
