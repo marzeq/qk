@@ -1419,6 +1419,26 @@ embedded `.qks` sources, or keep a directory of ordinary `.qk` files and pass it
 explicitly:
 
 ```text
+go generate ./stdlib
+go build ./cmd/qkc
+```
+
+The generation step does not produce generated files. It runs the embedded
+sources through tokenisation, preprocessing, parsing, module loading, semantic
+analysis, attribution, and validation, then fails the command on any diagnostic.
+Go does not run generators as part of `go build`, so compiler developers and CI
+must invoke `go generate ./stdlib` explicitly before building. The checker can
+also be run directly, with an optional target for compile-time selection:
+
+```text
+go run ./cmd/qkstdlibcheck
+go run ./cmd/qkstdlibcheck -target aarch64-unknown-linux-gnu
+```
+
+For an external development library, keep a directory of ordinary `.qk` files
+and pass it to the compiler explicitly:
+
+```text
 go run ./cmd/qkc . -stdlib /path/to/qk-stdlib
 ```
 

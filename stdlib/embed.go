@@ -2,6 +2,8 @@ package stdlib
 
 import "embed"
 
+//go:generate go run ../cmd/qkstdlibcheck
+
 // Sources contains the compiler-authorized standard library. The .qks suffix
 // keeps these files out of ordinary project source discovery.
 //

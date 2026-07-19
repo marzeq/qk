@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 
 	"github.com/marzeq/qk/attributes"
 	"github.com/marzeq/qk/ir"
@@ -72,18 +71,9 @@ func main() {
 		} else {
 			sources, err := stdlib.ReadSources()
 			check(err)
-			origins := make([]string, 0, len(sources))
-			for origin := range sources {
-				origins = append(origins, origin)
-			}
-			sort.Strings(origins)
-			for _, origin := range origins {
-				ast, err := parseSource(sources[origin], origin, args.target)
-				check(err)
-				info, err := loader.CollectModuleInfo(ast, true)
-				check(err)
-				partials = append(partials, info)
-			}
+			stdlibPartials, err := stdlib.ParseTrustedSources(sources, args.target)
+			check(err)
+			partials = append(partials, stdlibPartials...)
 		}
 	}
 

@@ -13,7 +13,8 @@ git clone git@github.com:marzeq/qk.git
 cd qk
 git config core.hooksPath .githooks # if you plan to contribute
 
-go build ./cmd/qkc # or run 'go run ./cmd/qkc' directly
+go generate ./stdlib # typecheck the embedded QK standard library
+go build ./cmd/qkc   # or run 'go run ./cmd/qkc' directly
 ```
 ## Supported platforms
 
