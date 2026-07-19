@@ -134,6 +134,7 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 
 	var args []*FunctionNodeArg
 	variadic := false
+	typedVariadic := false
 	receiver := MethodReceiverNone
 	hasReceiver := p.Match(tokeniser.TokenAsterisk) ||
 		(p.Match(tokeniser.TokenIdentifier) && p.Peek().Value == "self")
@@ -248,9 +249,23 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 		}
 		p.Inc()
 
+		isTypedVariadic := p.Match(tokeniser.Token3Dots)
+		if isTypedVariadic {
+			if len(group) != 1 {
+				return nil, shared.NewError(p.CurrLoc(), "typed variadic parameter cannot use a grouped declaration")
+			}
+			p.Inc()
+		}
 		argType, err := p.ParseType()
 		if err != nil {
 			return nil, err
+		}
+		if isTypedVariadic {
+			if group[0].Default != nil {
+				return nil, shared.NewError(beginLoc, "typed variadic parameter cannot have a default")
+			}
+			argType = &SliceTypeNode{ElementType: argType, Size: -1, Loc: argType.GetLoc()}
+			typedVariadic = true
 		}
 
 		if p.Match(tokeniser.TokenEquals) {
@@ -268,6 +283,12 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 			groupedArg.Type = argType
 		}
 		args = append(args, group...)
+		if isTypedVariadic {
+			if p.Match(tokeniser.TokenComma) {
+				return nil, shared.NewError(p.CurrLoc(), "typed variadic parameter must be last")
+			}
+			break
+		}
 
 		if !p.Match(tokeniser.TokenComma) {
 			break
@@ -337,15 +358,16 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 	}
 
 	return &FunctionDefNode{
-		Name:        name.Value,
-		MethodOwner: methodOwner,
-		Receiver:    receiver,
-		Args:        args,
-		RetTypeNode: retType,
-		Body:        body,
-		Loc:         beginLoc,
-		Attributes:  attrs,
-		HasVariadic: variadic,
+		Name:          name.Value,
+		MethodOwner:   methodOwner,
+		Receiver:      receiver,
+		Args:          args,
+		RetTypeNode:   retType,
+		Body:          body,
+		Loc:           beginLoc,
+		Attributes:    attrs,
+		HasVariadic:   variadic,
+		TypedVariadic: typedVariadic,
 	}, nil
 }
 

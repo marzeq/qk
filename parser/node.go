@@ -156,9 +156,10 @@ func (n PointerTypeNode) GetLoc() shared.Location { return n.Loc }
 func (n PointerTypeNode) _type()                  {}
 
 type FunctionTypeNode struct {
-	Parameters []TypeNode
-	ReturnType TypeNode
-	Loc        shared.Location
+	Parameters    []TypeNode
+	ReturnType    TypeNode
+	TypedVariadic bool
+	Loc           shared.Location
 }
 
 func (n FunctionTypeNode) GetLoc() shared.Location { return n.Loc }
@@ -275,6 +276,11 @@ type FunctionCallNode struct {
 
 	TraitCall bool
 	TraitSlot int
+
+	TypedVariadic      bool
+	TypedVariadicStart int
+	TypedVariadicSlice types.Type
+	VariadicExpansion  bool
 }
 
 func (n FunctionCallNode) GetLoc() shared.Location { return n.Loc }
@@ -556,17 +562,18 @@ type FunctionNodeArg struct {
 func (a FunctionNodeArg) GetLoc() shared.Location { return a.Type.GetLoc() }
 
 type FunctionDefNode struct {
-	Name        string
-	MethodOwner string
-	Receiver    MethodReceiverKind
-	Args        []*FunctionNodeArg
-	RetTypeNode TypeNode
-	Body        Node
-	HasVariadic bool
-	Pub         bool
-	Attributes  attributes.Attributes
-	Loc         shared.Location
-	Symbol      *symbols.Symbol
+	Name          string
+	MethodOwner   string
+	Receiver      MethodReceiverKind
+	Args          []*FunctionNodeArg
+	RetTypeNode   TypeNode
+	Body          Node
+	HasVariadic   bool
+	TypedVariadic bool
+	Pub           bool
+	Attributes    attributes.Attributes
+	Loc           shared.Location
+	Symbol        *symbols.Symbol
 }
 
 type MethodReceiverKind uint8

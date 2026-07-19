@@ -66,6 +66,9 @@ func (a *Analyser) collectPlainFunctionSignature(n *parser.FunctionDefNode) {
 			requiredParameters = i
 		}
 	}
+	if n.TypedVariadic && requiredParameters == len(n.Args) {
+		requiredParameters--
+	}
 
 	var retType types.Type
 	if n.RetTypeNode != nil {
@@ -77,6 +80,10 @@ func (a *Analyser) collectPlainFunctionSignature(n *parser.FunctionDefNode) {
 		RequiredParameters: requiredParameters,
 		ReturnType:         retType,
 		Variadic:           n.HasVariadic,
+		TypedVariadic:      n.TypedVariadic,
+	}
+	if n.TypedVariadic {
+		sig.VariadicElement = types.Underlying(paramTypes[len(paramTypes)-1]).(types.SliceType).Base
 	}
 
 	sym := &symbols.Symbol{
@@ -127,14 +134,20 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 			requiredParameters = i
 		}
 	}
+	if n.TypedVariadic && requiredParameters == len(n.Args) {
+		requiredParameters--
+	}
 	var ret types.Type
 	if n.RetTypeNode != nil {
 		ret = a.resolveTypeNode(n.RetTypeNode)
 	}
 	sym := &symbols.Symbol{Name: n.MethodOwner + "." + n.Name, Kind: symbols.SymbolKindFunction,
-		Signature: &symbols.FunctionSignature{Parameters: paramTypes, RequiredParameters: requiredParameters, ReturnType: ret, Variadic: n.HasVariadic},
+		Signature: &symbols.FunctionSignature{Parameters: paramTypes, RequiredParameters: requiredParameters, ReturnType: ret, Variadic: n.HasVariadic, TypedVariadic: n.TypedVariadic},
 		Public:    n.Pub, Attributes: n.Attributes, StaticMethod: n.Receiver == parser.MethodReceiverNone}
 	a.methods[key][n.Name] = sym
+	if n.TypedVariadic {
+		sym.Signature.VariadicElement = types.Underlying(paramTypes[len(paramTypes)-1]).(types.SliceType).Base
+	}
 	n.Symbol = sym
 }
 

@@ -75,7 +75,11 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 		for i, param := range t.Parameters {
 			params[i] = a.resolveTypeNodeAt(param, indirect)
 		}
-		return types.FunctionType{Parameters: params, ReturnType: a.resolveTypeNodeAt(t.ReturnType, indirect)}
+		fn := types.FunctionType{Parameters: params, ReturnType: a.resolveTypeNodeAt(t.ReturnType, indirect), TypedVariadic: t.TypedVariadic}
+		if t.TypedVariadic {
+			fn.VariadicElement = types.Underlying(params[len(params)-1]).(types.SliceType).Base
+		}
+		return fn
 
 	case *parser.SliceTypeNode:
 		return types.SliceType{

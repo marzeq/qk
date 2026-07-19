@@ -33,6 +33,8 @@ type FunctionSignature struct {
 	RequiredParameters int
 	ReturnType         types.Type
 	Variadic           bool
+	TypedVariadic      bool
+	VariadicElement    types.Type
 }
 
 func NewVariable(name string, typ types.Type) *Symbol {

@@ -837,6 +837,7 @@ func (p *Parser) ParseFunctionCall(name *IdentifierNode) (*FunctionCallNode, err
 
 func (p *Parser) ParseCall(callee ExpressionNode) (*FunctionCallNode, error) {
 	var args []ExpressionNode
+	expanded := false
 
 	if !p.Expect(tokeniser.TokenOpenParen) {
 		return nil, shared.NewError(p.PrevLoc(), "expected '('")
@@ -860,6 +861,17 @@ func (p *Parser) ParseCall(callee ExpressionNode) (*FunctionCallNode, error) {
 				return nil, err
 			}
 			args = append(args, arg)
+			if p.Match(tokeniser.Token3Dots) {
+				p.Inc()
+				expanded = true
+				for p.Match(tokeniser.TokenNewline) {
+					p.Inc()
+				}
+				if !p.Match(tokeniser.TokenCloseParen) {
+					return nil, shared.NewError(p.CurrLoc(), "expanded slice must be the final call argument")
+				}
+				break
+			}
 
 			if !p.Match(tokeniser.TokenComma) {
 				break
@@ -881,9 +893,10 @@ func (p *Parser) ParseCall(callee ExpressionNode) (*FunctionCallNode, error) {
 	}
 
 	return &FunctionCallNode{
-		Callee: callee,
-		Args:   args,
-		Loc:    callee.GetLoc(),
+		Callee:            callee,
+		Args:              args,
+		VariadicExpansion: expanded,
+		Loc:               callee.GetLoc(),
 	}, nil
 }
 
@@ -1587,6 +1600,7 @@ func (p *Parser) ParseFunctionType() (*FunctionTypeNode, error) {
 	beginLoc := p.CurrLoc()
 	p.Inc() // (
 	var params []TypeNode
+	typedVariadic := false
 	for {
 		for p.Match(tokeniser.TokenNewline) {
 			p.Inc()
@@ -1594,11 +1608,25 @@ func (p *Parser) ParseFunctionType() (*FunctionTypeNode, error) {
 		if p.Match(tokeniser.TokenCloseParen) {
 			break
 		}
+		isTypedVariadic := p.Match(tokeniser.Token3Dots)
+		if isTypedVariadic {
+			p.Inc()
+		}
 		param, err := p.ParseType()
 		if err != nil {
 			return nil, err
 		}
+		if isTypedVariadic {
+			param = &SliceTypeNode{ElementType: param, Size: -1, Loc: param.GetLoc()}
+			typedVariadic = true
+		}
 		params = append(params, param)
+		if isTypedVariadic {
+			if p.Match(tokeniser.TokenComma) {
+				return nil, shared.NewError(p.CurrLoc(), "typed variadic parameter must be last")
+			}
+			break
+		}
 		if !p.Match(tokeniser.TokenComma) {
 			break
 		}
@@ -1614,7 +1642,7 @@ func (p *Parser) ParseFunctionType() (*FunctionTypeNode, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &FunctionTypeNode{Parameters: params, ReturnType: ret, Loc: beginLoc}, nil
+	return &FunctionTypeNode{Parameters: params, ReturnType: ret, TypedVariadic: typedVariadic, Loc: beginLoc}, nil
 }
 
 func (p *Parser) ParseNamedType() (*NamedTypeNode, error) {

@@ -89,6 +89,9 @@ func (v *Validator) validateNode(node parser.Node) {
 		if n.Symbol.Signature.Variadic && usesQKABI {
 			v.errorf(n, "functions using the qk ABI cannot be variadic")
 		}
+		if n.Symbol.Signature.TypedVariadic && usesCABI {
+			v.errorf(n, "typed variadic functions cannot use the c ABI")
+		}
 
 		seenDefault := false
 		for i, param := range n.Symbol.Signature.Parameters {
@@ -99,6 +102,9 @@ func (v *Validator) validateNode(node parser.Node) {
 				v.errorf(n.Args[i].Type, "function parameter cannot have incomplete type %v", param)
 			}
 			arg := n.Args[i]
+			if n.Symbol.Signature.TypedVariadic && arg.Default != nil {
+				v.errorf(arg.Default, "typed variadic functions cannot currently use default parameters")
+			}
 			if arg.Default == nil {
 				if seenDefault {
 					v.errorf(arg, "parameter without a default cannot follow a parameter with a default")
@@ -423,9 +429,13 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 	case *parser.FunctionCallNode:
 		var params []types.Type
 		variadic := false
+		typedVariadic := false
+		var variadicElement types.Type
 		if n.Symbol != nil && n.Symbol.Kind == symbols.SymbolKindFunction {
 			params = n.Symbol.Signature.Parameters
 			variadic = n.Symbol.Signature.Variadic
+			typedVariadic = n.Symbol.Signature.TypedVariadic
+			variadicElement = n.Symbol.Signature.VariadicElement
 		} else {
 			v.validateExpr(n.Callee)
 			ptr, ok := types.Underlying(n.Callee.GetType()).(types.PointerType)
@@ -439,9 +449,15 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 				return
 			}
 			params = fn.Parameters
+			typedVariadic = fn.TypedVariadic
+			variadicElement = fn.VariadicElement
 		}
 
 		got, expected := len(n.Args), len(params)
+		if typedVariadic {
+			expected--
+			variadic = true
+		}
 		required := expected
 		if n.Symbol != nil && n.Symbol.Kind == symbols.SymbolKindFunction {
 			required = n.Symbol.Signature.RequiredParameters
@@ -476,6 +492,18 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		}
 
 		for i, arg := range n.Args {
+			if typedVariadic && i >= len(params)-1 {
+				if n.VariadicExpansion {
+					if i != len(params)-1 || len(n.Args) != len(params) {
+						v.errorf(n, "slice expansion must supply the complete typed variadic tail")
+						continue
+					}
+					n.Args[i] = v.validateExprWithExpected(arg, params[len(params)-1])
+				} else {
+					n.Args[i] = v.validateExprWithExpected(arg, variadicElement)
+				}
+				continue
+			}
 			if i >= len(params) {
 				v.validateExpr(arg)
 				if types.HasUntyped(arg.GetType()) {
@@ -486,6 +514,13 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 
 			paramType := params[i]
 			n.Args[i] = v.validateExprWithExpected(arg, paramType)
+		}
+		if typedVariadic {
+			n.TypedVariadic = true
+			n.TypedVariadicStart = len(params) - 1
+			n.TypedVariadicSlice = params[len(params)-1]
+		} else if n.VariadicExpansion {
+			v.errorf(n, "slice expansion requires a typed variadic function")
 		}
 
 	case *parser.CastNode:
@@ -530,6 +565,11 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 				v.errorf(n, "type %v does not conform to %v", n.Type, sourceTrait.Trait)
 			}
 			break
+		}
+		if from, ok := types.Underlying(n.Operand.GetType()).(types.SliceType); ok {
+			if to, ok := types.Underlying(n.Type).(types.SliceType); ok && from.Base.Equals(to.Base) {
+				break
+			}
 		}
 		if !types.CanExplicitCast(n.Operand.GetType(), n.Type) {
 			v.errorf(n, "cannot cast %v to %v", n.Operand.GetType(), n.Type)

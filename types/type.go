@@ -601,8 +601,10 @@ func (a SliceType) String() string {
 }
 
 type FunctionType struct {
-	Parameters []Type
-	ReturnType Type
+	Parameters      []Type
+	ReturnType      Type
+	TypedVariadic   bool
+	VariadicElement Type
 }
 
 func (f FunctionType) Equals(other Type) bool {
@@ -612,6 +614,9 @@ func (f FunctionType) Equals(other Type) bool {
 	}
 
 	if len(f.Parameters) != len(otherFunction.Parameters) {
+		return false
+	}
+	if f.TypedVariadic != otherFunction.TypedVariadic {
 		return false
 	}
 
@@ -633,6 +638,9 @@ func (f FunctionType) CanCoerceTo(other Type) bool {
 	if len(f.Parameters) != len(otherFunction.Parameters) {
 		return false
 	}
+	if f.TypedVariadic != otherFunction.TypedVariadic {
+		return false
+	}
 
 	for i := range f.Parameters {
 		if !otherFunction.Parameters[i].CanCoerceTo(f.Parameters[i]) {
@@ -651,7 +659,12 @@ func (f FunctionType) String() string {
 	var result strings.Builder
 	result.WriteString("(")
 	for i, param := range f.Parameters {
-		result.WriteString(param.String())
+		if f.TypedVariadic && i == len(f.Parameters)-1 {
+			result.WriteString("...")
+			result.WriteString(f.VariadicElement.String())
+		} else {
+			result.WriteString(param.String())
+		}
 		if i < len(f.Parameters)-1 {
 			result.WriteString(", ")
 		}

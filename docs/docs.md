@@ -400,15 +400,49 @@ on functions using the C ABI.
 
 ### 7.4 Variadic functions
 
-`...` declares a variadic tail:
+Bare `...` declares an untyped C variadic tail:
 
 ```qk
 let printf(format: cstr, ...): i32 @foreign
 ```
 
-Variadic functions must use the C ABI. Fixed arguments are checked normally.
+Bare variadic functions must use the C ABI. Fixed arguments are checked normally.
 Extra arguments must already have concrete types, so cast otherwise-unconstrained
 numeric literals before passing them.
+
+A named typed variadic parameter uses `name: ...Type` and is available as a
+dynamic slice inside a QK function:
+
+```qk
+let sum(values: ...i64): i64 {
+    let mut result: i64 = 0
+    for value in values { result += value }
+    return result
+}
+
+let inspect(values: ...*Any) { /* values has type [*Any] */ }
+```
+
+Calls accept zero or more separately checked arguments. The compiler packages
+them into temporary contiguous storage and passes one ordinary slice descriptor:
+
+```qk
+sum()
+sum(10, 20, 30)
+inspect(number.&, file.&)
+```
+
+An existing slice can supply the complete variadic tail with postfix `...`:
+
+```qk
+let numbers: [i64, 3] = [10, 20, 30]
+sum(numbers...)
+```
+
+Typed variadics are QK-ABI-only and lower to a fixed final `[Type]` parameter;
+they never use LLVM or C varargs. They must be final, cannot use defaults, and
+cannot appear on C foreign or exported functions. Bare C variadics and typed QK
+variadics are distinct features.
 
 ### 7.5 Calls and function values
 
@@ -428,9 +462,10 @@ Function-pointer syntax is:
 let Callback = type alias *(i32, *void): bool
 ```
 
-Function types contain parameter and return types. Defaults, parameter names,
-variadic status, and foreign/export metadata are not part of a function-pointer
-type.
+Function types contain parameter and return types. Typed variadic metadata is
+written as `*(...Type): Return` and is preserved for checked indirect calls; its
+ABI is still a final slice parameter. Defaults, parameter names, bare C variadic
+status, and foreign/export metadata are not part of a function-pointer type.
 
 ### 7.6 Program entry point
 
@@ -1039,8 +1074,9 @@ compatibility. Function pointers cannot be declared `*mut`; mutability applies t
 data reached through a pointer, not to code.
 
 The callable type does not encode symbol linkage, C/QK ABI selection, defaults,
-or variadic behavior. Preserve those properties by calling a declared function
-directly when they matter. An indirect call uses the ordinary QK callable type.
+or bare C variadic behavior. Preserve those properties by calling a declared
+function directly when they matter. Typed QK variadic behavior is retained by
+the callable type because it uses an ordinary fixed slice ABI.
 
 ## 23. Scopes and name resolution
 

@@ -205,7 +205,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 			if ret == nil {
 				ret = types.PrimitiveVoid
 			}
-			n.SetType(types.PointerType{Base: types.FunctionType{Parameters: n.Symbol.Signature.Parameters, ReturnType: ret}})
+			n.SetType(types.PointerType{Base: types.FunctionType{Parameters: n.Symbol.Signature.Parameters, ReturnType: ret, TypedVariadic: n.Symbol.Signature.TypedVariadic, VariadicElement: n.Symbol.Signature.VariadicElement}})
 		} else if n.Symbol == nil || n.Symbol.Type == nil {
 			a.errorf(n, "undefined identifier: %s", n.String())
 			n.SetType(types.ErrorType{})
@@ -693,7 +693,7 @@ func (a *Attributor) attributeMethodValue(n *parser.FieldAccessNode) bool {
 	}
 	n.MethodSymbol = method
 	n.MethodModule = module
-	n.SetType(types.PointerType{Base: types.FunctionType{Parameters: method.Signature.Parameters, ReturnType: ret}})
+	n.SetType(types.PointerType{Base: types.FunctionType{Parameters: method.Signature.Parameters, ReturnType: ret, TypedVariadic: method.Signature.TypedVariadic, VariadicElement: method.Signature.VariadicElement}})
 	return true
 }
 

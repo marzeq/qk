@@ -324,6 +324,9 @@ func (g *Generator) GenerateFunction(fn *parser.FunctionDefNode) {
 }
 
 func (g *Generator) generateDefaultWrappers(fn *parser.FunctionDefNode, targetName string) {
+	if fn.Symbol.Signature.TypedVariadic {
+		return
+	}
 	required := fn.Symbol.Signature.RequiredParameters
 	total := len(fn.Args)
 	linkage := ir.LinkageInternal
@@ -1680,8 +1683,21 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 		callee = &value
 	}
 	args := make([]ir.Operand, 0, len(node.Args))
-	for _, arg := range node.Args {
-		args = append(args, g.GenerateExpr(arg))
+	if node.TypedVariadic {
+		for _, arg := range node.Args[:node.TypedVariadicStart] {
+			args = append(args, g.GenerateExpr(arg))
+		}
+		if node.VariadicExpansion {
+			args = append(args, g.GenerateExpr(node.Args[node.TypedVariadicStart]))
+		} else {
+			sliceType := node.TypedVariadicSlice
+			packed := &parser.SliceLiteralNode{Elements: append([]parser.ExpressionNode(nil), node.Args[node.TypedVariadicStart:]...), Type: sliceType, Loc: node.Loc}
+			args = append(args, g.generateSliceLiteralExpr(packed))
+		}
+	} else {
+		for _, arg := range node.Args {
+			args = append(args, g.GenerateExpr(arg))
+		}
 	}
 	callSig := g.buildCallSignature(node)
 	args = g.promoteVariadicArgs(args, callSig)
@@ -1724,7 +1740,7 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 			g.addExternForCall(name, callSig, "", hidden)
 		}
 
-		if len(node.Args) < len(node.Symbol.Signature.Parameters) {
+		if !node.Symbol.Signature.TypedVariadic && len(node.Args) < len(node.Symbol.Signature.Parameters) {
 			name = g.defaultWrapperName(name, len(node.Args))
 			callSig.ParamTypes = append([]types.Type(nil), node.Symbol.Signature.Parameters[:len(node.Args)]...)
 			callSig.Variadic = false
