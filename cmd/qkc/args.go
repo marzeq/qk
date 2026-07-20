@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -90,7 +91,7 @@ func parseOutputType(value string) (OutputType, error) {
 	switch value {
 	case "exe", "executable", ".exe":
 		return OutputExecutable, nil
-	case "obj", "object", ".o":
+	case "obj", "object", ".o", ".obj":
 		return OutputObject, nil
 	case "so", "shared", "sharedlib", ".so", ".dll", ".dylib":
 		return OutputSharedLib, nil
@@ -389,7 +390,7 @@ func printUsage() {
 	fmt.Println("  -target-abi <name> Target-specific ABI name")
 	fmt.Println("  -relocation-model <model>  Relocation model (default, static, pic, dynamic-no-pic)")
 	fmt.Println("  -code-model <model>        Code model (default, tiny, small, kernel, medium, large)")
-	fmt.Println("  -Xlink <args>      Additional arguments to pass to clang when linking the final executable")
+	fmt.Println("  -Xlink <args>      Additional arguments for the native link")
 	fmt.Println("  -L <path>          Add library search path (can specify multiple times)")
 	fmt.Println("  -no-emit           Do not emit any output files, just check for errors")
 }
@@ -411,7 +412,7 @@ func finaliseArgs(args *Args) error {
 		if err != nil || !info.Mode().IsRegular() {
 			return fmt.Errorf("source file does not exist or is not a regular file: %s", args.file)
 		}
-		if filepath.Ext(args.file) != ".qk" {
+		if !strings.EqualFold(filepath.Ext(args.file), ".qk") {
 			return fmt.Errorf("source file must have a .qk extension: %s", args.file)
 		}
 		abs, err := filepath.Abs(args.file)
@@ -474,21 +475,21 @@ func finaliseOutputArgs(args *Args) error {
 	if args.output == "" {
 		switch args.outputType {
 		case OutputUnspecified:
-			args.output = args.mainModule
+			args.output = defaultExecutableName(args.mainModule, args.target)
 			args.outputType = OutputExecutable
 		case OutputExecutable:
-			args.output = args.mainModule
+			args.output = defaultExecutableName(args.mainModule, args.target)
 		case OutputObject:
-			args.output = args.mainModule + ".o"
+			args.output = defaultObjectName(args.mainModule, args.target)
 		case OutputSharedLib:
-			args.output = "lib" + args.mainModule + ".so"
+			args.output = defaultSharedLibraryName(args.mainModule, args.target)
 		}
 	} else {
 		switch args.outputType {
 		case OutputUnspecified:
-			ext := filepath.Ext(args.output)
+			ext := strings.ToLower(filepath.Ext(args.output))
 			switch ext {
-			case ".o":
+			case ".o", ".obj":
 				args.outputType = OutputObject
 			case ".so", ".dll", ".dylib":
 				args.outputType = OutputSharedLib
@@ -505,4 +506,46 @@ func finaliseOutputArgs(args *Args) error {
 	}
 
 	return nil
+}
+
+func defaultExecutableName(module, target string) string {
+	if targetIsWindows(target) {
+		return module + ".exe"
+	}
+	return module
+}
+
+func defaultObjectName(module, target string) string {
+	if targetIsWindows(target) {
+		return module + ".obj"
+	}
+	return module + ".o"
+}
+
+func defaultSharedLibraryName(module, target string) string {
+	switch {
+	case targetIsWindows(target):
+		return module + ".dll"
+	case targetIsApple(target):
+		return "lib" + module + ".dylib"
+	default:
+		return "lib" + module + ".so"
+	}
+}
+
+func effectiveTargetName(target string) string {
+	if target != "" {
+		return strings.ToLower(target)
+	}
+	return runtime.GOARCH + "-" + runtime.GOOS
+}
+
+func targetIsWindows(target string) bool {
+	target = effectiveTargetName(target)
+	return strings.Contains(target, "windows") || strings.Contains(target, "mingw") || strings.Contains(target, "msvc")
+}
+
+func targetIsApple(target string) bool {
+	target = effectiveTargetName(target)
+	return strings.Contains(target, "darwin") || strings.Contains(target, "apple") || strings.Contains(target, "macos") || strings.Contains(target, "ios")
 }

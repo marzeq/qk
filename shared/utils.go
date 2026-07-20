@@ -3,6 +3,7 @@ package shared
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 )
 
@@ -51,9 +52,14 @@ func (err Error) Error() string {
 	}
 	fmt.Fprintf(&b, "%s:%d:%d\n", err.loc.FilePath, err.loc.LC.Line, err.loc.LC.Col)
 
-	const red = "\x1b[31m"
-	const yellow = "\x1b[33m"
-	const reset = "\x1b[0m"
+	red := "\x1b[31m"
+	yellow := "\x1b[33m"
+	reset := "\x1b[0m"
+	if runtime.GOOS == "windows" || os.Getenv("NO_COLOR") != "" {
+		red = ""
+		yellow = ""
+		reset = ""
+	}
 
 	var color string
 	if err.isWarning {

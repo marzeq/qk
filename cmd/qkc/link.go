@@ -23,8 +23,8 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots []str
 	switch config.outputType {
 	case OutputExecutable:
 	case OutputObject:
-		if isWindowsGNUTarget(config.target) {
-			return nil, fmt.Errorf("relocatable object output for Windows GNU targets is unavailable with in-process LLD")
+		if targetIsWindows(config.target) {
+			return nil, fmt.Errorf("relocatable object output for Windows targets is unavailable")
 		}
 		args = append(args, "-r")
 	case OutputSharedLib:
@@ -88,15 +88,15 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots []str
 }
 
 func isWindowsGNUTarget(target string) bool {
-	target = strings.ToLower(target)
+	target = effectiveTargetName(target)
 	windows := strings.Contains(target, "windows") || strings.Contains(target, "mingw")
 	return windows && (strings.Contains(target, "gnu") || strings.Contains(target, "mingw"))
 }
 
 func deadStripLinkerFlag(target string) string {
-	target = strings.ToLower(target)
+	target = effectiveTargetName(target)
 	switch {
-	case strings.Contains(target, "darwin"), strings.Contains(target, "apple"), strings.Contains(target, "macos"), strings.Contains(target, "ios"):
+	case targetIsApple(target):
 		return "-Wl,-dead_strip"
 	case strings.Contains(target, "windows"), strings.Contains(target, "mingw"), strings.Contains(target, "msvc"):
 		return "-Wl,/OPT:REF"
@@ -106,9 +106,9 @@ func deadStripLinkerFlag(target string) string {
 }
 
 func linkerUndefinedFlag(target, symbol string) string {
-	target = strings.ToLower(target)
+	target = effectiveTargetName(target)
 	switch {
-	case strings.Contains(target, "darwin"), strings.Contains(target, "apple"), strings.Contains(target, "macos"), strings.Contains(target, "ios"):
+	case targetIsApple(target):
 		return "-Wl,-u,_" + symbol
 	case isWindowsGNUTarget(target):
 		return "-Wl,-u," + symbol

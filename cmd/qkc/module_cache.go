@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -37,7 +38,7 @@ func cleanupModuleObjectCache(verbose bool) {
 	var totalSize int64
 	removed := 0
 	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".o" {
+		if entry.IsDir() || !strings.EqualFold(filepath.Ext(entry.Name()), ".o") {
 			continue
 		}
 		info, err := entry.Info()

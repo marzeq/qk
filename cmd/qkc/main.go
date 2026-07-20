@@ -84,7 +84,7 @@ func main() {
 	}
 
 	for _, file := range files {
-		if file == args.file {
+		if samePath(file, args.file) {
 			continue
 		}
 		ast, err := parseFile(file, preprocessorConfig)

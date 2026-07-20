@@ -1,3 +1,5 @@
+//go:build cgo
+
 #include "bridge.h"
 
 #include <cstdlib>

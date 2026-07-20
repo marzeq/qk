@@ -20,11 +20,9 @@ go build ./cmd/qkc   # or run 'go run ./cmd/qkc' directly
 
 ### For the compiler itself
 
-Definitely not Windows, as I make many *NIX assumptions in the code.
-
-All other *nixes supported by Go should be supported, but I have only tested on Linux.
-
-Windows support is not on the top of my priority list, I'd rather push this to a fairly finished state first.
+Linux, macOS, and Windows hosts are supported when the required LLVM 22,
+Clang C++, and LLD development libraries are available. Linux is currently the
+most extensively exercised host.
 
 ### For compiling code with the compiler
 
@@ -39,6 +37,10 @@ aggregate lowering is currently limited to the documented target families.
 - A C++17 compiler
 - LLVM and Clang 22 development headers
 - The shared LLVM 22, Clang C++, and LLD driver libraries
+
+The headers and libraries must be visible to cgo's C++ compiler and linker. On
+Windows, use an LLVM build compatible with the selected cgo toolchain and set
+`CGO_CXXFLAGS`/`CGO_LDFLAGS` when it is installed outside standard search paths.
 
 ### Using the compiler
 
@@ -60,6 +62,8 @@ qkc -h
 qkc .
 ./main
 ```
+
+On Windows, the default executable is `main.exe`.
 
 The compiler will discover all `.qk` files belonging to the root module, build the dependency graph from there, and produce an executable named after the root module in the current directory.
 

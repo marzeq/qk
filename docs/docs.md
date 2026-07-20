@@ -41,10 +41,10 @@ During development, the equivalent direct invocation is:
 go run ./cmd/qkc .
 ```
 
-See the repository README for current build prerequisites. `qkc` is intended for
-Unix-like hosts. QK supports recognised 32-bit and 64-bit target architectures.
-Hosted cross-compilation requires compatible target CRT objects and native
-libraries.
+See the repository README for current build prerequisites. Linux, macOS, and
+Windows hosts are supported. QK supports recognised 32-bit and 64-bit target
+architectures. Hosted cross-compilation requires compatible target CRT objects
+and native libraries.
 
 The repository includes Vim file detection, syntax highlighting, indentation,
 and file settings under `editor_support/vim`.
@@ -241,12 +241,15 @@ another without an import. A name may be defined only once in a scope.
 
 ### 4.4 Source discovery
 
-The compiler recursively discovers `.qk` files in:
+The compiler recursively discovers `.qk` files in the base directory supplied on
+the command line and the platform's QK data directories. On Unix-like hosts these
+are:
 
-1. The base directory supplied on the command line.
-2. `~/.local/share/qk`.
-3. `/usr/local/lib/qk`.
-4. `/usr/lib/qk`.
+- `~/.local/share/qk`
+- `/usr/local/lib/qk`
+- `/usr/lib/qk`
+
+On Windows they are `%AppData%\qk` and, when available, `%ProgramData%\qk`.
 
 Use repeated `-E path` options to exclude files or directory trees. Only modules
 reachable from the selected root module contribute to the output.
@@ -1570,11 +1573,11 @@ Accepted output-type aliases are:
 - Shared library: `so`, `shared`, `sharedlib`, `.so`, `.dll`, `.dylib`.
 
 When `-t` is omitted, `-o` determines the type from its extension. With neither,
-the output is an executable named after the root module. Default object and shared
-library names are `module.o` and `libmodule.so`, where `module` is the root module
-name.
+the output is an executable named after the root module, with an `.exe` suffix on
+Windows targets. Default shared-library names use the target convention:
+`module.dll`, `libmodule.dylib`, or `libmodule.so`.
 
-Relocatable object output is unavailable for Windows GNU targets. `-run` is valid
+Relocatable object output is unavailable for Windows targets. `-run` is valid
 only for executables. It forwards the program's exit code and removes the
 generated executable after the run.
 
@@ -1821,8 +1824,7 @@ QK is intentionally small and currently has no:
 Target pointer width is supported for recognised 32-bit and 64-bit architectures.
 C aggregate parameters and returns are supported for SysV AMD64, Windows x64,
 and AArch64, but not yet for 32-bit targets. Scalar C ABI and ordinary QK calls
-work on supported 32-bit targets. The host compiler is not currently intended
-for Windows.
+work on supported 32-bit targets.
 
 `as` is reserved but casts use `value.(Type)`. Block comments do not nest. QK
 strings and C strings are deliberately distinct.

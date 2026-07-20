@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/marzeq/qk/parser"
@@ -33,7 +34,10 @@ func collectSourceFiles(paths []string, exclude []string) ([]string, error) {
 	seen := map[string]struct{}{}
 	excluded := map[string]struct{}{}
 	for _, e := range exclude {
-		abs, _ := filepath.Abs(e)
+		abs, err := filepath.Abs(e)
+		if err != nil {
+			return nil, err
+		}
 		excluded[abs] = struct{}{}
 	}
 
@@ -44,39 +48,77 @@ func collectSourceFiles(paths []string, exclude []string) ([]string, error) {
 			continue
 		}
 
-		filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		err = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}
-			abs, _ := filepath.Abs(path)
+			abs, err := filepath.Abs(path)
+			if err != nil {
+				return err
+			}
 			for ex := range excluded {
-				if strings.HasPrefix(abs, ex) {
+				if pathWithin(abs, ex) {
 					if d.IsDir() {
 						return filepath.SkipDir
 					}
 					return nil
 				}
 			}
-			if !d.IsDir() && filepath.Ext(path) == ".qk" {
-				if _, ok := seen[abs]; !ok {
-					seen[abs] = struct{}{}
+			if !d.IsDir() && strings.EqualFold(filepath.Ext(path), ".qk") {
+				key := pathKey(abs)
+				if _, ok := seen[key]; !ok {
+					seen[key] = struct{}{}
 					files = append(files, abs)
 				}
 			}
 			return nil
 		})
+		if err != nil {
+			return nil, err
+		}
 	}
 	return files, nil
 }
 
+func samePath(first, second string) bool {
+	return pathKey(first) == pathKey(second)
+}
+
+func pathKey(path string) string {
+	path = filepath.Clean(path)
+	if runtime.GOOS == "windows" {
+		return strings.ToLower(path)
+	}
+	return path
+}
+
 func buildSearchPaths(baseDir string) []string {
 	paths := []string{baseDir}
-	if home, err := os.UserHomeDir(); err == nil {
-		paths = append(paths, filepath.Join(home, ".local", "share", "qk"))
+	if runtime.GOOS == "windows" {
+		if dataDir, err := os.UserConfigDir(); err == nil {
+			paths = append(paths, filepath.Join(dataDir, "qk"))
+		}
+	} else {
+		if home, err := os.UserHomeDir(); err == nil {
+			paths = append(paths, filepath.Join(home, ".local", "share", "qk"))
+		}
+		paths = append(paths,
+			filepath.Join(string(filepath.Separator), "usr", "local", "lib", "qk"),
+			filepath.Join(string(filepath.Separator), "usr", "lib", "qk"),
+		)
 	}
-	paths = append(paths,
-		filepath.Join("/usr", "local", "lib", "qk"),
-		filepath.Join("/usr", "lib", "qk"),
-	)
+	if runtime.GOOS == "windows" {
+		if programData := os.Getenv("ProgramData"); programData != "" {
+			paths = append(paths, filepath.Join(programData, "qk"))
+		}
+	}
 	return paths
+}
+
+func pathWithin(path, root string) bool {
+	relative, err := filepath.Rel(root, path)
+	if err != nil {
+		return false
+	}
+	return relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
 }

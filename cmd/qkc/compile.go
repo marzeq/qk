@@ -27,7 +27,7 @@ func dumpLLVMModule(output string) {
 }
 
 func emitLLVMFile(output string) (string, error) {
-	buildDir, err := os.MkdirTemp("/tmp", "qk-build-")
+	buildDir, err := os.MkdirTemp("", "qk-build-")
 	if err != nil {
 		return "", err
 	}
