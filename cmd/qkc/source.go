@@ -60,6 +60,12 @@ func collectSourceFiles(paths []string, exclude []string) ([]string, error) {
 				}
 				return err
 			}
+			if path != root && strings.HasPrefix(d.Name(), ".") {
+				if d.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
 			abs, err := filepath.Abs(path)
 			if err != nil {
 				return err
