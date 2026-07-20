@@ -75,9 +75,11 @@ native Mach-O library paths and ad-hoc code signing:
 scripts/package-release-macos.sh 0.1.0
 ```
 
-It requires `clang`, `llvm-config`, `otool`, `install_name_tool`, `codesign`, and
-`tar`. Run it natively on each supported macOS architecture with the release
-LLVM installation selected in `PATH`.
+It requires Go, LLVM and LLD development libraries, `otool`,
+`install_name_tool`, `codesign`, and `tar`. Homebrew's separate keg-only `llvm`
+and `lld` formulae are detected automatically. Other layouts can be selected
+with `LLVM_CONFIG`, `LLD_ROOT`, and `CLANG`. Run the script natively on each
+supported macOS architecture.
 
 ### Using the compiler
 

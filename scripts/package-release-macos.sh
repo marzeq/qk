@@ -11,12 +11,42 @@ if [[ $# -lt 1 || $# -gt 2 ]]; then
   exit 2
 fi
 
-for command in go clang llvm-config otool install_name_tool codesign tar; do
+for command in go otool install_name_tool codesign tar; do
   if ! command -v "$command" >/dev/null 2>&1; then
     echo "required command not found: $command" >&2
     exit 1
   fi
 done
+
+if [[ -n ${LLVM_CONFIG:-} ]]; then
+  llvm_config=$LLVM_CONFIG
+elif command -v llvm-config >/dev/null 2>&1; then
+  llvm_config=$(command -v llvm-config)
+elif command -v brew >/dev/null 2>&1 && [[ -x $(brew --prefix llvm)/bin/llvm-config ]]; then
+  llvm_config=$(brew --prefix llvm)/bin/llvm-config
+else
+  echo "llvm-config not found; install LLVM or set LLVM_CONFIG" >&2
+  exit 1
+fi
+
+llvm_prefix=$($llvm_config --prefix)
+llvm_library_directory=$($llvm_config --libdir)
+clang_command=${CLANG:-"$llvm_prefix/bin/clang"}
+if [[ ! -x "$clang_command" ]]; then
+  echo "Clang not found: $clang_command" >&2
+  exit 1
+fi
+
+if [[ -n ${LLD_ROOT:-} ]]; then
+  lld_prefix=$LLD_ROOT
+elif [[ -f "$llvm_library_directory/liblldCommon.dylib" ]]; then
+  lld_prefix=$llvm_prefix
+elif command -v brew >/dev/null 2>&1 && [[ -f $(brew --prefix lld)/lib/liblldCommon.dylib ]]; then
+  lld_prefix=$(brew --prefix lld)
+else
+  echo "LLD development libraries not found; install LLD or set LLD_ROOT" >&2
+  exit 1
+fi
 
 version=$1
 output_directory=${2:-dist}
@@ -24,7 +54,6 @@ architecture=$(go env GOARCH)
 archive_name="qk-${version}-macos-${architecture}"
 staging_parent=$(mktemp -d)
 staging_directory="${staging_parent}/${archive_name}"
-llvm_library_directory=$(llvm-config --libdir)
 
 cleanup() {
   rm -rf -- "$staging_parent"
@@ -35,7 +64,8 @@ mkdir -p "$staging_directory/bin" "$staging_directory/lib" "$output_directory"
 
 release_ldflags='-Wl,-rpath,@executable_path/../lib'
 GOCACHE=${GOCACHE:-"${staging_parent}/go-build-cache"} \
-  CGO_LDFLAGS="${CGO_LDFLAGS:-} ${release_ldflags}" \
+  CGO_CXXFLAGS="${CGO_CXXFLAGS:-} -I${llvm_prefix}/include -I${lld_prefix}/include" \
+  CGO_LDFLAGS="${CGO_LDFLAGS:-} -L${llvm_library_directory} -L${lld_prefix}/lib ${release_ldflags}" \
   go build -trimpath -ldflags="-s -w" -o "$staging_directory/bin/qkc" ./cmd/qkc
 
 dependencies() {
@@ -136,7 +166,7 @@ for library in "$staging_directory"/lib/*.dylib; do
 done
 codesign --force --sign - "$staging_directory/bin/qkc" >/dev/null
 
-resource_directory=$(clang -print-resource-dir)
+resource_directory=$($clang_command -print-resource-dir)
 if [[ ! -d "$resource_directory" ]]; then
   echo "Clang resource directory not found: $resource_directory" >&2
   exit 1
