@@ -933,11 +933,10 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 		if err != nil {
 			return nil, false, err
 		}
-		call, ok := value.(*FunctionCallNode)
-		if !ok {
-			return nil, false, shared.NewError(value.GetLoc(), "multiple assignment requires a function call")
+		if !isMultiResultSource(value) {
+			return nil, false, shared.NewError(value.GetLoc(), "multiple assignment requires a function call or checked cast")
 		}
-		return &AssignmentNode{Assignees: assignees, Value: call, Loc: expr.GetLoc()}, true, nil
+		return &AssignmentNode{Assignees: assignees, Value: value, Loc: expr.GetLoc()}, true, nil
 	}
 
 	if p.Match(tokeniser.TokenEquals) {
@@ -1083,11 +1082,18 @@ func (p *Parser) parseMultiDeclaration() (*MultiDeclarationNode, error) {
 	if err != nil {
 		return nil, err
 	}
-	call, ok := value.(*FunctionCallNode)
-	if !ok {
-		return nil, shared.NewError(value.GetLoc(), "multiple declaration requires a function call")
+	if !isMultiResultSource(value) {
+		return nil, shared.NewError(value.GetLoc(), "multiple declaration requires a function call or checked cast")
 	}
-	return &MultiDeclarationNode{Names: names, Value: call, Loc: loc}, nil
+	return &MultiDeclarationNode{Names: names, Value: value, Loc: loc}, nil
+}
+
+func isMultiResultSource(value ExpressionNode) bool {
+	switch value.(type) {
+	case *FunctionCallNode, *CastNode:
+		return true
+	}
+	return false
 }
 
 func (p *Parser) parseFunctionReturnType() (TypeNode, error) {

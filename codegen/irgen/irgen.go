@@ -1019,10 +1019,6 @@ func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
 		return g.generateGivenExpr(n)
 	case *parser.BinaryOpNode:
 		return g.generateBinaryExpr(n)
-	case *parser.TypeTestNode:
-		return g.generateTypeTestExpr(n)
-	case *parser.ImplementsTestNode:
-		return g.generateImplementsTestExpr(n)
 	case *parser.UnaryOpNode:
 		return g.generateUnaryExpr(n)
 	case *parser.StructLiteralNode:
@@ -1173,11 +1169,18 @@ func (g *Generator) generateNilLiteralExpr(node *parser.NilLiteralNode) ir.Opera
 
 func (g *Generator) generateCastExpr(node *parser.CastNode) ir.Operand {
 	targetType := node.GetType()
+	if node.Checked {
+		targetType = node.CheckedType
+	}
 	if node.TraitRecast {
 		return g.generateTraitRecast(node)
 	}
 	if node.TraitConversion {
-		return g.generateTraitConversion(node)
+		value := g.generateTraitConversion(node)
+		if node.Checked {
+			return g.packCheckedCast(value, ir.BoolConstOperand(true), node.GetType().(types.MultipleReturnType))
+		}
+		return value
 	}
 	if node.TraitUnwrap {
 		return g.generateTraitUnwrap(node)
@@ -1187,29 +1190,48 @@ func (g *Generator) generateCastExpr(node *parser.CastNode) ir.Operand {
 		if _, ok := types.Underlying(targetType).(types.PointerType); ok {
 			dst := g.currentFunction.NewValueOfType(targetType)
 			g.Emit(ir.StringConst{Dest: dst, Value: str.Value})
-			return ir.ValueOperand(dst, targetType)
+			return g.finishCertainCheckedCast(node, ir.ValueOperand(dst, targetType))
 		}
 	}
 
 	from := g.GenerateExpr(node.Operand)
 	if from.Type.Equals(targetType) {
-		return from
+		return g.finishCertainCheckedCast(node, from)
 	}
 	if types.Underlying(from.Type).Equals(types.Underlying(targetType)) {
 		from.Type = targetType
-		return from
+		return g.finishCertainCheckedCast(node, from)
 	}
 	if fromSlice, ok := types.Underlying(from.Type).(types.SliceType); ok {
 		if toSlice, ok := types.Underlying(targetType).(types.SliceType); ok && fromSlice.Base.Equals(toSlice.Base) {
 			// Fixed-size and dynamic slices have the same runtime representation.
 			from.Type = targetType
-			return from
+			return g.finishCertainCheckedCast(node, from)
 		}
 	}
 
 	dst := g.currentFunction.NewValueOfType(targetType)
 	g.Emit(ir.Cast{Dest: dst, From: from, To: targetType})
-	return ir.ValueOperand(dst, targetType)
+	value := ir.ValueOperand(dst, targetType)
+	if node.Checked {
+		return g.packCheckedCast(value, ir.BoolConstOperand(true), node.GetType().(types.MultipleReturnType))
+	}
+	return value
+}
+
+func (g *Generator) finishCertainCheckedCast(node *parser.CastNode, value ir.Operand) ir.Operand {
+	if !node.Checked {
+		return value
+	}
+	return g.packCheckedCast(value, ir.BoolConstOperand(true), node.GetType().(types.MultipleReturnType))
+}
+
+func (g *Generator) packCheckedCast(value, ok ir.Operand, result types.MultipleReturnType) ir.Operand {
+	first := g.currentFunction.NewValueOfType(result)
+	g.Emit(ir.InsertValue{Dest: first, Aggregate: ir.ZeroConstOperand(result), Value: value, Index: 0})
+	second := g.currentFunction.NewValueOfType(result)
+	g.Emit(ir.InsertValue{Dest: second, Aggregate: ir.ValueOperand(first, result), Value: ok, Index: 1})
+	return ir.ValueOperand(second, result)
 }
 
 func traitRuntimeName(t types.Type) string {
@@ -1338,7 +1360,11 @@ func (g *Generator) generateValueReceiverTraitThunk(vtableName string, slot int,
 }
 
 func (g *Generator) generateTraitConversion(node *parser.CastNode) ir.Operand {
-	target := node.GetType().(types.TraitPointerType)
+	targetType := node.GetType()
+	if node.Checked {
+		targetType = node.CheckedType
+	}
+	target := targetType.(types.TraitPointerType)
 	data := g.GenerateExpr(node.Operand)
 	voidPtr := types.PointerType{Base: types.PrimitiveVoid, Mutable: target.Mutable}
 	if !data.Type.Equals(voidPtr) {
@@ -1362,7 +1388,11 @@ func (g *Generator) generateTraitConversion(node *parser.CastNode) ir.Operand {
 func (g *Generator) generateTraitRecast(node *parser.CastNode) ir.Operand {
 	sourceValue := g.GenerateExpr(node.Operand)
 	source := sourceValue.Type.(types.TraitPointerType)
-	target := node.GetType().(types.TraitPointerType)
+	targetType := node.GetType()
+	if node.Checked {
+		targetType = node.CheckedType
+	}
+	target := targetType.(types.TraitPointerType)
 	sourceVT := traitVTableType(source.Trait)
 	sourceVTPtr := types.PointerType{Base: sourceVT}
 	vtID := g.currentFunction.NewValueOfType(sourceVTPtr)
@@ -1385,6 +1415,11 @@ func (g *Generator) generateTraitRecast(node *parser.CastNode) ir.Operand {
 
 	resultSlot := g.currentFunction.NewSlot(target, "trait.recast")
 	g.Emit(ir.Alloca{Slot: resultSlot})
+	okSlot := g.currentFunction.NewSlot(types.PrimitiveBool, "trait.recast.ok")
+	if node.Checked {
+		g.Emit(ir.Alloca{Slot: okSlot})
+		g.Emit(ir.Store{Slot: okSlot, Value: ir.BoolConstOperand(false)})
+	}
 	end := g.currentFunction.NewBlock("trait.recast.end")
 	for _, candidate := range node.TraitCandidates {
 		matches := g.currentFunction.NewValueOfType(types.PrimitiveBool)
@@ -1405,24 +1440,38 @@ func (g *Generator) generateTraitRecast(node *parser.CastNode) ir.Operand {
 		second := g.currentFunction.NewValueOfType(target)
 		g.Emit(ir.InsertValue{Dest: second, Aggregate: ir.ValueOperand(first, target), Value: ir.ValueOperand(targetVTID, targetVTPtr), Index: 1})
 		g.Emit(ir.Store{Slot: resultSlot, Value: ir.ValueOperand(second, target)})
+		if node.Checked {
+			g.Emit(ir.Store{Slot: okSlot, Value: ir.BoolConstOperand(true)})
+		}
 		g.Emit(ir.Jump{Target: end.ID})
 		g.currentBlock = next
 	}
 
-	messageText := "trait cast failed: value does not implement " + target.Trait.String()
-	messageNode := &parser.StringLiteralNode{Value: messageText, Type: types.SliceType{Base: types.PrimitiveChar, Size: len(messageText)}, Loc: node.Loc}
-	message := g.generateStringLiteralExpr(messageNode)
-	runtimeStr := types.SliceType{Base: types.PrimitiveChar, Size: -1}
-	message.Type = runtimeStr
-	panicSig := ir.FunctionSignature{ParamTypes: []types.Type{runtimeStr}, ReturnType: types.PrimitiveVoid}
-	g.addExternForCall("__qk_panic", panicSig, "", true)
-	g.Emit(ir.Call{Name: "__qk_panic", Args: []ir.Operand{message}, Signature: panicSig})
-	g.Emit(ir.Unreachable{})
+	if node.Checked {
+		g.Emit(ir.Store{Slot: resultSlot, Value: ir.ZeroConstOperand(target)})
+		g.Emit(ir.Jump{Target: end.ID})
+	} else {
+		messageText := "trait cast failed: value does not implement " + target.Trait.String()
+		messageNode := &parser.StringLiteralNode{Value: messageText, Type: types.SliceType{Base: types.PrimitiveChar, Size: len(messageText)}, Loc: node.Loc}
+		message := g.generateStringLiteralExpr(messageNode)
+		runtimeStr := types.SliceType{Base: types.PrimitiveChar, Size: -1}
+		message.Type = runtimeStr
+		panicSig := ir.FunctionSignature{ParamTypes: []types.Type{runtimeStr}, ReturnType: types.PrimitiveVoid}
+		g.addExternForCall("__qk_panic", panicSig, "", true)
+		g.Emit(ir.Call{Name: "__qk_panic", Args: []ir.Operand{message}, Signature: panicSig})
+		g.Emit(ir.Unreachable{})
+	}
 
 	g.currentBlock = end
 	result := g.currentFunction.NewValueOfType(target)
 	g.Emit(ir.Load{Dest: result, Slot: resultSlot})
-	return ir.ValueOperand(result, target)
+	value := ir.ValueOperand(result, target)
+	if node.Checked {
+		okID := g.currentFunction.NewValueOfType(types.PrimitiveBool)
+		g.Emit(ir.Load{Dest: okID, Slot: okSlot})
+		return g.packCheckedCast(value, ir.ValueOperand(okID, types.PrimitiveBool), node.GetType().(types.MultipleReturnType))
+	}
+	return value
 }
 
 func (g *Generator) generateTraitUnwrap(node *parser.CastNode) ir.Operand {
@@ -1440,86 +1489,71 @@ func (g *Generator) generateTraitUnwrap(node *parser.CastNode) ir.Operand {
 	g.Emit(ir.CmpEq{Dest: matches, Left: ir.ValueOperand(actualID, types.PrimitiveU64), Right: ir.IntConstOperand(fmt.Sprintf("%d", runtimeTypeID(node.ConcreteType)), types.PrimitiveU64)})
 	success := g.currentFunction.NewBlock("trait.unwrap.success")
 	failure := g.currentFunction.NewBlock("trait.unwrap.failure")
+	end := g.currentFunction.NewBlock("trait.unwrap.end")
+	targetType := node.GetType()
+	if node.Checked {
+		targetType = node.CheckedType
+	}
+	resultSlot := g.currentFunction.NewSlot(targetType, "trait.unwrap")
+	okSlot := g.currentFunction.NewSlot(types.PrimitiveBool, "trait.unwrap.ok")
+	if node.Checked {
+		g.Emit(ir.Alloca{Slot: resultSlot})
+		g.Emit(ir.Alloca{Slot: okSlot})
+		g.Emit(ir.Store{Slot: okSlot, Value: ir.BoolConstOperand(false)})
+	}
 	g.Emit(ir.Branch{Cond: ir.ValueOperand(matches, types.PrimitiveBool), Then: success.ID, Else: failure.ID})
 	g.currentBlock = failure
-	messageText := "trait unwrap failed: expected " + traitRuntimeName(node.ConcreteType)
-	messageNode := &parser.StringLiteralNode{Value: messageText, Type: types.SliceType{Base: types.PrimitiveChar, Size: len(messageText)}, Loc: node.Loc}
-	message := g.generateStringLiteralExpr(messageNode)
-	runtimeStr := types.SliceType{Base: types.PrimitiveChar, Size: -1}
-	message.Type = runtimeStr
-	panicSig := ir.FunctionSignature{ParamTypes: []types.Type{runtimeStr}, ReturnType: types.PrimitiveVoid}
-	g.addExternForCall("__qk_panic", panicSig, "", true)
-	g.Emit(ir.Call{Name: "__qk_panic", Args: []ir.Operand{message}, Signature: panicSig})
-	g.Emit(ir.Unreachable{})
+	if node.Checked {
+		g.Emit(ir.Store{Slot: resultSlot, Value: ir.ZeroConstOperand(targetType)})
+		g.Emit(ir.Jump{Target: end.ID})
+	} else {
+		messageText := "trait unwrap failed: expected " + traitRuntimeName(node.ConcreteType)
+		messageNode := &parser.StringLiteralNode{Value: messageText, Type: types.SliceType{Base: types.PrimitiveChar, Size: len(messageText)}, Loc: node.Loc}
+		message := g.generateStringLiteralExpr(messageNode)
+		runtimeStr := types.SliceType{Base: types.PrimitiveChar, Size: -1}
+		message.Type = runtimeStr
+		panicSig := ir.FunctionSignature{ParamTypes: []types.Type{runtimeStr}, ReturnType: types.PrimitiveVoid}
+		g.addExternForCall("__qk_panic", panicSig, "", true)
+		g.Emit(ir.Call{Name: "__qk_panic", Args: []ir.Operand{message}, Signature: panicSig})
+		g.Emit(ir.Unreachable{})
+	}
 	g.currentBlock = success
 	dataType := types.PointerType{Base: types.PrimitiveVoid, Mutable: traitPtr.Mutable}
 	dataID := g.currentFunction.NewValueOfType(dataType)
 	g.Emit(ir.ExtractValue{Dest: dataID, Aggregate: traitValue, Index: 0})
-	targetPointer, byPointer := types.Underlying(node.GetType()).(types.PointerType)
+	targetPointer, byPointer := types.Underlying(targetType).(types.PointerType)
 	if !byPointer {
-		targetPointer = types.PointerType{Base: node.GetType()}
+		targetPointer = types.PointerType{Base: targetType}
 	}
 	castID := g.currentFunction.NewValueOfType(targetPointer)
 	g.Emit(ir.Cast{Dest: castID, From: ir.ValueOperand(dataID, dataType), To: targetPointer})
 	if byPointer {
-		return ir.ValueOperand(castID, node.GetType())
-	}
-	valueID := g.currentFunction.NewValueOfType(node.GetType())
-	g.Emit(ir.LoadPtr{Dest: valueID, Ptr: ir.ValueOperand(castID, targetPointer)})
-	return ir.ValueOperand(valueID, node.GetType())
-}
-
-func (g *Generator) generateTypeTestExpr(node *parser.TypeTestNode) ir.Operand {
-	traitValue := g.GenerateExpr(node.Operand)
-	traitPtr := traitValue.Type.(types.TraitPointerType)
-	vtType := traitVTableType(traitPtr.Trait)
-	vtPtrType := types.PointerType{Base: vtType}
-	vtID := g.currentFunction.NewValueOfType(vtPtrType)
-	g.Emit(ir.ExtractValue{Dest: vtID, Aggregate: traitValue, Index: 1})
-	typeIDPtr := g.currentFunction.NewValueOfType(types.PointerType{Base: types.PrimitiveU64})
-	g.Emit(ir.FieldAddress{Dest: typeIDPtr, Base: ir.ValueOperand(vtID, vtPtrType), Field: "type_id"})
-	actualID := g.currentFunction.NewValueOfType(types.PrimitiveU64)
-	g.Emit(ir.LoadPtr{Dest: actualID, Ptr: ir.ValueOperand(typeIDPtr, types.PointerType{Base: types.PrimitiveU64})})
-	matches := g.currentFunction.NewValueOfType(types.PrimitiveBool)
-	g.Emit(ir.CmpEq{
-		Dest:  matches,
-		Left:  ir.ValueOperand(actualID, types.PrimitiveU64),
-		Right: ir.IntConstOperand(fmt.Sprintf("%d", runtimeTypeID(node.TargetType)), types.PrimitiveU64),
-	})
-	return ir.ValueOperand(matches, types.PrimitiveBool)
-}
-
-func (g *Generator) generateImplementsTestExpr(node *parser.ImplementsTestNode) ir.Operand {
-	if node.CompileTime {
-		return ir.BoolConstOperand(node.CompileResult)
-	}
-	traitValue := g.GenerateExpr(node.Operand)
-	if node.Always {
-		return ir.BoolConstOperand(true)
-	}
-	traitPtr := traitValue.Type.(types.TraitPointerType)
-	vtType := traitVTableType(traitPtr.Trait)
-	vtPtrType := types.PointerType{Base: vtType}
-	vtID := g.currentFunction.NewValueOfType(vtPtrType)
-	g.Emit(ir.ExtractValue{Dest: vtID, Aggregate: traitValue, Index: 1})
-	typeIDPtr := g.currentFunction.NewValueOfType(types.PointerType{Base: types.PrimitiveU64})
-	g.Emit(ir.FieldAddress{Dest: typeIDPtr, Base: ir.ValueOperand(vtID, vtPtrType), Field: "type_id"})
-	actualID := g.currentFunction.NewValueOfType(types.PrimitiveU64)
-	g.Emit(ir.LoadPtr{Dest: actualID, Ptr: ir.ValueOperand(typeIDPtr, types.PointerType{Base: types.PrimitiveU64})})
-	result := ir.BoolConstOperand(false)
-	for _, candidate := range node.Candidates {
-		matches := g.currentFunction.NewValueOfType(types.PrimitiveBool)
-		g.Emit(ir.CmpEq{Dest: matches, Left: ir.ValueOperand(actualID, types.PrimitiveU64), Right: ir.IntConstOperand(fmt.Sprintf("%d", runtimeTypeID(candidate)), types.PrimitiveU64)})
-		match := ir.ValueOperand(matches, types.PrimitiveBool)
-		if result.Kind == ir.OperandBoolConst && !result.BoolValue {
-			result = match
-			continue
+		value := ir.ValueOperand(castID, targetType)
+		if node.Checked {
+			g.Emit(ir.Store{Slot: resultSlot, Value: value})
+			g.Emit(ir.Store{Slot: okSlot, Value: ir.BoolConstOperand(true)})
+			g.Emit(ir.Jump{Target: end.ID})
+		} else {
+			return value
 		}
-		combined := g.currentFunction.NewValueOfType(types.PrimitiveBool)
-		g.Emit(ir.LogicalOr{Dest: combined, Left: result, Right: match})
-		result = ir.ValueOperand(combined, types.PrimitiveBool)
+	} else {
+		valueID := g.currentFunction.NewValueOfType(targetType)
+		g.Emit(ir.LoadPtr{Dest: valueID, Ptr: ir.ValueOperand(castID, targetPointer)})
+		value := ir.ValueOperand(valueID, targetType)
+		if node.Checked {
+			g.Emit(ir.Store{Slot: resultSlot, Value: value})
+			g.Emit(ir.Store{Slot: okSlot, Value: ir.BoolConstOperand(true)})
+			g.Emit(ir.Jump{Target: end.ID})
+		} else {
+			return value
+		}
 	}
-	return result
+	g.currentBlock = end
+	valueID := g.currentFunction.NewValueOfType(targetType)
+	g.Emit(ir.Load{Dest: valueID, Slot: resultSlot})
+	okID := g.currentFunction.NewValueOfType(types.PrimitiveBool)
+	g.Emit(ir.Load{Dest: okID, Slot: okSlot})
+	return g.packCheckedCast(ir.ValueOperand(valueID, targetType), ir.ValueOperand(okID, types.PrimitiveBool), node.GetType().(types.MultipleReturnType))
 }
 
 func (g *Generator) generateSizeOfExpr(node *parser.SizeOfNode) ir.Operand {

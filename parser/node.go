@@ -483,36 +483,6 @@ func (n BinaryOpNode) GetLoc() shared.Location { return n.Loc }
 func (n *BinaryOpNode) SetType(t types.Type)   { n.Type = t }
 func (n *BinaryOpNode) GetType() types.Type    { return n.Type }
 
-type TypeTestNode struct {
-	Operand    ExpressionNode
-	Target     TypeNode
-	TargetType types.Type
-	Loc        shared.Location
-	Type       types.Type
-}
-
-func (n TypeTestNode) GetLoc() shared.Location { return n.Loc }
-func (n *TypeTestNode) SetType(t types.Type)   { n.Type = t }
-func (n *TypeTestNode) GetType() types.Type    { return n.Type }
-
-type ImplementsTestNode struct {
-	Operand       ExpressionNode
-	Concrete      TypeNode
-	ConcreteType  types.Type
-	Target        TypeNode
-	TargetType    types.Type
-	Candidates    []types.Type
-	Always        bool
-	CompileTime   bool
-	CompileResult bool
-	Loc           shared.Location
-	Type          types.Type
-}
-
-func (n ImplementsTestNode) GetLoc() shared.Location { return n.Loc }
-func (n *ImplementsTestNode) SetType(t types.Type)   { n.Type = t }
-func (n *ImplementsTestNode) GetType() types.Type    { return n.Type }
-
 type CastNode struct {
 	ToType  TypeNode
 	Operand ExpressionNode
@@ -525,6 +495,8 @@ type CastNode struct {
 	ConcreteType    types.Type
 	TraitMethods    []*symbols.Symbol
 	TraitCandidates []TraitCastCandidate
+	Checked         bool
+	CheckedType     types.Type
 }
 
 type TraitCastCandidate struct {
@@ -717,7 +689,7 @@ type DeclarationNode struct {
 
 type MultiDeclarationNode struct {
 	Names   []string
-	Value   *FunctionCallNode
+	Value   ExpressionNode
 	Loc     shared.Location
 	Symbols []*symbols.Symbol
 }

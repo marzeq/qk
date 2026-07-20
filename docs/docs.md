@@ -60,7 +60,7 @@ The reserved words are:
 
 ```text
 alias alignof and as break continue defer else enum false for
-given if implements import in is len let module mut nil not offsetof opaque or pub
+given if import in len let module mut nil not offsetof opaque or pub
 return sizeof struct trait true type union
 ```
 
@@ -1398,49 +1398,33 @@ mutable place. Immutable trait pointers also accept computed concrete expression
 Untyped numeric literals still need a cast because the trait alone cannot infer
 their concrete numeric type. Implicit conversion never weakens mutability rules.
 
-Use `is` to compare a trait pointer's runtime concrete type without unwrapping:
+Use a two-target checked assertion to inspect a trait pointer without trapping:
 
 ```qk
-if erased is File {
-    let file = erased.(*File)
-}
-
-let is_file = erased is File
+let file, ok = erased.(*File)
 ```
 
-The right operand names an exact nominal concrete type, not a pointer or another
-trait. The result is `bool`; it does not perform structural conformance testing.
+The first target receives the asserted pointer or copied value on success and
+the zero value on failure. The second target receives `true` only when the
+runtime concrete type matches exactly.
 
-Use `implements` to test whether the erased concrete type structurally conforms
-to another trait:
+The same form performs a checked trait-to-trait recast:
 
 ```qk
-if erased implements Printable {
-    // The dynamic concrete type has Printable's required method set.
-}
-
-let can_print = erased implements Printable
+let printable, ok = erased.(dyn Printable)
 ```
 
-It also accepts a concrete type on the left and becomes a compile-time boolean
-constant, while remaining usable in ordinary expressions:
+When a cast is statically certain, the syntax remains accepted and the second
+result is the constant `true`:
 
 ```qk
-let vecs_are_printable = Vec2 implements Printable
-if Vec2 implements Printable { /* ... */ }
+let printable, ok = value.&.(dyn Printable)
+let widened, ok = number.(i64)
 ```
 
-An ordinary non-erased value uses its static concrete type and is likewise a
-compile-time result:
-
-```qk
-let can_print = value implements Printable
-```
-
-Unlike `is`, the right operand of `implements` must be a trait. Runtime checks use
-the concrete types and accessible method sets in the complete program; it does
-not invoke methods or construct a new trait pointer. Every concrete value
-implements `Any` and an empty trait.
+Checked assertions and recasts are available only as the right-hand side of a
+two-target declaration or assignment. Single-target casts retain their existing
+trapping behavior.
 
 ### 26.2 Display
 
@@ -1496,8 +1480,8 @@ Arguments rely on implicit concrete-to-trait borrowing. Both addressable and
 computed values are accepted. A private `display` method can satisfy the trait:
 visibility still prevents another module from naming the method directly, but
 does not prevent invocation through the trait. Converting an existing trait
-pointer to a different trait pointer performs a checked runtime recast and traps
-if the concrete type does not conform.
+pointer to a different trait pointer traps if the concrete type does not conform;
+the two-target form reports failure through its boolean result instead.
 
 ### 26.3 Panic
 

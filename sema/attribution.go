@@ -147,6 +147,9 @@ func (a *Attributor) attributeNode(node parser.Node) {
 			n.Symbol.Type = n.Value.GetType()
 		}
 	case *parser.MultiDeclarationNode:
+		if cast, ok := n.Value.(*parser.CastNode); ok {
+			cast.Checked = true
+		}
 		a.attributeExpr(n.Value)
 		if result, ok := n.Value.GetType().(types.MultipleReturnType); ok {
 			for i, sym := range n.Symbols {
@@ -157,6 +160,11 @@ func (a *Attributor) attributeNode(node parser.Node) {
 		}
 
 	case *parser.AssignmentNode:
+		if len(n.Assignees) > 0 {
+			if cast, ok := n.Value.(*parser.CastNode); ok {
+				cast.Checked = true
+			}
+		}
 		if len(n.Assignees) > 0 {
 			for _, target := range n.Assignees {
 				if id, ok := target.(*parser.IdentifierNode); !ok || id.Name != "_" {
@@ -667,22 +675,12 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 	case *parser.CastNode:
 		a.attributeExpr(n.Operand)
 		target := a.analyser.resolveTypeNode(n.ToType)
-		n.SetType(target)
-
-	case *parser.TypeTestNode:
-		a.attributeExpr(n.Operand)
-		n.TargetType = a.analyser.resolveTypeNode(n.Target)
-		n.SetType(types.PrimitiveBool)
-
-	case *parser.ImplementsTestNode:
-		if ident, ok := n.Operand.(*parser.IdentifierNode); ok && ident.Symbol != nil && ident.Symbol.Kind == symbols.SymbolKindType {
-			n.CompileTime = true
-			n.ConcreteType = ident.Symbol.TypeInfo
+		n.CheckedType = target
+		if n.Checked {
+			n.SetType(types.MultipleReturnType{Types: []types.Type{target, types.PrimitiveBool}})
 		} else {
-			a.attributeExpr(n.Operand)
+			n.SetType(target)
 		}
-		n.TargetType = a.analyser.resolveTypeNode(n.Target)
-		n.SetType(types.PrimitiveBool)
 
 	case *parser.SizeOfNode:
 		n.SetType(types.PrimitiveUsz)

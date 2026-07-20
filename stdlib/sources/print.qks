@@ -10,8 +10,9 @@ let display_print_argument(index: usz, arguments: [dyn Any]): void {
   }
 
   let argument = arguments[index]
-  if argument implements Display {
-    argument.(dyn Display).display()
+  let display, ok = argument.(dyn Display)
+  if ok {
+    display.display()
   } else {
     "<?>".display()
   }

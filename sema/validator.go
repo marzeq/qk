@@ -610,12 +610,16 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		}
 
 	case *parser.CastNode:
+		targetType := n.Type
+		if n.Checked {
+			targetType = n.CheckedType
+		}
 		if literal, ok := n.Operand.(*parser.SliceLiteralNode); ok && len(literal.Elements) == 0 && literal.RepeatValue == nil {
-			v.validateSliceLiteralWithExpected(literal, n.Type)
+			v.validateSliceLiteralWithExpected(literal, targetType)
 			break
 		}
 		v.validateExpr(n.Operand)
-		if conversion, ok := v.traitConversion(n.Operand, n.Type); ok {
+		if conversion, ok := v.traitConversion(n.Operand, targetType); ok {
 			n.TraitConversion = true
 			n.ConcreteType = conversion.ConcreteType
 			n.TraitMethods = conversion.TraitMethods
@@ -623,23 +627,23 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		}
 
 		if types.IsUntyped(n.Operand.GetType()) {
-			n.Operand = v.createCast(n.Operand, n.Type)
+			n.Operand = v.createCast(n.Operand, targetType)
 		}
 
 		if sourceTrait, ok := traitPointer(n.Operand.GetType()); ok {
-			if targetTrait, targetIsTrait := traitPointer(n.Type); targetIsTrait {
+			if targetTrait, targetIsTrait := traitPointer(targetType); targetIsTrait {
 				if !sourceTrait.Mutable && targetTrait.Mutable {
-					v.errorf(n, "cannot cast immutable %v to mutable %v", n.Operand.GetType(), n.Type)
+					v.errorf(n, "cannot cast immutable %v to mutable %v", n.Operand.GetType(), targetType)
 					break
 				}
 				n.TraitRecast = true
 				n.TraitCandidates = v.analyser.runtimeTraitCastCandidates(targetTrait.Trait, targetTrait.Mutable, n)
 				break
 			}
-			targetPointer, pointerTarget := types.Underlying(n.Type).(types.PointerType)
+			targetPointer, pointerTarget := types.Underlying(targetType).(types.PointerType)
 			if pointerTarget {
 				if !sourceTrait.Mutable && targetPointer.Mutable {
-					v.errorf(n, "cannot unwrap immutable %v as %v", n.Operand.GetType(), n.Type)
+					v.errorf(n, "cannot unwrap immutable %v as %v", n.Operand.GetType(), targetType)
 				}
 				n.TraitUnwrap = true
 				n.ConcreteType = targetPointer.Base
@@ -649,70 +653,26 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 				}
 				break
 			}
-			if !types.IsComplete(n.Type) {
-				v.errorf(n, "cannot unwrap incomplete type %v by value", n.Type)
+			if !types.IsComplete(targetType) {
+				v.errorf(n, "cannot unwrap incomplete type %v by value", targetType)
 				break
 			}
 			n.TraitUnwrap = true
-			n.ConcreteType = n.Type
-			probe := types.PointerType{Base: n.Type, Mutable: sourceTrait.Mutable}
+			n.ConcreteType = targetType
+			probe := types.PointerType{Base: targetType, Mutable: sourceTrait.Mutable}
 			if _, conforms := v.analyser.structuralConformance(probe, sourceTrait, n); !conforms {
-				v.errorf(n, "type %v does not conform to %v", n.Type, sourceTrait.Trait)
+				v.errorf(n, "type %v does not conform to %v", targetType, sourceTrait.Trait)
 			}
 			break
 		}
 		if from, ok := types.Underlying(n.Operand.GetType()).(types.SliceType); ok {
-			if to, ok := types.Underlying(n.Type).(types.SliceType); ok && from.Base.Equals(to.Base) {
+			if to, ok := types.Underlying(targetType).(types.SliceType); ok && from.Base.Equals(to.Base) {
 				break
 			}
 		}
-		if !types.CanExplicitCast(n.Operand.GetType(), n.Type) {
-			v.errorf(n, "cannot cast %v to %v", n.Operand.GetType(), n.Type)
+		if !types.CanExplicitCast(n.Operand.GetType(), targetType) {
+			v.errorf(n, "cannot cast %v to %v", n.Operand.GetType(), targetType)
 		}
-
-	case *parser.TypeTestNode:
-		v.validateExpr(n.Operand)
-		source, ok := traitPointer(n.Operand.GetType())
-		if !ok {
-			v.errorf(n, "left operand of is must be a trait pointer, got %v", n.Operand.GetType())
-			break
-		}
-		if _, trait := types.Underlying(n.TargetType).(types.TraitType); trait {
-			v.errorf(n, "right operand of is must be a concrete type, got %v", n.TargetType)
-			break
-		}
-		if _, pointer := types.Underlying(n.TargetType).(types.PointerType); pointer {
-			v.errorf(n, "right operand of is names the concrete type, not a pointer type")
-			break
-		}
-		probe := types.PointerType{Base: n.TargetType, Mutable: source.Mutable}
-		if _, conforms := v.analyser.structuralConformance(probe, source, n); !conforms {
-			v.errorf(n, "type %v does not conform to %v", n.TargetType, source.Trait)
-		}
-
-	case *parser.ImplementsTestNode:
-		trait, ok := types.Underlying(n.TargetType).(types.TraitType)
-		if !ok {
-			v.errorf(n, "right operand of implements must be a trait type, got %v", n.TargetType)
-			break
-		}
-		if n.CompileTime {
-			if sourceTrait, isTrait := types.Underlying(n.ConcreteType).(types.TraitType); isTrait {
-				n.CompileResult = traitImplementsTrait(sourceTrait, trait)
-				break
-			}
-			_, n.CompileResult = v.analyser.structuralConformance(types.PointerType{Base: n.ConcreteType}, types.TraitPointerType{Trait: trait}, n)
-			break
-		}
-		v.validateExpr(n.Operand)
-		if _, ok := traitPointer(n.Operand.GetType()); !ok {
-			n.CompileTime = true
-			n.ConcreteType = n.Operand.GetType()
-			_, n.CompileResult = v.analyser.structuralConformance(types.PointerType{Base: n.ConcreteType}, types.TraitPointerType{Trait: trait}, n)
-			break
-		}
-		n.Always = trait.Any || len(trait.Methods) == 0
-		n.Candidates = v.analyser.runtimeTraitImplementers(trait, n)
 
 	case *parser.UnaryOpNode:
 		v.validateExpr(n.Operand)
