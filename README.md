@@ -46,35 +46,25 @@ Windows, use an LLVM build compatible with the selected cgo toolchain and set
 
 The normal build dynamically links LLVM, Clang C++, and LLD. Distribution
 packagers should use this mode and declare the appropriate runtime library
-dependencies in their package metadata. They should not use the static release
-mode: the package manager is responsible for keeping QK and its LLVM ABI
-dependencies compatible and rebuilding QK when necessary.
+dependencies in their package metadata. They should not bundle these libraries:
+the package manager is responsible for keeping QK and its LLVM ABI dependencies
+compatible and rebuilding QK when necessary.
 
-#### Standalone releases
+#### Standalone Linux releases
 
-The `llvm_static` build tag disables QK's default shared-library linker flags so
-a standalone release can link a pinned LLVM toolchain entirely from static
-archives:
+The release packaging script builds `qkc`, bundles its LLVM, Clang, and LLD
+shared libraries, their non-glibc runtime dependencies, and Clang resource
+files, configures executable-relative library lookup, and creates a versioned
+archive:
 
 ```bash
-CGO_LDFLAGS="<absolute LLVM, Clang, LLD, C++ runtime, and dependency archives>" \
-  go build -tags llvm_static -o qkc ./cmd/qkc
+scripts/package-release-linux.sh 0.1.0
 ```
 
-Release builders must supply the complete archive closure produced by the LLVM
-build being shipped. This normally includes the static LLVM components reported
-by `llvm-config --link-static --libs --system-libs`, the Clang C++ and LLD
-archives used by QK, the C++ runtime, and LLVM's configured compression, XML,
-terminal, and other support dependencies. Prefer absolute archive paths (or the
-platform linker's force-static equivalent) so a same-named shared library cannot
-be selected accidentally. LLVM installations containing only shared libraries,
-such as many distribution development packages, cannot produce this build.
-
-This mode controls the libraries embedded in `qkc`; it does not change the
-runtime dependencies of programs produced by the compiler. A GitHub release
-workflow should build each supported OS/architecture in a pinned environment,
-inspect the resulting executable's dynamic dependency table, and fail if any
-LLVM, Clang, or LLD library remains.
+The script requires `clang`, `ldd`, `realpath`, and `tar`, and writes to `dist/`
+unless a second output-directory argument is supplied. Run it in the pinned
+Linux environment used for the GitHub release. The bundle does not change the
+runtime dependencies of programs produced by the compiler.
 
 ### Using the compiler
 

@@ -10,3 +10,4 @@ a.out
 *.ir
 /main
 AGENTS.md
+dist/

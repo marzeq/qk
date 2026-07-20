@@ -1,4 +1,4 @@
-//go:build cgo && !llvm_static
+//go:build cgo
 
 package llvmbackend
 

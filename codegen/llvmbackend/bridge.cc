@@ -328,8 +328,10 @@ extern "C" int qk_link_lld(
   clang::DiagnosticsEngine diagnostic_engine(
       diagnostic_ids, diagnostic_options, &diagnostic_printer, false);
 
+  const std::string executable_path = llvm::sys::fs::getMainExecutable(
+      "qkc", reinterpret_cast<void *>(&qk_link_lld));
   clang::driver::Driver driver(
-      "clang", llvm::sys::getDefaultTargetTriple(), diagnostic_engine);
+      executable_path, llvm::sys::getDefaultTargetTriple(), diagnostic_engine);
   driver.setCheckInputsExist(false);
 
   llvm::SmallVector<const char *, 32> driver_arguments;
