@@ -460,6 +460,8 @@ func (g *Generator) GenerateNode(node parser.Node) {
 		g.generateBlock(n)
 	case *parser.DeclarationNode:
 		g.generateDeclaration(n)
+	case *parser.MultiDeclarationNode:
+		g.generateMultiDeclaration(n)
 	case *parser.AssignmentNode:
 		g.generateAssignment(n)
 	case *parser.ControlKeywordNode:
@@ -549,6 +551,10 @@ func (g *Generator) emitScopeDefers(scope int) {
 }
 
 func (g *Generator) generateDeclaration(node *parser.DeclarationNode) {
+	if node.Name == "_" {
+		g.GenerateExpr(node.Value)
+		return
+	}
 	if node.Symbol == nil {
 		panic("declaration symbol is nil")
 	}
@@ -567,9 +573,49 @@ func (g *Generator) generateDeclaration(node *parser.DeclarationNode) {
 	g.Emit(ir.Store{Slot: slot, Value: value})
 }
 
+func (g *Generator) generateMultiDeclaration(node *parser.MultiDeclarationNode) {
+	bundle := g.GenerateExpr(node.Value)
+	result := bundle.Type.(types.MultipleReturnType)
+	for i, sym := range node.Symbols {
+		if sym == nil {
+			continue
+		}
+		valueID := g.currentFunction.NewValueOfType(result.Types[i])
+		g.Emit(ir.ExtractValue{Dest: valueID, Aggregate: bundle, Index: i})
+		slot := g.currentFunction.NewSlot(sym.Type, node.Names[i])
+		g.currentEnv.Variables[sym] = slot
+		g.Emit(ir.Alloca{Slot: slot})
+		g.Emit(ir.Store{Slot: slot, Value: ir.ValueOperand(valueID, result.Types[i])})
+	}
+}
+
 func (g *Generator) generateAssignment(node *parser.AssignmentNode) {
 	if node.Compound {
 		g.generateCompoundAssignment(node)
+		return
+	}
+	if len(node.Assignees) > 0 {
+		bundle := g.GenerateExpr(node.Value)
+		result := bundle.Type.(types.MultipleReturnType)
+		for i, target := range node.Assignees {
+			if id, ok := target.(*parser.IdentifierNode); ok && id.Name == "_" {
+				continue
+			}
+			valueID := g.currentFunction.NewValueOfType(result.Types[i])
+			g.Emit(ir.ExtractValue{Dest: valueID, Aggregate: bundle, Index: i})
+			value := ir.ValueOperand(valueID, result.Types[i])
+			if !result.Types[i].Equals(target.GetType()) {
+				castID := g.currentFunction.NewValueOfType(target.GetType())
+				g.Emit(ir.Cast{Dest: castID, From: value, To: target.GetType()})
+				value = ir.ValueOperand(castID, target.GetType())
+			}
+			address := g.generateAddressOfExpr(target)
+			g.Emit(ir.StorePtr{Ptr: address, Value: value})
+		}
+		return
+	}
+	if id, ok := node.Assignee.(*parser.IdentifierNode); ok && id.Name == "_" {
+		g.GenerateExpr(node.Value)
 		return
 	}
 
@@ -651,7 +697,16 @@ func (g *Generator) generateControlKeyword(node *parser.ControlKeywordNode) {
 	switch node.Keyword {
 	case tokeniser.KeywordReturn:
 		var value ir.Operand
-		if node.ReturnValue != nil {
+		if len(node.ReturnValues) > 1 {
+			multi := g.currentFunction.Signature.ReturnType.(types.MultipleReturnType)
+			value = ir.ZeroConstOperand(multi)
+			for i, expr := range node.ReturnValues {
+				item := g.GenerateExpr(expr)
+				dest := g.currentFunction.NewValueOfType(multi)
+				g.Emit(ir.InsertValue{Dest: dest, Aggregate: value, Value: item, Index: i})
+				value = ir.ValueOperand(dest, multi)
+			}
+		} else if node.ReturnValue != nil {
 			value = g.GenerateExpr(node.ReturnValue)
 		}
 		g.emitDefersUntil(0)

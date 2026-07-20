@@ -53,6 +53,12 @@ func (w *debugWalker) walkNode(node parser.Node) {
 		w.walkNode(n.Action)
 
 	case *parser.DeclarationNode:
+		if n.Name == "_" {
+			if n.Value != nil {
+				w.walkExpr(n.Value)
+			}
+			break
+		}
 		if n.Symbol == nil || n.Symbol.Type == nil {
 			w.errors = append(w.errors, "declaration symbol has nil type")
 		} else {
@@ -62,9 +68,24 @@ func (w *debugWalker) walkNode(node parser.Node) {
 		if n.Value != nil {
 			w.walkExpr(n.Value)
 		}
+	case *parser.MultiDeclarationNode:
+		for _, sym := range n.Symbols {
+			if sym != nil {
+				w.checkType(sym.Type)
+			}
+		}
+		w.walkExpr(n.Value)
 
 	case *parser.AssignmentNode:
-		w.walkExpr(n.Assignee)
+		if len(n.Assignees) > 0 {
+			for _, target := range n.Assignees {
+				if id, ok := target.(*parser.IdentifierNode); !ok || id.Name != "_" {
+					w.walkExpr(target)
+				}
+			}
+		} else if id, ok := n.Assignee.(*parser.IdentifierNode); !ok || id.Name != "_" {
+			w.walkExpr(n.Assignee)
+		}
 		w.walkExpr(n.Value)
 
 	case *parser.IfNode:
@@ -82,8 +103,8 @@ func (w *debugWalker) walkNode(node parser.Node) {
 		w.walkNode(n.Body)
 
 	case *parser.ControlKeywordNode:
-		if n.ReturnValue != nil {
-			w.walkExpr(n.ReturnValue)
+		for _, value := range n.ReturnValues {
+			w.walkExpr(value)
 		}
 
 	case parser.ExpressionNode:

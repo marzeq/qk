@@ -176,6 +176,14 @@ type FunctionTypeNode struct {
 	Loc           shared.Location
 }
 
+type MultipleReturnTypeNode struct {
+	Types []TypeNode
+	Loc   shared.Location
+}
+
+func (n MultipleReturnTypeNode) GetLoc() shared.Location { return n.Loc }
+func (n MultipleReturnTypeNode) _type()                  {}
+
 func (n FunctionTypeNode) GetLoc() shared.Location { return n.Loc }
 func (n FunctionTypeNode) _type()                  {}
 
@@ -681,9 +689,10 @@ type ForEachNode struct {
 func (n ForEachNode) GetLoc() shared.Location { return n.Loc }
 
 type ControlKeywordNode struct {
-	Keyword     tokeniser.KeywordKind
-	ReturnValue ExpressionNode // only for "return"
-	Loc         shared.Location
+	Keyword      tokeniser.KeywordKind
+	ReturnValue  ExpressionNode // only for "return"
+	ReturnValues []ExpressionNode
+	Loc          shared.Location
 }
 
 func (n ControlKeywordNode) GetLoc() shared.Location { return n.Loc }
@@ -706,13 +715,23 @@ type DeclarationNode struct {
 	Symbol     *symbols.Symbol
 }
 
+type MultiDeclarationNode struct {
+	Names   []string
+	Value   *FunctionCallNode
+	Loc     shared.Location
+	Symbols []*symbols.Symbol
+}
+
+func (n MultiDeclarationNode) GetLoc() shared.Location { return n.Loc }
+
 func (n DeclarationNode) GetLoc() shared.Location { return n.Loc }
 
 type AssignmentNode struct {
-	Assignee ExpressionNode
-	Value    ExpressionNode
-	Compound bool
-	Loc      shared.Location
+	Assignee  ExpressionNode
+	Assignees []ExpressionNode
+	Value     ExpressionNode
+	Compound  bool
+	Loc       shared.Location
 }
 
 func (n AssignmentNode) GetLoc() shared.Location { return n.Loc }

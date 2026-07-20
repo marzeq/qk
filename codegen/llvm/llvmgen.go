@@ -434,6 +434,17 @@ func (e *Emitter) TypeEmit(ty types.Type) string {
 		}
 		sb.WriteString(" }")
 		return sb.String()
+	case types.MultipleReturnType:
+		var sb strings.Builder
+		sb.WriteString("{ ")
+		for i, item := range ty.Types {
+			if i > 0 {
+				sb.WriteString(", ")
+			}
+			sb.WriteString(e.TypeEmit(item))
+		}
+		sb.WriteString(" }")
+		return sb.String()
 	case types.UnionType:
 		size, align := e.typeSizeAlign(ty)
 		return fmt.Sprintf("[%d x i%d]", size/align, align*8)

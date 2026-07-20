@@ -20,6 +20,8 @@ func (a *Analyser) visit(node parser.Node) {
 
 	case *parser.DeclarationNode:
 		a.visitLocalDeclaration(n)
+	case *parser.MultiDeclarationNode:
+		a.visitMultiDeclaration(n)
 
 	case *parser.AssignmentNode:
 		a.visitAssignment(n)
@@ -105,6 +107,12 @@ func (a *Analyser) visitLocalDeclaration(n *parser.DeclarationNode) {
 		a.errorf(n, "foreign variables must be declared at module scope")
 		return
 	}
+	if n.Name == "_" {
+		if n.Value != nil {
+			a.visitExpression(n.Value)
+		}
+		return
+	}
 
 	var varType types.Type
 
@@ -119,11 +127,29 @@ func (a *Analyser) visitLocalDeclaration(n *parser.DeclarationNode) {
 		Mutable: n.Mutable,
 	}
 
-	a.defineSymbol(sym, n)
-	n.Symbol = sym
-
 	if n.Value != nil {
 		a.visitExpression(n.Value)
+	}
+	a.current.Symbols[sym.Name] = sym
+	n.Symbol = sym
+}
+
+func (a *Analyser) visitMultiDeclaration(n *parser.MultiDeclarationNode) {
+	a.visitExpression(n.Value)
+	n.Symbols = make([]*symbols.Symbol, len(n.Names))
+	seen := map[string]bool{}
+	for i, name := range n.Names {
+		if name == "_" {
+			continue
+		}
+		if seen[name] {
+			a.errorf(n, "symbol '%v' appears more than once in declaration", name)
+			continue
+		}
+		seen[name] = true
+		sym := symbols.NewVariable(name, nil)
+		n.Symbols[i] = sym
+		a.current.Symbols[name] = sym
 	}
 }
 
@@ -242,7 +268,17 @@ func (a *Analyser) visitExpression(expr parser.ExpressionNode) {
 }
 
 func (a *Analyser) visitAssignment(n *parser.AssignmentNode) {
-	a.visitExpression(n.Assignee)
+	if len(n.Assignees) > 0 {
+		for _, target := range n.Assignees {
+			if id, ok := target.(*parser.IdentifierNode); !ok || id.Name != "_" {
+				a.visitExpression(target)
+			}
+		}
+	} else {
+		if id, ok := n.Assignee.(*parser.IdentifierNode); !ok || id.Name != "_" {
+			a.visitExpression(n.Assignee)
+		}
+	}
 	a.visitExpression(n.Value)
 }
 
@@ -320,7 +356,7 @@ func (a *Analyser) visitForEach(n *parser.ForEachNode) {
 }
 
 func (a *Analyser) visitControlKeyword(n *parser.ControlKeywordNode) {
-	if n.ReturnValue != nil {
-		a.visitExpression(n.ReturnValue)
+	for _, value := range n.ReturnValues {
+		a.visitExpression(value)
 	}
 }

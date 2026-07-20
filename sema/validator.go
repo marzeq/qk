@@ -123,6 +123,9 @@ func (v *Validator) validateNode(node parser.Node) {
 		} else if usesCABI && ret != nil && types.HasTraitPointer(ret) {
 			v.errorf(n, "trait pointers cannot cross the c ABI")
 		}
+		if _, multiple := n.Symbol.Signature.ReturnType.(types.MultipleReturnType); multiple && usesCABI {
+			v.errorf(n, "multiple return values are not supported by the c ABI; use abi \"qk\"")
+		}
 
 		if n.Body != nil {
 			v.validateNode(n.Body)
@@ -136,11 +139,19 @@ func (v *Validator) validateNode(node parser.Node) {
 		}
 
 	case *parser.DeclarationNode:
+		if n.Name == "_" {
+			if n.Value != nil {
+				v.validateExpr(n.Value)
+			}
+			break
+		}
 		v.validateAttributes(n, n.Attributes, "declaration", attributes.AttributeTypeForeign)
 		v.finaliseDeclaration(n)
 		if n.Symbol.Type != nil && !types.IsComplete(n.Symbol.Type) {
 			v.errorf(n, "cannot declare a value of incomplete type %v", n.Symbol.Type)
 		}
+	case *parser.MultiDeclarationNode:
+		v.validateMultiDeclaration(n)
 
 	case *parser.AssignmentNode:
 		v.validateAssignment(n)
@@ -216,6 +227,11 @@ func (v *Validator) finaliseDeclaration(n *parser.DeclarationNode) {
 	v.validateExpr(n.Value)
 
 	valueType := n.Value.GetType()
+	if _, multiple := valueType.(types.MultipleReturnType); multiple {
+		v.errorf(n, "multiple return values must be unpacked into a matching target list")
+		n.Symbol.Type = types.ErrorType{}
+		return
+	}
 
 	if types.HasUntyped(valueType) {
 		if _, ok := valueType.(types.UnresolvedEnum); ok {
@@ -231,6 +247,34 @@ func (v *Validator) finaliseDeclaration(n *parser.DeclarationNode) {
 }
 
 func (v *Validator) validateAssignment(n *parser.AssignmentNode) {
+	if len(n.Assignees) > 0 {
+		v.validateExpr(n.Value)
+		result, ok := n.Value.GetType().(types.MultipleReturnType)
+		if !ok {
+			v.errorf(n, "multiple assignment requires a function returning multiple values")
+			return
+		}
+		if len(result.Types) != len(n.Assignees) {
+			v.errorf(n, "assignment has %d targets but call returns %d values", len(n.Assignees), len(result.Types))
+			return
+		}
+		for i, target := range n.Assignees {
+			if id, ok := target.(*parser.IdentifierNode); ok && id.Name == "_" {
+				continue
+			}
+			if !v.validateLValue(target) {
+				continue
+			}
+			if !result.Types[i].CanCoerceTo(target.GetType()) {
+				v.errorf(target, "cannot assign %v to %v", result.Types[i], target.GetType())
+			}
+		}
+		return
+	}
+	if id, ok := n.Assignee.(*parser.IdentifierNode); ok && id.Name == "_" {
+		v.validateExpr(n.Value)
+		return
+	}
 	if !v.validateLValue(n.Assignee) {
 		return
 	}
@@ -239,6 +283,24 @@ func (v *Validator) validateAssignment(n *parser.AssignmentNode) {
 
 	lhsType := n.Assignee.GetType()
 	n.Value = v.validateExprWithExpected(n.Value, lhsType)
+}
+
+func (v *Validator) validateMultiDeclaration(n *parser.MultiDeclarationNode) {
+	v.validateExpr(n.Value)
+	result, ok := n.Value.GetType().(types.MultipleReturnType)
+	if !ok {
+		v.errorf(n, "multiple declaration requires a function returning multiple values")
+		return
+	}
+	if len(result.Types) != len(n.Names) {
+		v.errorf(n, "declaration has %d names but call returns %d values", len(n.Names), len(result.Types))
+		return
+	}
+	for i, sym := range n.Symbols {
+		if sym != nil {
+			sym.Type = result.Types[i]
+		}
+	}
 }
 
 func (v *Validator) validateLValue(expr parser.ExpressionNode) bool {
@@ -417,6 +479,26 @@ func (v *Validator) validateReturn(n *parser.ControlKeywordNode) {
 		return
 	}
 	expected := v.currentFunction.Signature.ReturnType
+	if multi, ok := expected.(types.MultipleReturnType); ok {
+		if len(n.ReturnValues) == 1 {
+			if _, forwarded := n.ReturnValue.(*parser.FunctionCallNode); forwarded {
+				n.ReturnValue = v.validateExprWithExpected(n.ReturnValue, expected)
+				return
+			}
+		}
+		if len(n.ReturnValues) != len(multi.Types) {
+			v.errorf(n, "return has %d values but function returns %d", len(n.ReturnValues), len(multi.Types))
+			return
+		}
+		for i := range n.ReturnValues {
+			n.ReturnValues[i] = v.validateExprWithExpected(n.ReturnValues[i], multi.Types[i])
+		}
+		return
+	}
+	if len(n.ReturnValues) > 1 {
+		v.errorf(n, "too many return values")
+		return
+	}
 	n.ReturnValue = v.validateExprWithExpected(n.ReturnValue, expected)
 }
 

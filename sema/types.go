@@ -13,6 +13,12 @@ func (a *Analyser) resolveTypeNode(n parser.TypeNode) types.Type {
 
 func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Type {
 	switch t := n.(type) {
+	case *parser.MultipleReturnTypeNode:
+		result := make([]types.Type, len(t.Types))
+		for i, item := range t.Types {
+			result[i] = a.resolveTypeNodeAt(item, indirect)
+		}
+		return types.MultipleReturnType{Types: result}
 
 	case *parser.NamedTypeNode:
 		if info, ok := a.aliases[t.Name]; ok && t.ModName == "" {

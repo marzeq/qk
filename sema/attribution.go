@@ -139,13 +139,35 @@ func (a *Attributor) attributeNode(node parser.Node) {
 		if n.Value != nil {
 			a.attributeExpr(n.Value)
 		}
+		if n.Name == "_" {
+			break
+		}
 
 		if n.Value != nil && n.Symbol.Type == nil {
 			n.Symbol.Type = n.Value.GetType()
 		}
+	case *parser.MultiDeclarationNode:
+		a.attributeExpr(n.Value)
+		if result, ok := n.Value.GetType().(types.MultipleReturnType); ok {
+			for i, sym := range n.Symbols {
+				if sym != nil && i < len(result.Types) {
+					sym.Type = result.Types[i]
+				}
+			}
+		}
 
 	case *parser.AssignmentNode:
-		a.attributeExpr(n.Assignee)
+		if len(n.Assignees) > 0 {
+			for _, target := range n.Assignees {
+				if id, ok := target.(*parser.IdentifierNode); !ok || id.Name != "_" {
+					a.attributeExpr(target)
+				}
+			}
+		} else {
+			if id, ok := n.Assignee.(*parser.IdentifierNode); !ok || id.Name != "_" {
+				a.attributeExpr(n.Assignee)
+			}
+		}
 		a.attributeExpr(n.Value)
 
 	case *parser.IfNode:
@@ -183,8 +205,8 @@ func (a *Attributor) attributeNode(node parser.Node) {
 		a.attributeNode(n.Body)
 
 	case *parser.ControlKeywordNode:
-		if n.ReturnValue != nil {
-			a.attributeExpr(n.ReturnValue)
+		for _, value := range n.ReturnValues {
+			a.attributeExpr(value)
 		}
 
 	case *parser.DeferNode:

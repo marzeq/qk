@@ -308,7 +308,7 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 	var retType TypeNode
 	if p.Match(tokeniser.TokenColon) {
 		p.Inc()
-		argType, err := p.ParseType()
+		argType, err := p.parseFunctionReturnType()
 		if err != nil {
 			return nil, err
 		}
@@ -879,6 +879,10 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 				p.PopPos()
 				node, err := p.ParseDeclaration()
 				return node, true, err
+			case p.Match(tokeniser.TokenComma):
+				p.PopPos()
+				node, err := p.parseMultiDeclaration()
+				return node, true, err
 			}
 
 			return nil, false, shared.NewError(p.PrevLoc(), "invalid let statement")
@@ -910,6 +914,30 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 	expr, err := p.ParseExpression()
 	if err != nil {
 		return nil, false, err
+	}
+
+	if p.Match(tokeniser.TokenComma) {
+		assignees := []ExpressionNode{expr}
+		for p.Match(tokeniser.TokenComma) {
+			p.Inc()
+			ident, err := p.ParseIdent()
+			if err != nil {
+				return nil, false, err
+			}
+			assignees = append(assignees, ident)
+		}
+		if !p.Expect(tokeniser.TokenEquals) {
+			return nil, false, shared.NewError(p.PrevLoc(), "expected '=' after assignment targets")
+		}
+		value, err := p.ParseExpression()
+		if err != nil {
+			return nil, false, err
+		}
+		call, ok := value.(*FunctionCallNode)
+		if !ok {
+			return nil, false, shared.NewError(value.GetLoc(), "multiple assignment requires a function call")
+		}
+		return &AssignmentNode{Assignees: assignees, Value: call, Loc: expr.GetLoc()}, true, nil
 	}
 
 	if p.Match(tokeniser.TokenEquals) {
@@ -1031,6 +1059,62 @@ func (p *Parser) ParseDeclaration() (*DeclarationNode, error) {
 		Attributes: attrs,
 		Loc:        beginLoc,
 	}, nil
+}
+
+func (p *Parser) parseMultiDeclaration() (*MultiDeclarationNode, error) {
+	loc := p.CurrLoc()
+	p.Inc() // let
+	names := []string{}
+	for {
+		ident, ok := p.ExpectGet(tokeniser.TokenIdentifier)
+		if !ok {
+			return nil, shared.NewError(p.PrevLoc(), "expected declaration name")
+		}
+		names = append(names, ident.Value)
+		if !p.Match(tokeniser.TokenComma) {
+			break
+		}
+		p.Inc()
+	}
+	if !p.Expect(tokeniser.TokenEquals) {
+		return nil, shared.NewError(p.PrevLoc(), "expected '=' after declaration names")
+	}
+	value, err := p.ParseExpression()
+	if err != nil {
+		return nil, err
+	}
+	call, ok := value.(*FunctionCallNode)
+	if !ok {
+		return nil, shared.NewError(value.GetLoc(), "multiple declaration requires a function call")
+	}
+	return &MultiDeclarationNode{Names: names, Value: call, Loc: loc}, nil
+}
+
+func (p *Parser) parseFunctionReturnType() (TypeNode, error) {
+	if !p.Match(tokeniser.TokenOpenParen) {
+		return p.ParseType()
+	}
+	loc := p.CurrLoc()
+	p.Inc()
+	items := []TypeNode{}
+	for {
+		t, err := p.ParseType()
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, t)
+		if !p.Match(tokeniser.TokenComma) {
+			break
+		}
+		p.Inc()
+	}
+	if len(items) < 2 {
+		return nil, shared.NewError(loc, "multiple return type requires at least two types")
+	}
+	if !p.Expect(tokeniser.TokenCloseParen) {
+		return nil, shared.NewError(p.PrevLoc(), "expected ')' after return types")
+	}
+	return &MultipleReturnTypeNode{Types: items, Loc: loc}, nil
 }
 
 func (p *Parser) ParseAssignment(subj ExpressionNode) (*AssignmentNode, error) {
@@ -1207,18 +1291,29 @@ func (p *Parser) ParseControlKeyword() (*ControlKeywordNode, error) {
 	}
 
 	var expr ExpressionNode
+	var exprs []ExpressionNode
 	if kw.Value == string(tokeniser.KeywordReturn) && !p.Match(tokeniser.TokenNewline, tokeniser.TokenSemicolon) {
 		got, err := p.ParseExpression()
 		if err != nil {
 			return nil, err
 		}
 		expr = got
+		exprs = append(exprs, got)
+		for p.Match(tokeniser.TokenComma) {
+			p.Inc()
+			got, err = p.ParseExpression()
+			if err != nil {
+				return nil, err
+			}
+			exprs = append(exprs, got)
+		}
 	}
 
 	return &ControlKeywordNode{
-		Keyword:     tokeniser.KeywordKind(kw.Value),
-		ReturnValue: expr,
-		Loc:         loc,
+		Keyword:      tokeniser.KeywordKind(kw.Value),
+		ReturnValue:  expr,
+		ReturnValues: exprs,
+		Loc:          loc,
 	}, nil
 }
 

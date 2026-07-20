@@ -358,6 +358,12 @@ func IsComplete(t Type) bool {
 		}
 	case SliceType:
 		return IsComplete(t.Base)
+	case MultipleReturnType:
+		for _, item := range t.Types {
+			if !IsComplete(item) {
+				return false
+			}
+		}
 	}
 	return true
 }
@@ -607,6 +613,42 @@ type FunctionType struct {
 	VariadicElement Type
 }
 
+// MultipleReturnType is an ABI result bundle, not a source-level tuple.
+type MultipleReturnType struct{ Types []Type }
+
+func (m MultipleReturnType) Equals(other Type) bool {
+	o, ok := other.(MultipleReturnType)
+	if !ok || len(m.Types) != len(o.Types) {
+		return false
+	}
+	for i := range m.Types {
+		if !m.Types[i].Equals(o.Types[i]) {
+			return false
+		}
+	}
+	return true
+}
+func (m MultipleReturnType) CanCoerceTo(other Type) bool {
+	o, ok := other.(MultipleReturnType)
+	if !ok || len(m.Types) != len(o.Types) {
+		return false
+	}
+	for i := range m.Types {
+		if !m.Types[i].CanCoerceTo(o.Types[i]) {
+			return false
+		}
+	}
+	return true
+}
+func (m MultipleReturnType) CanCastTo(other Type) bool { return m.Equals(other) }
+func (m MultipleReturnType) String() string {
+	parts := make([]string, len(m.Types))
+	for i, t := range m.Types {
+		parts[i] = t.String()
+	}
+	return "(" + strings.Join(parts, ", ") + ")"
+}
+
 func (f FunctionType) Equals(other Type) bool {
 	otherFunction, ok := other.(FunctionType)
 	if !ok {
@@ -798,6 +840,8 @@ func HasUntyped(t Type) bool {
 			return true
 		}
 		return HasUntyped(t.ReturnType)
+	case MultipleReturnType:
+		return slices.ContainsFunc(t.Types, HasUntyped)
 	}
 
 	return false
