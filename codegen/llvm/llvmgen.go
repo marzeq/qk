@@ -1191,6 +1191,17 @@ func (e *Emitter) CastEmit(out *strings.Builder, c ir.Cast) {
 		}
 	}
 
+	// LLVM integer types do not encode signedness, and pointer-sized QK
+	// integers may have the same representation as a fixed-width integer.
+	// LLVM rejects casts such as `sext i64 to i64`; retain the SSA destination
+	// with a representation-preserving select instead.
+	if e.TypeEmit(from) == e.TypeEmit(to) {
+		typeName := e.TypeEmit(to)
+		operand := e.OperandEmit(c.From)
+		fmt.Fprintf(out, "%s = select i1 true, %s %s, %s %s", e.ValueIDEmit(c.Dest), typeName, operand, typeName, operand)
+		return
+	}
+
 	if from.Equals(to) {
 		fmt.Fprintf(out, "%s = bitcast %s %s to %s", e.ValueIDEmit(c.Dest), e.TypeEmit(from), e.OperandEmit(c.From), e.TypeEmit(to))
 		return
@@ -1198,8 +1209,8 @@ func (e *Emitter) CastEmit(out *strings.Builder, c ir.Cast) {
 
 	if fromOK && toOK {
 		if types.IsInteger(fromPrim) && types.IsInteger(toPrim) {
-			srcBits := types.IntegerRank(fromPrim)
-			dstBits := types.IntegerRank(toPrim)
+			srcBits := e.integerBits(fromPrim)
+			dstBits := e.integerBits(toPrim)
 			op := "trunc"
 			if srcBits == dstBits {
 				op = "bitcast"

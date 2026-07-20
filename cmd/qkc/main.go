@@ -55,13 +55,6 @@ func main() {
 			selectedStdlibSources[file] = string(data)
 		}
 	}
-	capabilitySources := selectedStdlibSources
-	if args.noStdlib {
-		capabilitySources = embeddedStdlibSources
-	}
-	preprocessorConfig.Capabilities, err = preprocessor.ResolveCapabilities(capabilitySources, preprocessorConfig, args.noStdlib)
-	check(err)
-
 	excludes := append([]string(nil), args.excludeDirs...)
 	if args.stdlibPath != "" {
 		excludes = append(excludes, args.stdlibPath)
@@ -72,6 +65,19 @@ func main() {
 	if len(files) == 0 {
 		fatal("no source files found")
 	}
+	compileTimeSources := map[string]string{}
+	for _, file := range files {
+		data, err := os.ReadFile(file)
+		check(err)
+		compileTimeSources[file] = string(data)
+	}
+	if !args.noStdlib {
+		for origin, source := range selectedStdlibSources {
+			compileTimeSources[origin] = source
+		}
+	}
+	preprocessorConfig.ModuleBindings, err = preprocessor.ResolveModuleBindings(compileTimeSources, preprocessorConfig)
+	check(err)
 
 	var partials []*loader.PartialModuleInfo
 	if args.file != "" {
@@ -102,18 +108,16 @@ func main() {
 		partials = append(partials, info)
 	}
 	if !args.noStdlib {
-		trustedConfig := preprocessorConfig
-		trustedConfig.TrustedStandardLibrary = true
 		if args.stdlibPath != "" {
 			for _, file := range stdlibFiles {
-				ast, err := parseFile(file, trustedConfig)
+				ast, err := parseFile(file, preprocessorConfig)
 				check(err)
 				info, err := loader.CollectModuleInfo(ast, true)
 				check(err)
 				partials = append(partials, info)
 			}
 		} else {
-			stdlibPartials, err := stdlib.ParseTrustedSources(selectedStdlibSources, trustedConfig)
+			stdlibPartials, err := stdlib.ParseTrustedSources(selectedStdlibSources, preprocessorConfig)
 			check(err)
 			partials = append(partials, stdlibPartials...)
 		}

@@ -1,6 +1,6 @@
 module std
 
-let HasPrint = compile_time not NoLibc
+pub let HasPrint = compile_time not NoLibc
 
 when HasPrint {
 let display_print_argument(index: usz, arguments: [*Any]): void {

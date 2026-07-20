@@ -2,6 +2,7 @@ package preprocessor
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/marzeq/qk/parser"
@@ -9,146 +10,128 @@ import (
 	"github.com/marzeq/qk/tokeniser"
 )
 
-type capabilityDeclaration struct {
-	name string
-	expr parser.ExpressionNode
-	loc  shared.Location
+type moduleBindingDeclaration struct {
+	module string
+	name   string
+	expr   parser.ExpressionNode
+	loc    shared.Location
 }
 
-// ResolveCapabilities collects and evaluates trusted standard-library
-// compile-time capability declarations. When disabled, known capabilities are
-// retained but forced to false for -nostdlib preprocessing.
-func ResolveCapabilities(sources map[string]string, config Config, disabled bool) (map[string]bool, error) {
+// ResolveModuleBindings resolves file-scope compile-time declarations in
+// their canonical module namespaces before individual files are processed.
+func ResolveModuleBindings(sources map[string]string, config Config) (map[string]Value, error) {
 	origins := make([]string, 0, len(sources))
 	for origin := range sources {
 		origins = append(origins, origin)
 	}
 	sort.Strings(origins)
-	declarations := map[string]capabilityDeclaration{}
+	declarations := map[string]moduleBindingDeclaration{}
 	for _, origin := range origins {
 		tokens, err := tokeniser.NewTokeniser(sources[origin], origin).Tokenise()
 		if err != nil {
 			return nil, err
 		}
-		found, err := collectCapabilityDeclarations(tokens)
-		if err != nil {
-			return nil, err
-		}
-		for _, declaration := range found {
-			if previous, exists := declarations[declaration.name]; exists {
-				return nil, shared.NewError(declaration.loc, "duplicate compile-time capability %q; previously declared at %s", declaration.name, previous.loc)
+		module := tokenModule(tokens)
+		for _, declaration := range topLevelCompileTimeDeclarations(tokens, module) {
+			key := module + "." + declaration.name
+			if previous, exists := declarations[key]; exists {
+				return nil, shared.NewError(declaration.loc, "duplicate compile-time binding %q; previously declared at %s", key, previous.loc)
 			}
-			declarations[declaration.name] = declaration
+			declarations[key] = declaration
 		}
 	}
-
-	values := make(map[string]bool, len(declarations))
-	if disabled {
-		for name := range declarations {
-			values[name] = false
-		}
-		return values, nil
-	}
+	values := make(map[string]Value, len(declarations))
 	target := targetFromTriple(config.TargetTriple)
 	target.noLibc, target.noStdlib = config.NoLibc, config.NoStdlib
 	state := map[string]uint8{}
-	var resolve func(string, shared.Location) (bool, error)
-	resolve = func(name string, loc shared.Location) (bool, error) {
-		declaration, exists := declarations[name]
+	var resolve func(string, shared.Location) (Value, error)
+	resolve = func(key string, loc shared.Location) (Value, error) {
+		declaration, exists := declarations[key]
 		if !exists {
-			return false, shared.NewError(loc, "unknown compile-time value %q", name)
+			return Value{}, shared.NewError(loc, "unknown compile-time value %q", key)
 		}
-		switch state[name] {
-		case 1:
-			return false, shared.NewError(loc, "cyclic compile-time capability involving %q", name)
-		case 2:
-			return values[name], nil
+		if state[key] == 1 {
+			return Value{}, shared.NewError(loc, "cyclic compile-time binding involving %q", key)
 		}
-		state[name] = 1
-		value, err := evaluate(declaration.expr, target, resolve)
+		if state[key] == 2 {
+			return values[key], nil
+		}
+		state[key] = 1
+		value, err := evaluate(declaration.expr, target, func(name string, refLoc shared.Location) (Value, error) {
+			if !strings.Contains(name, ".") {
+				name = declaration.module + "." + name
+			}
+			return resolve(name, refLoc)
+		})
 		if err != nil {
-			return false, err
+			return Value{}, err
 		}
-		if value.kind != valueBool {
-			return false, shared.NewError(declaration.loc, "compile-time capability %q must be boolean", name)
+		if value.kind != valueBool && value.kind != valueInteger {
+			return Value{}, shared.NewError(declaration.loc, "compile-time binding %q must resolve to a boolean or integer", key)
 		}
-		values[name] = value.boolean
-		state[name] = 2
-		return value.boolean, nil
+		values[key], state[key] = value, 2
+		return value, nil
 	}
-	names := make([]string, 0, len(declarations))
-	for name := range declarations {
-		names = append(names, name)
+	keys := make([]string, 0, len(declarations))
+	for key := range declarations {
+		keys = append(keys, key)
 	}
-	sort.Strings(names)
-	for _, name := range names {
-		if _, err := resolve(name, declarations[name].loc); err != nil {
+	sort.Strings(keys)
+	for _, key := range keys {
+		if _, err := resolve(key, declarations[key].loc); err != nil {
 			return nil, err
 		}
 	}
 	return values, nil
 }
 
-func stripCapabilityDeclarations(tokens []tokeniser.Token, trusted bool) ([]tokeniser.Token, error) {
-	declarations, ranges, err := scanCapabilityDeclarations(tokens)
-	if err != nil {
-		return nil, err
-	}
-	if len(declarations) != 0 && !trusted {
-		return nil, shared.NewError(declarations[0].loc, "compile-time capabilities may only be declared by the trusted standard library")
-	}
-	if len(ranges) == 0 {
-		return tokens, nil
-	}
-	result := make([]tokeniser.Token, 0, len(tokens))
-	nextRange := 0
-	for index := 0; index < len(tokens); {
-		if nextRange < len(ranges) && index == ranges[nextRange][0] {
-			index = ranges[nextRange][1]
-			nextRange++
+func tokenModule(tokens []tokeniser.Token) string {
+	for index, tok := range tokens {
+		if tok.Type != tokeniser.TokenKeyword || tok.Value != string(tokeniser.KeywordModule) {
 			continue
 		}
-		result = append(result, tokens[index])
-		index++
+		var parts []string
+		for index++; index < len(tokens) && tokens[index].Type != tokeniser.TokenNewline && tokens[index].Type != tokeniser.TokenEof; index++ {
+			if tokens[index].Type == tokeniser.TokenIdentifier {
+				parts = append(parts, tokens[index].Value)
+			}
+		}
+		return strings.Join(parts, ".")
 	}
-	return result, nil
+	return ""
 }
 
-func collectCapabilityDeclarations(tokens []tokeniser.Token) ([]capabilityDeclaration, error) {
-	declarations, _, err := scanCapabilityDeclarations(tokens)
-	return declarations, err
-}
-
-func scanCapabilityDeclarations(tokens []tokeniser.Token) ([]capabilityDeclaration, [][2]int, error) {
-	var declarations []capabilityDeclaration
-	var ranges [][2]int
-	braceDepth := 0
+func topLevelCompileTimeDeclarations(tokens []tokeniser.Token, module string) []moduleBindingDeclaration {
+	var declarations []moduleBindingDeclaration
+	depth := 0
 	for index := 0; index < len(tokens); index++ {
-		token := tokens[index]
-		if token.Type == tokeniser.TokenOpenCurly {
-			braceDepth++
+		switch tokens[index].Type {
+		case tokeniser.TokenOpenCurly:
+			depth++
+		case tokeniser.TokenCloseCurly:
+			depth--
+		}
+		if depth != 0 || tokens[index].Type != tokeniser.TokenKeyword || tokens[index].Value != string(tokeniser.KeywordLet) {
 			continue
 		}
-		if token.Type == tokeniser.TokenCloseCurly {
-			braceDepth--
+		namePos := index + 1
+		if namePos < len(tokens) && tokens[namePos].Type == tokeniser.TokenKeyword && tokens[namePos].Value == string(tokeniser.KeywordMut) {
+			namePos++
+		}
+		if namePos >= len(tokens) || tokens[namePos].Type != tokeniser.TokenIdentifier {
 			continue
 		}
-		if braceDepth != 0 || token.Type != tokeniser.TokenKeyword || token.Value != string(tokeniser.KeywordLet) {
+		equals := namePos + 1
+		for equals < len(tokens) && tokens[equals].Type != tokeniser.TokenEquals && tokens[equals].Type != tokeniser.TokenNewline {
+			equals++
+		}
+		if equals+1 >= len(tokens) || tokens[equals+1].Type != tokeniser.TokenIdentifier || tokens[equals+1].Value != "compile_time" {
 			continue
 		}
-		if index+3 >= len(tokens) || tokens[index+1].Type != tokeniser.TokenIdentifier ||
-			tokens[index+2].Type != tokeniser.TokenEquals || tokens[index+3].Type != tokeniser.TokenIdentifier ||
-			tokens[index+3].Value != "compile_time" {
-			continue
-		}
-		nameToken := tokens[index+1]
-		if !strings.HasPrefix(nameToken.Value, "Has") || len(nameToken.Value) == 3 {
-			return nil, nil, shared.NewError(nameToken.Loc, "compile-time capability name %q must begin with Has", nameToken.Value)
-		}
-		end, parens, squares := index+4, 0, 0
+		end, parens, squares := equals+2, 0, 0
 		for end < len(tokens) {
-			t := tokens[end]
-			switch t.Type {
+			tok := tokens[end]
+			switch tok.Type {
 			case tokeniser.TokenOpenParen:
 				parens++
 			case tokeniser.TokenCloseParen:
@@ -158,21 +141,34 @@ func scanCapabilityDeclarations(tokens []tokeniser.Token) ([]capabilityDeclarati
 			case tokeniser.TokenCloseSquare:
 				squares--
 			}
-			if parens == 0 && squares == 0 && (t.Type == tokeniser.TokenNewline || t.Type == tokeniser.TokenSemicolon || t.Type == tokeniser.TokenEof) {
+			if parens == 0 && squares == 0 && (tok.Type == tokeniser.TokenNewline || tok.Type == tokeniser.TokenSemicolon || tok.Type == tokeniser.TokenEof) {
 				break
 			}
 			end++
 		}
-		if end == index+4 {
-			return nil, nil, shared.NewError(nameToken.Loc, "expected expression after compile_time")
+		if end == equals+2 {
+			continue
 		}
-		expr, err := parseCondition(tokens[index+4:end], nameToken.Loc)
+		expr, err := parseCondition(tokens[equals+2:end], tokens[namePos].Loc)
 		if err != nil {
-			return nil, nil, err
+			continue
 		}
-		declarations = append(declarations, capabilityDeclaration{name: nameToken.Value, expr: expr, loc: nameToken.Loc})
-		ranges = append(ranges, [2]int{index, end})
-		index = end - 1
+		declarations = append(declarations, moduleBindingDeclaration{module: module, name: tokens[namePos].Value, expr: expr, loc: tokens[namePos].Loc})
 	}
-	return declarations, ranges, nil
+	return declarations
+}
+
+func literalToken(value Value, loc shared.Location) (tokeniser.Token, error) {
+	switch value.kind {
+	case valueBool:
+		text := string(tokeniser.KeywordFalse)
+		if value.boolean {
+			text = string(tokeniser.KeywordTrue)
+		}
+		return tokeniser.Token{Type: tokeniser.TokenKeyword, Value: text, Loc: loc}, nil
+	case valueInteger:
+		return tokeniser.Token{Type: tokeniser.TokenNumber, Value: strconv.FormatInt(value.integer, 10), Loc: loc}, nil
+	default:
+		return tokeniser.Token{}, shared.NewError(loc, "compile-time target values may only be bound after converting them to a boolean or integer")
+	}
 }

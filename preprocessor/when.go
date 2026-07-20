@@ -15,25 +15,29 @@ type Processor struct {
 	tokens []tokeniser.Token
 	pos    int
 	target targetValues
+	scopes []map[string]Value
 }
 
 type Config struct {
-	TargetTriple           string
-	NoLibc                 bool
-	NoStdlib               bool
-	Capabilities           map[string]bool
-	TrustedStandardLibrary bool
+	TargetTriple   string
+	NoLibc         bool
+	NoStdlib       bool
+	ModuleBindings map[string]Value
 }
 
 func Process(tokens []tokeniser.Token, config Config) ([]tokeniser.Token, error) {
 	target := targetFromTriple(config.TargetTriple)
 	target.noLibc = config.NoLibc
 	target.noStdlib = config.NoStdlib
-	target.capabilities = config.Capabilities
-	var err error
-	tokens, err = stripCapabilityDeclarations(tokens, config.TrustedStandardLibrary)
-	if err != nil {
-		return nil, err
+	target.bindings = cloneValues(config.ModuleBindings)
+	currentModule := tokenModule(tokens)
+	if currentModule != "" {
+		for name, value := range config.ModuleBindings {
+			prefix := currentModule + "."
+			if strings.HasPrefix(name, prefix) && !strings.Contains(strings.TrimPrefix(name, prefix), ".") {
+				target.bindings[strings.TrimPrefix(name, prefix)] = value
+			}
+		}
 	}
 	p := &Processor{tokens: tokens, target: target}
 	return p.process()
@@ -43,8 +47,24 @@ func (p *Processor) process() ([]tokeniser.Token, error) {
 	result := make([]tokeniser.Token, 0, len(p.tokens))
 	for p.pos < len(p.tokens) {
 		tok := p.tokens[p.pos]
+		if tok.Type == tokeniser.TokenOpenCurly {
+			p.scopes = append(p.scopes, p.target.bindings)
+			p.target.bindings = cloneValues(p.target.bindings)
+		} else if tok.Type == tokeniser.TokenCloseCurly && len(p.scopes) != 0 {
+			p.target.bindings = p.scopes[len(p.scopes)-1]
+			p.scopes = p.scopes[:len(p.scopes)-1]
+		}
 		if tok.Type == tokeniser.TokenKeyword {
 			switch tok.Value {
+			case string(tokeniser.KeywordLet):
+				rewritten, ok, err := p.processCompileTimeDeclaration()
+				if err != nil {
+					return nil, err
+				}
+				if ok {
+					result = append(result, rewritten...)
+					continue
+				}
 			case string(tokeniser.KeywordWhen):
 				if whenContinuesPrevious(result) {
 					for len(result) > 0 && result[len(result)-1].Type == tokeniser.TokenNewline {
@@ -65,6 +85,88 @@ func (p *Processor) process() ([]tokeniser.Token, error) {
 		p.pos++
 	}
 	return result, nil
+}
+
+func cloneValues(values map[string]Value) map[string]Value {
+	cloned := make(map[string]Value, len(values))
+	for name, value := range values {
+		cloned[name] = value
+	}
+	return cloned
+}
+
+func (p *Processor) processCompileTimeDeclaration() ([]tokeniser.Token, bool, error) {
+	start := p.pos
+	namePos := start + 1
+	if namePos < len(p.tokens) && p.tokens[namePos].Type == tokeniser.TokenKeyword && p.tokens[namePos].Value == string(tokeniser.KeywordMut) {
+		namePos++
+	}
+	if namePos >= len(p.tokens) || p.tokens[namePos].Type != tokeniser.TokenIdentifier {
+		return nil, false, nil
+	}
+	equals := namePos + 1
+	for equals < len(p.tokens) && p.tokens[equals].Type != tokeniser.TokenEquals && p.tokens[equals].Type != tokeniser.TokenNewline && p.tokens[equals].Type != tokeniser.TokenSemicolon {
+		equals++
+	}
+	if equals+1 >= len(p.tokens) || p.tokens[equals].Type != tokeniser.TokenEquals || p.tokens[equals+1].Type != tokeniser.TokenIdentifier || p.tokens[equals+1].Value != "compile_time" {
+		return nil, false, nil
+	}
+	exprStart := equals + 2
+	end, parens, squares := exprStart, 0, 0
+	for end < len(p.tokens) {
+		tok := p.tokens[end]
+		switch tok.Type {
+		case tokeniser.TokenOpenParen:
+			parens++
+		case tokeniser.TokenCloseParen:
+			parens--
+		case tokeniser.TokenOpenSquare:
+			squares++
+		case tokeniser.TokenCloseSquare:
+			squares--
+		}
+		if parens == 0 && squares == 0 && (tok.Type == tokeniser.TokenNewline || tok.Type == tokeniser.TokenSemicolon || tok.Type == tokeniser.TokenEof || tok.Type == tokeniser.TokenCloseCurly) {
+			break
+		}
+		end++
+	}
+	name := p.tokens[namePos]
+	if end == exprStart {
+		return nil, true, shared.NewError(name.Loc, "expected expression after compile_time")
+	}
+	expr, err := parseCondition(p.tokens[exprStart:end], name.Loc)
+	if err != nil {
+		return nil, true, err
+	}
+	value, err := evaluate(expr, p.target, nil)
+	if err != nil {
+		return nil, true, err
+	}
+	literal, err := literalToken(value, name.Loc)
+	if err != nil {
+		return nil, true, err
+	}
+	rewritten := append([]tokeniser.Token(nil), p.tokens[start:equals]...)
+	if value.kind == valueInteger && !declarationHasType(p.tokens[namePos+1:equals]) {
+		rewritten = append(rewritten,
+			tokeniser.Token{Type: tokeniser.TokenColon, Loc: name.Loc},
+			tokeniser.Token{Type: tokeniser.TokenIdentifier, Value: "i64", Loc: name.Loc},
+		)
+	}
+	rewritten = append(rewritten, p.tokens[equals])
+	rewritten = append(rewritten, literal)
+	p.target.bindings[name.Value] = value
+	p.pos = end
+	return rewritten, true, nil
+}
+
+func declarationHasType(tokens []tokeniser.Token) bool {
+	for _, tok := range tokens {
+		if tok.Type == tokeniser.TokenColon {
+			return true
+		}
+	}
+	return false
 }
 
 func whenContinuesPrevious(tokens []tokeniser.Token) bool {
@@ -170,7 +272,9 @@ func (p *Processor) processWhen() ([]tokeniser.Token, error) {
 
 	selected = trimBoundaryNewlines(selected)
 	nested := &Processor{tokens: selected, target: p.target}
-	return nested.process()
+	processed, err := nested.process()
+	p.target.bindings = nested.target.bindings
+	return processed, err
 }
 
 func trimBoundaryNewlines(tokens []tokeniser.Token) []tokeniser.Token {
@@ -277,7 +381,8 @@ const (
 	valueEnumLiteral
 )
 
-type compileTimeValue struct {
+// Value is a value resolved during compile-time preprocessing.
+type Value struct {
 	kind    valueKind
 	boolean bool
 	integer int64
@@ -286,103 +391,167 @@ type compileTimeValue struct {
 }
 
 type targetValues struct {
-	os           string
-	arch         string
-	environment  string
-	pointerBits  int64
-	noLibc       bool
-	noStdlib     bool
-	capabilities map[string]bool
+	os          string
+	arch        string
+	environment string
+	pointerBits int64
+	noLibc      bool
+	noStdlib    bool
+	bindings    map[string]Value
 }
 
-func evaluate(node parser.ExpressionNode, target targetValues, resolveCapability func(string, shared.Location) (bool, error)) (compileTimeValue, error) {
+func evaluate(node parser.ExpressionNode, target targetValues, resolveBinding func(string, shared.Location) (Value, error)) (Value, error) {
 	switch n := node.(type) {
 	case *parser.BoolLiteralNode:
-		return compileTimeValue{kind: valueBool, boolean: n.Value == string(tokeniser.KeywordTrue)}, nil
+		return Value{kind: valueBool, boolean: n.Value == string(tokeniser.KeywordTrue)}, nil
 	case *parser.IntegerLiteralNode:
 		value, err := strconv.ParseInt(n.Value, 10, 64)
 		if err != nil {
-			return compileTimeValue{}, shared.NewError(n.Loc, "invalid integer in compile-time condition")
+			return Value{}, shared.NewError(n.Loc, "invalid integer in compile-time expression")
 		}
-		return compileTimeValue{kind: valueInteger, integer: value}, nil
+		return Value{kind: valueInteger, integer: value}, nil
 	case *parser.EnumLiteralNode:
-		return compileTimeValue{kind: valueEnumLiteral, name: n.Variant}, nil
+		return Value{kind: valueEnumLiteral, name: n.Variant}, nil
 	case *parser.IdentifierNode:
 		switch n.Name {
 		case "OS":
-			return compileTimeValue{kind: valueEnum, domain: "OS", name: target.os}, nil
+			return Value{kind: valueEnum, domain: "OS", name: target.os}, nil
 		case "Arch":
-			return compileTimeValue{kind: valueEnum, domain: "Arch", name: target.arch}, nil
+			return Value{kind: valueEnum, domain: "Arch", name: target.arch}, nil
 		case "Environment":
-			return compileTimeValue{kind: valueEnum, domain: "Environment", name: target.environment}, nil
+			return Value{kind: valueEnum, domain: "Environment", name: target.environment}, nil
 		case "PointerBits":
-			return compileTimeValue{kind: valueInteger, integer: target.pointerBits}, nil
+			return Value{kind: valueInteger, integer: target.pointerBits}, nil
 		case "NoLibc":
-			return compileTimeValue{kind: valueBool, boolean: target.noLibc}, nil
+			return Value{kind: valueBool, boolean: target.noLibc}, nil
 		case "NoStdlib":
-			return compileTimeValue{kind: valueBool, boolean: target.noStdlib}, nil
+			return Value{kind: valueBool, boolean: target.noStdlib}, nil
 		default:
-			if resolveCapability != nil {
-				value, err := resolveCapability(n.Name, n.Loc)
+			if resolveBinding != nil {
+				value, err := resolveBinding(n.Name, n.Loc)
 				if err == nil {
-					return compileTimeValue{kind: valueBool, boolean: value}, nil
+					return value, nil
 				}
-				return compileTimeValue{}, err
+				return Value{}, err
 			}
-			if value, ok := target.capabilities[n.Name]; ok {
-				return compileTimeValue{kind: valueBool, boolean: value}, nil
+			if value, ok := target.bindings[n.Name]; ok {
+				return value, nil
 			}
-			return compileTimeValue{}, shared.NewError(n.Loc, "unknown compile-time value %q", n.Name)
+			return Value{}, shared.NewError(n.Loc, "unknown compile-time value %q", n.Name)
 		}
+	case *parser.FieldAccessNode:
+		name, ok := compileTimeName(n)
+		if !ok {
+			return Value{}, unsupported(node)
+		}
+		if resolveBinding != nil {
+			return resolveBinding(name, n.Loc)
+		}
+		if value, ok := target.bindings[name]; ok {
+			return value, nil
+		}
+		return Value{}, shared.NewError(n.Loc, "unknown compile-time value %q", name)
 	case *parser.UnaryOpNode:
-		if n.Op != parser.UnaryOpLogicalNot {
-			return compileTimeValue{}, unsupported(node)
-		}
-		operand, err := evaluate(n.Operand, target, resolveCapability)
+		operand, err := evaluate(n.Operand, target, resolveBinding)
 		if err != nil {
-			return compileTimeValue{}, err
+			return Value{}, err
 		}
-		if operand.kind != valueBool {
-			return compileTimeValue{}, shared.NewError(n.Loc, "operator 'not' requires a boolean compile-time value")
+		if n.Op == parser.UnaryOpLogicalNot && operand.kind == valueBool {
+			return Value{kind: valueBool, boolean: !operand.boolean}, nil
 		}
-		return compileTimeValue{kind: valueBool, boolean: !operand.boolean}, nil
+		if n.Op == parser.UnaryOpNegate && operand.kind == valueInteger {
+			return Value{kind: valueInteger, integer: -operand.integer}, nil
+		}
+		return Value{}, shared.NewError(n.Loc, "invalid unary operator for compile-time value")
 	case *parser.BinaryOpNode:
-		left, err := evaluate(n.Operand1, target, resolveCapability)
+		left, err := evaluate(n.Operand1, target, resolveBinding)
 		if err != nil {
-			return compileTimeValue{}, err
+			return Value{}, err
 		}
-		right, err := evaluate(n.Operand2, target, resolveCapability)
+		right, err := evaluate(n.Operand2, target, resolveBinding)
 		if err != nil {
-			return compileTimeValue{}, err
+			return Value{}, err
 		}
 		switch n.Op {
 		case parser.BinaryOpLogicalAnd, parser.BinaryOpLogicalOr:
 			if left.kind != valueBool || right.kind != valueBool {
-				return compileTimeValue{}, shared.NewError(n.Loc, "logical compile-time operators require boolean operands")
+				return Value{}, shared.NewError(n.Loc, "logical compile-time operators require boolean operands")
 			}
 			value := left.boolean && right.boolean
 			if n.Op == parser.BinaryOpLogicalOr {
 				value = left.boolean || right.boolean
 			}
-			return compileTimeValue{kind: valueBool, boolean: value}, nil
+			return Value{kind: valueBool, boolean: value}, nil
 		case parser.BinaryOpEqual, parser.BinaryOpNotEqual:
 			equal, err := equalValues(left, right, n.Loc)
 			if err != nil {
-				return compileTimeValue{}, err
+				return Value{}, err
 			}
 			if n.Op == parser.BinaryOpNotEqual {
 				equal = !equal
 			}
-			return compileTimeValue{kind: valueBool, boolean: equal}, nil
+			return Value{kind: valueBool, boolean: equal}, nil
+		case parser.BinaryOpAdd, parser.BinaryOpSubtract, parser.BinaryOpMultiply, parser.BinaryOpDivide, parser.BinaryOpModulo:
+			if left.kind != valueInteger || right.kind != valueInteger {
+				return Value{}, shared.NewError(n.Loc, "arithmetic compile-time operators require integer operands")
+			}
+			if (n.Op == parser.BinaryOpDivide || n.Op == parser.BinaryOpModulo) && right.integer == 0 {
+				return Value{}, shared.NewError(n.Loc, "division by zero in compile-time expression")
+			}
+			value := left.integer
+			switch n.Op {
+			case parser.BinaryOpAdd:
+				value += right.integer
+			case parser.BinaryOpSubtract:
+				value -= right.integer
+			case parser.BinaryOpMultiply:
+				value *= right.integer
+			case parser.BinaryOpDivide:
+				value /= right.integer
+			case parser.BinaryOpModulo:
+				value %= right.integer
+			}
+			return Value{kind: valueInteger, integer: value}, nil
+		case parser.BinaryOpLess, parser.BinaryOpLessEqual, parser.BinaryOpGreater, parser.BinaryOpGreaterEqual:
+			if left.kind != valueInteger || right.kind != valueInteger {
+				return Value{}, shared.NewError(n.Loc, "ordered compile-time comparisons require integer operands")
+			}
+			var value bool
+			switch n.Op {
+			case parser.BinaryOpLess:
+				value = left.integer < right.integer
+			case parser.BinaryOpLessEqual:
+				value = left.integer <= right.integer
+			case parser.BinaryOpGreater:
+				value = left.integer > right.integer
+			case parser.BinaryOpGreaterEqual:
+				value = left.integer >= right.integer
+			}
+			return Value{kind: valueBool, boolean: value}, nil
 		default:
-			return compileTimeValue{}, unsupported(node)
+			return Value{}, unsupported(node)
 		}
 	default:
-		return compileTimeValue{}, unsupported(node)
+		return Value{}, unsupported(node)
 	}
 }
 
-func equalValues(left, right compileTimeValue, loc shared.Location) (bool, error) {
+func compileTimeName(node parser.ExpressionNode) (string, bool) {
+	switch n := node.(type) {
+	case *parser.IdentifierNode:
+		return n.Name, true
+	case *parser.FieldAccessNode:
+		prefix, ok := compileTimeName(n.Subject)
+		if !ok {
+			return "", false
+		}
+		return prefix + "." + n.Field.Name, true
+	default:
+		return "", false
+	}
+}
+
+func equalValues(left, right Value, loc shared.Location) (bool, error) {
 	if left.kind == valueEnumLiteral && right.kind == valueEnum {
 		left, right = right, left
 	}

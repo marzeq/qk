@@ -1,6 +1,6 @@
 module std
 
-when HasLibc {
+when not NoLibc {
 
 import std.libc
 

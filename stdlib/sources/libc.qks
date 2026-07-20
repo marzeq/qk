@@ -1,6 +1,6 @@
 module std.libc
 
-when HasLibc {
+when not NoLibc {
 
 pub let FILE = type opaque
 

@@ -5,7 +5,25 @@ import (
 	"strings"
 
 	qktarget "github.com/marzeq/qk/target"
+	"github.com/marzeq/qk/types"
 )
+
+func (e *Emitter) integerBits(t types.PrimitiveType) int {
+	switch t {
+	case types.PrimitiveI8, types.PrimitiveU8:
+		return 8
+	case types.PrimitiveI16, types.PrimitiveU16:
+		return 16
+	case types.PrimitiveI32, types.PrimitiveU32:
+		return 32
+	case types.PrimitiveI64, types.PrimitiveU64:
+		return 64
+	case types.PrimitiveIsz, types.PrimitiveUsz:
+		return e.pointerBits()
+	default:
+		return 0
+	}
+}
 
 func (e *Emitter) targetArch() string {
 	return qktarget.Arch(e.targetTriple())
