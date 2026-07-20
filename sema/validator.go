@@ -625,6 +625,30 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			n.TraitMethods = conversion.TraitMethods
 			break
 		}
+		if target, ok := traitPointer(targetType); ok {
+			got := n.Operand.GetType()
+			if types.HasUntyped(got) {
+				v.errorf(n, "cannot infer concrete type for trait conversion; add a type annotation or cast")
+				break
+			}
+			pointer := types.PointerType{Base: got, Mutable: target.Mutable}
+			methods, conforms := v.analyser.structuralConformance(pointer, target, n)
+			if conforms {
+				op := parser.UnaryOpReference
+				if target.Mutable {
+					op = parser.UnaryOpMutableReference
+				}
+				reference := &parser.UnaryOpNode{Op: op, Operand: n.Operand, Loc: n.Operand.GetLoc(), Type: pointer}
+				if !v.validateReferenceTarget(reference, n.Operand, target.Mutable) {
+					break
+				}
+				n.Operand = reference
+				n.TraitConversion = true
+				n.ConcreteType = got
+				n.TraitMethods = methods
+				break
+			}
+		}
 
 		if types.IsUntyped(n.Operand.GetType()) {
 			n.Operand = v.createCast(n.Operand, targetType)

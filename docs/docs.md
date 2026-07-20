@@ -1398,6 +1398,16 @@ mutable place. Immutable trait pointers also accept computed concrete expression
 Untyped numeric literals still need a cast because the trait alone cannot infer
 their concrete numeric type. Implicit conversion never weakens mutability rules.
 
+An explicit concrete-to-trait cast borrows an addressable concrete value as
+syntax sugar for taking its reference first:
+
+```qk
+let any = value.(dyn Any) // value.&.(dyn Any)
+```
+
+This explicit sugar does not materialize temporaries. A mutable dynamic trait
+additionally requires a mutable place.
+
 Use a two-target checked assertion to inspect a trait pointer without trapping:
 
 ```qk
