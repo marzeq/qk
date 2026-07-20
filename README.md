@@ -36,11 +36,45 @@ aggregate lowering is currently limited to the documented target families.
 - Reasonably modern Go version
 - A C++17 compiler
 - LLVM and Clang 22 development headers
-- The shared LLVM 22, Clang C++, and LLD driver libraries
+- LLVM 22, Clang C++, and LLD driver libraries
 
 The headers and libraries must be visible to cgo's C++ compiler and linker. On
 Windows, use an LLVM build compatible with the selected cgo toolchain and set
 `CGO_CXXFLAGS`/`CGO_LDFLAGS` when it is installed outside standard search paths.
+
+#### Distribution packages
+
+The normal build dynamically links LLVM, Clang C++, and LLD. Distribution
+packagers should use this mode and declare the appropriate runtime library
+dependencies in their package metadata. They should not use the static release
+mode: the package manager is responsible for keeping QK and its LLVM ABI
+dependencies compatible and rebuilding QK when necessary.
+
+#### Standalone releases
+
+The `llvm_static` build tag disables QK's default shared-library linker flags so
+a standalone release can link a pinned LLVM toolchain entirely from static
+archives:
+
+```bash
+CGO_LDFLAGS="<absolute LLVM, Clang, LLD, C++ runtime, and dependency archives>" \
+  go build -tags llvm_static -o qkc ./cmd/qkc
+```
+
+Release builders must supply the complete archive closure produced by the LLVM
+build being shipped. This normally includes the static LLVM components reported
+by `llvm-config --link-static --libs --system-libs`, the Clang C++ and LLD
+archives used by QK, the C++ runtime, and LLVM's configured compression, XML,
+terminal, and other support dependencies. Prefer absolute archive paths (or the
+platform linker's force-static equivalent) so a same-named shared library cannot
+be selected accidentally. LLVM installations containing only shared libraries,
+such as many distribution development packages, cannot produce this build.
+
+This mode controls the libraries embedded in `qkc`; it does not change the
+runtime dependencies of programs produced by the compiler. A GitHub release
+workflow should build each supported OS/architecture in a pinned environment,
+inspect the resulting executable's dynamic dependency table, and fail if any
+LLVM, Clang, or LLD library remains.
 
 ### Using the compiler
 

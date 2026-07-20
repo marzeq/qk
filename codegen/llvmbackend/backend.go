@@ -2,9 +2,6 @@ package llvmbackend
 
 /*
 #cgo CXXFLAGS: -std=c++17
-#cgo LDFLAGS: -lclang-cpp -llldELF -llldCOFF -llldMinGW -llldMachO -llldCommon -lLLVM
-#cgo !darwin LDFLAGS: -lstdc++
-#cgo darwin LDFLAGS: -lc++
 #include <stdlib.h>
 #include "bridge.h"
 */
