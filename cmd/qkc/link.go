@@ -83,7 +83,7 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots []str
 		args = append(args, "-L"+path)
 	}
 
-	args = append(args, "-o", config.output, "-fuse-ld=lld")
+	args = append(args, "-o", config.output)
 	return args, nil
 }
 
