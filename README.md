@@ -66,6 +66,19 @@ unless a second output-directory argument is supplied. Run it in the pinned
 Linux environment used for the GitHub release. The bundle does not change the
 runtime dependencies of programs produced by the compiler.
 
+#### Standalone macOS releases
+
+The macOS packaging script provides the equivalent relocatable archive using
+native Mach-O library paths and ad-hoc code signing:
+
+```bash
+scripts/package-release-macos.sh 0.1.0
+```
+
+It requires `clang`, `llvm-config`, `otool`, `install_name_tool`, `codesign`, and
+`tar`. Run it natively on each supported macOS architecture with the release
+LLVM installation selected in `PATH`.
+
 ### Using the compiler
 
 - Target CRT objects and native libraries for hosted linking
