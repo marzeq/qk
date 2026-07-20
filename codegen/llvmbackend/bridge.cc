@@ -328,10 +328,24 @@ extern "C" int qk_link_lld(
   clang::DiagnosticsEngine diagnostic_engine(
       diagnostic_ids, diagnostic_options, &diagnostic_printer, false);
 
+  const std::string default_triple = llvm::sys::getDefaultTargetTriple();
+  std::string link_triple = default_triple;
+  for (size_t index = 0; index < argument_count; ++index) {
+    llvm::StringRef argument(arguments[index]);
+    if (argument == "-target" && index + 1 < argument_count) {
+      link_triple = arguments[index + 1];
+      break;
+    }
+    if (argument.consume_front("--target=")) {
+      link_triple = argument.str();
+      break;
+    }
+  }
+
   const std::string executable_path = llvm::sys::fs::getMainExecutable(
       "qkc", reinterpret_cast<void *>(&qk_link_lld));
   clang::driver::Driver driver(
-      executable_path, llvm::sys::getDefaultTargetTriple(), diagnostic_engine);
+      executable_path, default_triple, diagnostic_engine);
   driver.setCheckInputsExist(false);
 
   llvm::SmallVector<const char *, 32> driver_arguments;
@@ -358,7 +372,10 @@ extern "C" int qk_link_lld(
   const clang::driver::Command &command = *jobs.front();
 
   llvm::SmallVector<const char *, 64> lld_arguments;
-  lld_arguments.push_back(command.getExecutable());
+  const llvm::Triple effective_link_triple(llvm::Triple::normalize(link_triple));
+  lld_arguments.push_back(effective_link_triple.isOSDarwin()
+      ? "ld64.lld"
+      : command.getExecutable());
   lld_arguments.append(command.getArguments());
   if (verbose) {
     llvm::errs() << "> libLLD";
