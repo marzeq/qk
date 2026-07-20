@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -50,6 +52,12 @@ func collectSourceFiles(paths []string, exclude []string) ([]string, error) {
 
 		err = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 			if err != nil {
+				if path != root && errors.Is(err, fs.ErrPermission) {
+					if d != nil && d.IsDir() {
+						return filepath.SkipDir
+					}
+					return nil
+				}
 				return err
 			}
 			abs, err := filepath.Abs(path)
