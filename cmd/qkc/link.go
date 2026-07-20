@@ -54,8 +54,16 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots []str
 			args = append(args, "-nolibc")
 		}
 	}
-	if config.sysroot != "" {
-		args = append([]string{"--sysroot=" + config.sysroot}, args...)
+	sysroot := config.sysroot
+	if sysroot == "" && targetIsApple(config.target) {
+		var err error
+		sysroot, err = hostAppleSysroot()
+		if err != nil {
+			return nil, err
+		}
+	}
+	if sysroot != "" {
+		args = append([]string{"--sysroot=" + sysroot}, args...)
 	}
 	if config.target != "" {
 		args = append([]string{"-target", config.target}, args...)
