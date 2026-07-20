@@ -160,6 +160,15 @@ type PointerTypeNode struct {
 func (n PointerTypeNode) GetLoc() shared.Location { return n.Loc }
 func (n PointerTypeNode) _type()                  {}
 
+type DynTypeNode struct {
+	TraitType TypeNode
+	Mutable   bool
+	Loc       shared.Location
+}
+
+func (n DynTypeNode) GetLoc() shared.Location { return n.Loc }
+func (n DynTypeNode) _type()                  {}
+
 type FunctionTypeNode struct {
 	Parameters    []TypeNode
 	ReturnType    TypeNode

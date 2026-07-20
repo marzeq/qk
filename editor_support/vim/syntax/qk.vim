@@ -29,7 +29,7 @@ syn keyword qkConstant nil
 
 " Language words
 syn keyword qkDeclaration let mut pub module import compile_time
-syn keyword qkTypeKeyword type alias struct union enum opaque trait
+syn keyword qkTypeKeyword type alias struct union enum opaque trait dyn
 syn keyword qkConditional if else given when
 syn keyword qkRepeat for in
 syn keyword qkStatement break continue return defer

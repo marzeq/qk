@@ -1191,6 +1191,17 @@ func (p *Parser) ParseIdent() (*IdentifierNode, error) {
 }
 
 func (p *Parser) ParseType() (TypeNode, error) {
+	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordDyn) {
+		return p.ParseDynType(false)
+	}
+	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordMut) {
+		begin := p.CurrLoc()
+		p.Inc()
+		if !p.Match(tokeniser.TokenKeyword) || p.Peek().Value != string(tokeniser.KeywordDyn) {
+			return nil, shared.NewError(begin, "expected 'dyn' after 'mut' in type")
+		}
+		return p.ParseDynType(true)
+	}
 	if p.Match(tokeniser.TokenAsterisk) {
 		return p.ParsePointerType()
 	}
@@ -1218,6 +1229,21 @@ func (p *Parser) ParseType() (TypeNode, error) {
 	}
 
 	return p.ParseNamedType()
+}
+
+func (p *Parser) ParseDynType(mutable bool) (*DynTypeNode, error) {
+	begin := p.CurrLoc()
+	if mutable {
+		begin = p.PrevLoc()
+	}
+	if !p.Expect(tokeniser.TokenKeyword) {
+		return nil, shared.NewError(p.PrevLoc(), "expected 'dyn' to start dynamic trait type")
+	}
+	trait, err := p.ParseNamedType()
+	if err != nil {
+		return nil, err
+	}
+	return &DynTypeNode{TraitType: trait, Mutable: mutable, Loc: begin}, nil
 }
 
 func (p *Parser) ParseTraitType() (*TraitTypeNode, error) {

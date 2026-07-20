@@ -50,9 +50,23 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 	case *parser.PointerTypeNode:
 		base := a.resolveTypeNodeAt(t.BaseType, true)
 		if trait, ok := types.Underlying(base).(types.TraitType); ok {
-			return types.TraitPointerType{Trait: trait, Mutable: t.Mutable}
+			mutStr := ""
+			if t.Mutable {
+				mutStr = "mut "
+			}
+			a.errorf(t, "you probably meant %sdyn %v, not *%s%v", mutStr, trait, mutStr, trait)
+			return types.ErrorType{}
 		}
 		return types.PointerType{Base: base, Mutable: t.Mutable}
+
+	case *parser.DynTypeNode:
+		base := a.resolveTypeNodeAt(t.TraitType, true)
+		trait, ok := types.Underlying(base).(types.TraitType)
+		if !ok {
+			a.errorf(t, "dyn requires a trait type, got %v", base)
+			return types.ErrorType{}
+		}
+		return types.TraitPointerType{Trait: trait, Mutable: t.Mutable}
 
 	case *parser.OpaqueTypeNode:
 		return types.OpaqueType{}

@@ -316,9 +316,9 @@ func (p TraitPointerType) CanCoerceTo(other Type) bool {
 func (p TraitPointerType) CanCastTo(other Type) bool { return p.CanCoerceTo(other) }
 func (p TraitPointerType) String() string {
 	if p.Mutable {
-		return "*mut " + p.Trait.String()
+		return "mut dyn " + p.Trait.String()
 	}
-	return "*" + p.Trait.String()
+	return "dyn " + p.Trait.String()
 }
 
 // OpaqueType is an incomplete type with no known value representation. It is

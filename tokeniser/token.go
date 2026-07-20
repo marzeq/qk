@@ -81,6 +81,7 @@ const (
 	KeywordUnion         KeywordKind = "union"
 	KeywordOpaque        KeywordKind = "opaque"
 	KeywordTrait         KeywordKind = "trait"
+	KeywordDyn           KeywordKind = "dyn"
 	KeywordType          KeywordKind = "type"
 	KeywordAlias         KeywordKind = "alias"
 	KeywordIf            KeywordKind = "if"

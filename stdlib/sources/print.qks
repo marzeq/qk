@@ -3,7 +3,7 @@ module std
 pub let HasPrint = compile_time not NoLibc
 
 when HasPrint {
-let display_print_argument(index: usz, arguments: [*Any]): void {
+let display_print_argument(index: usz, arguments: [dyn Any]): void {
   if index >= len(arguments) {
     "<?>".display()
     return
@@ -11,13 +11,13 @@ let display_print_argument(index: usz, arguments: [*Any]): void {
 
   let argument = arguments[index]
   if argument implements Display {
-    argument.(*Display).display()
+    argument.(dyn Display).display()
   } else {
     "<?>".display()
   }
 }
 
-pub let print(format: str, arguments: ...*Any): void {
+pub let print(format: str, arguments: ...dyn Any): void {
   let mut format_index: usz = 0
   let mut argument_index: usz = 0
 
@@ -70,7 +70,7 @@ pub let print(format: str, arguments: ...*Any): void {
   }
 }
 
-pub let println(format: str, arguments: ...*Any): void {
+pub let println(format: str, arguments: ...dyn Any): void {
   print(format, arguments...)
   '\n'.display()
 }

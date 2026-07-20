@@ -495,7 +495,7 @@ let sum(values: ...i64): i64 {
     return result
 }
 
-let inspect(values: ...*Any) { /* values has type [*Any] */ }
+let inspect(values: ...dyn Any) { /* values has type [dyn Any] */ }
 ```
 
 Calls accept zero or more separately checked arguments. Inside the function, the
@@ -1367,16 +1367,17 @@ its accessible method set contains exact matches for every requirement. No
 conformance declaration is written. Dynamic calls to a value receiver operate on
 a copy; they do not move or mutate the original value.
 
-Traits cannot be used by value. Trait pointers retain the concrete value's type
-identity. Immutable trait pointers can call only `*self` methods; mutable trait
-pointers can call both receiver forms.
+Traits cannot be used by value. `dyn Trait` and `mut dyn Trait` create immutable
+and mutable dynamic trait types that retain the concrete value's type identity.
+Immutable trait pointers can call only `*self` methods; mutable trait pointers can
+call both receiver forms.
 
 `Any` is a built-in empty trait implemented by every concrete type. Trait
 pointers support trapping assertions. A pointer assertion aliases the original
 storage, while a value assertion copies the concrete value:
 
 ```qk
-let erased: *Any = file.&
+let erased: dyn Any = file.&
 let pointer = erased.(*File)
 let copy = erased.(File)
 ```
@@ -1388,11 +1389,11 @@ When an addressable concrete value is used where a trait pointer is expected,
 QK inserts the reference and structural conversion implicitly:
 
 ```qk
-let reader: *Reader = file       // file.&.(*Reader)
-consume_reader(file)             // parameter type is *Reader
+let reader: dyn Reader = file       // file.&.(dyn Reader)
+consume_reader(file)                // parameter type is dyn Reader
 ```
 
-An expected `*mut Trait` similarly inserts `.&mut.(*mut Trait)`, but only for a
+An expected `mut dyn Trait` similarly inserts `.&mut.(mut dyn Trait)`, but only for a
 mutable place. Immutable trait pointers also accept computed concrete expressions.
 Untyped numeric literals still need a cast because the trait alone cannot infer
 their concrete numeric type. Implicit conversion never weakens mutability rules.
@@ -1479,7 +1480,7 @@ The standard library also provides typed, type-safe formatting through
 std.print("hello {} {1}", foo, bar)
 ```
 
-Its signature is `print(format: str, arguments: ...*Any): void`. Each field
+Its signature is `print(format: str, arguments: ...dyn Any): void`. Each field
 advances the automatic argument position once. `{}` selects the current automatic
 argument, while a zero-based indexed field such as `{1}` overrides the selection
 for that field without changing how the automatic position advances. Thus
