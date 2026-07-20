@@ -2,8 +2,8 @@
 
 QK is a small native systems language with C-like semantics, explicit data
 layout, nominal user-defined types, pointers, slices, modules, methods, and
-direct C interoperability. The implementation is under active development;
-this document describes the current language rather than a stable standard.
+direct C interoperability. The language is under active development; this
+document describes its current behavior rather than a stable standard.
 
 ## 1. Getting started
 
@@ -23,9 +23,6 @@ qkc .
 ./main
 ```
 
-`qkc` requires `clang`, LLVM's `opt`, and a usable `lld`. The compiler driver is
-written in Go; Go is only needed to build or run the compiler from source.
-
 The language has no garbage collector or ownership runtime. Memory allocation,
 resource management, and operating-system interaction are provided through
 libraries and foreign interfaces.
@@ -44,10 +41,10 @@ During development, the equivalent direct invocation is:
 go run ./cmd/qkc .
 ```
 
-`qkc` requires `clang`, LLVM's `opt`, and a usable `lld`. The compiler itself is
-intended for Unix-like hosts. QK supports recognised 32-bit and 64-bit target
-architectures; native code generation and cross-compilation use the target support
-exposed by the installed LLVM toolchain.
+See the repository README for current build prerequisites. `qkc` is intended for
+Unix-like hosts. QK supports recognised 32-bit and 64-bit target architectures.
+Hosted cross-compilation requires compatible target CRT objects and native
+libraries.
 
 The repository includes Vim file detection, syntax highlighting, indentation,
 and file settings under `editor_support/vim`.
@@ -260,25 +257,22 @@ Apart from the initial module declaration, top-level forms are imports, function
 global values, and type declarations. `pub` may prefix functions, globals, and
 types. Declarations are terminated by a newline or semicolon.
 
-The compiler collects module-level type and function signatures before resolving
-bodies, so functions and types can refer to later top-level declarations. Local
-declarations remain lexically scoped.
+Functions and types can refer to later top-level declarations. Local declarations
+remain lexically scoped.
 
-Types and values share the module's symbol table: the same name cannot be reused
-for a type, function, global, or imported module alias in one scope. Methods are
-stored per owner type and use a separate lookup path.
+A type, function, global, or imported module alias cannot reuse another such name
+in the same scope. Method names are unique within their owner type.
 
 ### 5.1 Compile-time `when`
 
-`when` selects source tokens before parsing and semantic analysis. Conditions
-support boolean literals, `not`, `and`, `or`, equality, and compiler-provided
-target and configuration values:
+`when` conditionally includes source. Conditions support boolean literals, `not`,
+`and`, `or`, equality, and build target and configuration values:
 
 ```qk
 when NoLibc {
-    // Freestanding implementation.
+    // Freestanding path.
 } else {
-    // libc-backed implementation.
+    // libc-backed path.
 }
 ```
 
@@ -308,9 +302,9 @@ let HasPrint = compile_time not NoLibc
 let HasFormatting = compile_time HasPrint
 ```
 
-Capability declarations are preprocessing metadata, not runtime globals or
-members of the `std` namespace. Their names are globally available only inside
-`when` conditions:
+Capability declarations are compile-time values, not runtime globals or members
+of the `std` namespace. Their names are globally available only inside `when`
+conditions:
 
 ```qk
 when HasPrint {
@@ -319,15 +313,15 @@ when HasPrint {
 }
 ```
 
-Only compiler-trusted embedded sources or an explicitly trusted `-stdlib` source
-tree may declare capabilities. Names must begin with `Has`, initializers must be
-boolean compile-time expressions, and declarations must be top-level. They may
-reference target/configuration values and other capabilities. Forward references
-are supported; duplicate declarations, unknown references, and dependency cycles
-are errors.
+Only the standard library or an explicitly trusted `-stdlib` source tree may
+declare capabilities. Names must begin with `Has`, initializers must be boolean
+compile-time expressions, and declarations must be top-level. They may reference
+target/configuration values and other capabilities. Forward references are
+supported; duplicate declarations, unknown references, and dependency cycles are
+errors.
 
-With `-nostdlib`, capability names known to the embedded standard library remain
-available but evaluate to `false`. This permits project sources to guard imports
+With `-nostdlib`, known standard-library capability names remain available but
+evaluate to `false`. This permits project sources to guard imports
 without producing unknown-name errors, while misspelled or otherwise unknown
 capability names remain diagnostics. An external `-stdlib` tree supplies its own
 capability set while selected.
@@ -501,8 +495,8 @@ let sum(values: ...i64): i64 {
 let inspect(values: ...*Any) { /* values has type [*Any] */ }
 ```
 
-Calls accept zero or more separately checked arguments. The compiler packages
-them into temporary contiguous storage and passes one ordinary slice descriptor:
+Calls accept zero or more separately checked arguments. Inside the function, the
+arguments are available as one dynamic slice:
 
 ```qk
 sum()
@@ -517,8 +511,7 @@ let numbers: [i64, 3] = [10, 20, 30]
 sum(numbers...)
 ```
 
-Typed variadics are QK-ABI-only and lower to a fixed final `[Type]` parameter;
-they never use LLVM or C varargs. They must be final, cannot use defaults, and
+Typed variadics are QK-ABI-only. They must be final, cannot use defaults, and
 cannot appear on C foreign or exported functions. Bare C variadics and typed QK
 variadics are distinct features.
 
@@ -540,10 +533,10 @@ Function-pointer syntax is:
 let Callback = type alias *(i32, *void): bool
 ```
 
-Function types contain parameter and return types. Typed variadic metadata is
-written as `*(...Type): Return` and is preserved for checked indirect calls; its
-ABI is still a final slice parameter. Defaults, parameter names, bare C variadic
-status, and foreign/export metadata are not part of a function-pointer type.
+Function types contain parameter and return types. A typed variadic function
+pointer is written as `*(...Type): Return`. Defaults, parameter names, bare C
+variadic status, and foreign/export properties are not part of a function-pointer
+type.
 
 ### 7.6 Program entry point
 
@@ -580,8 +573,8 @@ let length = point.length()
 point.update()
 ```
 
-The compiler performs the supported address/dereference adaptation needed for the
-receiver, subject to mutability rules.
+Calls apply the supported address/dereference adaptation for the receiver,
+subject to mutability rules.
 
 Omitting `self` declares a static method:
 
@@ -1199,8 +1192,8 @@ Functions accept:
 
 Empty parentheses are also accepted. `@inline` requests forced inlining,
 `@noinline` prohibits it, and `@noreturn` states that the function never returns
-to its caller. Violating `@noreturn` is erroneous program behavior; it is an ABI
-and optimizer promise, not a runtime check.
+to its caller. Violating `@noreturn` is erroneous program behavior; the promise
+is not checked at runtime.
 
 Attributes are not currently deduplicated. Repeating an attribute is unsupported;
 write each applicable attribute at most once.
@@ -1290,17 +1283,13 @@ QK distinguishes source visibility, native linkage, and calling convention:
 - `@foreign` refers to an externally provided native declaration.
 - `abi "c"` or `abi "qk"` selects the calling convention where supported.
 
-Ordinary QK functions and globals use internal native linkage, including `pub`
-declarations. The executable entry point and `@export` functions use external
-linkage. Cross-module QK calls are combined inside one native module, so `pub`
-does not need to expose implementation symbols to the system linker.
+Ordinary QK functions and globals, including `pub` declarations, are not part of
+the public native interface. Use `@export` for definitions that native callers
+must access.
 
-Both `@foreign` and `@export` default to the C ABI. The C ABI lowering uses the
-effective target triple and handles scalar and aggregate parameters and returns,
-including hidden structure-return pointers where the platform ABI requires them.
-Implemented aggregate classifications cover SysV AMD64, Windows x64, and AArch64.
-Other target/aggregate combinations may be unsupported even if Clang accepts the
-target.
+Both `@foreign` and `@export` default to the C ABI. Supported aggregate calling
+conventions depend on the selected target. Some target/aggregate combinations
+remain unsupported.
 
 Typical C interoperation uses `cstr`, opaque pointer types, C-layout aggregates,
 foreign functions/globals, and module link attributes:
@@ -1314,22 +1303,21 @@ let fopen(path: cstr, mode: cstr): *FILE @foreign
 let fclose(file: *FILE): i32 @foreign
 ```
 
-QK emits target-native struct and union layouts, but matching a particular C
-declaration remains the programmer's responsibility. Check target widths,
-signedness, packing expectations, and library headers. QK has no packed-struct or
-bit-field syntax.
+QK structs and unions use the selected target's native layout, but matching a
+particular C declaration remains the programmer's responsibility. Check target
+widths, signedness, packing expectations, and library headers. QK has no
+packed-struct or bit-field syntax.
 
-The QK ABI is intended for calls entirely controlled by QK. It supports language
-representations that are not necessarily stable C interfaces. ABI metadata is not
-carried by function-pointer types, so indirect foreign calls should be avoided
-unless their lowered signature is known to match.
+The QK ABI is intended for calls entirely controlled by QK and is not a stable C
+interface. Function-pointer types do not distinguish C and QK calling conventions,
+so indirect foreign calls should be avoided unless the signature is known to be
+ABI-compatible.
 
 ## 26. Runtime semantics
 
 QK values use native value semantics. Primitive values, pointers, enums, fixed
-slices, structs, and unions are copied on assignment and argument passing unless
-the platform ABI lowers the transfer indirectly. A dynamic slice copies its
-pointer-and-length descriptor, not the referenced elements.
+slices, structs, and unions are copied on assignment and argument passing.
+Copying a dynamic slice does not copy its referenced elements.
 
 Local storage has lexical lifetime. Global values have program lifetime. Pointers
 do not extend either lifetime. Returning or retaining an address to expired local
@@ -1351,14 +1339,12 @@ checked at runtime:
 - Reading a union through an inactive/incompatible field.
 - Invalid values manufactured by casts.
 
-Such operations inherit LLVM/native-machine behavior and may be undefined. The
-compiler performs some static checks when enough information is immediately
-available, such as literal indexing into a fixed-size slice.
+Such operations have native-machine behavior and may be undefined. Some cases,
+such as literal indexing outside a fixed-size slice, are rejected during the
+build.
 
 There is no allocator, exception mechanism, stack unwinding, garbage collector,
-or automatic destructor system. The thin runtime provides panic termination and,
-for freestanding builds, memory primitives. `defer` is lexical control
-flow emitted by the compiler; it is not exception-safe unwinding.
+or automatic destructor system. `defer` does not provide exception unwinding.
 
 ### 26.1 Traits and dynamic dispatch
 
@@ -1375,14 +1361,12 @@ pub let Reader = type trait {
 `self`, `*self`, and `*mut self` are supported and must match the concrete
 method's receiver exactly. A concrete nominal type conforms structurally when
 its accessible method set contains exact matches for every requirement. No
-conformance declaration is written. Dynamic calls to a value receiver copy the
-underlying concrete value into a compiler-generated adapter before invoking the
-method; they do not move or mutate the original value.
+conformance declaration is written. Dynamic calls to a value receiver operate on
+a copy; they do not move or mutate the original value.
 
-Traits cannot be used by value. `*Reader` and `*mut Reader` are two-word trait
-pointers containing the concrete data address and a vtable address. Immutable
-trait pointers can call only `*self` methods; mutable trait pointers can call
-both receiver forms.
+Traits cannot be used by value. Trait pointers retain the concrete value's type
+identity. Immutable trait pointers can call only `*self` methods; mutable trait
+pointers can call both receiver forms.
 
 `Any` is a built-in empty trait implemented by every concrete type. Trait
 pointers support trapping assertions. A pointer assertion aliases the original
@@ -1406,10 +1390,9 @@ consume_reader(file)             // parameter type is *Reader
 ```
 
 An expected `*mut Trait` similarly inserts `.&mut.(*mut Trait)`, but only for a
-mutable place. For immutable trait pointers, non-addressable expressions are
-materialized in compiler-owned temporary storage. Untyped numeric literals still
-need a cast because the trait alone cannot infer their concrete numeric type.
-Implicit conversion never weakens mutability rules.
+mutable place. Immutable trait pointers also accept computed concrete expressions.
+Untyped numeric literals still need a cast because the trait alone cannot infer
+their concrete numeric type. Implicit conversion never weakens mutability rules.
 
 Use `is` to compare a trait pointer's runtime concrete type without unwrapping:
 
@@ -1484,8 +1467,7 @@ let shown: *std.Display = count.&.(*std.Display)
 shown.display()
 ```
 
-The current implementations use the platform C output functions and are excluded
-from the standard library when `NoLibc` is true.
+Builtin `Display` methods are unavailable when `NoLibc` is true.
 
 The standard library also provides typed, type-safe formatting through
 `std.print`:
@@ -1506,33 +1488,25 @@ and extra arguments are ignored. `{{` and `}}` emit literal braces; malformed
 fields are emitted literally. Formatting itself adds no newline. `std.println`
 has the same formatting behavior and appends one newline.
 
-Arguments rely on implicit concrete-to-trait borrowing. Addressable values are
-borrowed directly, while computed values are materialized in temporary storage
-for the call. A private `display` method can satisfy the trait: visibility
-still prevents another module from naming the method directly, but does not
-prevent opaque invocation through a compiler-generated trait witness. Converting
-an existing trait pointer to a different trait pointer performs a checked runtime
-recast: QK selects the target vtable by concrete type identity and traps if the
-concrete type does not conform.
+Arguments rely on implicit concrete-to-trait borrowing. Both addressable and
+computed values are accepted. A private `display` method can satisfy the trait:
+visibility still prevents another module from naming the method directly, but
+does not prevent invocation through the trait. Converting an existing trait
+pointer to a different trait pointer performs a checked runtime recast and traps
+if the concrete type does not conform.
 
 ### 26.3 Panic
 
 `panic(message: str)` writes `panic: `, the message, and a newline to standard
 error, then terminates without stack unwinding. Deferred actions are not run as
-part of panic termination. Failed trait assertions use the same thin-runtime
-entry point and therefore receive the same prefix.
+part of panic termination. Failed trait assertions use the same message prefix.
 
-## 27. Compilation and output model
+## 27. Builds and output
 
-`qkc` recursively discovers source files, selects the root module and its imports,
-checks the complete program, emits one native compilation unit, and invokes the
-LLVM/Clang toolchain.
-
-The compiler applies LLVM global dead-code elimination before object generation.
-It emits per-function and per-data sections. Executable and shared-library links
-also request platform linker dead stripping (`--gc-sections`, Apple `dead_strip`,
-or Windows `OPT:REF`). Unreferenced internal code may therefore be absent from the
-output.
+`qkc` discovers source files, selects the root module and its transitive imports,
+checks the complete program, and produces the requested executable, shared
+library, relocatable object, or assembly output. Unreferenced definitions are not
+guaranteed to remain in native output.
 
 ## 28. Compiler command line
 
@@ -1550,25 +1524,18 @@ Exactly one base directory is required. Options may appear before or after it.
 | --- | --- |
 | `-m module` | Select the root module; default `main`. |
 | `-E path` | Exclude a source file or directory tree; repeatable. |
-| `-stdlib path` | Trust and use a compiler-development standard-library source tree instead of the embedded library. |
+| `-stdlib path` | Trust and use a replacement standard-library source tree. |
 | `-nostdlib` | Disable standard-library loading. |
-| `-no-emit` | Check and generate internal output without writing a final file. |
+| `-no-emit` | Check the program without writing a final file. |
 
-### 28.2 Standard-library development
+### 28.2 Standard library
 
-The compiler embeds its authorized standard-library sources from
-`stdlib/sources`. Those files use the `.qks` suffix so ordinary recursive `.qk`
-source discovery cannot pick them up. The embedded `std` module is added as a
-dependency of every other module, which makes its public methods on builtin
-types available without an explicit import.
+The `std` module is available by default, and its public methods on builtin types
+can be called without importing the module name. The `std` and `std.*` namespaces
+are reserved. Use `-nostdlib` to build without the standard library.
 
-Only compiler-trusted standard-library sources may declare `module std`, declare
-a module below the reserved `std.*` namespace, or attach methods to builtin value
-types. A project cannot acquire that authority by placing such a file in its
-source tree, including in a `-nostdlib` build.
-
-The embedded `std.libc` submodule provides the draft C ABI declarations when
-`HasLibc` is true. Import it explicitly before use:
+The `std.libc` submodule provides C declarations when `HasLibc` is true. Import
+it explicitly before use:
 
 ```qk
 import std.libc
@@ -1576,54 +1543,17 @@ import std.libc
 let memory = std.libc.malloc(1024)
 ```
 
-In a `-nolibc` build the module still exists, but the `when HasLibc` guard removes
-its declarations.
+In a `-nolibc` build the module remains available, but its C declarations are not.
 
-While editing the standard library, either rebuild/run `qkc` to exercise the
-embedded `.qks` sources, or keep a directory of ordinary `.qk` files and pass it
-explicitly:
-
-```text
-go generate ./stdlib
-go build ./cmd/qkc
-```
-
-The generation step does not produce generated files. It runs the embedded
-sources through tokenisation, preprocessing, parsing, module loading, semantic
-analysis, attribution, and validation, then fails the command on any diagnostic.
-It checks every embedded standard-library submodule in both the ordinary and
-`NoLibc` configurations.
-Go does not run generators as part of `go build`, so compiler developers and CI
-must invoke `go generate ./stdlib` explicitly before building. The checker can
-also be run directly, with an optional target for compile-time selection:
-
-```text
-go run ./cmd/qkstdlibcheck
-go run ./cmd/qkstdlibcheck -target aarch64-unknown-linux-gnu
-go run ./cmd/qkstdlibcheck -nolibc
-```
-
-For an external development library, keep a directory of ordinary `.qk` files
-and pass it to the compiler explicitly:
+`-stdlib` selects a trusted replacement standard-library source tree:
 
 ```text
 go run ./cmd/qkc . -stdlib /path/to/qk-stdlib
 ```
 
-Every file in that override tree must declare `module std`. Supplying `-stdlib`
-is an explicit compiler-developer trust decision; do not pass paths controlled by
-an untrusted project. For example, a primitive value-receiver method can be
-defined there as:
-
-```qk
-module std
-
-pub let i32.double(self) = self * 2
-```
-
-The method is then callable on typed `i32` values in normal modules. Primitive
-methods participate in the same structural trait conformance and dynamic dispatch
-rules as methods on user-defined types.
+Every file in that tree must declare `module std`. The path is trusted to define
+reserved modules and methods on builtin types, so do not use a tree controlled by
+an untrusted project.
 
 ### 28.3 Output selection
 
@@ -1644,16 +1574,16 @@ the output is an executable named after the root module. Default object and shar
 library names are `module.o` and `libmodule.so`, where `module` is the root module
 name.
 
-Object output is produced as a relocatable link (`clang -r`). `-run` is valid only
-for executables. It forwards the program's exit code and removes the generated
-executable after the run.
+Relocatable object output is unavailable for Windows GNU targets. `-run` is valid
+only for executables. It forwards the program's exit code and removes the
+generated executable after the run.
 
 ### 28.4 Optimization and diagnostics
 
 | Option | Meaning |
 | --- | --- |
 | `-Olevel` or `-O level` | Set `0`, `1`, `2`, `3`, `s`, `z`, `fast`, or `g`; default `2`. |
-| `-v` | Print invoked tool commands and verbose pipeline progress. |
+| `-v` | Print verbose build progress. |
 | `-d` | Enable compiler debug detail. |
 
 Numeric optimization levels above 3 are accepted, warned about, and treated as `-O3`.
@@ -1662,32 +1592,34 @@ Numeric optimization levels above 3 are accepted, warned about, and treated as `
 
 | Option | Meaning |
 | --- | --- |
-| `-target triple` | Set the Clang target triple and C ABI target. |
-| `-sysroot path` | Set the target sysroot. |
-| `-Xcompile "args"` | Append whitespace-split arguments to Clang compilation. |
-| `-Xlink "args"` | Append whitespace-split arguments to the final link. |
+| `-target triple` | Set the compilation and C ABI target triple. |
+| `-sysroot path` | Set the target sysroot for final linking. |
+| `-cpu name` | Select the target CPU; `native` resolves to the host CPU. |
+| `-features list` | Set comma-separated target features such as `+avx2,-sse4.1`. |
+| `-target-abi name` | Set the target-specific ABI name. |
+| `-relocation-model model` | Select `default`, `static`, `pic`, or `dynamic-no-pic`; the implicit default is PIC. |
+| `-code-model model` | Select `default`, `tiny`, `small`, `kernel`, `medium`, or `large`. |
+| `-Xlink "args"` | Append whitespace-split arguments to the native link. |
 | `-static` | Request static linking; invalid for shared output. |
 | `-nolibc` | Build without libc; Linux x86-64 executables use QK's freestanding startup. |
 | `-lname` / `-l name` | Link a system library; repeatable. |
 | `-Lpath` / `-L path` | Add a library search directory; repeatable. |
 
-The driver selects `lld` with `-fuse-ld=lld`. Cross-linking requires compatible
-CRT objects, libraries, and headers/sysroot outside QK. `-target` changes code
-generation; it does not install a cross toolchain.
+Arbitrary compilation arguments are intentionally unsupported; use the structured
+options above. Cross-linking requires compatible CRT objects, libraries, and a
+sysroot outside QK. `-target` does not install a cross toolchain.
 
 On Linux x86-64, an executable built with `-nolibc` is linked with `-nostdlib`
-and uses the thin runtime's `_start` instead of a C runtime startup object.
-`_start` calls the root module initializer, which transitively initializes its
-dependencies, calls QK `main`, and terminates through the Linux `exit` syscall.
-The freestanding panic implementation writes directly through the `write`
-syscall and exits with status 101. There is currently no argument/environment
-entry API, and QK `main` returns exit status 0 normally.
+and does not depend on C runtime startup. It terminates through the Linux `exit`
+syscall. `panic` writes through the Linux `write` syscall and exits with status
+101. There is currently no argument/environment entry API, and QK `main` returns
+exit status 0 normally.
 
 Freestanding executable startup is currently rejected for other targets rather
-than silently emitting a binary that depends on a platform CRT. Library and
+than producing a binary that depends on a platform CRT. Library and
 object `-nolibc` workflows retain their existing linker behavior. Code reached by
 a freestanding executable must not call libc-backed facilities such as
-`std.print`, `std.println`, or builtin `Display` implementations.
+`std.print`, `std.println`, or builtin `Display` methods.
 
 ### 28.6 Informational options
 
@@ -1695,9 +1627,9 @@ a freestanding executable must not call libc-backed facilities such as
 
 ## 29. Diagnostics and troubleshooting
 
-Compiler diagnostics include a file, line, column, source excerpt, and marker.
-Parsing and semantic analysis can report several independent errors in one run.
-Warnings are printed but do not prevent output unless a later error occurs.
+Diagnostics include a file, line, column, source excerpt, and marker. Several
+independent errors can be reported in one run. Warnings do not prevent output
+unless an error also occurs.
 
 ## 30. Examples
 
@@ -1887,10 +1819,10 @@ QK is intentionally small and currently has no:
 - Stable language, native ABI, IR, or compiler-plugin interface.
 
 Target pointer width is supported for recognised 32-bit and 64-bit architectures.
-C aggregate ABI lowering is implemented for SysV AMD64, Windows x64, and AArch64;
-32-bit C aggregate parameters and returns are not yet supported. Scalar C ABI and
-ordinary QK calls work on supported 32-bit targets. The host compiler is not
-currently intended for Windows.
+C aggregate parameters and returns are supported for SysV AMD64, Windows x64,
+and AArch64, but not yet for 32-bit targets. Scalar C ABI and ordinary QK calls
+work on supported 32-bit targets. The host compiler is not currently intended
+for Windows.
 
 `as` is reserved but casts use `value.(Type)`. Block comments do not nest. QK
 strings and C strings are deliberately distinct.

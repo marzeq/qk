@@ -3,12 +3,12 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/marzeq/qk/codegen/llvm"
+	"github.com/marzeq/qk/codegen/llvmbackend"
 	"github.com/marzeq/qk/ir"
 )
 
@@ -54,78 +54,57 @@ func compileLLVMModule(buildDir, moduleName, llvmOutput string, args *Args) (str
 		}
 	}
 
-	optimizedPath, err := optimizeLLVMModule(buildDir, args)
+	if args.verbose {
+		fmt.Printf("> libLLVM emit object %s\n", objPath)
+	}
+	err := llvmbackend.Compile(
+		llvmOutput,
+		objPath,
+		filepath.Join(buildDir, "module.opt.ll"),
+		llvmbackend.OutputObject,
+		llvmBackendOptions(args),
+	)
 	if err != nil {
 		return "", err
-	}
-
-	clangArgs := []string{
-		"-c", optimizedPath, "-o", objPath,
-		fmt.Sprintf("-O%s", args.optLevel),
-		"-ffunction-sections",
-		"-fdata-sections",
-	}
-	if args.target != "" {
-		clangArgs = append([]string{"-target", args.target}, clangArgs...)
-	}
-	if args.sysroot != "" {
-		clangArgs = append(clangArgs, "--sysroot="+args.sysroot)
-	}
-	if len(args.clangArgs) > 0 {
-		clangArgs = append(clangArgs, args.clangArgs...)
-	}
-
-	if args.verbose {
-		fmt.Printf("> clang %s\n", strings.Join(clangArgs, " "))
-	}
-	out, err := exec.Command("clang", clangArgs...).CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("clang failed: %w\n%s", err, string(out))
 	}
 	storeModuleObject(cachePath, objPath)
 
 	return objPath, nil
 }
 
-func optimizeLLVMModule(buildDir string, args *Args) (string, error) {
-	llPath := filepath.Join(buildDir, "module.ll")
-	optimizedPath := filepath.Join(buildDir, "module.opt.ll")
-	optArgs := []string{"-passes=globaldce", "-S", llPath, "-o", optimizedPath}
-	if args.verbose {
-		fmt.Printf("> opt %s\n", strings.Join(optArgs, " "))
-	}
-	out, err := exec.Command("opt", optArgs...).CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("LLVM global dead-code elimination failed: %w\n%s", err, string(out))
-	}
-	return optimizedPath, nil
-}
-
 func emitAssemblyFile(buildDir string, args *Args) error {
-	llPath, err := optimizeLLVMModule(buildDir, args)
+	llvmOutput, err := os.ReadFile(filepath.Join(buildDir, "module.ll"))
 	if err != nil {
 		return err
 	}
 	asmPath := filepath.Join(buildDir, "module.s")
-	clangArgs := []string{"-S", llPath, "-o", asmPath, fmt.Sprintf("-O%s", args.optLevel)}
-
-	if args.target != "" {
-		clangArgs = append([]string{"-target", args.target}, clangArgs...)
-	}
-	if args.sysroot != "" {
-		clangArgs = append(clangArgs, "--sysroot="+args.sysroot)
-	}
-	if len(args.clangArgs) > 0 {
-		clangArgs = append(clangArgs, args.clangArgs...)
-	}
 	if args.verbose {
-		fmt.Printf("> clang %s\n", strings.Join(clangArgs, " "))
+		fmt.Printf("> libLLVM emit assembly %s\n", asmPath)
 	}
-	out, err := exec.Command("clang", clangArgs...).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("clang failed while generating assembly: %w\n%s", err, string(out))
+	return llvmbackend.Compile(
+		string(llvmOutput),
+		asmPath,
+		filepath.Join(buildDir, "module.opt.ll"),
+		llvmbackend.OutputAssembly,
+		llvmBackendOptions(args),
+	)
+}
+
+func llvmBackendOptions(args *Args) llvmbackend.Options {
+	relocation := args.relocation
+	if relocation == "" {
+		relocation = "pic"
 	}
-	return nil
+	return llvmbackend.Options{
+		TargetTriple:    args.target,
+		CPU:             args.cpu,
+		Features:        args.features,
+		TargetABI:       args.targetABI,
+		OptLevel:        string(args.optLevel),
+		RelocationModel: relocation,
+		CodeModel:       args.codeModel,
+		Verbose:         args.verbose && args.debug,
+	}
 }
 
 func dumpAssemblyFile(buildDir string) error {

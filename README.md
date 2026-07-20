@@ -36,10 +36,13 @@ aggregate lowering is currently limited to the documented target families.
 ### Building the compiler
 
 - Reasonably modern Go version
+- A C++17 compiler
+- LLVM and Clang 22 development headers
+- The shared LLVM 22, Clang C++, and LLD driver libraries
 
 ### Using the compiler
 
-- clang installed system-wide
+- Target CRT objects and native libraries for hosted linking
 
 ## Compiler CLI
 

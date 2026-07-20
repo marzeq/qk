@@ -51,8 +51,12 @@ type Args struct {
 	noEmit        bool
 	target        string
 	sysroot       string
+	cpu           string
+	features      string
+	targetABI     string
+	relocation    string
+	codeModel     string
 	outputType    OutputType
-	clangArgs     []string
 	linkArgs      []string
 	libs          []string
 	libraryPaths  []string
@@ -273,9 +277,49 @@ func (p *argumentParser) parseCurrent() error {
 		}
 		p.args.sysroot = value
 
-	case tok == "-Xcompile":
-		if err := p.parseSplitArgs(tok, &p.args.clangArgs); err != nil {
+	case tok == "-cpu":
+		value, err := p.nextValue(tok)
+		if err != nil {
 			return err
+		}
+		p.args.cpu = value
+
+	case tok == "-features":
+		value, err := p.nextValue(tok)
+		if err != nil {
+			return err
+		}
+		p.args.features = value
+
+	case tok == "-target-abi":
+		value, err := p.nextValue(tok)
+		if err != nil {
+			return err
+		}
+		p.args.targetABI = value
+
+	case tok == "-relocation-model":
+		value, err := p.nextValue(tok)
+		if err != nil {
+			return err
+		}
+		switch value {
+		case "default", "static", "pic", "dynamic-no-pic":
+			p.args.relocation = value
+		default:
+			return fmt.Errorf("invalid relocation model: %s", value)
+		}
+
+	case tok == "-code-model":
+		value, err := p.nextValue(tok)
+		if err != nil {
+			return err
+		}
+		switch value {
+		case "default", "tiny", "small", "kernel", "medium", "large":
+			p.args.codeModel = value
+		default:
+			return fmt.Errorf("invalid code model: %s", value)
 		}
 
 	case tok == "-Xlink":
@@ -340,7 +384,11 @@ func printUsage() {
 	fmt.Println("  -l <lib>           Link with library <lib> (can specify multiple times)")
 	fmt.Println("  -target <triple>   Target triple for code generation")
 	fmt.Println("  -sysroot <path>    Sysroot path for target")
-	fmt.Println("  -Xcompile <args>   Additional arguments to pass to clang when building module object files")
+	fmt.Println("  -cpu <name>        LLVM target CPU (for example: native, x86-64-v3)")
+	fmt.Println("  -features <list>   LLVM target features (for example: +avx2,-sse4.1)")
+	fmt.Println("  -target-abi <name> Target-specific ABI name")
+	fmt.Println("  -relocation-model <model>  Relocation model (default, static, pic, dynamic-no-pic)")
+	fmt.Println("  -code-model <model>        Code model (default, tiny, small, kernel, medium, large)")
 	fmt.Println("  -Xlink <args>      Additional arguments to pass to clang when linking the final executable")
 	fmt.Println("  -L <path>          Add library search path (can specify multiple times)")
 	fmt.Println("  -no-emit           Do not emit any output files, just check for errors")

@@ -2,9 +2,11 @@ package main
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/marzeq/qk/attributes"
@@ -17,15 +19,6 @@ import (
 	"github.com/marzeq/qk/stdlib"
 	"github.com/marzeq/qk/types"
 )
-
-func containsString(values []string, wanted string) bool {
-	for _, value := range values {
-		if value == wanted {
-			return true
-		}
-	}
-	return false
-}
 
 func main() {
 	args, err := parseArgs()
@@ -72,9 +65,7 @@ func main() {
 		compileTimeSources[file] = string(data)
 	}
 	if !args.noStdlib {
-		for origin, source := range selectedStdlibSources {
-			compileTimeSources[origin] = source
-		}
+		maps.Copy(compileTimeSources, selectedStdlibSources)
 	}
 	preprocessorConfig.ModuleBindings, err = preprocessor.ResolveModuleBindings(compileTimeSources, preprocessorConfig)
 	check(err)
@@ -132,7 +123,7 @@ func main() {
 	check(err)
 	if !args.noStdlib {
 		for name, module := range modules {
-			if name != "std" && !strings.HasPrefix(name, "std.") && !containsString(module.Imports, "std") {
+			if name != "std" && !strings.HasPrefix(name, "std.") && !slices.Contains(module.Imports, "std") {
 				module.Imports = append(module.Imports, "std")
 			}
 		}

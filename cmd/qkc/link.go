@@ -2,10 +2,10 @@ package main
 
 import (
 	"fmt"
-	"os/exec"
 	"strings"
 
 	"github.com/marzeq/qk/attributes"
+	"github.com/marzeq/qk/codegen/llvmbackend"
 )
 
 func linkObjects(objFiles []string, moduleLinks []attributes.Link, roots []string, config *Args) error {
@@ -14,16 +14,7 @@ func linkObjects(objFiles []string, moduleLinks []attributes.Link, roots []strin
 		return err
 	}
 
-	if config.verbose {
-		fmt.Printf("> clang %s\n", strings.Join(args, " "))
-	}
-	cmd := exec.Command("clang", args...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("linking failed: %w\n%s", err, string(out))
-	}
-
-	return nil
+	return llvmbackend.Link(args, config.verbose)
 }
 
 func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots []string, config *Args) ([]string, error) {
@@ -32,10 +23,10 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots []str
 	switch config.outputType {
 	case OutputExecutable:
 	case OutputObject:
-		args = append(args, "-r")
 		if isWindowsGNUTarget(config.target) {
-			args = append(args, "-nostdlib")
+			return nil, fmt.Errorf("relocatable object output for Windows GNU targets is unavailable with in-process LLD")
 		}
+		args = append(args, "-r")
 	case OutputSharedLib:
 		if config.static {
 			return nil, fmt.Errorf("cannot use --static with shared lib output")
@@ -92,13 +83,7 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots []str
 		args = append(args, "-L"+path)
 	}
 
-	linker := "lld"
-	if config.outputType == OutputObject && isWindowsGNUTarget(config.target) {
-		// LLD's COFF driver cannot produce a relocatable object. MinGW's GNU
-		// linker can, and -nostdlib above keeps it from adding CRT startup files.
-		linker = "bfd"
-	}
-	args = append(args, "-o", config.output, "-fuse-ld="+linker)
+	args = append(args, "-o", config.output, "-fuse-ld=lld")
 	return args, nil
 }
 

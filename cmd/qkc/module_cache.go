@@ -79,12 +79,16 @@ func moduleObjectCachePath(llvmOutput string, args *Args) string {
 	}
 	hash := sha256.New()
 	for _, value := range append([]string{
-		"qk-module-object-v1",
+		"qk-module-object-v6-libllvm22",
 		llvmOutput,
 		string(args.optLevel),
 		args.target,
-		args.sysroot,
-	}, args.clangArgs...) {
+		args.cpu,
+		args.features,
+		args.targetABI,
+		args.relocation,
+		args.codeModel,
+	}) {
 		hash.Write([]byte(value))
 		hash.Write([]byte{0})
 	}
