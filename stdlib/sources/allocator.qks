@@ -1,0 +1,273 @@
+module std.alloc
+
+pub let Allocator = type trait {
+  let alloc(*mut self, size: usz, align: usz): *mut void
+  let free(*mut self, ptr: *mut void, size: usz, align: usz): void
+  let resize(
+    *mut self,
+    ptr: *mut void,
+    old_size: usz,
+    new_size: usz,
+    align: usz,
+  ): *mut void
+  let free_all(*mut self): void
+}
+
+when not NoLibc {
+
+import std.libc
+
+let ArenaDefaultChunkSize: usz = comptime 64 * 1024
+
+let ArenaChunk = type struct {
+  previous: *mut ArenaChunk
+
+  // Pointer to the aligned storage following this header.
+  data: *mut u8
+
+  capacity: usz
+  used: usz
+}
+
+pub let GrowingArena = type struct {
+  current: *mut ArenaChunk
+
+  // Minimum size of the next chunk. This grows geometrically.
+  next_chunk_size: usz
+
+  // The most recent allocation can be resized in place.
+  last_ptr: *mut void
+  last_offset: usz
+  last_size: usz
+  last_align: usz
+}
+
+let is_power_of_two(value: usz): bool =
+  value != 0 and (value & (value - 1)) == 0
+
+let align_forward(value: usz, align: usz): usz =
+  (value + align - 1) & ~(align - 1)
+
+let max_usz(a: usz, b: usz): usz =
+  if a > b { a } else { b }
+
+let min_usz(a: usz, b: usz): usz =
+  if a < b { a } else { b }
+
+pub let GrowingArena.init(
+  initial_chunk_size: usz = ArenaDefaultChunkSize,
+): GrowingArena =
+  GrowingArena{
+    current=nil,
+    next_chunk_size=max_usz(initial_chunk_size, 1),
+    last_ptr=nil,
+    last_offset=0,
+    last_size=0,
+    last_align=1,
+  }
+
+let GrowingArena.allocate_chunk(
+  *mut self,
+  minimum_capacity: usz,
+  requested_align: usz,
+): *mut ArenaChunk {
+  let header_size = sizeof(ArenaChunk)
+
+  // The chunk's data region must accommodate any alignment requested for the
+  // allocation that caused this chunk to be created.
+  let data_align = max_usz(requested_align, alignof(ArenaChunk))
+
+  // Extra bytes allow the data pointer to be aligned after the header.
+  let allocation_size = header_size + (data_align - 1) + minimum_capacity
+
+  // Overflow wrapped the calculation.
+  if allocation_size < minimum_capacity {
+    return nil
+  }
+
+  let raw = std.libc.malloc(allocation_size)
+  if raw == nil {
+    return nil
+  }
+
+  let mut chunk = raw.(*mut ArenaChunk)
+
+  let unaligned_data = raw.(usz) + header_size
+
+  let data_address =
+    align_forward(unaligned_data, data_align)
+
+  chunk.previous = self.current
+  chunk.data = data_address.(*mut u8)
+  chunk.capacity = minimum_capacity
+  chunk.used = 0
+
+  self.current = chunk
+  return chunk
+}
+
+let GrowingArena.grow(
+  *mut self,
+  size: usz,
+  align: usz,
+): *mut ArenaChunk {
+  // At worst, align - 1 bytes are lost before the allocation.
+  let required_capacity = size + align - 1
+
+  if required_capacity < size {
+    return nil
+  }
+
+  let capacity = max_usz(self.next_chunk_size, required_capacity)
+
+  let chunk = self.allocate_chunk(capacity, align)
+  if chunk == nil {
+    return nil
+  }
+
+  // Geometric growth, saturating if doubling would overflow.
+  if capacity <= (~0.(usz)) / 2 {
+    self.next_chunk_size = capacity * 2
+  } else {
+    self.next_chunk_size = ~0.(usz)
+  }
+
+  return chunk
+}
+
+pub let GrowingArena.alloc(
+  *mut self,
+  size: usz,
+  align: usz,
+): *mut void {
+  if size == 0 {
+    return nil
+  }
+
+  if not is_power_of_two(align) {
+    return nil
+  }
+
+  let mut chunk = self.current
+
+  if chunk != nil {
+    let data_address = chunk.data.(usz)
+    let cursor = data_address + chunk.used
+    let aligned_address = align_forward(cursor, align)
+    let offset = aligned_address - data_address
+
+    if offset <= chunk.capacity and
+       size <= chunk.capacity - offset {
+      chunk.used = offset + size
+
+      let result = aligned_address.(*mut void)
+
+      self.last_ptr = result
+      self.last_offset = offset
+      self.last_size = size
+      self.last_align = align
+
+      return result
+    }
+  }
+
+  chunk = self.grow(size, align)
+  if chunk == nil {
+    return nil
+  }
+
+  let data_address = chunk.data.(usz)
+  let aligned_address = align_forward(data_address, align)
+  let offset = aligned_address - data_address
+
+  // grow() reserves size + align - 1, so this should always fit.
+  if offset > chunk.capacity or
+     size > chunk.capacity - offset {
+    return nil
+  }
+
+  chunk.used = offset + size
+
+  let result = aligned_address.(*mut void)
+
+  self.last_ptr = result
+  self.last_offset = offset
+  self.last_size = size
+  self.last_align = align
+
+  return result
+}
+
+pub let GrowingArena.free(
+  *mut self,
+  ptr: *mut void,
+  size: usz,
+  align: usz,
+): void {
+  // Arena allocations are released together by free_all().
+  //
+  // Deliberately do not reclaim the last allocation here: callers may free
+  // allocations in an arbitrary order, and reusing that storage could hide
+  // use-after-free errors or overlap live allocations.
+}
+
+pub let GrowingArena.resize(
+  *mut self,
+  ptr: *mut void,
+  old_size: usz,
+  new_size: usz,
+  align: usz,
+): *mut void {
+  if ptr == nil {
+    return self.alloc(new_size, align)
+  }
+
+  if new_size == 0 {
+    // Individual arena allocations are not reclaimed.
+    return nil
+  }
+
+  if not is_power_of_two(align) {
+    return nil
+  }
+
+  // The newest allocation in the newest chunk can be resized in place.
+  if ptr == self.last_ptr and
+     align == self.last_align and
+     self.current != nil {
+    let mut chunk = self.current
+
+    if new_size <= chunk.capacity - self.last_offset {
+      chunk.used = self.last_offset + new_size
+      self.last_size = new_size
+      return ptr
+    }
+  }
+
+  let replacement = self.alloc(new_size, align)
+  if replacement == nil {
+    return nil
+  }
+
+  std.libc.memcpy(replacement, ptr, min_usz(old_size, new_size))
+
+  return replacement
+}
+
+pub let GrowingArena.free_all(*mut self): void {
+  let mut chunk = self.current
+
+  for chunk != nil {
+    let previous = chunk.previous
+    std.libc.free(chunk)
+    chunk = previous
+  }
+
+  self.current = nil
+  self.last_ptr = nil
+  self.last_offset = 0
+  self.last_size = 0
+  self.last_align = 1
+}
+
+}

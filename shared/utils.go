@@ -30,12 +30,26 @@ func NewWarning(loc Location, message string, a ...any) Error {
 }
 
 func (err Error) Error() string {
-	f, e := os.ReadFile(err.loc.FilePath)
-	if e != nil {
+	source := err.loc.SourceText
+	if source == "" {
+		f, e := os.ReadFile(err.loc.FilePath)
+		if e == nil {
+			source = string(f)
+		}
+	}
+	if source == "" {
+		if err.loc.FilePath != "" && err.loc.LC.Line > 0 {
+			kind := "Error"
+			if err.isWarning {
+				kind = "Warning"
+			}
+			return fmt.Sprintf("%s: %s:%d:%d\n\n%s", kind, err.loc.FilePath,
+				err.loc.LC.Line, err.loc.LC.Col, err.message)
+		}
 		return err.message
 	}
 
-	lines := strings.Split(string(f), "\n")
+	lines := strings.Split(source, "\n")
 	lineIdx := err.loc.LC.Line - 1
 	if lineIdx < 0 || lineIdx >= len(lines) {
 		return err.message
@@ -88,8 +102,9 @@ type LineCol struct {
 }
 
 type Location struct {
-	LC       LineCol
-	FilePath string
+	LC         LineCol
+	FilePath   string
+	SourceText string
 }
 
 func (l Location) String() string {

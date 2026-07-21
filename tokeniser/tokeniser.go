@@ -14,6 +14,7 @@ type Tokeniser struct {
 	line       int
 	col        int
 	text       []rune
+	sourceText string
 	fileOrigin string
 	tokens     []Token
 }
@@ -24,17 +25,19 @@ func NewTokeniserFromFile(path string) (*Tokeniser, error) {
 		return nil, fmt.Errorf("failed to open file '%s'", path)
 	}
 
+	source := string(text)
 	return &Tokeniser{
 		pos:        0,
 		line:       1,
 		col:        1,
 		fileOrigin: path,
-		text:       []rune(string(text)),
+		text:       []rune(source),
+		sourceText: source,
 	}, nil
 }
 
 func NewTokeniser(text, origin string) *Tokeniser {
-	return &Tokeniser{pos: 0, line: 1, col: 1, fileOrigin: origin, text: []rune(text)}
+	return &Tokeniser{pos: 0, line: 1, col: 1, fileOrigin: origin, text: []rune(text), sourceText: text}
 }
 
 func (t *Tokeniser) Peek() rune {
@@ -256,7 +259,8 @@ func (t *Tokeniser) IgnoreMultilineComment() {
 
 func (t *Tokeniser) GetLoc() shared.Location {
 	return shared.Location{
-		FilePath: t.fileOrigin,
+		FilePath:   t.fileOrigin,
+		SourceText: t.sourceText,
 		LC: shared.LineCol{
 			Line: t.line,
 			Col:  t.col,

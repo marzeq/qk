@@ -132,6 +132,9 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 	if !p.Expect(tokeniser.TokenOpenParen) {
 		return nil, shared.NewError(p.PrevLoc(), "expected '('")
 	}
+	for p.Match(tokeniser.TokenNewline) {
+		p.Inc()
+	}
 
 	var args []*FunctionNodeArg
 	variadic := false

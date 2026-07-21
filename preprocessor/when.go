@@ -66,7 +66,8 @@ func (p *Processor) process() ([]tokeniser.Token, error) {
 					continue
 				}
 			case string(tokeniser.KeywordWhen):
-				if whenContinuesPrevious(result) {
+				continuesPrevious := whenContinuesPrevious(result)
+				if continuesPrevious {
 					for len(result) > 0 && result[len(result)-1].Type == tokeniser.TokenNewline {
 						result = result[:len(result)-1]
 					}
@@ -74,6 +75,9 @@ func (p *Processor) process() ([]tokeniser.Token, error) {
 				selected, err := p.processWhen()
 				if err != nil {
 					return nil, err
+				}
+				if continuesPrevious && len(selected) == 0 {
+					return nil, shared.NewError(tok.Loc, "selected compile-time block cannot be empty here")
 				}
 				result = append(result, selected...)
 				continue

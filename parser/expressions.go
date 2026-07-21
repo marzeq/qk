@@ -1251,6 +1251,9 @@ func (p *Parser) ParseTraitType() (*TraitTypeNode, error) {
 		if !p.Expect(tokeniser.TokenOpenParen) {
 			return nil, shared.NewError(p.PrevLoc(), "expected '('")
 		}
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
 		receiver := MethodReceiverNone
 		if p.Match(tokeniser.TokenIdentifier) && p.Peek().Value == "self" {
 			p.Inc()
@@ -1273,24 +1276,58 @@ func (p *Parser) ParseTraitType() (*TraitTypeNode, error) {
 		if p.Match(tokeniser.TokenComma) {
 			p.Inc()
 		}
-		for !p.Match(tokeniser.TokenCloseParen) {
+		for {
+			for p.Match(tokeniser.TokenNewline) {
+				p.Inc()
+			}
+			if p.Match(tokeniser.TokenCloseParen) {
+				break
+			}
 			arg, err := p.ParseIdent()
 			if err != nil {
 				return nil, err
 			}
-			if !p.Expect(tokeniser.TokenColon) {
-				return nil, shared.NewError(p.PrevLoc(), "expected ':' after trait method parameter")
+
+			for p.Match(tokeniser.TokenNewline) {
+				p.Inc()
 			}
+
+			if !p.Expect(tokeniser.TokenColon) {
+				return nil, shared.NewError(
+					p.PrevLoc(),
+					"expected ':' after trait method parameter",
+				)
+			}
+
+			for p.Match(tokeniser.TokenNewline) {
+				p.Inc()
+			}
+
 			t, err := p.ParseType()
 			if err != nil {
 				return nil, err
 			}
-			args = append(args, &FunctionNodeArg{Name: arg.Name, Type: t})
+
+			args = append(args, &FunctionNodeArg{
+				Name: arg.Name,
+				Type: t,
+			})
+
+			for p.Match(tokeniser.TokenNewline) {
+				p.Inc()
+			}
+
 			if !p.Match(tokeniser.TokenComma) {
 				break
 			}
+
 			p.Inc()
 		}
+
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+
 		if !p.Expect(tokeniser.TokenCloseParen) {
 			return nil, shared.NewError(p.PrevLoc(), "expected ')'")
 		}

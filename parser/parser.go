@@ -192,7 +192,8 @@ func (p *Parser) Parse() (*RootNode, error) {
 				Line: 1,
 				Col:  1,
 			},
-			FilePath: eofTok.Loc.FilePath,
+			FilePath:   eofTok.Loc.FilePath,
+			SourceText: eofTok.Loc.SourceText,
 		},
 	}
 	var parseErrors []error

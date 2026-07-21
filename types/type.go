@@ -223,6 +223,11 @@ func (p PrimitiveType) CanCastTo(other Type) bool {
 	if p.Equals(other) {
 		return true
 	}
+	if IsInteger(p) {
+		if _, ok := other.(PointerType); ok {
+			return true
+		}
+	}
 
 	otherPrimitive, ok := other.(PrimitiveType)
 	if !ok {
@@ -241,12 +246,6 @@ func (p PrimitiveType) CanCastTo(other Type) bool {
 	if (p == PrimitiveChar && IsInteger(otherPrimitive)) ||
 		(otherPrimitive == PrimitiveChar && IsInteger(p)) {
 		return true
-	}
-
-	if IsInteger(p) {
-		if _, ok := other.(PointerType); ok {
-			return true
-		}
 	}
 
 	return false

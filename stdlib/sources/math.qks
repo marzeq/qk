@@ -1,0 +1,28 @@
+module std.math
+  @link(system "m")
+
+pub let PI: f64 = 3.14159265358979323846
+pub let E: f64 = 2.71828182845904523536
+pub let PHI: f64 = 1.57079632679489661923
+
+pub let sin(x: f64): f64 @foreign(symbol "sin")
+pub let cos(x: f64): f64 @foreign(symbol "cos")
+pub let tan(x: f64): f64 @foreign(symbol "tan") 
+pub let asin(x: f64): f64 @foreign(symbol "asin")
+pub let acos(x: f64): f64 @foreign(symbol "acos")
+pub let atan(x: f64): f64 @foreign(symbol "atan")
+pub let atan2(y, x: f64): f64 @foreign(symbol "atan2")
+pub let sinh(x: f64): f64 @foreign(symbol "sinh")
+pub let cosh(x: f64): f64 @foreign(symbol "cosh")
+pub let tanh(x: f64): f64 @foreign(symbol "tanh")
+
+pub let exp(x: f64): f64 @foreign(symbol "exp")
+pub let log(x: f64): f64 @foreign(symbol "log")
+pub let log10(x: f64): f64 @foreign(symbol "log10")
+pub let pow(x, y: f64): f64 @foreign(symbol "pow")
+pub let sqrt(x: f64): f64 @foreign(symbol "sqrt")
+
+pub let ceil(x: f64): f64 @foreign(symbol "ceil")
+pub let floor(x: f64): f64 @foreign(symbol "floor")
+pub let round(x: f64): f64 @foreign(symbol "round")
+pub let trunc(x: f64): f64 @foreign(symbol "trunc")
