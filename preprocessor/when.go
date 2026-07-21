@@ -108,7 +108,7 @@ func (p *Processor) processCompileTimeDeclaration() ([]tokeniser.Token, bool, er
 	for equals < len(p.tokens) && p.tokens[equals].Type != tokeniser.TokenEquals && p.tokens[equals].Type != tokeniser.TokenNewline && p.tokens[equals].Type != tokeniser.TokenSemicolon {
 		equals++
 	}
-	if equals+1 >= len(p.tokens) || p.tokens[equals].Type != tokeniser.TokenEquals || p.tokens[equals+1].Type != tokeniser.TokenIdentifier || p.tokens[equals+1].Value != "compile_time" {
+	if equals+1 >= len(p.tokens) || p.tokens[equals].Type != tokeniser.TokenEquals || p.tokens[equals+1].Type != tokeniser.TokenIdentifier || p.tokens[equals+1].Value != "comptime" {
 		return nil, false, nil
 	}
 	exprStart := equals + 2
@@ -132,7 +132,7 @@ func (p *Processor) processCompileTimeDeclaration() ([]tokeniser.Token, bool, er
 	}
 	name := p.tokens[namePos]
 	if end == exprStart {
-		return nil, true, shared.NewError(name.Loc, "expected expression after compile_time")
+		return nil, true, shared.NewError(name.Loc, "expected expression after comptime")
 	}
 	expr, err := parseCondition(p.tokens[exprStart:end], name.Loc)
 	if err != nil {
@@ -580,7 +580,7 @@ func equalValues(left, right Value, loc shared.Location) (bool, error) {
 }
 
 func unsupported(node parser.ExpressionNode) error {
-	return shared.NewError(node.GetLoc(), "expression is not supported in a compile-time condition")
+	return shared.NewError(node.GetLoc(), "expression is not supported in a compile-time context")
 }
 
 func validVariant(domain, variant string) bool {

@@ -125,7 +125,7 @@ func topLevelCompileTimeDeclarations(tokens []tokeniser.Token, module string) []
 		for equals < len(tokens) && tokens[equals].Type != tokeniser.TokenEquals && tokens[equals].Type != tokeniser.TokenNewline {
 			equals++
 		}
-		if equals+1 >= len(tokens) || tokens[equals+1].Type != tokeniser.TokenIdentifier || tokens[equals+1].Value != "compile_time" {
+		if equals+1 >= len(tokens) || tokens[equals+1].Type != tokeniser.TokenIdentifier || tokens[equals+1].Value != "comptime" {
 			continue
 		}
 		end, parens, squares := equals+2, 0, 0

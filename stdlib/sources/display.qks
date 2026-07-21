@@ -2,7 +2,7 @@ module std
 
 import std.libc
 
-let HasDisplayPrimitives = compile_time not NoLibc
+let HasDisplayPrimitives = comptime not NoLibc
 
 pub let Display = type trait {
   let display(self): void

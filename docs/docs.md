@@ -301,8 +301,8 @@ Trusted standard-library sources can declare boolean capabilities:
 ```qk
 module std
 
-let HasPrint = compile_time not NoLibc
-let HasFormatting = compile_time HasPrint
+let HasPrint = comptime not NoLibc
+let HasFormatting = comptime HasPrint
 ```
 
 Capability declarations are compile-time values, not runtime globals or members
