@@ -924,10 +924,10 @@ Implicit numeric conversions are intentionally narrow:
 - `f32` widens to `f64`.
 - Floating-point values do not implicitly convert to integers.
 
-When two operands differ, arithmetic and bitwise operations choose the wider type
-within a compatible family. A typed integer combined with an untyped floating
-literal promotes to `f64`; an untyped integer adopts the other numeric operand's
-type.
+When two operands differ, arithmetic, bitwise, and comparison operations choose
+the wider type within a compatible family. A typed integer combined with an
+untyped floating literal promotes to `f64`; an untyped integer adopts the other
+numeric operand's type.
 
 Use postfix casts for narrowing, signedness changes, float/integer conversion,
 integer/`bool`, integer/`char`, or integer/pointer conversion:

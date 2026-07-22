@@ -876,18 +876,20 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		case parser.BinaryOpEqual,
 			parser.BinaryOpNotEqual:
 
-			if !t1.CanCoerceTo(t2) && !t2.CanCoerceTo(t1) {
-				v.errorf(n, "incompatible types for comparison: %v and %v", t1, t2)
-				break
-			}
 			if types.IsNumeric(t1) && types.IsNumeric(t2) {
 				common := types.PromoteNumeric(t1, t2)
+				if _, isError := common.(types.ErrorType); isError {
+					v.errorf(n, "incompatible types for comparison: %v and %v", t1, t2)
+					break
+				}
 				if types.IsUntyped(common) {
 					v.errorf(n, "cannot infer numeric type for comparison")
 					break
 				}
 				n.Operand1 = v.validateExprWithExpected(n.Operand1, common)
 				n.Operand2 = v.validateExprWithExpected(n.Operand2, common)
+			} else if !t1.CanCoerceTo(t2) && !t2.CanCoerceTo(t1) {
+				v.errorf(n, "incompatible types for comparison: %v and %v", t1, t2)
 			}
 
 		case parser.BinaryOpLess,
