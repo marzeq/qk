@@ -666,6 +666,11 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 		return expr, nil
 	}
 
+	if p.Match(tokeniser.TokenNoInitializer) {
+		p.Inc()
+		return &NoInitializerNode{Loc: beginLoc}, nil
+	}
+
 	if p.Match(tokeniser.TokenIdentifier) {
 		ident, err := p.ParseIdent()
 		if err != nil {
@@ -1078,6 +1083,23 @@ func (p *Parser) ParseStructLiteral(name *IdentifierNode) (*StructLiteralNode, e
 	}
 	for {
 		if p.Match(tokeniser.TokenCloseCurly) {
+			break
+		}
+		if p.Match(tokeniser.TokenNoInitializer) {
+			node.NoInitRemaining = true
+			p.Inc()
+			for p.Match(tokeniser.TokenNewline) {
+				p.Inc()
+			}
+			if p.Match(tokeniser.TokenComma) {
+				p.Inc()
+				for p.Match(tokeniser.TokenNewline) {
+					p.Inc()
+				}
+			}
+			if !p.Match(tokeniser.TokenCloseCurly) {
+				return nil, shared.NewError(p.CurrLoc(), "'---' must be the final struct initializer entry")
+			}
 			break
 		}
 

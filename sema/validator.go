@@ -215,6 +215,17 @@ func (v *Validator) finaliseDeclaration(n *parser.DeclarationNode) {
 	if n.Value == nil {
 		return
 	}
+	if noInit, ok := n.Value.(*parser.NoInitializerNode); ok {
+		if n.TypeNode == nil {
+			v.errorf(n, "'---' declaration requires a type annotation")
+			n.Symbol.Type = types.ErrorType{}
+			return
+		}
+		declared := v.analyser.resolveTypeNode(n.TypeNode)
+		noInit.SetType(declared)
+		n.Symbol.Type = declared
+		return
+	}
 
 	if n.TypeNode != nil {
 		declared := v.analyser.resolveTypeNode(n.TypeNode)
@@ -1063,6 +1074,11 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			v.validateStructLiteralWithExpected(n, n.Symbol.TypeInfo)
 			break
 		}
+		if n.NoInitRemaining {
+			v.errorf(n, "'---' in a struct literal requires a named or expected struct type")
+			n.SetType(types.ErrorType{})
+			break
+		}
 
 		fields := make([]shared.Pair[string, types.Type], 0, len(n.Fields))
 		for i, field := range n.Fields {
@@ -1085,6 +1101,9 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		*parser.NilLiteralNode,
 		*parser.IdentifierNode:
 		// nothing to validate
+
+	case *parser.NoInitializerNode:
+		v.errorf(n, "'---' is only valid as a declaration initializer, a struct field initializer, or the final struct initializer entry")
 
 	case *parser.SizeOfNode:
 		if !types.IsComplete(n.OperandType) {
@@ -1460,6 +1479,11 @@ func (v *Validator) validateSliceLiteralWithExpected(n *parser.SliceLiteralNode,
 
 func (v *Validator) validateStructLiteralWithExpected(n *parser.StructLiteralNode, expected types.Type) {
 	if flagType, ok := types.Underlying(expected).(types.FlagsType); ok {
+		if n.NoInitRemaining {
+			v.errorf(n, "flags literals cannot use '---'")
+			n.SetType(types.ErrorType{})
+			return
+		}
 		if len(n.Fields) != 0 {
 			v.errorf(n, "flags literals use '.member' entries")
 			n.SetType(types.ErrorType{})
@@ -1485,6 +1509,10 @@ func (v *Validator) validateStructLiteralWithExpected(n *parser.StructLiteralNod
 		return
 	}
 	if unionType, ok := types.Underlying(expected).(types.UnionType); ok {
+		if n.NoInitRemaining && len(n.Fields) == 0 {
+			n.SetType(expected)
+			return
+		}
 		if len(n.Fields) != 1 {
 			v.errorf(n, "union literal must initialize exactly one field")
 			n.SetType(types.ErrorType{})
@@ -1493,7 +1521,11 @@ func (v *Validator) validateStructLiteralWithExpected(n *parser.StructLiteralNod
 		field := n.Fields[0]
 		for _, unionField := range unionType.Fields {
 			if unionField.L == field.L {
-				n.Fields[0].R = v.validateExprWithExpected(field.R, unionField.R)
+				if noInit, ok := field.R.(*parser.NoInitializerNode); ok {
+					noInit.SetType(unionField.R)
+				} else {
+					n.Fields[0].R = v.validateExprWithExpected(field.R, unionField.R)
+				}
 				n.SetType(expected)
 				return
 			}
@@ -1536,7 +1568,11 @@ func (v *Validator) validateStructLiteralWithExpected(n *parser.StructLiteralNod
 		}
 		seen[field.L] = struct{}{}
 
-		n.Fields[i].R = v.validateExprWithExpected(field.R, expectedFieldType)
+		if noInit, ok := field.R.(*parser.NoInitializerNode); ok {
+			noInit.SetType(expectedFieldType)
+		} else {
+			n.Fields[i].R = v.validateExprWithExpected(field.R, expectedFieldType)
+		}
 	}
 
 	missingFields := []string{}
@@ -1561,7 +1597,7 @@ func (v *Validator) validateStructLiteralWithExpected(n *parser.StructLiteralNod
 			missingFields = append(missingFields, field.L)
 		}
 	}
-	if len(missingFields) > 0 {
+	if len(missingFields) > 0 && !n.NoInitRemaining {
 		v.errorf(n, "missing fields in struct literal: %v", strings.Join(missingFields, ", "))
 	}
 

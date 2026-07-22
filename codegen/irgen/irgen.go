@@ -44,13 +44,14 @@ type Generator struct {
 	MainModule             string
 	DependencyInitializers []string
 
-	currentFunction *ir.Function
-	currentBlock    *ir.Block
-	currentEnv      *Env
-	globals         map[*symbols.Symbol]string
-	loopTargets     []loopTargets
-	deferScopes     [][]parser.Node
-	dynamicGlobals  []dynamicGlobalInitializer
+	currentFunction    *ir.Function
+	currentBlock       *ir.Block
+	currentEnv         *Env
+	globals            map[*symbols.Symbol]string
+	loopTargets        []loopTargets
+	deferScopes        [][]parser.Node
+	dynamicGlobals     []dynamicGlobalInitializer
+	initializingGlobal bool
 }
 
 type dynamicGlobalInitializer struct {
@@ -171,6 +172,8 @@ func (g *Generator) generateGlobalDeclaration(node *parser.DeclarationNode) {
 
 func (g *Generator) tryGenerateGlobalInitializer(expr parser.ExpressionNode) (ir.Operand, bool) {
 	switch node := expr.(type) {
+	case *parser.NoInitializerNode:
+		return ir.ZeroConstOperand(node.GetType()), true
 	case *parser.IntegerLiteralNode:
 		if types.IsFloat(node.GetType()) {
 			return ir.FloatConstOperand(node.Value, node.GetType()), true
@@ -197,6 +200,9 @@ func (g *Generator) tryGenerateGlobalInitializer(expr parser.ExpressionNode) (ir
 		}
 		return ir.Operand{}, false
 	case *parser.StructLiteralNode:
+		if node.NoInitRemaining && len(node.Fields) == 0 {
+			return ir.ZeroConstOperand(node.GetType()), true
+		}
 		if flagType, ok := types.Underlying(node.GetType()).(types.FlagsType); ok {
 			value := new(big.Int)
 			for _, member := range node.FlagMembers {
@@ -218,6 +224,10 @@ func (g *Generator) tryGenerateGlobalInitializer(expr parser.ExpressionNode) (ir
 		for i, field := range structType.Fields {
 			value, exists := fields[field.L]
 			if !exists {
+				if node.NoInitRemaining {
+					values[i] = ir.ZeroConstOperand(field.R)
+					continue
+				}
 				return ir.Operand{}, false
 			}
 			fieldValue, constant := g.tryGenerateGlobalInitializer(value)
@@ -266,7 +276,9 @@ func (g *Generator) generateModuleInitializer() {
 		g.Emit(ir.Call{Name: dependency, Signature: signature})
 	}
 	for _, global := range g.dynamicGlobals {
+		g.initializingGlobal = true
 		value := g.GenerateExpr(global.expr)
+		g.initializingGlobal = false
 		g.Emit(ir.StoreGlobal{Name: global.name, Value: value})
 	}
 	g.Emit(ir.Jump{Target: done.ID})
@@ -576,6 +588,9 @@ func (g *Generator) generateDeclaration(node *parser.DeclarationNode) {
 	g.currentEnv.Variables[node.Symbol] = slot
 
 	g.Emit(ir.Alloca{Slot: slot})
+	if _, noInit := node.Value.(*parser.NoInitializerNode); noInit {
+		return
+	}
 
 	if lit, ok := node.Value.(*parser.StructLiteralNode); ok {
 		g.generateStructLiteralIntoSlot(slot, lit)
@@ -1753,12 +1768,18 @@ func (g *Generator) generateRepeatedSliceLiteral(node *parser.SliceLiteralNode, 
 }
 
 func (g *Generator) generateStructLiteralIntoSlot(slot ir.SlotID, node *parser.StructLiteralNode) {
+	if !node.NoInitRemaining || g.initializingGlobal {
+		g.Emit(ir.Store{Slot: slot, Value: ir.ZeroConstOperand(node.GetType())})
+	}
 
 	basePtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: node.GetType()})
 	g.Emit(ir.AddressOf{Dest: basePtrID, Slot: slot})
 	basePtr := ir.ValueOperand(basePtrID, types.PointerType{Base: node.GetType()})
 
 	for _, field := range node.Fields {
+		if _, noInit := field.R.(*parser.NoInitializerNode); noInit {
+			continue
+		}
 		fieldTy := node.GetType()
 		switch composite := types.Underlying(node.GetType()).(type) {
 		case types.StructType:

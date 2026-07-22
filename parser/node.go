@@ -278,13 +278,23 @@ func (n NilLiteralNode) GetLoc() shared.Location { return n.Loc }
 func (n *NilLiteralNode) SetType(t types.Type)   { n.Type = t }
 func (n *NilLiteralNode) GetType() types.Type    { return n.Type }
 
+type NoInitializerNode struct {
+	Loc  shared.Location
+	Type types.Type
+}
+
+func (n NoInitializerNode) GetLoc() shared.Location { return n.Loc }
+func (n *NoInitializerNode) SetType(t types.Type)   { n.Type = t }
+func (n *NoInitializerNode) GetType() types.Type    { return n.Type }
+
 type StructLiteralNode struct {
-	Name        *IdentifierNode
-	Fields      []shared.Pair[string, ExpressionNode] // field name, value
-	FlagMembers []string
-	Loc         shared.Location
-	Symbol      *symbols.Symbol
-	Type        types.Type
+	Name            *IdentifierNode
+	Fields          []shared.Pair[string, ExpressionNode] // field name, value
+	FlagMembers     []string
+	NoInitRemaining bool
+	Loc             shared.Location
+	Symbol          *symbols.Symbol
+	Type            types.Type
 }
 
 func (n StructLiteralNode) GetLoc() shared.Location { return n.Loc }

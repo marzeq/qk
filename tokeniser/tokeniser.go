@@ -478,7 +478,10 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 			}
 			continue
 		case '-':
-			if IsNum(t.Next()) {
+			if t.Next() == '-' && t.pos+2 < len(t.text) && t.text[t.pos+2] == '-' {
+				t.AddToken(TokenNoInitializer, t.GetLoc())
+				t.Inc().Inc().Inc()
+			} else if IsNum(t.Next()) {
 				pos := t.GetLoc()
 				n, base, err := t.ReadNumber()
 				if err != nil {

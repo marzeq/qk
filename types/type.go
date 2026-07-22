@@ -15,6 +15,14 @@ type Type interface {
 	String() string
 }
 
+// NoInitializerType is a contextual marker used only while validating `---`.
+type NoInitializerType struct{}
+
+func (NoInitializerType) Equals(other Type) bool { _, ok := other.(NoInitializerType); return ok }
+func (NoInitializerType) CanCoerceTo(Type) bool  { return false }
+func (NoInitializerType) CanCastTo(Type) bool    { return false }
+func (NoInitializerType) String() string         { return "<no initializer>" }
+
 // DefinedType is a nominal user-defined type. Its underlying type determines
 // representation and explicit cast compatibility, but never implicit coercion.
 type DefinedType struct {

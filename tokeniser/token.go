@@ -40,6 +40,7 @@ const (
 
 	TokenPlus
 	TokenMinus
+	TokenNoInitializer
 	TokenIncrement
 	TokenDecrement
 	TokenAsterisk
@@ -159,6 +160,8 @@ func (t Token) String() string {
 		return "+"
 	case TokenMinus:
 		return "-"
+	case TokenNoInitializer:
+		return "---"
 	case TokenIncrement:
 		return "++"
 	case TokenDecrement:

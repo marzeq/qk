@@ -31,7 +31,7 @@ func (p *Parser) trailingBraceStartsStructLiteral() bool {
 	if pos >= len(p.tokens) {
 		return false
 	}
-	if p.tokens[pos].Type != tokeniser.TokenCloseCurly && p.tokens[pos].Type != tokeniser.TokenDot {
+	if p.tokens[pos].Type != tokeniser.TokenCloseCurly && p.tokens[pos].Type != tokeniser.TokenDot && p.tokens[pos].Type != tokeniser.TokenNoInitializer {
 		if p.tokens[pos].Type != tokeniser.TokenIdentifier ||
 			pos+1 >= len(p.tokens) || p.tokens[pos+1].Type != tokeniser.TokenEquals {
 			return false

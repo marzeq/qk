@@ -359,6 +359,17 @@ let mode: Mode = .read
 A declaration normally needs an initializer. An attributed foreign declaration
 may omit it but must state its type.
 
+`---` is an explicit non-initializer and requires a type annotation:
+
+```qk
+let value: i32 = ---
+```
+
+For a block-local declaration this allocates storage without writing an initial
+value. Reading it before some other operation initializes its storage has
+undefined behavior. At module scope, static storage is zero-initialized, matching
+C's `int value;` behavior.
+
 Declarations may appear at module or block scope. Nested blocks introduce nested
 lexical scopes. A declaration can shadow a name from an outer scope but cannot
 duplicate a name in the same scope.
@@ -819,6 +830,26 @@ let point: Point = { x = 1.0, y = 2.0 }
 Without an expected named type, `{ field = value }` creates an anonymous structural
 value. Named literals reject unknown and duplicate fields and require every
 ordinary struct field. A union literal initializes exactly one field.
+
+The non-initializer token has two aggregate forms. A named field set to `---`
+behaves like an omitted C named initializer: the aggregate is initially zero and
+that field receives no explicit store.
+
+```qk
+let point = Point { x = 10, y = --- } // y is zero
+```
+
+A final standalone `---` disables the initial zeroing and permits all remaining
+fields to stay uninitialized:
+
+```qk
+let point = Point { x = 10, --- } // y is uninitialized
+let raw = Point { --- }           // every field is uninitialized
+```
+
+The standalone marker must be the final entry. As with an uninitialized local
+declaration, reading an unwritten field has undefined behavior. Static-storage
+aggregates remain zero-initialized.
 
 ### 13.2 Enum literals
 

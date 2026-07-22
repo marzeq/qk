@@ -271,6 +271,9 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 			Mutable: false,
 		})
 
+	case *parser.NoInitializerNode:
+		n.SetType(types.NoInitializerType{})
+
 	case *parser.EnumLiteralNode:
 		// Leading-dot enum literals are resolved later from an expected type.
 		n.SetType(types.UnresolvedEnum{})

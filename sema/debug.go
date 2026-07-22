@@ -131,7 +131,8 @@ func (w *debugWalker) walkExpr(expr parser.ExpressionNode) {
 		*parser.CStringLiteralNode,
 		*parser.CharLiteralNode,
 		*parser.NilLiteralNode,
-		*parser.EnumLiteralNode:
+		*parser.EnumLiteralNode,
+		*parser.NoInitializerNode:
 
 	case *parser.CastNode:
 		w.walkExpr(n.Operand)
