@@ -108,7 +108,7 @@ func (t *Tokeniser) ReadWord() string {
 	return s.String()
 }
 
-func (t *Tokeniser) ReadNumber() (string, error) {
+func (t *Tokeniser) ReadNumber() (string, int, error) {
 	negative := false
 
 	if t.Peek() == '-' {
@@ -139,30 +139,30 @@ func (t *Tokeniser) ReadNumber() (string, error) {
 			break
 		}
 		if digitValue(c) >= base {
-			return "", shared.NewError(t.GetLoc(), "invalid digit %q for base-%d integer literal", c, base)
+			return "", 0, shared.NewError(t.GetLoc(), "invalid digit %q for base-%d integer literal", c, base)
 		}
 		digits.WriteRune(t.Consume())
 	}
 
 	if digits.Len() == 0 {
-		return "", shared.NewError(t.GetLoc(), "expected digits in base-%d integer literal", base)
+		return "", 0, shared.NewError(t.GetLoc(), "expected digits in base-%d integer literal", base)
 	}
 	if prefixed && t.Peek() == '.' && t.Next() != '.' {
-		return "", shared.NewError(t.GetLoc(), "base-%d floating-point literals are not supported", base)
+		return "", 0, shared.NewError(t.GetLoc(), "base-%d floating-point literals are not supported", base)
 	}
 
 	value := digits.String()
 	if prefixed {
 		integer, ok := new(big.Int).SetString(value, base)
 		if !ok {
-			return "", shared.NewError(t.GetLoc(), "invalid base-%d integer literal", base)
+			return "", 0, shared.NewError(t.GetLoc(), "invalid base-%d integer literal", base)
 		}
 		value = integer.String()
 	}
 	if negative {
 		value = "-" + value
 	}
-	return value, nil
+	return value, base, nil
 }
 
 func digitValue(c rune) int {
@@ -364,12 +364,13 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 				}
 			}
 			pos := t.GetLoc()
-			n, err := t.ReadNumber()
+			n, base, err := t.ReadNumber()
 			if err != nil {
 				return nil, err
 			}
 
 			t.AddToken(TokenNumber, pos, n)
+			t.tokens[len(t.tokens)-1].NumberBase = base
 			continue
 		}
 
@@ -479,12 +480,13 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 		case '-':
 			if IsNum(t.Next()) {
 				pos := t.GetLoc()
-				n, err := t.ReadNumber()
+				n, base, err := t.ReadNumber()
 				if err != nil {
 					return nil, err
 				}
 
 				t.AddToken(TokenNumber, pos, n)
+				t.tokens[len(t.tokens)-1].NumberBase = base
 			} else if t.Next() == '=' {
 				t.AddToken(TokenDecBy, t.GetLoc())
 				t.Inc().Inc()

@@ -6,6 +6,9 @@ type Token struct {
 	Type  TokenKind
 	Value string
 	Loc   shared.Location
+	// NumberBase preserves the spelling class of numeric tokens after their
+	// value has been normalized to decimal. It is zero for non-numbers.
+	NumberBase int
 }
 type TokenKind uint
 

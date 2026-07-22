@@ -3,6 +3,7 @@ package irgen
 import (
 	"fmt"
 	"hash/fnv"
+	"math/big"
 	"slices"
 	"strings"
 
@@ -191,8 +192,20 @@ func (g *Generator) tryGenerateGlobalInitializer(expr parser.ExpressionNode) (ir
 		if node.IsEnumValue {
 			return ir.IntConstOperand(node.EnumValue, node.GetType()), true
 		}
+		if node.IsFlagValue {
+			return ir.IntConstOperand(node.FlagValue, node.FlagType), true
+		}
 		return ir.Operand{}, false
 	case *parser.StructLiteralNode:
+		if flagType, ok := types.Underlying(node.GetType()).(types.FlagsType); ok {
+			value := new(big.Int)
+			for _, member := range node.FlagMembers {
+				raw, _ := flagType.VariantValue(member)
+				part, _ := new(big.Int).SetString(raw, 10)
+				value.Or(value, part)
+			}
+			return ir.IntConstOperand(value.String(), node.GetType()), true
+		}
 		structType, ok := types.Underlying(node.GetType()).(types.StructType)
 		if !ok {
 			return ir.Operand{}, false
@@ -618,6 +631,10 @@ func (g *Generator) generateAssignment(node *parser.AssignmentNode) {
 		g.GenerateExpr(node.Value)
 		return
 	}
+	if field, ok := node.Assignee.(*parser.FieldAccessNode); ok && field.IsFlagTest {
+		g.generateFlagMemberAssignment(field, node.Value)
+		return
+	}
 
 	switch n := node.Assignee.(type) {
 	case *parser.IdentifierNode:
@@ -676,6 +693,30 @@ func (g *Generator) generateAssignment(node *parser.AssignmentNode) {
 	default:
 		panic(fmt.Sprintf("todo: assignment assignee %T", n))
 	}
+}
+
+func (g *Generator) generateFlagMemberAssignment(field *parser.FieldAccessNode, rhs parser.ExpressionNode) {
+	address := g.generateAddressOfExpr(field.Subject)
+	currentID := g.currentFunction.NewValueOfType(field.FlagType)
+	g.Emit(ir.LoadPtr{Dest: currentID, Ptr: address})
+	current := ir.ValueOperand(currentID, field.FlagType)
+	mask := ir.IntConstOperand(field.FlagValue, field.FlagType)
+	condition := g.GenerateExpr(rhs)
+	setBlock := g.currentFunction.NewBlock("flags.set")
+	clearBlock := g.currentFunction.NewBlock("flags.clear")
+	mergeBlock := g.currentFunction.NewBlock("flags.assign.merge")
+	g.Emit(ir.Branch{Cond: condition, Then: setBlock.ID, Else: clearBlock.ID})
+	g.currentBlock = setBlock
+	set := g.emitBinaryOperation(parser.BinaryOpBitwiseOr, current, mask, field.FlagType)
+	g.Emit(ir.StorePtr{Ptr: address, Value: set})
+	g.Emit(ir.Jump{Target: mergeBlock.ID})
+	g.currentBlock = clearBlock
+	notID := g.currentFunction.NewValueOfType(field.FlagType)
+	g.Emit(ir.BitwiseNot{Dest: notID, Operand: mask})
+	clear := g.emitBinaryOperation(parser.BinaryOpBitwiseAnd, current, ir.ValueOperand(notID, field.FlagType), field.FlagType)
+	g.Emit(ir.StorePtr{Ptr: address, Value: clear})
+	g.Emit(ir.Jump{Target: mergeBlock.ID})
+	g.currentBlock = mergeBlock
 }
 
 func (g *Generator) generateCompoundAssignment(node *parser.AssignmentNode) {
@@ -1581,6 +1622,15 @@ func (g *Generator) generateOffsetOfExpr(node *parser.OffsetOfNode) ir.Operand {
 }
 
 func (g *Generator) generateStructLiteralExpr(node *parser.StructLiteralNode) ir.Operand {
+	if flagType, ok := types.Underlying(node.GetType()).(types.FlagsType); ok {
+		value := new(big.Int)
+		for _, member := range node.FlagMembers {
+			raw, _ := flagType.VariantValue(member)
+			part, _ := new(big.Int).SetString(raw, 10)
+			value.Or(value, part)
+		}
+		return ir.IntConstOperand(value.String(), node.GetType())
+	}
 	tmpSlot := g.currentFunction.NewSlot(node.GetType(), "")
 	g.Emit(ir.Alloca{Slot: tmpSlot})
 	g.generateStructLiteralIntoSlot(tmpSlot, node)
@@ -1757,6 +1807,17 @@ func (g *Generator) generateFieldAccessExpr(node *parser.FieldAccessNode) ir.Ope
 	}
 	if node.IsEnumValue {
 		return ir.IntConstOperand(node.EnumValue, node.GetType())
+	}
+	if node.IsFlagValue {
+		return ir.IntConstOperand(node.FlagValue, node.FlagType)
+	}
+	if node.IsFlagTest {
+		value := g.GenerateExpr(node.Subject)
+		mask := ir.IntConstOperand(node.FlagValue, node.FlagType)
+		masked := g.emitBinaryOperation(parser.BinaryOpBitwiseAnd, value, mask, node.FlagType)
+		dst := g.currentFunction.NewValueOfType(types.PrimitiveBool)
+		g.Emit(ir.CmpEq{Dest: dst, Left: masked, Right: mask})
+		return ir.ValueOperand(dst, types.PrimitiveBool)
 	}
 	basePtr := g.generateFieldSubjectAddress(node.Subject)
 

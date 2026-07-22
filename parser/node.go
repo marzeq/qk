@@ -52,6 +52,10 @@ type FieldAccessNode struct {
 	Type         types.Type
 	EnumValue    string
 	IsEnumValue  bool
+	IsFlagValue  bool
+	IsFlagTest   bool
+	FlagValue    string
+	FlagType     types.Type
 	MethodSymbol *symbols.Symbol
 	MethodModule string
 	// ResolvedIdentifier is set when this dotted access names a declaration in
@@ -108,6 +112,18 @@ type EnumTypeNode struct {
 
 func (n EnumTypeNode) GetLoc() shared.Location { return n.Loc }
 func (n EnumTypeNode) _type()                  {}
+
+type FlagsTypeNode struct {
+	Name       string
+	Module     string
+	Underlying TypeNode
+	Variants   []string
+	Values     []string
+	Loc        shared.Location
+}
+
+func (n FlagsTypeNode) GetLoc() shared.Location { return n.Loc }
+func (n FlagsTypeNode) _type()                  {}
 
 type UnionTypeNode struct {
 	Name   string
@@ -263,11 +279,12 @@ func (n *NilLiteralNode) SetType(t types.Type)   { n.Type = t }
 func (n *NilLiteralNode) GetType() types.Type    { return n.Type }
 
 type StructLiteralNode struct {
-	Name   *IdentifierNode
-	Fields []shared.Pair[string, ExpressionNode] // field name, value
-	Loc    shared.Location
-	Symbol *symbols.Symbol
-	Type   types.Type
+	Name        *IdentifierNode
+	Fields      []shared.Pair[string, ExpressionNode] // field name, value
+	FlagMembers []string
+	Loc         shared.Location
+	Symbol      *symbols.Symbol
+	Type        types.Type
 }
 
 func (n StructLiteralNode) GetLoc() shared.Location { return n.Loc }

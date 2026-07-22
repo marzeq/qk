@@ -1084,6 +1084,51 @@ integers or other enum types.
 Use `Type.variant` when the type must be explicit, or `.variant` where context
 already supplies it. Enum values support equality with the same enum type.
 
+### Bit flags
+
+Flags are nominal, fixed-width integer masks. Every member requires an explicit
+value written as hexadecimal, a `1 << bit` expression, or a composition of
+earlier members:
+
+```qk
+let Features = type flags(u32) {
+    logging = 1 << 0,
+    metrics = 1 << 1,
+    tracing = 0x00000004,
+    observed = logging | metrics,
+}
+```
+
+Implicit values and standalone decimal values are rejected. A flags literal
+combines named masks; an empty literal has value zero:
+
+```qk
+let enabled = Features { .logging, .metrics }
+let disabled = Features {}
+```
+
+Flags retain the usual `&`, `|`, `^`, `~`, shift, and compound-assignment
+operations. Operands must use the same nominal flags type, except that shift
+counts are integers. A member accessed through a value is a boolean test that
+all bits in that member's mask are set. Assigning a boolean through the same
+syntax sets or clears those bits. Zero-valued members cannot be used through
+the boolean field syntax; compare the complete flags value with `Type {}`
+instead:
+
+```qk
+if enabled.logging and enabled.metrics {
+    enabled.tracing = true
+}
+
+enabled |= .logging
+enabled &= ~Features.metrics
+```
+
+At a C ABI boundary, a flags value has exactly the representation and calling
+convention of its declared underlying fixed-width integer. Unknown bits are
+preserved; flags are not restricted at runtime to combinations declared in the
+type.
+
 ## 21. Defined types, aliases, opaque types, and recursion
 
 `type` creates a nominal type:

@@ -151,6 +151,8 @@ func (e *Emitter) typeSizeAlign(ty types.Type) (int, int) {
 		return e.pointerBytes() * 2, e.pointerBytes()
 	case types.EnumType:
 		return 4, 4
+	case types.FlagsType:
+		return e.typeSizeAlign(t.Underlying)
 	case types.StructType:
 		offset, maxAlign := 0, 1
 		for _, field := range t.Fields {

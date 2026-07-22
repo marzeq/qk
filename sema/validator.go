@@ -275,6 +275,13 @@ func (v *Validator) validateAssignment(n *parser.AssignmentNode) {
 		v.validateExpr(n.Value)
 		return
 	}
+	if field, ok := n.Assignee.(*parser.FieldAccessNode); ok && field.IsFlagTest {
+		if !v.validateLValue(field.Subject) {
+			return
+		}
+		n.Value = v.validateExprWithExpected(n.Value, types.PrimitiveBool)
+		return
+	}
 	if !v.validateLValue(n.Assignee) {
 		return
 	}
@@ -716,7 +723,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			}
 
 		case parser.UnaryOpBitwiseNot:
-			if !types.IsInteger(operandType) {
+			if !types.IsInteger(operandType) && !isFlagsType(operandType) {
 				v.errorf(n, "operator ~ requires an integer")
 			}
 
@@ -829,6 +836,17 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			parser.BinaryOpShiftLeft,
 			parser.BinaryOpShiftRight:
 
+			if isFlagsType(t1) {
+				if n.Op == parser.BinaryOpShiftLeft || n.Op == parser.BinaryOpShiftRight {
+					if !types.IsInteger(t2) {
+						v.errorf(n, "flags shift count must be an integer")
+					}
+				} else if !t1.Equals(t2) {
+					v.errorf(n, "flags bitwise operands must have the same type")
+				}
+				n.SetType(t1)
+				break
+			}
 			if !types.IsInteger(t1) || !types.IsInteger(t2) {
 				v.errorf(n, "bitwise operators require integer operands")
 				break
@@ -915,7 +933,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		}
 
 	case *parser.FieldAccessNode:
-		if n.IsEnumValue || n.MethodSymbol != nil || n.ResolvedIdentifier != nil || n.ModulePath != "" {
+		if n.IsEnumValue || n.IsFlagValue || n.IsFlagTest || n.MethodSymbol != nil || n.ResolvedIdentifier != nil || n.ModulePath != "" {
 			return
 		}
 		v.validateExpr(n.Subject)
@@ -1242,15 +1260,20 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 			return n
 		}
 	case *parser.EnumLiteralNode:
-		enumType, ok := types.Underlying(expected).(types.EnumType)
-		if !ok {
-			v.errorf(n, "enum shorthand .%s requires an expected enum type", n.Variant)
+		var value string
+		var exists bool
+		switch t := types.Underlying(expected).(type) {
+		case types.EnumType:
+			value, exists = t.VariantValue(n.Variant)
+		case types.FlagsType:
+			value, exists = t.VariantValue(n.Variant)
+		default:
+			v.errorf(n, "member shorthand .%s requires an expected enum or flags type", n.Variant)
 			n.SetType(types.ErrorType{})
 			return n
 		}
-		value, exists := enumType.VariantValue(n.Variant)
 		if !exists {
-			v.errorf(n, "enum %s has no variant %q", enumType, n.Variant)
+			v.errorf(n, "%s has no member %q", expected, n.Variant)
 			n.SetType(types.ErrorType{})
 			return n
 		}
@@ -1271,12 +1294,22 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 		n.SetType(types.UntypedFloat{})
 	case *parser.UnaryOpNode:
 		if (types.IsNumeric(expected) && n.Op == parser.UnaryOpNegate) ||
-			(types.IsInteger(expected) && n.Op == parser.UnaryOpBitwiseNot) {
+			((types.IsInteger(expected) || isFlagsType(expected)) && n.Op == parser.UnaryOpBitwiseNot) {
 			n.Operand = v.validateExprWithExpected(n.Operand, expected)
 			n.SetType(expected)
 			return n
 		}
 	case *parser.BinaryOpNode:
+		if isFlagsType(expected) && isBitwiseOperator(n.Op) {
+			n.Operand1 = v.validateExprWithExpected(n.Operand1, expected)
+			if n.Op == parser.BinaryOpShiftLeft || n.Op == parser.BinaryOpShiftRight {
+				v.validateExpr(n.Operand2)
+			} else {
+				n.Operand2 = v.validateExprWithExpected(n.Operand2, expected)
+			}
+			n.SetType(expected)
+			return n
+		}
 		leftIsPointer := types.IsPointer(n.Operand1.GetType())
 		rightIsPointer := types.IsPointer(n.Operand2.GetType())
 		if types.IsNumeric(expected) && !leftIsPointer && !rightIsPointer &&
@@ -1369,6 +1402,8 @@ func isBitwiseOperator(op parser.BinaryOpKind) bool {
 	}
 }
 
+func isFlagsType(t types.Type) bool { _, ok := types.Underlying(t).(types.FlagsType); return ok }
+
 func isArithmeticOperator(op parser.BinaryOpKind) bool {
 	switch op {
 	case parser.BinaryOpAdd,
@@ -1424,6 +1459,31 @@ func (v *Validator) validateSliceLiteralWithExpected(n *parser.SliceLiteralNode,
 }
 
 func (v *Validator) validateStructLiteralWithExpected(n *parser.StructLiteralNode, expected types.Type) {
+	if flagType, ok := types.Underlying(expected).(types.FlagsType); ok {
+		if len(n.Fields) != 0 {
+			v.errorf(n, "flags literals use '.member' entries")
+			n.SetType(types.ErrorType{})
+			return
+		}
+		seen := map[string]struct{}{}
+		for _, member := range n.FlagMembers {
+			if _, duplicate := seen[member]; duplicate {
+				v.errorf(n, "duplicate flag member %q", member)
+				continue
+			}
+			seen[member] = struct{}{}
+			if _, exists := flagType.VariantValue(member); !exists {
+				v.errorf(n, "unknown flag member %q", member)
+			}
+		}
+		n.SetType(expected)
+		return
+	}
+	if len(n.FlagMembers) != 0 {
+		v.errorf(n, "only flags literals may use '.member' entries")
+		n.SetType(types.ErrorType{})
+		return
+	}
 	if unionType, ok := types.Underlying(expected).(types.UnionType); ok {
 		if len(n.Fields) != 1 {
 			v.errorf(n, "union literal must initialize exactly one field")

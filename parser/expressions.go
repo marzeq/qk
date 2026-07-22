@@ -1050,6 +1050,32 @@ func (p *Parser) ParseStructLiteral(name *IdentifierNode) (*StructLiteralNode, e
 		Name: name,
 		Loc:  beginLoc,
 	}
+	if p.Match(tokeniser.TokenDot) {
+		for {
+			if !p.Expect(tokeniser.TokenDot) {
+				return nil, shared.NewError(p.PrevLoc(), "expected '.' before flag name")
+			}
+			member, ok := p.ExpectGet(tokeniser.TokenIdentifier)
+			if !ok {
+				return nil, shared.NewError(p.PrevLoc(), "expected flag name")
+			}
+			node.FlagMembers = append(node.FlagMembers, member.Value)
+			if !p.Match(tokeniser.TokenComma, tokeniser.TokenNewline) {
+				break
+			}
+			p.Inc()
+			for p.Match(tokeniser.TokenNewline) {
+				p.Inc()
+			}
+			if p.Match(tokeniser.TokenCloseCurly) {
+				break
+			}
+		}
+		if !p.Expect(tokeniser.TokenCloseCurly) {
+			return nil, shared.NewError(p.PrevLoc(), "expected '}' to end flags literal")
+		}
+		return node, nil
+	}
 	for {
 		if p.Match(tokeniser.TokenCloseCurly) {
 			break
@@ -1188,6 +1214,9 @@ func (p *Parser) ParseType() (TypeNode, error) {
 	}
 	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordEnum) {
 		return p.ParseEnumType()
+	}
+	if p.Match(tokeniser.TokenIdentifier) && p.Peek().Value == "flags" && p.Next().Type == tokeniser.TokenOpenParen {
+		return p.ParseFlagsType()
 	}
 	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordUnion) {
 		return p.ParseUnionType()
@@ -1473,6 +1502,103 @@ func enumValueFits32Bits(value string) bool {
 	min := big.NewInt(-1 << 31)
 	max := new(big.Int).SetUint64(1<<32 - 1)
 	return n.Cmp(min) >= 0 && n.Cmp(max) <= 0
+}
+
+func (p *Parser) ParseFlagsType() (*FlagsTypeNode, error) {
+	beginLoc := p.CurrLoc()
+	p.Inc()
+	if !p.Expect(tokeniser.TokenOpenParen) {
+		return nil, shared.NewError(p.PrevLoc(), "expected '(' after flags")
+	}
+	underlying, err := p.ParseNamedType()
+	if err != nil {
+		return nil, err
+	}
+	if !p.Expect(tokeniser.TokenCloseParen) || !p.Expect(tokeniser.TokenOpenCurly) {
+		return nil, shared.NewError(p.PrevLoc(), "expected '{' after flags underlying type")
+	}
+	known := map[string]*big.Int{}
+	var variants, values []string
+	for {
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+		if p.Match(tokeniser.TokenCloseCurly) {
+			p.Inc()
+			break
+		}
+		name, ok := p.ExpectGet(tokeniser.TokenIdentifier)
+		if !ok {
+			return nil, shared.NewError(p.PrevLoc(), "expected flag name")
+		}
+		if _, exists := known[name.Value]; exists {
+			return nil, shared.NewError(name.Loc, "duplicate flag %q", name.Value)
+		}
+		if !p.Expect(tokeniser.TokenEquals) {
+			return nil, shared.NewError(p.PrevLoc(), "flags require explicit values")
+		}
+		value, err := p.parseFlagValue(known)
+		if err != nil {
+			return nil, err
+		}
+		known[name.Value] = value
+		variants, values = append(variants, name.Value), append(values, value.String())
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+		if p.Match(tokeniser.TokenComma) {
+			p.Inc()
+			continue
+		}
+		if !p.Match(tokeniser.TokenCloseCurly) {
+			return nil, shared.NewError(p.CurrLoc(), "expected ',' or '}' after flag")
+		}
+	}
+	if len(variants) == 0 {
+		return nil, shared.NewError(beginLoc, "flags must declare at least one member")
+	}
+	return &FlagsTypeNode{Underlying: underlying, Variants: variants, Values: values, Loc: beginLoc}, nil
+}
+
+func (p *Parser) parseFlagValue(known map[string]*big.Int) (*big.Int, error) {
+	result := new(big.Int)
+	for {
+		var term *big.Int
+		if p.Match(tokeniser.TokenIdentifier) {
+			tok := p.Consume()
+			value, ok := known[tok.Value]
+			if !ok {
+				return nil, shared.NewError(tok.Loc, "unknown earlier flag %q", tok.Value)
+			}
+			term = new(big.Int).Set(value)
+		} else if p.Match(tokeniser.TokenNumber) {
+			tok := p.Consume()
+			if tok.NumberBase == 16 {
+				term, _ = new(big.Int).SetString(tok.Value, 10)
+			} else if tok.Value == "1" && p.Match(tokeniser.TokenShiftLeft) {
+				p.Inc()
+				shift, ok := p.ExpectGet(tokeniser.TokenNumber)
+				if !ok || shift.NumberBase != 10 {
+					return nil, shared.NewError(p.PrevLoc(), "expected decimal bit position after '1 <<'")
+				}
+				bit, ok := new(big.Int).SetString(shift.Value, 10)
+				if !ok || !bit.IsUint64() {
+					return nil, shared.NewError(shift.Loc, "invalid flag bit position")
+				}
+				term = new(big.Int).Lsh(big.NewInt(1), uint(bit.Uint64()))
+			} else {
+				return nil, shared.NewError(tok.Loc, "flag values must use hexadecimal, '1 << bit', or earlier flag names")
+			}
+		} else {
+			return nil, shared.NewError(p.CurrLoc(), "expected hexadecimal value, '1 << bit', or earlier flag name")
+		}
+		result.Or(result, term)
+		if !p.Match(tokeniser.TokenPipe) {
+			break
+		}
+		p.Inc()
+	}
+	return result, nil
 }
 
 func (p *Parser) ParseStructType() (*StructTypeNode, error) {

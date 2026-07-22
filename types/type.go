@@ -374,6 +374,30 @@ type EnumType struct {
 	Values   []string
 }
 
+type FlagsType struct {
+	Underlying PrimitiveType
+	Variants   []string
+	Values     []string
+}
+
+func (f FlagsType) Equals(other Type) bool {
+	o, ok := other.(FlagsType)
+	return ok && f.Underlying == o.Underlying && slices.Equal(f.Variants, o.Variants) && slices.Equal(f.Values, o.Values)
+}
+func (f FlagsType) CanCoerceTo(other Type) bool { return f.Equals(other) }
+func (f FlagsType) CanCastTo(other Type) bool {
+	return other.Equals(f.Underlying) || f.Equals(other)
+}
+func (f FlagsType) String() string { return "flags(" + f.Underlying.String() + ")" }
+func (f FlagsType) VariantValue(name string) (string, bool) {
+	for i, variant := range f.Variants {
+		if variant == name {
+			return f.Values[i], true
+		}
+	}
+	return "", false
+}
+
 type UnionType struct {
 	Module string
 	Name   string

@@ -5,6 +5,7 @@ import (
 	"github.com/marzeq/qk/shared"
 	"github.com/marzeq/qk/symbols"
 	"github.com/marzeq/qk/types"
+	"math/big"
 )
 
 func (a *Analyser) resolveTypeNode(n parser.TypeNode) types.Type {
@@ -145,6 +146,24 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 			Variants: append([]string(nil), t.Variants...),
 			Values:   append([]string(nil), t.Values...),
 		}
+
+	case *parser.FlagsTypeNode:
+		base := a.resolveTypeNodeAt(t.Underlying, indirect)
+		primitive, ok := types.Underlying(base).(types.PrimitiveType)
+		if !ok || !types.IsInteger(primitive) || primitive == types.PrimitiveIsz || primitive == types.PrimitiveUsz {
+			a.errorf(t, "flags underlying type must be a fixed-width integer")
+			return types.ErrorType{}
+		}
+		bits := map[types.PrimitiveType]uint{types.PrimitiveI8: 8, types.PrimitiveU8: 8, types.PrimitiveI16: 16, types.PrimitiveU16: 16, types.PrimitiveI32: 32, types.PrimitiveU32: 32, types.PrimitiveI64: 64, types.PrimitiveU64: 64}[primitive]
+		limit := new(big.Int).Lsh(big.NewInt(1), bits)
+		for i, raw := range t.Values {
+			value, _ := new(big.Int).SetString(raw, 10)
+			if value.Sign() < 0 || value.Cmp(limit) >= 0 {
+				a.errorf(t, "flag %q value does not fit in %s", t.Variants[i], primitive)
+				return types.ErrorType{}
+			}
+		}
+		return types.FlagsType{Underlying: primitive, Variants: append([]string(nil), t.Variants...), Values: append([]string(nil), t.Values...)}
 
 	case *parser.UnionTypeNode:
 		fields := make([]shared.Pair[string, types.Type], 0, len(t.Fields))

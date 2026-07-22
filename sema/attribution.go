@@ -459,6 +459,8 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		case parser.UnaryOpBitwiseNot:
 			if types.IsInteger(n.Operand.GetType()) {
 				n.SetType(n.Operand.GetType())
+			} else if _, ok := types.Underlying(n.Operand.GetType()).(types.FlagsType); ok {
+				n.SetType(n.Operand.GetType())
 			} else {
 				a.errorf(n, "cannot apply bitwise not operator to non-integer type: %v", n.Operand.GetType())
 				n.SetType(types.ErrorType{})
@@ -530,6 +532,18 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 				}
 				break
 			}
+			if flagType, ok := types.Underlying(ident.Symbol.TypeInfo).(types.FlagsType); ok {
+				ident.SetType(flagType)
+				value, exists := flagType.VariantValue(n.Field.Name)
+				if !exists {
+					a.errorf(n, "flags %s has no member %q", ident.Symbol.TypeInfo, n.Field.Name)
+					n.SetType(types.ErrorType{})
+				} else {
+					n.IsFlagValue, n.FlagValue, n.FlagType = true, value, ident.Symbol.TypeInfo
+					n.SetType(ident.Symbol.TypeInfo)
+				}
+				break
+			}
 		}
 		if ident, ok := n.Subject.(*parser.IdentifierNode); ok &&
 			ident.Symbol != nil && ident.Symbol.Kind == symbols.SymbolKindModule {
@@ -544,6 +558,18 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 			subjectType = types.Underlying(ptr.Base)
 		}
 		switch t := subjectType.(type) {
+		case types.FlagsType:
+			value, exists := t.VariantValue(n.Field.Name)
+			if !exists {
+				a.errorf(n, "flags %v has no member %q", n.Subject.GetType(), n.Field.Name)
+				n.SetType(types.ErrorType{})
+			} else if value == "0" {
+				a.errorf(n, "zero-valued flag %q cannot be used as a boolean field", n.Field.Name)
+				n.SetType(types.ErrorType{})
+			} else {
+				n.IsFlagTest, n.FlagValue, n.FlagType = true, value, n.Subject.GetType()
+				n.SetType(types.PrimitiveBool)
+			}
 		case types.StructType:
 			found := false
 			for _, field := range t.Fields {
@@ -593,12 +619,12 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		a.attributeExpr(n.Operand1)
 		a.attributeExpr(n.Operand2)
 		if literal, ok := n.Operand1.(*parser.EnumLiteralNode); ok && isUnresolvedEnum(literal.GetType()) {
-			if _, ok := types.Underlying(n.Operand2.GetType()).(types.EnumType); ok {
+			if isEnumOrFlags(n.Operand2.GetType()) {
 				a.resolveEnumLiteral(literal, n.Operand2.GetType())
 			}
 		}
 		if literal, ok := n.Operand2.(*parser.EnumLiteralNode); ok && isUnresolvedEnum(literal.GetType()) {
-			if _, ok := types.Underlying(n.Operand1.GetType()).(types.EnumType); ok {
+			if isEnumOrFlags(n.Operand1.GetType()) {
 				a.resolveEnumLiteral(literal, n.Operand1.GetType())
 			}
 		}
@@ -656,6 +682,17 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 			}
 		case parser.BinaryOpBitwiseAnd, parser.BinaryOpBitwiseXor, parser.BinaryOpBitwiseOr,
 			parser.BinaryOpShiftLeft, parser.BinaryOpShiftRight:
+			if _, leftFlags := types.Underlying(t1).(types.FlagsType); leftFlags {
+				if (n.Op == parser.BinaryOpShiftLeft || n.Op == parser.BinaryOpShiftRight) && types.IsInteger(t2) {
+					n.SetType(t1)
+				} else if t1.Equals(t2) {
+					n.SetType(t1)
+				} else {
+					a.errorf(n, "flags bitwise operands must have the same type")
+					n.SetType(types.ErrorType{})
+				}
+				break
+			}
 			if types.IsInteger(t1) && types.IsInteger(t2) {
 				got := types.PromoteNumeric(t1, t2)
 				if got.Equals(types.ErrorType{}) {
@@ -854,11 +891,25 @@ func isUnresolvedEnum(t types.Type) bool {
 	return ok
 }
 
+func isEnumOrFlags(t types.Type) bool {
+	switch types.Underlying(t).(type) {
+	case types.EnumType, types.FlagsType:
+		return true
+	}
+	return false
+}
+
 func (a *Attributor) resolveEnumLiteral(n *parser.EnumLiteralNode, expected types.Type) {
-	enumType := types.Underlying(expected).(types.EnumType)
-	value, ok := enumType.VariantValue(n.Variant)
+	var value string
+	var ok bool
+	switch t := types.Underlying(expected).(type) {
+	case types.EnumType:
+		value, ok = t.VariantValue(n.Variant)
+	case types.FlagsType:
+		value, ok = t.VariantValue(n.Variant)
+	}
 	if !ok {
-		a.errorf(n, "enum %s has no variant %q", enumType, n.Variant)
+		a.errorf(n, "%s has no member %q", expected, n.Variant)
 		n.SetType(types.ErrorType{})
 		return
 	}

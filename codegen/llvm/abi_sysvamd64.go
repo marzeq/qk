@@ -94,6 +94,9 @@ func (e *Emitter) classifySysVAggregate(
 		e.markSysVAggregateClass(base, 8, abiClassInteger, classes)
 	case types.EnumType:
 		e.markSysVAggregateClass(base, 4, abiClassInteger, classes)
+	case types.FlagsType:
+		size, _ := e.typeSizeAlign(t.Underlying)
+		e.markSysVAggregateClass(base, size, abiClassInteger, classes)
 	case types.PrimitiveType:
 		size, _ := e.typeSizeAlign(t)
 		class := abiClassInteger
