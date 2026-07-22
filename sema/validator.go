@@ -1021,7 +1021,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			if common == nil {
 				common = el.GetType()
 			} else {
-				common = types.PromoteNumeric(common, el.GetType())
+				common = types.CommonType(common, el.GetType())
 				if _, isErr := common.(types.ErrorType); isErr {
 					v.errorf(n, "slice element type mismatch")
 					return

@@ -919,6 +919,24 @@ func PromoteNumeric(a, b Type) Type {
 	return PromoteIntegers(pa, pb)
 }
 
+// CommonType finds the type shared by values in aggregate literals. In
+// addition to numeric promotion, fixed-size slices with the same element type
+// widen to an unsized slice. This lets differently sized string literals share
+// the builtin str representation without erasing distinct element types.
+func CommonType(a, b Type) Type {
+	if a.Equals(b) {
+		return a
+	}
+
+	if as, ok := a.(SliceType); ok {
+		if bs, ok := b.(SliceType); ok && as.Base.Equals(bs.Base) {
+			return SliceType{Base: as.Base, Size: -1}
+		}
+	}
+
+	return PromoteNumeric(a, b)
+}
+
 func PromoteIntegers(a, b PrimitiveType) Type {
 	if IsSigned(a) && IsSigned(b) {
 		return widerSigned(a, b)

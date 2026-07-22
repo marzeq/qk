@@ -215,4 +215,357 @@ when OS == .Linux
   compiler_error("Unsupported OS")
 }
 
+// -----------------------------------------------------------------------------
+// Unix process management
+// -----------------------------------------------------------------------------
+
+when OS == .Linux
+  or OS == .MacOS
+  or OS == .FreeBSD
+  or OS == .OpenBSD
+  or OS == .NetBSD
+  or OS == .DragonFly {
+
+  // On the supported Unix ABIs, pid_t is a signed 32-bit integer.
+  pub let pid_t = type i32
+
+  // POSIX uses int for file descriptors, signals and wait status values.
+  pub let fd_t = type i32
+  pub let signal_t = type i32
+  pub let wait_status_t = type i32
+
+  // Environment inherited by exec-family calls.
+  pub let environ: *mut *mut char @foreign
+
+  // ---------------------------------------------------------------------------
+  // Process creation and termination
+  // ---------------------------------------------------------------------------
+
+  pub let fork(): pid_t @foreign
+
+  // vfork() imposes substantially stricter rules than fork(). The child must
+  // call exec*() or _exit() without returning or modifying shared state.
+  pub let vfork(): pid_t @foreign
+
+  pub let _exit(status: i32): void @foreign @noreturn
+
+  // ---------------------------------------------------------------------------
+  // Program execution
+  // ---------------------------------------------------------------------------
+
+  // The vector forms are generally the easiest and safest FFI bindings.
+  //
+  // argv must be terminated by a null pointer.
+  // envp must be terminated by a null pointer.
+  pub let execve(
+    path: cstr,
+    argv: **char,
+    envp: **char,
+  ): i32 @foreign
+
+  pub let execv(
+    path: cstr,
+    argv: **char,
+  ): i32 @foreign
+
+  pub let execvp(
+    file: cstr,
+    argv: **char,
+  ): i32 @foreign
+
+  // Variadic exec forms. The argument list must end with a null pointer.
+  pub let execl(path: cstr, arg0: cstr, ...): i32 @foreign
+  pub let execlp(file: cstr, arg0: cstr, ...): i32 @foreign
+
+  // execle() also requires envp after the null argument-list terminator.
+  pub let execle(path: cstr, arg0: cstr, ...): i32 @foreign
+
+  // exec*() returns only when execution fails, in which case it returns -1.
+
+  // ---------------------------------------------------------------------------
+  // Waiting for child processes
+  // ---------------------------------------------------------------------------
+
+  pub let wait(status: *mut wait_status_t): pid_t @foreign
+
+  pub let waitpid(
+    pid: pid_t,
+    status: *mut wait_status_t,
+    options: i32,
+  ): pid_t @foreign
+
+  // waitpid() pid argument meanings.
+  pub let WaitAny: pid_t = -1
+  pub let WaitMyProcessGroup: pid_t = 0
+
+  // POSIX waitpid() option bits.
+  pub let WaitNoHang: i32 = 1
+  pub let WaitUntraced: i32 = 2
+
+  // WCONTINUED is available on the supported contemporary Unix systems,
+  // although its numeric value is ABI-specific.
+  pub let WaitContinued: i32 =
+    when OS == .Linux { 8 }
+    else when OS == .MacOS
+      or OS == .FreeBSD
+      or OS == .OpenBSD
+      or OS == .NetBSD
+      or OS == .DragonFly { 16 }
+    else { 0 }
+
+  // Equivalent to the standard WIFEXITED(status) macro.
+  pub let wait_exited(status: wait_status_t): bool {
+    return (status & 0x7f) == 0.(wait_status_t)
+  }
+
+  // Equivalent to WEXITSTATUS(status).
+  // Call only when wait_exited(status) is true.
+  pub let wait_exit_status(status: wait_status_t): i32 {
+    return ((status >> 8) & 0xff).(i32)
+  }
+
+  // Equivalent to WIFSIGNALED(status).
+  pub let wait_signalled(status: wait_status_t): bool {
+    let signal = status & 0x7f
+    return signal != 0.(wait_status_t) and signal != (0x7f).(wait_status_t)
+  }
+
+  // Equivalent to WTERMSIG(status).
+  // Call only when wait_signalled(status) is true.
+  pub let wait_term_signal(status: wait_status_t): signal_t {
+    return (status & (0x7f).(wait_status_t)).(signal_t)
+  }
+
+  // Equivalent to WIFSTOPPED(status).
+  pub let wait_stopped(status: wait_status_t): bool {
+    return (status & 0xff) == (0x7f).(wait_status_t)
+  }
+
+  // Equivalent to WSTOPSIG(status).
+  // Call only when wait_stopped(status) is true.
+  pub let wait_stop_signal(status: wait_status_t): signal_t {
+    return ((status >> 8) & 0xff).(signal_t)
+  }
+
+  // Equivalent to WCOREDUMP(status). This is widely available but is not
+  // required by POSIX.
+  pub let wait_core_dumped(status: wait_status_t): bool {
+    return (status & 0x80) != 0.(wait_status_t)
+  }
+
+  // WIFCONTINUED has different encodings between Linux and BSD-derived ABIs.
+  pub let wait_continued(status: wait_status_t): bool {
+    when OS == .Linux {
+      return status == (0xffff).(wait_status_t)
+    } else {
+      return status == (0x13).(wait_status_t)
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Process identity
+  // ---------------------------------------------------------------------------
+
+  pub let getpid(): pid_t @foreign
+  pub let getppid(): pid_t @foreign
+
+  // ---------------------------------------------------------------------------
+  // Process groups and sessions
+  // ---------------------------------------------------------------------------
+
+  pub let getpgrp(): pid_t @foreign
+
+  pub let getpgid(pid: pid_t): pid_t @foreign
+
+  pub let setpgid(
+    pid: pid_t,
+    pgid: pid_t,
+  ): i32 @foreign
+
+  pub let getsid(pid: pid_t): pid_t @foreign
+  pub let setsid(): pid_t @foreign
+
+  // Foreground process-group management for terminals.
+  pub let tcgetpgrp(fd: fd_t): pid_t @foreign
+
+  pub let tcsetpgrp(
+    fd: fd_t,
+    pgrp: pid_t,
+  ): i32 @foreign
+
+  // ---------------------------------------------------------------------------
+  // Signals
+  // ---------------------------------------------------------------------------
+
+  pub let kill(
+    pid: pid_t,
+    signal: signal_t,
+  ): i32 @foreign
+
+  pub let raise(signal: signal_t): i32 @foreign
+
+  // kill() pid argument behaviour:
+  //
+  //   pid > 0   send to one process
+  //   pid == 0  send to the caller's process group
+  //   pid == -1 send to every permitted process
+  //   pid < -1  send to process group -pid
+
+  pub let SignalHangup: signal_t = 1
+  pub let SignalInterrupt: signal_t = 2
+  pub let SignalQuit: signal_t = 3
+  pub let SignalIllegalInstruction: signal_t = 4
+  pub let SignalAbort: signal_t = 6
+  pub let SignalFloatingPointException: signal_t = 8
+  pub let SignalKill: signal_t = 9
+  pub let SignalSegmentationFault: signal_t = 11
+  pub let SignalPipe: signal_t = 13
+  pub let SignalAlarm: signal_t = 14
+  pub let SignalTerminate: signal_t = 15
+
+  // These values differ on Linux and BSD-derived systems.
+  pub let SignalChild: signal_t =
+    when OS == .Linux { 17 }
+    else when OS == .MacOS
+      or OS == .FreeBSD
+      or OS == .OpenBSD
+      or OS == .NetBSD
+      or OS == .DragonFly { 20 }
+    else { 0 }
+
+  pub let SignalContinue: signal_t =
+    when OS == .Linux { 18 }
+    else when OS == .MacOS
+      or OS == .FreeBSD
+      or OS == .OpenBSD
+      or OS == .NetBSD
+      or OS == .DragonFly { 19 }
+    else { 0 }
+
+  pub let SignalStop: signal_t =
+    when OS == .Linux { 19 }
+    else when OS == .MacOS
+      or OS == .FreeBSD
+      or OS == .OpenBSD
+      or OS == .NetBSD
+      or OS == .DragonFly { 17 }
+    else { 0 }
+
+  pub let SignalTerminalStop: signal_t =
+    when OS == .Linux { 20 }
+    else when OS == .MacOS
+      or OS == .FreeBSD
+      or OS == .OpenBSD
+      or OS == .NetBSD
+      or OS == .DragonFly { 18 }
+    else { 0 }
+
+  // ---------------------------------------------------------------------------
+  // File descriptors and redirection
+  // ---------------------------------------------------------------------------
+
+  pub let StandardInput: fd_t = 0
+  pub let StandardOutput: fd_t = 1
+  pub let StandardError: fd_t = 2
+
+  pub let PipeRead: usz = 0
+  pub let PipeWrite: usz = 1
+
+  // pipefd must point to storage for two i32 values:
+  // pipefd[PipeRead] and pipefd[PipeWrite].
+  pub let pipe(pipefd: *mut fd_t): i32 @foreign
+
+  pub let dup(oldfd: fd_t): fd_t @foreign
+
+  pub let dup2(
+    oldfd: fd_t,
+    newfd: fd_t,
+  ): fd_t @foreign
+
+  pub let close(fd: fd_t): i32 @foreign
+
+  // ---------------------------------------------------------------------------
+  // Environment and working directory
+  // ---------------------------------------------------------------------------
+
+  pub let chdir(path: cstr): i32 @foreign
+  pub let fchdir(fd: fd_t): i32 @foreign
+
+  pub let getcwd(
+    buffer: *mut char,
+    size: usz,
+  ): *mut char @foreign
+
+  pub let setenv(
+    name: cstr,
+    value: cstr,
+    overwrite: i32,
+  ): i32 @foreign
+
+  pub let unsetenv(name: cstr): i32 @foreign
+
+  // ---------------------------------------------------------------------------
+  // Process scheduling
+  // ---------------------------------------------------------------------------
+
+  pub let nice(increment: i32): i32 @foreign
+
+  pub let PriorityProcess: i32 = 0
+  pub let PriorityProcessGroup: i32 = 1
+  pub let PriorityUser: i32 = 2
+
+  pub let getpriority(
+    which: i32,
+    who: u32,
+  ): i32 @foreign
+
+  pub let setpriority(
+    which: i32,
+    who: u32,
+    priority: i32,
+  ): i32 @foreign
+}
+
+// -----------------------------------------------------------------------------
+// Linux-specific process APIs
+// -----------------------------------------------------------------------------
+
+when OS == .Linux {
+
+  // GNU extension: PATH lookup with an explicit environment.
+  pub let execvpe(
+    file: cstr,
+    argv: **char,
+    envp: **char,
+  ): i32 @foreign
+
+  // Linux versions allowing atomic close-on-exec configuration.
+  pub let pipe2(
+    pipefd: *mut fd_t,
+    flags: i32,
+  ): i32 @foreign
+
+  pub let dup3(
+    oldfd: fd_t,
+    newfd: fd_t,
+    flags: i32,
+  ): fd_t @foreign
+
+  pub let CloseOnExec: i32 = 0x80000
+  pub let NonBlocking: i32 = 0x800
+
+  // Linux pidfd APIs provide race-resistant references to processes.
+  pub let pidfd_open(
+    pid: pid_t,
+    flags: u32,
+  ): fd_t @foreign
+
+  pub let pidfd_send_signal(
+    pidfd: fd_t,
+    signal: signal_t,
+    info: *void,
+    flags: u32,
+  ): i32 @foreign
+}
+
 }

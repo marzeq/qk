@@ -314,7 +314,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		if len(typs) > 0 {
 			currentType := typs[0]
 			for _, t := range typs[1:] {
-				got := types.PromoteNumeric(currentType, t)
+				got := types.CommonType(currentType, t)
 				if got.Equals(types.ErrorType{}) {
 					a.errorf(n, "inconsistent slice element types: expected %v, got %v", currentType, t)
 				}
@@ -714,7 +714,9 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 }
 
 func fieldOwnerDisplayType(t types.Type) types.Type {
-	if ptr, ok := types.Underlying(t).(types.PointerType); ok {
+	// Preserve a nominal pointer type's name in diagnostics. Only peel an
+	// actual pointer expression to describe the type whose fields were queried.
+	if ptr, ok := t.(types.PointerType); ok {
 		return ptr.Base
 	}
 	return t
