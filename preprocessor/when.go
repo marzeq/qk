@@ -110,6 +110,9 @@ func (p *Processor) processCompileTimeDeclaration() ([]tokeniser.Token, bool, er
 	}
 	equals := namePos + 1
 	for equals < len(p.tokens) && p.tokens[equals].Type != tokeniser.TokenEquals && p.tokens[equals].Type != tokeniser.TokenNewline && p.tokens[equals].Type != tokeniser.TokenSemicolon {
+		if p.tokens[equals].Type == tokeniser.TokenLess {
+			return nil, false, nil
+		}
 		equals++
 	}
 	if equals+1 >= len(p.tokens) || p.tokens[equals].Type != tokeniser.TokenEquals || p.tokens[equals+1].Type != tokeniser.TokenIdentifier || p.tokens[equals+1].Value != "comptime" {

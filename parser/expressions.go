@@ -344,8 +344,33 @@ func (p *Parser) ParsePostfix() (ExpressionNode, error) {
 
 	for {
 		switch {
+		case p.Match(tokeniser.TokenLess):
+			typeArguments, ok, err := p.tryParseTypeArguments()
+			if err != nil {
+				return nil, err
+			}
+			if !ok {
+				return expr, nil
+			}
+			switch target := expr.(type) {
+			case *IdentifierNode:
+				if len(target.TypeArguments) != 0 {
+					return nil, shared.NewError(target.Loc, "generic arguments already specified")
+				}
+				target.TypeArguments = typeArguments
+			case *FieldAccessNode:
+				if len(target.Field.TypeArguments) != 0 {
+					return nil, shared.NewError(target.Field.Loc, "generic arguments already specified")
+				}
+				target.Field.TypeArguments = typeArguments
+			default:
+				return nil, shared.NewError(expr.GetLoc(), "type arguments require a named binding")
+			}
 		case p.Match(tokeniser.TokenOpenCurly) && (!p.disambiguateTrailingBlock || p.trailingBraceStartsStructLiteral()):
-			qualified, ok := dottedIdentifier(expr)
+			qualified, ok := expr.(*IdentifierNode)
+			if !ok {
+				qualified, ok = dottedIdentifier(expr)
+			}
 			if !ok {
 				return expr, nil
 			}
@@ -354,6 +379,9 @@ func (p *Parser) ParsePostfix() (ExpressionNode, error) {
 			call, err := p.ParseCall(expr)
 			if err != nil {
 				return nil, err
+			}
+			if identifier, ok := expr.(*IdentifierNode); ok {
+				call.Name = identifier
 			}
 			expr = call
 		case p.Match(tokeniser.TokenIncrement):
@@ -459,9 +487,13 @@ func (p *Parser) ParsePostfix() (ExpressionNode, error) {
 
 func dottedIdentifier(expr ExpressionNode) (*IdentifierNode, bool) {
 	var parts []string
+	var typeArguments []TypeNode
 	for {
 		switch n := expr.(type) {
 		case *FieldAccessNode:
+			if len(parts) == 0 {
+				typeArguments = n.Field.TypeArguments
+			}
 			parts = append([]string{n.Field.Name}, parts...)
 			expr = n.Subject
 		case *IdentifierNode:
@@ -469,11 +501,50 @@ func dottedIdentifier(expr ExpressionNode) (*IdentifierNode, bool) {
 			if len(parts) < 2 {
 				return nil, false
 			}
-			return &IdentifierNode{Name: parts[len(parts)-1], Module: strings.Join(parts[:len(parts)-1], "."), Loc: n.Loc}, true
+			return &IdentifierNode{
+				Name: parts[len(parts)-1], Module: strings.Join(parts[:len(parts)-1], "."),
+				TypeArguments: typeArguments, Loc: n.Loc,
+			}, true
 		default:
 			return nil, false
 		}
 	}
+}
+
+func (p *Parser) tryParseTypeArguments() ([]TypeNode, bool, error) {
+	p.PushPos()
+	p.Inc()
+	var arguments []TypeNode
+	for {
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+		argument, err := p.ParseType()
+		if err != nil {
+			p.PopPos()
+			return nil, false, nil
+		}
+		arguments = append(arguments, argument)
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+		if p.consumeGenericClose() {
+			break
+		}
+		if !p.Match(tokeniser.TokenComma) {
+			p.PopPos()
+			return nil, false, nil
+		}
+		p.Inc()
+	}
+	switch p.Peek().Type {
+	case tokeniser.TokenIdentifier, tokeniser.TokenNumber, tokeniser.TokenString,
+		tokeniser.TokenCString, tokeniser.TokenChar:
+		p.PopPos()
+		return nil, false, nil
+	}
+	p.CommitPos()
+	return arguments, true, nil
 }
 
 func (p *Parser) ParseComparison() (ExpressionNode, error) {
@@ -1848,11 +1919,19 @@ func (p *Parser) ParseNamedType() (*NamedTypeNode, error) {
 	}
 
 	if !p.Match(tokeniser.TokenDot) {
-		return &NamedTypeNode{
+		node := &NamedTypeNode{
 			ModName: "",
 			Name:    ident.Name,
 			Loc:     beginLoc,
-		}, nil
+		}
+		if p.Match(tokeniser.TokenLess) {
+			arguments, err := p.parseTypeArguments()
+			if err != nil {
+				return nil, err
+			}
+			node.TypeArguments = arguments
+		}
+		return node, nil
 	}
 	parts := []string{ident.Name}
 	for p.Match(tokeniser.TokenDot) {
@@ -1864,9 +1943,44 @@ func (p *Parser) ParseNamedType() (*NamedTypeNode, error) {
 		parts = append(parts, realIdent.Name)
 	}
 
-	return &NamedTypeNode{
+	node := &NamedTypeNode{
 		ModName: strings.Join(parts[:len(parts)-1], "."),
 		Name:    parts[len(parts)-1],
 		Loc:     beginLoc,
-	}, nil
+	}
+	if p.Match(tokeniser.TokenLess) {
+		arguments, err := p.parseTypeArguments()
+		if err != nil {
+			return nil, err
+		}
+		node.TypeArguments = arguments
+	}
+	return node, nil
+}
+
+func (p *Parser) parseTypeArguments() ([]TypeNode, error) {
+	if !p.Expect(tokeniser.TokenLess) {
+		return nil, shared.NewError(p.PrevLoc(), "expected '<'")
+	}
+	var arguments []TypeNode
+	for {
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+		argument, err := p.ParseType()
+		if err != nil {
+			return nil, err
+		}
+		arguments = append(arguments, argument)
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+		if p.consumeGenericClose() {
+			break
+		}
+		if !p.Expect(tokeniser.TokenComma) {
+			return nil, shared.NewError(p.PrevLoc(), "expected ',' or '>' in type argument list")
+		}
+	}
+	return arguments, nil
 }

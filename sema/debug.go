@@ -32,6 +32,9 @@ func (w *debugWalker) walkNode(node parser.Node) {
 		}
 
 	case *parser.FunctionDefNode:
+		if len(n.GenericParameters) != 0 {
+			break
+		}
 		if n.Symbol == nil || n.Symbol.Signature == nil {
 			w.errors = append(w.errors, "function symbol has nil type")
 		}
@@ -53,6 +56,9 @@ func (w *debugWalker) walkNode(node parser.Node) {
 		w.walkNode(n.Action)
 
 	case *parser.DeclarationNode:
+		if len(n.GenericParameters) != 0 {
+			break
+		}
 		if n.Name == "_" {
 			if n.Value != nil {
 				w.walkExpr(n.Value)

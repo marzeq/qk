@@ -87,6 +87,9 @@ func (g *Generator) GenerateRoots(roots []*parser.RootNode) *ir.Module {
 	for _, root := range roots {
 		for _, node := range root.Body {
 			if node, ok := node.(*parser.DeclarationNode); ok {
+				if len(node.GenericParameters) != 0 {
+					continue
+				}
 				g.generateGlobalDeclaration(node)
 			}
 		}
@@ -96,6 +99,9 @@ func (g *Generator) GenerateRoots(roots []*parser.RootNode) *ir.Module {
 		for _, rawNode := range root.Body {
 			node, ok := rawNode.(*parser.FunctionDefNode)
 			if !ok {
+				continue
+			}
+			if len(node.GenericParameters) != 0 {
 				continue
 			}
 			if node.Body == nil {
@@ -151,7 +157,13 @@ func (g *Generator) generateGlobalDeclaration(node *parser.DeclarationNode) {
 		visibility = ir.VisibilityHidden
 	}
 	name := g.mangleGlobalName(g.ModuleName, node.Name)
-	value, constant := g.tryGenerateGlobalInitializer(node.Value)
+	var value ir.Operand
+	var constant bool
+	if node.Comptime {
+		value, constant = g.tryGenerateComptimeInitializer(node.Value)
+	} else {
+		value, constant = g.tryGenerateGlobalInitializer(node.Value)
+	}
 	if !constant {
 		value = ir.ZeroConstOperand(node.Symbol.Type)
 		g.dynamicGlobals = append(g.dynamicGlobals, dynamicGlobalInitializer{
@@ -168,6 +180,86 @@ func (g *Generator) generateGlobalDeclaration(node *parser.DeclarationNode) {
 		Value:      value,
 	})
 	g.globals[node.Symbol] = g.Module.Globals[len(g.Module.Globals)-1].Name
+}
+
+func (g *Generator) tryGenerateComptimeInitializer(expr parser.ExpressionNode) (ir.Operand, bool) {
+	if value, ok := g.tryGenerateGlobalInitializer(expr); ok {
+		return value, true
+	}
+	switch node := expr.(type) {
+	case *parser.SizeOfNode:
+		return ir.SizeofConstOperand(node.OperandType), true
+	case *parser.CastNode:
+		value, ok := g.tryGenerateComptimeInitializer(node.Operand)
+		if !ok {
+			return ir.Operand{}, false
+		}
+		value.Type = node.GetType()
+		return value, true
+	case *parser.UnaryOpNode:
+		value, ok := g.tryGenerateComptimeInitializer(node.Operand)
+		if !ok {
+			return ir.Operand{}, false
+		}
+		switch node.Op {
+		case parser.UnaryOpNegate:
+			zero := ir.IntConstOperand("0", node.GetType())
+			return ir.BinaryConstOperand("sub", zero, value, node.GetType()), true
+		case parser.UnaryOpBitwiseNot:
+			allBits := ir.IntConstOperand("-1", node.GetType())
+			return ir.BinaryConstOperand("xor", value, allBits, node.GetType()), true
+		case parser.UnaryOpLogicalNot:
+			one := ir.BoolConstOperand(true)
+			return ir.BinaryConstOperand("xor", value, one, node.GetType()), true
+		}
+		return ir.Operand{}, false
+	case *parser.BinaryOpNode:
+		left, leftOK := g.tryGenerateComptimeInitializer(node.Operand1)
+		right, rightOK := g.tryGenerateComptimeInitializer(node.Operand2)
+		if !leftOK || !rightOK {
+			return ir.Operand{}, false
+		}
+		operator := ""
+		switch node.Op {
+		case parser.BinaryOpAdd:
+			operator = "add"
+		case parser.BinaryOpSubtract:
+			operator = "sub"
+		case parser.BinaryOpMultiply:
+			operator = "mul"
+		case parser.BinaryOpDivide:
+			if types.IsSigned(node.GetType()) {
+				operator = "sdiv"
+			} else {
+				operator = "udiv"
+			}
+		case parser.BinaryOpModulo:
+			if types.IsSigned(node.GetType()) {
+				operator = "srem"
+			} else {
+				operator = "urem"
+			}
+		case parser.BinaryOpBitwiseAnd:
+			operator = "and"
+		case parser.BinaryOpBitwiseOr:
+			operator = "or"
+		case parser.BinaryOpBitwiseXor:
+			operator = "xor"
+		case parser.BinaryOpShiftLeft:
+			operator = "shl"
+		case parser.BinaryOpShiftRight:
+			if types.IsSigned(node.GetType()) {
+				operator = "ashr"
+			} else {
+				operator = "lshr"
+			}
+		}
+		if operator == "" {
+			return ir.Operand{}, false
+		}
+		return ir.BinaryConstOperand(operator, left, right, node.GetType()), true
+	}
+	return ir.Operand{}, false
 }
 
 func (g *Generator) tryGenerateGlobalInitializer(expr parser.ExpressionNode) (ir.Operand, bool) {

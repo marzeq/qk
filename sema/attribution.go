@@ -57,6 +57,11 @@ func (a *Attributor) attributeNode(node parser.Node) {
 		// pass
 
 	case *parser.FunctionDefNode:
+		if len(n.GenericParameters) != 0 {
+			break
+		}
+		restoreSpecialization := a.enterSpecialization(n.Symbol)
+		defer restoreSpecialization()
 		for _, arg := range n.Args {
 			if arg.Default != nil {
 				a.attributeExpr(arg.Default)
@@ -136,6 +141,11 @@ func (a *Attributor) attributeNode(node parser.Node) {
 		}
 
 	case *parser.DeclarationNode:
+		if len(n.GenericParameters) != 0 {
+			break
+		}
+		restoreSpecialization := a.enterSpecialization(n.Symbol)
+		defer restoreSpecialization()
 		if n.Value != nil {
 			a.attributeExpr(n.Value)
 		}
@@ -231,7 +241,15 @@ func (a *Attributor) attributeNode(node parser.Node) {
 func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 	switch n := node.(type) {
 	case *parser.IdentifierNode:
-		if n.Symbol != nil && n.Symbol.Kind == symbols.SymbolKindFunction && n.Symbol.Signature != nil {
+		if n.Symbol != nil && n.Symbol.TemplateSymbol != nil {
+			if specialization := a.attributeGenericSpecialization(n.Symbol.TemplateSymbol, n.Symbol.TypeArguments, n); specialization != nil {
+				n.Symbol = specialization.Symbol
+			}
+		}
+		if n.Symbol != nil && n.Symbol.Template {
+			a.errorf(n, "generic binding %q requires type arguments", n.Symbol.Name)
+			n.SetType(types.ErrorType{})
+		} else if n.Symbol != nil && n.Symbol.Kind == symbols.SymbolKindFunction && n.Symbol.Signature != nil {
 			ret := n.Symbol.Signature.ReturnType
 			if ret == nil {
 				ret = types.PrimitiveVoid
@@ -357,16 +375,40 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		} else {
 			n.SetType(types.PrimitiveVoid)
 		}
+		for _, arg := range n.Args {
+			a.attributeExpr(arg)
+		}
+
+		if n.Symbol != nil && n.Symbol.Template {
+			template := n.Symbol
+			arguments, err := inferGenericArguments(
+				template.GenericParameters, template.Signature.Parameters, expressionTypes(n.Args),
+				template.Signature.TypedVariadic, n.VariadicExpansion,
+			)
+			if err != nil {
+				a.errorf(n, "%v", err)
+				n.SetType(types.ErrorType{})
+			} else if specialization := a.attributeGenericSpecialization(template, arguments, n); specialization != nil {
+				n.Symbol = specialization.Symbol
+				if n.Name != nil {
+					n.Name.Symbol = specialization.Symbol
+				}
+			}
+		} else if n.Symbol != nil && n.Symbol.TemplateSymbol != nil {
+			template := n.Symbol.TemplateSymbol
+			if specialization := a.attributeGenericSpecialization(template, n.Symbol.TypeArguments, n); specialization != nil {
+				n.Symbol = specialization.Symbol
+				if n.Name != nil {
+					n.Name.Symbol = specialization.Symbol
+				}
+			}
+		}
 		if n.Symbol != nil {
 			if n.Symbol.Signature.ReturnType != nil {
 				n.SetType(n.Symbol.Signature.ReturnType)
 			} else {
 				n.SetType(types.PrimitiveVoid)
 			}
-		}
-
-		for _, arg := range n.Args {
-			a.attributeExpr(arg)
 		}
 
 	case *parser.IfExprNode:
@@ -500,6 +542,16 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 	case *parser.FieldAccessNode:
 		if n.ResolvedIdentifier != nil {
 			ident := n.ResolvedIdentifier
+			if ident.Symbol.TemplateSymbol != nil {
+				if specialization := a.attributeGenericSpecialization(ident.Symbol.TemplateSymbol, ident.Symbol.TypeArguments, ident); specialization != nil {
+					ident.Symbol = specialization.Symbol
+				}
+			}
+			if ident.Symbol.Template {
+				a.errorf(n, "generic binding %q requires type arguments", ident.Symbol.Name)
+				n.SetType(types.ErrorType{})
+				break
+			}
 			switch ident.Symbol.Kind {
 			case symbols.SymbolKindVariable:
 				ident.SetType(ident.Symbol.Type)
@@ -780,6 +832,15 @@ func (a *Attributor) attributeMethodValue(n *parser.FieldAccessNode) bool {
 		n.SetType(types.ErrorType{})
 		return true
 	}
+	if method.Template && len(n.Field.TypeArguments) != 0 {
+		arguments := a.analyser.resolveGenericArguments(n.Field.TypeArguments)
+		specialization := a.analyser.specializeGenericFunction(method, arguments, n)
+		if specialization == nil {
+			n.SetType(types.ErrorType{})
+			return true
+		}
+		method = specialization.Symbol
+	}
 	ret := method.Signature.ReturnType
 	if ret == nil {
 		ret = types.PrimitiveVoid
@@ -844,6 +905,15 @@ func (a *Attributor) attributeMethodCall(n *parser.FunctionCallNode) bool {
 		a.errorf(n, "method %q is not public", member.Field.Name)
 		n.SetType(types.ErrorType{})
 		return true
+	}
+	if method.Template && len(member.Field.TypeArguments) != 0 {
+		arguments := a.analyser.resolveGenericArguments(member.Field.TypeArguments)
+		specialization := a.analyser.specializeGenericFunction(method, arguments, n)
+		if specialization == nil {
+			n.SetType(types.ErrorType{})
+			return true
+		}
+		method = specialization.Symbol
 	}
 	receiver := member.Subject
 	expected := method.Signature.Parameters[0]

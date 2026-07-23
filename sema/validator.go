@@ -67,6 +67,9 @@ func (v *Validator) validateNode(node parser.Node) {
 		v.validateAttributes(n, n.Attributes, "module", attributes.AttributeTypeLink)
 
 	case *parser.FunctionDefNode:
+		if len(n.GenericParameters) != 0 {
+			return
+		}
 		v.validateAttributes(n, n.Attributes, "function",
 			attributes.AttributeTypeInline,
 			attributes.AttributeTypeNoInline,
@@ -139,6 +142,9 @@ func (v *Validator) validateNode(node parser.Node) {
 		}
 
 	case *parser.DeclarationNode:
+		if len(n.GenericParameters) != 0 {
+			return
+		}
 		if n.Name == "_" {
 			if n.Value != nil {
 				v.validateExpr(n.Value)
@@ -147,6 +153,9 @@ func (v *Validator) validateNode(node parser.Node) {
 		}
 		v.validateAttributes(n, n.Attributes, "declaration", attributes.AttributeTypeForeign)
 		v.finaliseDeclaration(n)
+		if n.Comptime && !isGenericComptimeExpression(n.Value) {
+			v.errorf(n, "comptime generic initializer must be a constant integer expression")
+		}
 		if n.Symbol.Type != nil && !types.IsComplete(n.Symbol.Type) {
 			v.errorf(n, "cannot declare a value of incomplete type %v", n.Symbol.Type)
 		}
@@ -180,6 +189,9 @@ func (v *Validator) validateNode(node parser.Node) {
 		v.validateExpr(n)
 
 	case *parser.TypeAliasNode:
+		if len(n.GenericParameters) != 0 {
+			return
+		}
 		underlying := types.Underlying(n.Symbol.TypeInfo)
 		if n.Transparent && types.IsOpaque(n.Symbol.TypeInfo) {
 			v.errorf(n, "opaque type %q cannot be a transparent alias", n.Name)
@@ -194,6 +206,30 @@ func (v *Validator) validateNode(node parser.Node) {
 	default:
 		panic(fmt.Sprintf("unhandled node type %T", n))
 	}
+}
+
+func isGenericComptimeExpression(node parser.ExpressionNode) bool {
+	switch node := node.(type) {
+	case *parser.IntegerLiteralNode, *parser.BoolLiteralNode, *parser.CharLiteralNode,
+		*parser.SizeOfNode:
+		return true
+	case *parser.CastNode:
+		return isGenericComptimeExpression(node.Operand)
+	case *parser.UnaryOpNode:
+		switch node.Op {
+		case parser.UnaryOpNegate, parser.UnaryOpBitwiseNot, parser.UnaryOpLogicalNot:
+			return isGenericComptimeExpression(node.Operand)
+		}
+	case *parser.BinaryOpNode:
+		switch node.Op {
+		case parser.BinaryOpAdd, parser.BinaryOpSubtract, parser.BinaryOpMultiply,
+			parser.BinaryOpDivide, parser.BinaryOpModulo, parser.BinaryOpBitwiseAnd,
+			parser.BinaryOpBitwiseOr, parser.BinaryOpBitwiseXor, parser.BinaryOpShiftLeft,
+			parser.BinaryOpShiftRight:
+			return isGenericComptimeExpression(node.Operand1) && isGenericComptimeExpression(node.Operand2)
+		}
+	}
+	return false
 }
 
 func (v *Validator) validateAttributes(node parser.Node, attrs attributes.Attributes, entity string, allowed ...attributes.AttributeType) {
@@ -946,6 +982,10 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		}
 
 	case *parser.FieldAccessNode:
+		if n.MethodSymbol != nil && n.MethodSymbol.Template {
+			v.errorf(n, "generic method %q requires type arguments when used as a value", n.Field.Name)
+			return
+		}
 		if n.IsEnumValue || n.IsFlagValue || n.IsFlagTest || n.MethodSymbol != nil || n.ResolvedIdentifier != nil || n.ModulePath != "" {
 			return
 		}

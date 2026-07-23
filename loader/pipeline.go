@@ -44,8 +44,10 @@ func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, o
 		}
 	}
 
-	if len(attributor.Errors()) > 0 {
-		return attributor.Errors(), nil
+	if len(analyser.Errors()) > 0 || len(attributor.Errors()) > 0 {
+		errors := append([]error(nil), analyser.Errors()...)
+		errors = append(errors, attributor.Errors()...)
+		return errors, nil
 	}
 
 	if verbose && debug {

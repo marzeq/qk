@@ -28,6 +28,7 @@ type IdentifierNode struct {
 	Name               string
 	Module             string
 	ResolvedModuleName string
+	TypeArguments      []TypeNode
 	Loc                shared.Location
 	Symbol             *symbols.Symbol
 	Type               types.Type
@@ -81,8 +82,9 @@ func (n *EnumLiteralNode) SetType(t types.Type)   { n.Type = t }
 func (n *EnumLiteralNode) GetType() types.Type    { return n.Type }
 
 type NamedTypeNode struct {
-	ModName string
-	Name    string
+	ModName       string
+	Name          string
+	TypeArguments []TypeNode
 
 	Loc shared.Location
 }
@@ -607,19 +609,28 @@ type FunctionNodeArg struct {
 
 func (a FunctionNodeArg) GetLoc() shared.Location { return a.Type.GetLoc() }
 
+type GenericParameterNode struct {
+	Name       string
+	Constraint TypeNode
+	Loc        shared.Location
+}
+
+func (n GenericParameterNode) GetLoc() shared.Location { return n.Loc }
+
 type FunctionDefNode struct {
-	Name          string
-	MethodOwner   string
-	Receiver      MethodReceiverKind
-	Args          []*FunctionNodeArg
-	RetTypeNode   TypeNode
-	Body          Node
-	HasVariadic   bool
-	TypedVariadic bool
-	Pub           bool
-	Attributes    attributes.Attributes
-	Loc           shared.Location
-	Symbol        *symbols.Symbol
+	Name              string
+	MethodOwner       string
+	Receiver          MethodReceiverKind
+	GenericParameters []GenericParameterNode
+	Args              []*FunctionNodeArg
+	RetTypeNode       TypeNode
+	Body              Node
+	HasVariadic       bool
+	TypedVariadic     bool
+	Pub               bool
+	Attributes        attributes.Attributes
+	Loc               shared.Location
+	Symbol            *symbols.Symbol
 }
 
 type MethodReceiverKind uint8
@@ -634,12 +645,13 @@ const (
 func (n FunctionDefNode) GetLoc() shared.Location { return n.Loc }
 
 type TypeAliasNode struct {
-	Name        string
-	Type        TypeNode
-	Transparent bool
-	Pub         bool
-	Loc         shared.Location
-	Symbol      *symbols.Symbol
+	Name              string
+	GenericParameters []GenericParameterNode
+	Type              TypeNode
+	Transparent       bool
+	Pub               bool
+	Loc               shared.Location
+	Symbol            *symbols.Symbol
 }
 
 func (n TypeAliasNode) GetLoc() shared.Location { return n.Loc }
@@ -704,14 +716,16 @@ type DeferNode struct {
 func (n DeferNode) GetLoc() shared.Location { return n.Loc }
 
 type DeclarationNode struct {
-	Name       string
-	Mutable    bool
-	Pub        bool
-	TypeNode   TypeNode
-	Value      ExpressionNode
-	Attributes attributes.Attributes
-	Loc        shared.Location
-	Symbol     *symbols.Symbol
+	Name              string
+	GenericParameters []GenericParameterNode
+	Mutable           bool
+	Pub               bool
+	TypeNode          TypeNode
+	Value             ExpressionNode
+	Comptime          bool
+	Attributes        attributes.Attributes
+	Loc               shared.Location
+	Symbol            *symbols.Symbol
 }
 
 type MultiDeclarationNode struct {

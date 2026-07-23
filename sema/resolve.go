@@ -9,13 +9,21 @@ import (
 
 func (a *Analyser) resolveIdentifier(n *parser.IdentifierNode) (*symbols.Symbol, bool) {
 	if n.Module == "" {
+		if parameter, ok := a.typeParameterBindings[n.Name]; ok {
+			if len(n.TypeArguments) != 0 {
+				a.errorf(n, "type parameter %q does not accept type arguments", n.Name)
+				return nil, false
+			}
+			sym := symbols.NewType(n.Name, parameter)
+			n.Symbol = sym
+			return sym, true
+		}
 		sym, ok := a.current.Resolve(n.Name)
 		if !ok {
 			a.errorf(n, "undefined identifier %q", n.Name)
 			return nil, false
 		}
-		n.Symbol = sym
-		return sym, true
+		return a.resolveGenericIdentifier(n, sym)
 	}
 
 	var mod *symbols.Module
@@ -40,8 +48,41 @@ func (a *Analyser) resolveIdentifier(n *parser.IdentifierNode) (*symbols.Symbol,
 		return nil, false
 	}
 
-	n.Symbol = sym
 	n.ResolvedModuleName = mod.Name
+	return a.resolveGenericIdentifier(n, sym)
+}
+
+func (a *Analyser) resolveGenericIdentifier(n *parser.IdentifierNode, sym *symbols.Symbol) (*symbols.Symbol, bool) {
+	if !sym.Template {
+		if len(n.TypeArguments) != 0 {
+			a.errorf(n, "non-generic binding %q does not accept type arguments", sym.Name)
+			return nil, false
+		}
+		n.Symbol = sym
+		return sym, true
+	}
+	if len(n.TypeArguments) == 0 {
+		n.Symbol = sym
+		return sym, true
+	}
+	arguments := a.resolveGenericArguments(n.TypeArguments)
+	switch sym.Kind {
+	case symbols.SymbolKindFunction:
+		specialization := a.specializeGenericFunction(sym, arguments, n)
+		if specialization == nil || specialization.Symbol == nil {
+			return nil, false
+		}
+		sym = specialization.Symbol
+	case symbols.SymbolKindVariable:
+		sym = a.specializeGenericValue(sym, arguments, n)
+	case symbols.SymbolKindType:
+		info := a.genericAliases[sym]
+		sym = a.specializeGenericAlias(info, arguments, n, false)
+	}
+	if sym == nil {
+		return nil, false
+	}
+	n.Symbol = sym
 	return sym, true
 }
 
@@ -107,7 +148,14 @@ func (a *Analyser) resolveModuleField(n *parser.FieldAccessNode) bool {
 		a.errorf(n, "symbol %q is not public in module %q", sym.Name, path)
 		return true
 	}
-	n.ResolvedIdentifier = &parser.IdentifierNode{Name: n.Field.Name, Module: path, ResolvedModuleName: path, Loc: n.Field.Loc, Symbol: sym}
+	resolved := &parser.IdentifierNode{
+		Name: n.Field.Name, Module: path, ResolvedModuleName: path, Loc: n.Field.Loc,
+		TypeArguments: n.Field.TypeArguments,
+	}
+	if _, ok := a.resolveGenericIdentifier(resolved, sym); !ok {
+		return true
+	}
+	n.ResolvedIdentifier = resolved
 	return true
 }
 

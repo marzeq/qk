@@ -561,8 +561,66 @@ let main() {
 }
 ```
 
-`main` must have no parameters, must have a body, must return `void`, and cannot
-carry attributes.
+`main` must not be generic, must have no parameters, must have a body, must
+return `void`, and cannot carry attributes.
+
+### 7.7 Generic bindings
+
+A top-level binding may declare type parameters immediately after its name.
+The same syntax applies to functions, types, values, and attached methods:
+
+```qk
+let identity<T>(value: T): T = {
+    return value
+}
+
+let Pair<T> = type struct {
+    left: T
+    right: T
+}
+
+let layout_size<T>: usz = comptime sizeof(T) + 3
+```
+
+Concrete type arguments use angle brackets:
+
+```qk
+let number = identity<i32>(10)
+let pair = Pair<i32>{left = number, right = number}
+let size = layout_size<Pair<i32>>
+```
+
+Function and method calls infer type arguments structurally from concrete value
+arguments when possible, so `identity(number)` is equivalent to
+`identity<i32>(number)`. Untyped numeric literals do not select a type argument;
+cast them or provide the type argument explicitly.
+
+A type parameter may have a structural trait constraint:
+
+```qk
+let preserve<T: Display>(value: T): T = {
+    return value
+}
+```
+
+Trait constraints do not erase or wrap the argument. A specialization retains
+the concrete `T`, and calls to constrained methods are direct, statically
+resolved calls. Consequently, there is nothing to unwrap from a `T: Trait`
+parameter. Unwrapping applies only after an explicit conversion to `dyn Trait`,
+using the normal trapping or checked trait cast syntax. A `dyn Trait` value does
+not itself satisfy a `T: Trait` constraint.
+
+Each concrete specialization is owned and emitted by the module that defines
+the template, including when the use occurs in another module. Generic nominal
+types have a distinct, stable identity for each argument list; generic
+transparent aliases preserve the identity of their substituted target.
+
+Generic value bindings must use `comptime`; ordinary runtime value bindings
+cannot declare type parameters. Their initializer must be a constant
+integer/layout expression and is emitted as a native constant. Generic bindings
+cannot be mutable, foreign, exported through `@export`, or declared inside a
+block. Only type parameters are supported; compile-time value parameters are
+not.
 
 ## 8. Methods
 
@@ -1876,7 +1934,8 @@ qkc src \
 
 QK is intentionally small and currently has no:
 
-- Generics, templates, trait generics, or inheritance.
+- Compile-time value parameters, higher-kinded types, trait generics, or
+  inheritance.
 - Closures or captured local functions.
 - Exceptions, coroutines, async functions, or stack unwinding.
 - Macro or compile-time metaprogramming system.

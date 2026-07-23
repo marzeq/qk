@@ -185,6 +185,9 @@ func main() {
 			switch fn := stmt.(type) {
 			case *parser.FunctionDefNode:
 				if fn.Name == "main" {
+					if len(fn.GenericParameters) != 0 {
+						fatal("%v", shared.NewError(fn.Loc, "main function must not be generic"))
+					}
 					if len(fn.Args) != 0 {
 						fatal("%v", shared.NewError(fn.Loc, "main function must not have arguments"))
 					}

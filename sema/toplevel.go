@@ -3,6 +3,7 @@ package sema
 import (
 	"strings"
 
+	"github.com/marzeq/qk/attributes"
 	"github.com/marzeq/qk/parser"
 	"github.com/marzeq/qk/symbols"
 	"github.com/marzeq/qk/types"
@@ -17,7 +18,13 @@ func (a *Analyser) collectTopLevel(root *parser.RootNode) {
 
 	for _, node := range root.Body {
 		if n, ok := node.(*parser.TypeAliasNode); ok {
-			a.collectTypeAlias(n)
+			a.precollectTypeAlias(n)
+		}
+	}
+
+	for _, node := range root.Body {
+		if n, ok := node.(*parser.TypeAliasNode); ok && len(n.GenericParameters) != 0 {
+			a.finishGenericTypeAlias(n)
 		}
 	}
 
@@ -41,8 +48,14 @@ func (a *Analyser) resolveBodies(root *parser.RootNode) {
 	for _, node := range root.Body {
 		switch n := node.(type) {
 		case *parser.FunctionDefNode:
+			if len(n.GenericParameters) != 0 {
+				continue
+			}
 			a.visitFunction(n)
 		case *parser.DeclarationNode:
+			if len(n.GenericParameters) != 0 {
+				continue
+			}
 			if n.Value != nil {
 				a.visitExpression(n.Value)
 			}
@@ -51,6 +64,14 @@ func (a *Analyser) resolveBodies(root *parser.RootNode) {
 }
 
 func (a *Analyser) collectFunctionSignature(n *parser.FunctionDefNode) {
+	if len(n.GenericParameters) != 0 {
+		if n.Attributes.Get(attributes.AttributeTypeForeign) != nil {
+			a.errorf(n, "generic functions cannot be foreign declarations")
+		}
+		if n.Attributes.Get(attributes.AttributeTypeExport) != nil {
+			a.errorf(n, "generic functions cannot be exported")
+		}
+	}
 	if n.MethodOwner != "" {
 		a.collectMethodSignature(n)
 		return
@@ -59,6 +80,15 @@ func (a *Analyser) collectFunctionSignature(n *parser.FunctionDefNode) {
 }
 
 func (a *Analyser) collectPlainFunctionSignature(n *parser.FunctionDefNode) {
+	genericParameters := a.makeGenericParameters(n.Name, n.GenericParameters)
+	previousBindings := a.typeParameterBindings
+	if len(genericParameters) != 0 {
+		a.typeParameterBindings = make(map[string]types.Type, len(genericParameters))
+		for _, parameter := range genericParameters {
+			a.typeParameterBindings[parameter.Name] = parameter
+		}
+		defer func() { a.typeParameterBindings = previousBindings }()
+	}
 	paramTypes := make([]types.Type, len(n.Args))
 	requiredParameters := len(n.Args)
 
@@ -89,20 +119,38 @@ func (a *Analyser) collectPlainFunctionSignature(n *parser.FunctionDefNode) {
 	}
 
 	sym := &symbols.Symbol{
-		Name:             n.Name,
-		Kind:             symbols.SymbolKindFunction,
-		Signature:        sig,
-		Public:           n.Pub,
-		Attributes:       n.Attributes,
-		DefinitionModule: a.currentMod,
+		Name:              n.Name,
+		Kind:              symbols.SymbolKindFunction,
+		Signature:         sig,
+		Public:            n.Pub,
+		Attributes:        n.Attributes,
+		DefinitionModule:  a.currentMod,
+		GenericParameters: genericParameters,
+		Template:          len(genericParameters) != 0,
 	}
 
 	if a.defineSymbol(sym, n) {
 		n.Symbol = sym
+		if sym.Template {
+			a.genericFunctions[sym] = &genericFunctionInfo{
+				node: n, root: a.currentRoot, module: a.currentMod,
+				trusted: a.currentTrustedStandardLibrary, specializations: make(map[string]*parser.FunctionDefNode),
+				attributed: make(map[string]bool), attributing: make(map[string]bool),
+			}
+		}
 	}
 }
 
 func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
+	genericParameters := a.makeGenericParameters(n.MethodOwner+"."+n.Name, n.GenericParameters)
+	previousBindings := a.typeParameterBindings
+	if len(genericParameters) != 0 {
+		a.typeParameterBindings = make(map[string]types.Type, len(genericParameters))
+		for _, parameter := range genericParameters {
+			a.typeParameterBindings[parameter.Name] = parameter
+		}
+		defer func() { a.typeParameterBindings = previousBindings }()
+	}
 	var ownerType types.Type
 	ownerModule := a.currentMod
 	if info, ok := a.aliases[n.MethodOwner]; ok {
@@ -168,12 +216,19 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 	sym := &symbols.Symbol{Name: n.MethodOwner + "." + n.Name, Kind: symbols.SymbolKindFunction,
 		Signature: &symbols.FunctionSignature{Parameters: paramTypes, RequiredParameters: requiredParameters, ReturnType: ret, Variadic: n.HasVariadic, TypedVariadic: n.TypedVariadic},
 		Public:    n.Pub, Attributes: n.Attributes, Method: true, StaticMethod: n.Receiver == parser.MethodReceiverNone,
-		DefinitionModule: a.currentMod}
+		DefinitionModule: a.currentMod, GenericParameters: genericParameters, Template: len(genericParameters) != 0}
 	a.methods[key][n.Name] = sym
 	if n.TypedVariadic {
 		sym.Signature.VariadicElement = types.Underlying(paramTypes[len(paramTypes)-1]).(types.SliceType).Base
 	}
 	n.Symbol = sym
+	if sym.Template {
+		a.genericFunctions[sym] = &genericFunctionInfo{
+			node: n, root: a.currentRoot, module: a.currentMod,
+			trusted: a.currentTrustedStandardLibrary, specializations: make(map[string]*parser.FunctionDefNode),
+			attributed: make(map[string]bool), attributing: make(map[string]bool),
+		}
+	}
 }
 
 func fieldExists(t types.Type, name string) bool {
@@ -197,11 +252,10 @@ func fieldExists(t types.Type, name string) bool {
 	return false
 }
 
-func (a *Analyser) collectTypeAlias(n *parser.TypeAliasNode) {
+func (a *Analyser) precollectTypeAlias(n *parser.TypeAliasNode) {
 	sym := &symbols.Symbol{
-		Name:   n.Name,
-		Kind:   symbols.SymbolKindType,
-		Public: n.Pub,
+		Name: n.Name, Kind: symbols.SymbolKindType, Public: n.Pub,
+		Template: len(n.GenericParameters) != 0,
 	}
 
 	if !a.defineSymbol(sym, n) {
@@ -209,6 +263,9 @@ func (a *Analyser) collectTypeAlias(n *parser.TypeAliasNode) {
 	}
 
 	n.Symbol = sym
+	if sym.Template {
+		return
+	}
 
 	a.aliases[n.Name] = &aliasInfo{
 		node:  n,
@@ -216,7 +273,34 @@ func (a *Analyser) collectTypeAlias(n *parser.TypeAliasNode) {
 	}
 }
 
+func (a *Analyser) finishGenericTypeAlias(n *parser.TypeAliasNode) {
+	if n.Symbol == nil {
+		return
+	}
+	genericParameters := a.makeGenericParameters(n.Name, n.GenericParameters)
+	n.Symbol.GenericParameters = genericParameters
+	a.genericAliases[n.Symbol] = &genericAliasInfo{
+		node: n, module: a.currentMod, parameters: genericParameters,
+		specializations: make(map[string]*genericAliasSpecialization),
+	}
+}
+
 func (a *Analyser) collectGlobalVariable(n *parser.DeclarationNode) {
+	if len(n.GenericParameters) != 0 && !n.Comptime {
+		a.errorf(n, "generic value bindings require a comptime initializer")
+	}
+	if len(n.GenericParameters) != 0 && n.Attributes.Get(attributes.AttributeTypeForeign) != nil {
+		a.errorf(n, "generic values cannot be foreign declarations")
+	}
+	genericParameters := a.makeGenericParameters(n.Name, n.GenericParameters)
+	previousBindings := a.typeParameterBindings
+	if len(genericParameters) != 0 {
+		a.typeParameterBindings = make(map[string]types.Type, len(genericParameters))
+		for _, parameter := range genericParameters {
+			a.typeParameterBindings[parameter.Name] = parameter
+		}
+		defer func() { a.typeParameterBindings = previousBindings }()
+	}
 	var varType types.Type
 
 	if n.TypeNode != nil {
@@ -224,16 +308,24 @@ func (a *Analyser) collectGlobalVariable(n *parser.DeclarationNode) {
 	}
 
 	sym := &symbols.Symbol{
-		Name:       n.Name,
-		Kind:       symbols.SymbolKindVariable,
-		Type:       varType,
-		Mutable:    n.Mutable,
-		Public:     n.Pub,
-		Attributes: n.Attributes,
+		Name:              n.Name,
+		Kind:              symbols.SymbolKindVariable,
+		Type:              varType,
+		Mutable:           n.Mutable,
+		Public:            n.Pub,
+		Attributes:        n.Attributes,
+		GenericParameters: genericParameters,
+		Template:          len(genericParameters) != 0,
 	}
 
 	if a.defineSymbol(sym, n) {
 		n.Symbol = sym
+		if sym.Template {
+			a.genericValues[sym] = &genericValueInfo{
+				node: n, root: a.currentRoot, module: a.currentMod,
+				trusted: a.currentTrustedStandardLibrary, specializations: make(map[string]*parser.DeclarationNode),
+			}
+		}
 	}
 }
 

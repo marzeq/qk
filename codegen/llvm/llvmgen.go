@@ -514,6 +514,17 @@ func (e *Emitter) OperandEmit(op ir.Operand) string {
 		return "@" + name
 	case ir.OperandZeroConst:
 		return "zeroinitializer"
+	case ir.OperandSizeofConst:
+		return fmt.Sprintf(
+			"ptrtoint (ptr getelementptr (%s, ptr null, i32 1) to %s)",
+			e.TypeEmit(op.SubjectType), e.TypeEmit(op.Type),
+		)
+	case ir.OperandBinaryConst:
+		return fmt.Sprintf(
+			"%s (%s %s, %s %s)",
+			op.Operator, e.TypeEmit(op.Left.Type), e.OperandEmit(*op.Left),
+			e.TypeEmit(op.Right.Type), e.OperandEmit(*op.Right),
+		)
 	default:
 		panic("unreachable")
 	}

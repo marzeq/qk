@@ -21,6 +21,8 @@ const (
 	OperandCStringConst
 	OperandFunctionConst
 	OperandZeroConst
+	OperandSizeofConst
+	OperandBinaryConst
 )
 
 type Operand struct {
@@ -35,6 +37,10 @@ type Operand struct {
 	Fields       []Operand
 	StringValue  string
 	FunctionName string
+	SubjectType  types.Type
+	Operator     string
+	Left         *Operand
+	Right        *Operand
 }
 
 func ValueOperand(id ValueID, ty types.Type) Operand {
@@ -73,6 +79,14 @@ func FunctionConstOperand(name string, ty types.Type) Operand {
 
 func ZeroConstOperand(ty types.Type) Operand {
 	return Operand{Kind: OperandZeroConst, Type: ty}
+}
+
+func SizeofConstOperand(subject types.Type) Operand {
+	return Operand{Kind: OperandSizeofConst, Type: types.PrimitiveUsz, SubjectType: subject}
+}
+
+func BinaryConstOperand(operator string, left, right Operand, ty types.Type) Operand {
+	return Operand{Kind: OperandBinaryConst, Type: ty, Operator: operator, Left: &left, Right: &right}
 }
 
 type Slot struct {

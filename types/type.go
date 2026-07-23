@@ -15,6 +15,25 @@ type Type interface {
 	String() string
 }
 
+// TypeParameter is a declaration-scoped placeholder used only while describing
+// a generic binding. Owner makes equally named parameters from different
+// declarations distinct.
+type TypeParameter struct {
+	Owner      string
+	Name       string
+	Index      int
+	Constraint Type
+}
+
+func (p TypeParameter) Equals(other Type) bool {
+	o, ok := other.(TypeParameter)
+	return ok && p.Owner == o.Owner && p.Index == o.Index
+}
+func (p TypeParameter) CanCoerceTo(other Type) bool { return p.Equals(other) }
+func (p TypeParameter) CanCastTo(other Type) bool   { return p.Equals(other) }
+func (p TypeParameter) String() string              { return p.Name }
+func (p TypeParameter) Key() string                 { return p.Owner + "#" + strconv.Itoa(p.Index) }
+
 // NoInitializerType is a contextual marker used only while validating `---`.
 type NoInitializerType struct{}
 
@@ -26,9 +45,11 @@ func (NoInitializerType) String() string         { return "<no initializer>" }
 // DefinedType is a nominal user-defined type. Its underlying type determines
 // representation and explicit cast compatibility, but never implicit coercion.
 type DefinedType struct {
-	Module     string
-	Name       string
-	Underlying Type
+	Module        string
+	Name          string
+	Underlying    Type
+	GenericName   string
+	TypeArguments []Type
 }
 
 // AliasRef represents a recursive reference to a named type while that type is
@@ -91,6 +112,139 @@ func Underlying(t Type) Type {
 		default:
 			return t
 		}
+	}
+}
+
+// Substitute replaces declaration-scoped type parameters throughout a type.
+func Substitute(t Type, arguments map[string]Type) Type {
+	if t == nil {
+		return nil
+	}
+	switch t := t.(type) {
+	case TypeParameter:
+		if replacement, ok := arguments[t.Key()]; ok {
+			return replacement
+		}
+		return t
+	case DefinedType:
+		t.Underlying = Substitute(t.Underlying, arguments)
+		for i := range t.TypeArguments {
+			t.TypeArguments[i] = Substitute(t.TypeArguments[i], arguments)
+		}
+		return t
+	case *AliasRef:
+		return t
+	case PointerType:
+		t.Base = Substitute(t.Base, arguments)
+		return t
+	case SliceType:
+		t.Base = Substitute(t.Base, arguments)
+		return t
+	case StructType:
+		for i := range t.Fields {
+			t.Fields[i].R = Substitute(t.Fields[i].R, arguments)
+		}
+		return t
+	case UnionType:
+		for i := range t.Fields {
+			t.Fields[i].R = Substitute(t.Fields[i].R, arguments)
+		}
+		return t
+	case FunctionType:
+		for i := range t.Parameters {
+			t.Parameters[i] = Substitute(t.Parameters[i], arguments)
+		}
+		t.ReturnType = Substitute(t.ReturnType, arguments)
+		t.VariadicElement = Substitute(t.VariadicElement, arguments)
+		return t
+	case MultipleReturnType:
+		for i := range t.Types {
+			t.Types[i] = Substitute(t.Types[i], arguments)
+		}
+		return t
+	case TraitPointerType:
+		substituted := Substitute(t.Trait, arguments)
+		if trait, ok := substituted.(TraitType); ok {
+			t.Trait = trait
+		}
+		return t
+	case TraitType:
+		for i := range t.Methods {
+			for j := range t.Methods[i].Parameters {
+				t.Methods[i].Parameters[j] = Substitute(t.Methods[i].Parameters[j], arguments)
+			}
+			t.Methods[i].ReturnType = Substitute(t.Methods[i].ReturnType, arguments)
+		}
+		return t
+	default:
+		return t
+	}
+}
+
+// Identity returns a deterministic, declaration-sensitive encoding suitable
+// for specialization caches and symbol mangling.
+func Identity(t Type) string {
+	if t == nil {
+		return "<nil>"
+	}
+	switch t := t.(type) {
+	case TypeParameter:
+		return "param(" + t.Key() + ")"
+	case DefinedType:
+		if t.GenericName != "" {
+			arguments := make([]string, len(t.TypeArguments))
+			for i, argument := range t.TypeArguments {
+				arguments[i] = Identity(argument)
+			}
+			return "defined(" + t.Module + ":" + t.GenericName + "<" + strings.Join(arguments, ",") + ">)"
+		}
+		return "defined(" + t.Module + ":" + t.Name + ")"
+	case *AliasRef:
+		return "alias(" + t.Module + ":" + t.Name + ")"
+	case PointerType:
+		mutable := ""
+		if t.Mutable {
+			mutable = "mut:"
+		}
+		return "ptr(" + mutable + Identity(t.Base) + ")"
+	case SliceType:
+		return "slice(" + strconv.Itoa(t.Size) + ":" + Identity(t.Base) + ")"
+	case FunctionType:
+		parameters := make([]string, len(t.Parameters))
+		for i, parameter := range t.Parameters {
+			parameters[i] = Identity(parameter)
+		}
+		return "fn(" + strings.Join(parameters, ",") + ")->" + Identity(t.ReturnType)
+	case MultipleReturnType:
+		items := make([]string, len(t.Types))
+		for i, item := range t.Types {
+			items[i] = Identity(item)
+		}
+		return "multi(" + strings.Join(items, ",") + ")"
+	case PrimitiveType:
+		return "primitive(" + string(t) + ")"
+	case StructType:
+		fields := make([]string, len(t.Fields))
+		for i, field := range t.Fields {
+			fields[i] = field.L + ":" + Identity(field.R)
+		}
+		return "struct(" + strings.Join(fields, ",") + ")"
+	case UnionType:
+		return "union(" + t.Module + ":" + t.Name + ")"
+	case EnumType:
+		return "enum(" + t.Module + ":" + t.Name + ")"
+	case FlagsType:
+		return "flags(" + t.String() + ")"
+	case TraitType:
+		return "trait(" + t.String() + ")"
+	case TraitPointerType:
+		mutable := ""
+		if t.Mutable {
+			mutable = "mut:"
+		}
+		return "dyn(" + mutable + Identity(t.Trait) + ")"
+	default:
+		return t.String()
 	}
 }
 

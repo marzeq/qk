@@ -22,7 +22,20 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 		return types.MultipleReturnType{Types: result}
 
 	case *parser.NamedTypeNode:
+		if t.ModName == "" {
+			if parameter, ok := a.typeParameterBindings[t.Name]; ok {
+				if len(t.TypeArguments) != 0 {
+					a.errorf(t, "type parameter %q does not accept type arguments", t.Name)
+					return types.ErrorType{}
+				}
+				return parameter
+			}
+		}
 		if info, ok := a.aliases[t.Name]; ok && t.ModName == "" {
+			if len(t.TypeArguments) != 0 {
+				a.errorf(t, "non-generic type %q does not accept type arguments", t.Name)
+				return types.ErrorType{}
+			}
 			return a.resolveAlias(info, t, indirect)
 		}
 
@@ -30,6 +43,23 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 			sym, ok := a.current.Resolve(t.Name)
 			if !ok || sym.Kind != symbols.SymbolKindType {
 				a.errorf(t, "unknown type %q", t.Name)
+				return types.ErrorType{}
+			}
+			if sym.Template {
+				info := a.genericAliases[sym]
+				if info == nil {
+					a.errorf(t, "unsupported generic type %q", t.Name)
+					return types.ErrorType{}
+				}
+				arguments := a.resolveGenericArguments(t.TypeArguments)
+				specialization := a.specializeGenericAlias(info, arguments, t, indirect)
+				if specialization == nil {
+					return types.ErrorType{}
+				}
+				return specialization.TypeInfo
+			}
+			if len(t.TypeArguments) != 0 {
+				a.errorf(t, "non-generic type %q does not accept type arguments", t.Name)
 				return types.ErrorType{}
 			}
 			return sym.TypeInfo
@@ -49,6 +79,23 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 		sym, ok := mod.Scope.Resolve(t.Name)
 		if !ok || sym.Kind != symbols.SymbolKindType {
 			a.errorf(t, "unknown type %q in module %q", t.Name, t.ModName)
+			return types.ErrorType{}
+		}
+		if sym.Template {
+			info := a.genericAliases[sym]
+			if info == nil {
+				a.errorf(t, "unsupported generic type %q", t.Name)
+				return types.ErrorType{}
+			}
+			arguments := a.resolveGenericArguments(t.TypeArguments)
+			specialization := a.specializeGenericAlias(info, arguments, t, indirect)
+			if specialization == nil {
+				return types.ErrorType{}
+			}
+			return specialization.TypeInfo
+		}
+		if len(t.TypeArguments) != 0 {
+			a.errorf(t, "non-generic type %q does not accept type arguments", t.Name)
 			return types.ErrorType{}
 		}
 
