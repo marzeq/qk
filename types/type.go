@@ -34,6 +34,36 @@ func (p TypeParameter) CanCastTo(other Type) bool   { return p.Equals(other) }
 func (p TypeParameter) String() string              { return p.Name }
 func (p TypeParameter) Key() string                 { return p.Owner + "#" + strconv.Itoa(p.Index) }
 
+func HasTypeParameter(t Type) bool {
+	switch t := t.(type) {
+	case TypeParameter:
+		return true
+	case DefinedType:
+		return slices.ContainsFunc(t.TypeArguments, HasTypeParameter)
+	case PointerType:
+		return HasTypeParameter(t.Base)
+	case SliceType:
+		return HasTypeParameter(t.Base)
+	case StructType:
+		for _, field := range t.Fields {
+			if HasTypeParameter(field.R) {
+				return true
+			}
+		}
+	case UnionType:
+		for _, field := range t.Fields {
+			if HasTypeParameter(field.R) {
+				return true
+			}
+		}
+	case FunctionType:
+		return slices.ContainsFunc(t.Parameters, HasTypeParameter) || HasTypeParameter(t.ReturnType)
+	case MultipleReturnType:
+		return slices.ContainsFunc(t.Types, HasTypeParameter)
+	}
+	return false
+}
+
 // NoInitializerType is a contextual marker used only while validating `---`.
 type NoInitializerType struct{}
 

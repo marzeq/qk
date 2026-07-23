@@ -1333,6 +1333,9 @@ func (g *Generator) generateCastExpr(node *parser.CastNode) ir.Operand {
 	if node.TraitUnwrap {
 		return g.generateTraitUnwrap(node)
 	}
+	if node.GenericAssertion && !node.AssertionMatches {
+		return g.generateFailedGenericAssertion(node, targetType)
+	}
 
 	if str, ok := node.Operand.(*parser.StringLiteralNode); ok {
 		if _, ok := types.Underlying(targetType).(types.PointerType); ok {
@@ -1365,6 +1368,28 @@ func (g *Generator) generateCastExpr(node *parser.CastNode) ir.Operand {
 		return g.packCheckedCast(value, ir.BoolConstOperand(true), node.GetType().(types.MultipleReturnType))
 	}
 	return value
+}
+
+func (g *Generator) generateFailedGenericAssertion(node *parser.CastNode, targetType types.Type) ir.Operand {
+	// Assertions evaluate their operand even when specialization makes the
+	// outcome statically known.
+	g.GenerateExpr(node.Operand)
+	zero := ir.ZeroConstOperand(targetType)
+	if node.Checked {
+		return g.packCheckedCast(zero, ir.BoolConstOperand(false), node.GetType().(types.MultipleReturnType))
+	}
+
+	messageText := "type assertion failed: " + traitRuntimeName(node.Operand.GetType()) + " is not " + traitRuntimeName(targetType)
+	messageNode := &parser.StringLiteralNode{Value: messageText, Type: types.SliceType{Base: types.PrimitiveChar, Size: len(messageText)}, Loc: node.Loc}
+	message := g.generateStringLiteralExpr(messageNode)
+	runtimeStr := types.SliceType{Base: types.PrimitiveChar, Size: -1}
+	message.Type = runtimeStr
+	panicSig := ir.FunctionSignature{ParamTypes: []types.Type{runtimeStr}, ReturnType: types.PrimitiveVoid}
+	g.addExternForCall("__qk_panic", panicSig, "", true)
+	g.Emit(ir.Call{Name: "__qk_panic", Args: []ir.Operand{message}, Signature: panicSig})
+	g.Emit(ir.Unreachable{})
+	g.currentBlock = g.currentFunction.NewBlock("generic.assert.unreachable")
+	return zero
 }
 
 func (g *Generator) finishCertainCheckedCast(node *parser.CastNode, value ir.Operand) ir.Operand {

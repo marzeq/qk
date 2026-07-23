@@ -156,6 +156,9 @@ func (a *Attributor) attributeNode(node parser.Node) {
 		if n.Value != nil && n.Symbol.Type == nil {
 			n.Symbol.Type = n.Value.GetType()
 		}
+		if n.Value != nil && n.Symbol.GenericOrigin == nil {
+			n.Symbol.GenericOrigin = genericExpressionOrigin(n.Value)
+		}
 	case *parser.MultiDeclarationNode:
 		if cast, ok := n.Value.(*parser.CastNode); ok {
 			cast.Checked = true
@@ -766,6 +769,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 
 	case *parser.CastNode:
 		a.attributeExpr(n.Operand)
+		n.GenericAssertion = genericExpressionOrigin(n.Operand) != nil
 		target := a.analyser.resolveTypeNode(n.ToType)
 		n.CheckedType = target
 		if n.Checked {
@@ -803,6 +807,38 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 	if node.GetType() == nil {
 		panic("expression without type")
 	}
+}
+
+func genericExpressionOrigin(node parser.ExpressionNode) types.Type {
+	switch n := node.(type) {
+	case *parser.IdentifierNode:
+		if n.Symbol != nil {
+			return n.Symbol.GenericOrigin
+		}
+	case *parser.UnaryOpNode:
+		origin := genericExpressionOrigin(n.Operand)
+		if origin == nil {
+			return nil
+		}
+		switch n.Op {
+		case parser.UnaryOpReference:
+			return types.PointerType{Base: origin}
+		case parser.UnaryOpMutableReference:
+			return types.PointerType{Base: origin, Mutable: true}
+		case parser.UnaryOpDereference:
+			if pointer, ok := types.Underlying(origin).(types.PointerType); ok {
+				return pointer.Base
+			}
+		}
+	case *parser.FunctionCallNode:
+		if n.Symbol != nil && n.Symbol.TemplateSymbol != nil {
+			origin := n.Symbol.TemplateSymbol.Signature.ReturnType
+			if types.HasTypeParameter(origin) {
+				return origin
+			}
+		}
+	}
+	return nil
 }
 
 func fieldOwnerDisplayType(t types.Type) types.Type {

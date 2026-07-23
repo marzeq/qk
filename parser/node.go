@@ -518,14 +518,16 @@ type CastNode struct {
 	Loc     shared.Location
 	Type    types.Type
 
-	TraitConversion bool
-	TraitRecast     bool
-	TraitUnwrap     bool
-	ConcreteType    types.Type
-	TraitMethods    []*symbols.Symbol
-	TraitCandidates []TraitCastCandidate
-	Checked         bool
-	CheckedType     types.Type
+	TraitConversion  bool
+	TraitRecast      bool
+	TraitUnwrap      bool
+	ConcreteType     types.Type
+	TraitMethods     []*symbols.Symbol
+	TraitCandidates  []TraitCastCandidate
+	Checked          bool
+	CheckedType      types.Type
+	GenericAssertion bool
+	AssertionMatches bool
 }
 
 type TraitCastCandidate struct {

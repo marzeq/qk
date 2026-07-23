@@ -75,11 +75,19 @@ func (a *Analyser) visitFunction(n *parser.FunctionDefNode) {
 		if arg.Default != nil {
 			a.visitExpression(arg.Default)
 		}
+		var genericOrigin types.Type
+		if n.Symbol.TemplateSymbol != nil {
+			genericOrigin = n.Symbol.TemplateSymbol.Signature.Parameters[i]
+			if !types.HasTypeParameter(genericOrigin) {
+				genericOrigin = nil
+			}
+		}
 		paramSym := &symbols.Symbol{
-			Name:    arg.Name,
-			Kind:    symbols.SymbolKindVariable,
-			Type:    n.Symbol.Signature.Parameters[i],
-			Mutable: arg.Mutable,
+			Name:          arg.Name,
+			Kind:          symbols.SymbolKindVariable,
+			Type:          n.Symbol.Signature.Parameters[i],
+			GenericOrigin: genericOrigin,
+			Mutable:       arg.Mutable,
 		}
 		a.defineSymbol(paramSym, arg)
 		arg.Symbol = paramSym

@@ -743,6 +743,10 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			}
 			break
 		}
+		if n.GenericAssertion {
+			n.AssertionMatches = n.Operand.GetType().Equals(targetType)
+			break
+		}
 		if from, ok := types.Underlying(n.Operand.GetType()).(types.SliceType); ok {
 			if to, ok := types.Underlying(targetType).(types.SliceType); ok && from.Base.Equals(to.Base) {
 				break

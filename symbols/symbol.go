@@ -22,6 +22,7 @@ type Symbol struct {
 	Attributes attributes.Attributes
 
 	Type              types.Type         // for SymbolKindVariable
+	GenericOrigin     types.Type         // pre-substitution type for values originating from a generic parameter
 	Signature         *FunctionSignature // for SymbolKindFunction
 	TypeInfo          types.Type         // for SymbolKindTypeAlias
 	Module            *Module            // for SymbolKindModule

@@ -605,10 +605,13 @@ let preserve<T: Display>(value: T): T = {
 
 Trait constraints do not erase or wrap the argument. A specialization retains
 the concrete `T`, and calls to constrained methods are direct, statically
-resolved calls. Consequently, there is nothing to unwrap from a `T: Trait`
-parameter. Unwrapping applies only after an explicit conversion to `dyn Trait`,
-using the normal trapping or checked trait cast syntax. A `dyn Trait` value does
-not itself satisfy a `T: Trait` constraint.
+resolved calls. Typed assertions on values originating from a type parameter
+retain assertion semantics after specialization: `value.(Type)` succeeds only
+when the substituted type is exactly `Type`. A two-target assertion produces
+the zero value and `false` for a statically known mismatch; a single-target
+assertion emits a trapping panic path. Converting to `dyn Trait` still performs
+the ordinary explicit trait conversion, after which runtime trait unwrap rules
+apply. A `dyn Trait` value does not itself satisfy a `T: Trait` constraint.
 
 Each concrete specialization is owned and emitted by the module that defines
 the template, including when the use occurs in another module. Generic nominal
