@@ -609,7 +609,11 @@ let preserve<T: Display>(value: T): T = {
 
 Trait constraints do not erase or wrap the argument. A specialization retains
 the concrete `T`, and calls to constrained methods are direct, statically
-resolved calls. Typed assertions on values originating from a type parameter
+resolved calls. The constrained parameter carries the trait's static method
+surface into the specialization, including structurally selected private
+witnesses. A `T` parameter exposes value receivers, `*T` additionally exposes
+immutable pointer receivers, and `*mut T` exposes mutable pointer receivers.
+Typed assertions on values originating from a type parameter
 retain assertion semantics after specialization: `value.(Type)` succeeds only
 when the substituted type is exactly `Type`. A two-target assertion produces
 the zero value and `false` for a statically known mismatch; a single-target

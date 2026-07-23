@@ -377,9 +377,9 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 					n.Name.ResolvedModuleName = member.MethodModule
 				}
 			}
-		} else if n.Symbol.Signature.ReturnType != nil {
+		} else if n.Symbol != nil && n.Symbol.Signature.ReturnType != nil {
 			n.SetType(n.Symbol.Signature.ReturnType)
-		} else {
+		} else if n.Symbol != nil {
 			n.SetType(types.PrimitiveVoid)
 		}
 		for _, arg := range n.Args {

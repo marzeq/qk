@@ -101,6 +101,26 @@ func typeArgumentBindings(parameters []types.TypeParameter, arguments []types.Ty
 	return bindings
 }
 
+func staticTraitViewForGenericType(t types.Type) *types.StaticTraitView {
+	access := types.TraitReceiverValue
+	if pointer, ok := t.(types.PointerType); ok {
+		t = pointer.Base
+		access = types.TraitReceiverPointer
+		if pointer.Mutable {
+			access = types.TraitReceiverMutablePointer
+		}
+	}
+	parameter, ok := t.(types.TypeParameter)
+	if !ok || parameter.Constraint == nil {
+		return nil
+	}
+	trait, ok := types.Underlying(parameter.Constraint).(types.TraitType)
+	if !ok {
+		return nil
+	}
+	return &types.StaticTraitView{Trait: trait, Access: access}
+}
+
 func (a *Analyser) resolveGenericArguments(nodes []parser.TypeNode) []types.Type {
 	arguments := make([]types.Type, len(nodes))
 	for i, node := range nodes {

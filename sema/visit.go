@@ -83,11 +83,12 @@ func (a *Analyser) visitFunction(n *parser.FunctionDefNode) {
 			}
 		}
 		paramSym := &symbols.Symbol{
-			Name:          arg.Name,
-			Kind:          symbols.SymbolKindVariable,
-			Type:          n.Symbol.Signature.Parameters[i],
-			GenericOrigin: genericOrigin,
-			Mutable:       arg.Mutable,
+			Name:            arg.Name,
+			Kind:            symbols.SymbolKindVariable,
+			Type:            n.Symbol.Signature.Parameters[i],
+			GenericOrigin:   genericOrigin,
+			StaticTraitView: staticTraitViewForGenericType(genericOrigin),
+			Mutable:         arg.Mutable,
 		}
 		a.defineSymbol(paramSym, arg)
 		arg.Symbol = paramSym
