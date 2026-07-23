@@ -159,6 +159,9 @@ func (a *Attributor) attributeNode(node parser.Node) {
 		if n.Value != nil && n.Symbol.GenericOrigin == nil {
 			n.Symbol.GenericOrigin = genericExpressionOrigin(n.Value)
 		}
+		if n.Value != nil && n.Symbol.StaticTraitView == nil {
+			n.Symbol.StaticTraitView = staticTraitView(n.Value)
+		}
 	case *parser.MultiDeclarationNode:
 		if cast, ok := n.Value.(*parser.CastNode); ok {
 			cast.Checked = true
@@ -170,6 +173,9 @@ func (a *Attributor) attributeNode(node parser.Node) {
 					sym.Type = result.Types[i]
 				}
 			}
+		}
+		if len(n.Symbols) != 0 && n.Symbols[0] != nil {
+			n.Symbols[0].StaticTraitView = staticTraitView(n.Value)
 		}
 
 	case *parser.AssignmentNode:
@@ -275,13 +281,10 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		n.SetType(types.PrimitiveBool)
 
 	case *parser.StringLiteralNode:
-		n.SetType(types.SliceType{
-			Base: types.PrimitiveChar,
-			Size: len(n.Value),
-		})
+		n.SetType(a.analyser.universe.Symbols["str"].TypeInfo)
 
 	case *parser.CStringLiteralNode:
-		n.SetType(types.PointerType{Base: types.PrimitiveChar})
+		n.SetType(a.analyser.universe.Symbols["cstr"].TypeInfo)
 
 	case *parser.CharLiteralNode:
 		n.SetType(types.PrimitiveChar)
@@ -356,10 +359,11 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		}
 
 	case *parser.FunctionCallNode:
+		methodHandled := false
 		if n.Symbol == nil {
-			a.attributeMethodCall(n)
+			methodHandled = a.attributeMethodCall(n)
 		}
-		if n.Symbol == nil {
+		if n.Symbol == nil && !methodHandled {
 			a.attributeExpr(n.Callee)
 			if member, ok := n.Callee.(*parser.FieldAccessNode); ok && member.MethodSymbol != nil && member.MethodSymbol.StaticMethod {
 				n.Symbol = member.MethodSymbol
@@ -605,7 +609,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		}
 		if ident, ok := n.Subject.(*parser.IdentifierNode); ok &&
 			ident.Symbol != nil && ident.Symbol.Kind == symbols.SymbolKindModule {
-			a.errorf(n, "module-qualified names use ':' rather than '.'")
+			a.errorf(n, "cannot resolve module-qualified name %s.%s", ident.Name, n.Field.Name)
 			n.SetType(types.ErrorType{})
 			break
 		}
@@ -770,7 +774,18 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 	case *parser.CastNode:
 		a.attributeExpr(n.Operand)
 		n.GenericAssertion = genericExpressionOrigin(n.Operand) != nil
-		target := a.analyser.resolveTypeNode(n.ToType)
+		target, view := a.analyser.resolveCastTarget(n.ToType)
+		if view != nil {
+			n.StaticTraitView = view
+			target = n.Operand.GetType()
+			if view.Access != types.TraitReceiverValue {
+				if pointer, ok := types.Underlying(target).(types.PointerType); ok {
+					target = types.PointerType{Base: pointer.Base, Mutable: view.Access == types.TraitReceiverMutablePointer}
+				} else {
+					target = types.PointerType{Base: target, Mutable: view.Access == types.TraitReceiverMutablePointer}
+				}
+			}
+		}
 		n.CheckedType = target
 		if n.Checked {
 			n.SetType(types.MultipleReturnType{Types: []types.Type{target, types.PrimitiveBool}})
@@ -841,6 +856,35 @@ func genericExpressionOrigin(node parser.ExpressionNode) types.Type {
 	return nil
 }
 
+func staticTraitView(node parser.ExpressionNode) *types.StaticTraitView {
+	switch n := node.(type) {
+	case *parser.CastNode:
+		return n.StaticTraitView
+	case *parser.IdentifierNode:
+		if n.Symbol != nil {
+			return n.Symbol.StaticTraitView
+		}
+	case *parser.UnaryOpNode:
+		view := staticTraitView(n.Operand)
+		if view == nil {
+			return nil
+		}
+		result := *view
+		switch n.Op {
+		case parser.UnaryOpReference:
+			result.Access = types.TraitReceiverPointer
+		case parser.UnaryOpMutableReference:
+			result.Access = types.TraitReceiverMutablePointer
+		case parser.UnaryOpDereference:
+			result.Access = types.TraitReceiverValue
+		default:
+			return nil
+		}
+		return &result
+	}
+	return nil
+}
+
 func fieldOwnerDisplayType(t types.Type) types.Type {
 	// Preserve a nominal pointer type's name in diagnostics. Only peel an
 	// actual pointer expression to describe the type whose fields were queried.
@@ -906,6 +950,9 @@ func (a *Attributor) attributeMethodCall(n *parser.FunctionCallNode) bool {
 		return false
 	}
 	a.attributeExpr(member.Subject)
+	if view := staticTraitView(member.Subject); view != nil {
+		return a.attributeStaticTraitMethodCall(n, member, view)
+	}
 	if traitPtr, ok := traitPointer(member.Subject.GetType()); ok {
 		for slot, requirement := range traitPtr.Trait.Methods {
 			if requirement.Name != member.Field.Name {
@@ -968,6 +1015,77 @@ func (a *Attributor) attributeMethodCall(n *parser.FunctionCallNode) bool {
 	n.Method = true
 	if method.DefinitionModule != a.analyser.currentMod {
 		n.Name = &parser.IdentifierNode{Name: method.Name, Module: method.DefinitionModule, ResolvedModuleName: method.DefinitionModule, Loc: member.Loc, Symbol: method}
+	}
+	return true
+}
+
+func (a *Attributor) attributeStaticTraitMethodCall(
+	call *parser.FunctionCallNode,
+	member *parser.FieldAccessNode,
+	view *types.StaticTraitView,
+) bool {
+	var requirement *types.TraitMethod
+	requirementSlot := -1
+	for i := range view.Trait.Methods {
+		if view.Trait.Methods[i].Name == member.Field.Name {
+			requirement = &view.Trait.Methods[i]
+			requirementSlot = i
+			break
+		}
+	}
+	if requirement == nil {
+		a.errorf(call, "trait %v has no method %q", view.Trait, member.Field.Name)
+		call.SetType(types.ErrorType{})
+		return true
+	}
+	if requirement.Receiver == types.TraitReceiverPointer && view.Access == types.TraitReceiverValue {
+		a.errorf(call, "method %q requires *%v access", requirement.Name, view.Trait)
+		call.SetType(types.ErrorType{})
+		return true
+	}
+	if requirement.Receiver == types.TraitReceiverMutablePointer && view.Access != types.TraitReceiverMutablePointer {
+		a.errorf(call, "method %q requires *mut %v access", requirement.Name, view.Trait)
+		call.SetType(types.ErrorType{})
+		return true
+	}
+
+	subjectType := member.Subject.GetType()
+	probe, receiverIsPointer := types.Underlying(subjectType).(types.PointerType)
+	if !receiverIsPointer {
+		probe = types.PointerType{Base: subjectType, Mutable: view.Access == types.TraitReceiverMutablePointer}
+	}
+	target := types.TraitPointerType{
+		Trait:   view.Trait,
+		Mutable: view.Access == types.TraitReceiverMutablePointer,
+	}
+	methods, conforms := a.analyser.structuralConformance(probe, target, call)
+	if !conforms {
+		a.errorf(call, "type %v does not implement %v", subjectType, view.Trait)
+		call.SetType(types.ErrorType{})
+		return true
+	}
+	method := methods[requirementSlot]
+
+	receiver := member.Subject
+	expected := method.Signature.Parameters[0]
+	_, expectsPointer := types.Underlying(expected).(types.PointerType)
+	if expectsPointer && !receiverIsPointer {
+		op := parser.UnaryOpReference
+		if ptr := types.Underlying(expected).(types.PointerType); ptr.Mutable {
+			op = parser.UnaryOpMutableReference
+		}
+		receiver = &parser.UnaryOpNode{Op: op, Operand: receiver, Loc: receiver.GetLoc()}
+	} else if !expectsPointer && receiverIsPointer {
+		receiver = &parser.UnaryOpNode{Op: parser.UnaryOpDereference, Operand: receiver, Loc: receiver.GetLoc()}
+	}
+	call.Args = append([]parser.ExpressionNode{receiver}, call.Args...)
+	call.Symbol = method
+	call.Method = true
+	if method.DefinitionModule != a.analyser.currentMod {
+		call.Name = &parser.IdentifierNode{
+			Name: method.Name, Module: method.DefinitionModule, ResolvedModuleName: method.DefinitionModule,
+			Loc: member.Loc, Symbol: method,
+		}
 	}
 	return true
 }

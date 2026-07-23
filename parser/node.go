@@ -39,7 +39,7 @@ func (n IdentifierNode) String() string {
 	if n.Module == "" {
 		return n.Name
 	}
-	return n.Module + ":" + n.Name
+	return n.Module + "." + n.Name
 }
 func (n *IdentifierNode) SetType(t types.Type)       { n.Type = t }
 func (n *IdentifierNode) GetType() types.Type        { return n.Type }
@@ -528,6 +528,7 @@ type CastNode struct {
 	CheckedType      types.Type
 	GenericAssertion bool
 	AssertionMatches bool
+	StaticTraitView  *types.StaticTraitView
 }
 
 type TraitCastCandidate struct {

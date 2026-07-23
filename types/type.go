@@ -105,7 +105,7 @@ func (r *AliasRef) String() string {
 	if r.Module == "" {
 		return r.Name
 	}
-	return r.Module + ":" + r.Name
+	return r.Module + "." + r.Name
 }
 
 func (d DefinedType) Equals(other Type) bool {
@@ -126,7 +126,7 @@ func (d DefinedType) String() string {
 	if d.Module == "" {
 		return d.Name
 	}
-	return d.Module + ":" + d.Name
+	return d.Module + "." + d.Name
 }
 
 func Underlying(t Type) Type {
@@ -488,7 +488,25 @@ func (t TraitType) String() string {
 	if t.Module == "" {
 		return t.Name
 	}
-	return t.Module + ":" + t.Name
+	return t.Module + "." + t.Name
+}
+
+// StaticTraitView describes the method surface of a concrete value that was
+// reinterpreted as a trait without erasing its representation.
+type StaticTraitView struct {
+	Trait  TraitType
+	Access TraitReceiverKind
+}
+
+func (v StaticTraitView) String() string {
+	switch v.Access {
+	case TraitReceiverPointer:
+		return "*" + v.Trait.String()
+	case TraitReceiverMutablePointer:
+		return "*mut " + v.Trait.String()
+	default:
+		return v.Trait.String()
+	}
 }
 
 type TraitPointerType struct {
@@ -607,7 +625,7 @@ func (u UnionType) String() string {
 		if u.Module == "" {
 			return u.Name
 		}
-		return u.Module + ":" + u.Name
+		return u.Module + "." + u.Name
 	}
 	var result strings.Builder
 	result.WriteString("union { ")
@@ -627,7 +645,7 @@ func (e EnumType) String() string {
 		if e.Module == "" {
 			return e.Name
 		}
-		return e.Module + ":" + e.Name
+		return e.Module + "." + e.Name
 	}
 	return "enum { " + strings.Join(e.Variants, ", ") + " }"
 }

@@ -21,8 +21,9 @@ type Symbol struct {
 	Public     bool
 	Attributes attributes.Attributes
 
-	Type              types.Type         // for SymbolKindVariable
-	GenericOrigin     types.Type         // pre-substitution type for values originating from a generic parameter
+	Type              types.Type // for SymbolKindVariable
+	GenericOrigin     types.Type // pre-substitution type for values originating from a generic parameter
+	StaticTraitView   *types.StaticTraitView
 	Signature         *FunctionSignature // for SymbolKindFunction
 	TypeInfo          types.Type         // for SymbolKindTypeAlias
 	Module            *Module            // for SymbolKindModule

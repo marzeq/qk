@@ -673,6 +673,10 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			break
 		}
 		v.validateExpr(n.Operand)
+		if n.StaticTraitView != nil {
+			v.validateStaticTraitAssertion(n)
+			break
+		}
 		if conversion, ok := v.traitConversion(n.Operand, targetType); ok {
 			n.TraitConversion = true
 			n.ConcreteType = conversion.ConcreteType
@@ -1192,6 +1196,53 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		panic(fmt.Sprintf("unhandled expression type %T", n))
 	}
 
+}
+
+func (v *Validator) validateStaticTraitAssertion(node *parser.CastNode) {
+	view := node.StaticTraitView
+	source := node.Operand.GetType()
+	pointer, sourceIsPointer := types.Underlying(source).(types.PointerType)
+
+	var concrete types.Type
+	var probe types.PointerType
+	if view.Access == types.TraitReceiverValue {
+		if sourceIsPointer {
+			concrete = pointer.Base
+			probe = pointer
+		} else {
+			concrete = source
+			probe = types.PointerType{Base: source}
+		}
+	} else if sourceIsPointer {
+		if view.Access == types.TraitReceiverMutablePointer && !pointer.Mutable {
+			v.errorf(node, "cannot reinterpret immutable %v as %v", source, view)
+			return
+		}
+		concrete = pointer.Base
+		probe = pointer
+	} else {
+		mutable := view.Access == types.TraitReceiverMutablePointer
+		op := parser.UnaryOpReference
+		if mutable {
+			op = parser.UnaryOpMutableReference
+		}
+		reference := &parser.UnaryOpNode{Op: op, Operand: node.Operand, Loc: node.Operand.GetLoc(), Type: types.PointerType{Base: source, Mutable: mutable}}
+		if !v.validateReferenceTarget(reference, node.Operand, mutable) {
+			return
+		}
+		node.Operand = reference
+		concrete = source
+		probe = types.PointerType{Base: source, Mutable: mutable}
+	}
+
+	node.ConcreteType = concrete
+	target := types.TraitPointerType{
+		Trait:   view.Trait,
+		Mutable: view.Access == types.TraitReceiverMutablePointer,
+	}
+	methods, conforms := v.analyser.structuralConformance(probe, target, node)
+	node.AssertionMatches = conforms
+	node.TraitMethods = methods
 }
 
 func (v *Validator) validatePointerArithmeticBase(node parser.Node, base types.Type) {

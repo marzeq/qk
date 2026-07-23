@@ -8,6 +8,26 @@ import (
 	"math/big"
 )
 
+func (a *Analyser) resolveCastTarget(node parser.TypeNode) (types.Type, *types.StaticTraitView) {
+	if pointer, ok := node.(*parser.PointerTypeNode); ok {
+		base := a.resolveTypeNodeAt(pointer.BaseType, true)
+		if trait, ok := types.Underlying(base).(types.TraitType); ok {
+			access := types.TraitReceiverPointer
+			if pointer.Mutable {
+				access = types.TraitReceiverMutablePointer
+			}
+			return nil, &types.StaticTraitView{Trait: trait, Access: access}
+		}
+		return types.PointerType{Base: base, Mutable: pointer.Mutable}, nil
+	}
+
+	target := a.resolveTypeNode(node)
+	if trait, ok := types.Underlying(target).(types.TraitType); ok {
+		return nil, &types.StaticTraitView{Trait: trait, Access: types.TraitReceiverValue}
+	}
+	return target, nil
+}
+
 func (a *Analyser) resolveTypeNode(n parser.TypeNode) types.Type {
 	return a.resolveTypeNodeAt(n, false)
 }

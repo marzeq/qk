@@ -1298,7 +1298,7 @@ func (g *Generator) generateStringLiteralExpr(node *parser.StringLiteralNode) ir
 
 	lenPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: types.PrimitiveUsz})
 	g.Emit(ir.FieldAddress{Dest: lenPtrID, Base: slicePtr, Field: "1"})
-	g.Emit(ir.StorePtr{Ptr: ir.ValueOperand(lenPtrID, types.PointerType{Base: types.PrimitiveUsz}), Value: ir.IntConstOperand(fmt.Sprintf("%d", sliceType.Size), types.PrimitiveUsz)})
+	g.Emit(ir.StorePtr{Ptr: ir.ValueOperand(lenPtrID, types.PointerType{Base: types.PrimitiveUsz}), Value: ir.IntConstOperand(fmt.Sprintf("%d", len(node.Value)), types.PrimitiveUsz)})
 
 	loaded := g.currentFunction.NewValueOfType(sliceType)
 	g.Emit(ir.Load{Dest: loaded, Slot: tmpSlot})
@@ -1333,8 +1333,8 @@ func (g *Generator) generateCastExpr(node *parser.CastNode) ir.Operand {
 	if node.TraitUnwrap {
 		return g.generateTraitUnwrap(node)
 	}
-	if node.GenericAssertion && !node.AssertionMatches {
-		return g.generateFailedGenericAssertion(node, targetType)
+	if (node.GenericAssertion || node.StaticTraitView != nil) && !node.AssertionMatches {
+		return g.generateFailedStaticAssertion(node, targetType)
 	}
 
 	if str, ok := node.Operand.(*parser.StringLiteralNode); ok {
@@ -1370,7 +1370,7 @@ func (g *Generator) generateCastExpr(node *parser.CastNode) ir.Operand {
 	return value
 }
 
-func (g *Generator) generateFailedGenericAssertion(node *parser.CastNode, targetType types.Type) ir.Operand {
+func (g *Generator) generateFailedStaticAssertion(node *parser.CastNode, targetType types.Type) ir.Operand {
 	// Assertions evaluate their operand even when specialization makes the
 	// outcome statically known.
 	g.GenerateExpr(node.Operand)
@@ -1379,7 +1379,11 @@ func (g *Generator) generateFailedGenericAssertion(node *parser.CastNode, target
 		return g.packCheckedCast(zero, ir.BoolConstOperand(false), node.GetType().(types.MultipleReturnType))
 	}
 
-	messageText := "type assertion failed: " + traitRuntimeName(node.Operand.GetType()) + " is not " + traitRuntimeName(targetType)
+	expected := traitRuntimeName(targetType)
+	if node.StaticTraitView != nil {
+		expected = node.StaticTraitView.String()
+	}
+	messageText := "type assertion failed: " + traitRuntimeName(node.Operand.GetType()) + " is not " + expected
 	messageNode := &parser.StringLiteralNode{Value: messageText, Type: types.SliceType{Base: types.PrimitiveChar, Size: len(messageText)}, Loc: node.Loc}
 	message := g.generateStringLiteralExpr(messageNode)
 	runtimeStr := types.SliceType{Base: types.PrimitiveChar, Size: -1}
@@ -1410,9 +1414,9 @@ func (g *Generator) packCheckedCast(value, ok ir.Operand, result types.MultipleR
 func traitRuntimeName(t types.Type) string {
 	switch t := t.(type) {
 	case types.DefinedType:
-		return t.Module + ":" + t.Name
+		return t.Module + "." + t.Name
 	case *types.AliasRef:
-		return t.Module + ":" + t.Name
+		return t.Module + "." + t.Name
 	default:
 		return t.String()
 	}

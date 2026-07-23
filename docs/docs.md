@@ -595,6 +595,10 @@ arguments when possible, so `identity(number)` is equivalent to
 `identity<i32>(number)`. Untyped numeric literals do not select a type argument;
 cast them or provide the type argument explicitly.
 
+String and C-string literals have the canonical builtin `str` and `cstr` types,
+respectively. A string literal's runtime slice length still comes from its
+contents rather than becoming part of its static type.
+
 A type parameter may have a structural trait constraint:
 
 ```qk
@@ -1504,10 +1508,37 @@ its accessible method set contains exact matches for every requirement. No
 conformance declaration is written. Dynamic calls to a value receiver operate on
 a copy; they do not move or mutate the original value.
 
-Traits cannot be used by value. `dyn Trait` and `mut dyn Trait` create immutable
-and mutable dynamic trait types that retain the concrete value's type identity.
+Traits have no standalone by-value runtime representation. `dyn Trait` and
+`mut dyn Trait` create immutable and mutable dynamic trait types that retain the
+concrete value's type identity.
 Immutable trait pointers can call only `*self` methods; mutable trait pointers can
 call both receiver forms.
+
+An explicit cast to a bare trait creates a static trait view without changing
+the concrete representation:
+
+```qk
+let shown, ok = value.(Display)
+```
+
+Conformance is decided statically. The checked form returns the original value
+and `true`, or its zero value and `false`; the single-result form traps on a
+known mismatch. A `Trait` view exposes only value-receiver requirements.
+`*Trait` additionally exposes immutable pointer-receiver requirements, and
+`*mut Trait` exposes mutable pointer-receiver requirements. These views retain
+direct static dispatch and do not construct a vtable.
+
+Casting an addressable value directly to a pointer view takes its address as
+sugar:
+
+```qk
+let reader = value.(*Reader)       // value.&.(*Reader)
+let writer = value.(*mut Writer)   // value.&mut.(*mut Writer)
+```
+
+The sugar is rejected for literals, calls, and other values whose address
+cannot be taken. Writing `dyn Trait` remains the distinct, explicitly erased
+dynamic-dispatch conversion.
 
 `Any` is a built-in empty trait implemented by every concrete type. Trait
 pointers support trapping assertions. A pointer assertion aliases the original
@@ -1598,7 +1629,7 @@ the trait itself requires its module qualification:
 let count: i32 = 42
 count.display()
 
-let shown: *std.Display = count.&.(*std.Display)
+let shown = count.(*std.Display)
 shown.display()
 ```
 
