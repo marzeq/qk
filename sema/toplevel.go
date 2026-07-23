@@ -168,13 +168,13 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 			a.errorf(n, "methods on builtin type %q may only be defined by the trusted standard library", n.MethodOwner)
 			return
 		}
-		switch builtinType := builtin.TypeInfo.(type) {
+		switch builtinType := types.Underlying(builtin.TypeInfo).(type) {
 		case types.PrimitiveType:
 			if builtinType == types.PrimitiveVoid {
 				a.errorf(n, "cannot attach method to builtin type %q", n.MethodOwner)
 				return
 			}
-			ownerType = builtinType
+			ownerType = builtin.TypeInfo
 		case types.SliceType, types.PointerType:
 			ownerType = builtin.TypeInfo
 		default:

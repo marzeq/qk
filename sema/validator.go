@@ -799,7 +799,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			}
 
 		case parser.UnaryOpSliceLen:
-			switch operandType.(type) {
+			switch types.Underlying(operandType).(type) {
 			case types.SliceType:
 				// OK
 			default:

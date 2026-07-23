@@ -82,6 +82,15 @@ type DefinedType struct {
 	TypeArguments []Type
 }
 
+// StrType returns the nominal builtin string type. Its representation is a
+// dynamic character slice, but it is intentionally distinct from [char].
+func StrType() DefinedType {
+	return DefinedType{
+		Name:       "str",
+		Underlying: SliceType{Base: PrimitiveChar, Size: -1},
+	}
+}
+
 // AliasRef represents a recursive reference to a named type while that type is
 // being resolved. It is only constructed for cycles behind pointer indirection.
 type AliasRef struct {
