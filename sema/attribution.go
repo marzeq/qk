@@ -546,6 +546,45 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 			n.SetType(types.ErrorType{})
 		}
 
+	case *parser.SliceExprNode:
+		a.attributeExpr(n.Subject)
+		if n.Start != nil {
+			a.attributeExpr(n.Start)
+		}
+		if n.End != nil {
+			a.attributeExpr(n.End)
+		}
+
+		switch t := types.Underlying(n.Subject.GetType()).(type) {
+		case types.SliceType:
+			result := types.Type(types.SliceType{Base: t.Base, Size: -1})
+			if defined, ok := n.Subject.GetType().(types.DefinedType); ok && defined.Module == "" && defined.Name == "str" {
+				result = defined
+			}
+			n.SetType(result)
+		default:
+			a.errorf(n, "cannot slice type %v", n.Subject.GetType())
+			n.SetType(types.ErrorType{})
+		}
+
+		normalizeBound := func(bound *parser.ExpressionNode) {
+			if *bound == nil {
+				return
+			}
+			switch (*bound).GetType().(type) {
+			case types.UntypedInt:
+				*bound = &parser.CastNode{
+					Operand: *bound,
+					Type:    types.PrimitiveUsz,
+				}
+			case types.UntypedFloat:
+				a.errorf(n, "cannot use untyped float as slice bound; cast to integer type")
+				n.SetType(types.ErrorType{})
+			}
+		}
+		normalizeBound(&n.Start)
+		normalizeBound(&n.End)
+
 	case *parser.FieldAccessNode:
 		if n.ResolvedIdentifier != nil {
 			ident := n.ResolvedIdentifier

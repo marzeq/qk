@@ -387,18 +387,19 @@ func (g *Generator) GenerateFunction(fn *parser.FunctionDefNode) {
 		name = export.As
 		linkage = ir.LinkageExternal
 	} else {
-		if fn.Symbol.Public || fn.Symbol.Method {
+		if fn.Symbol.Public || fn.Symbol.Method || g.isProgramEntryFunction(fn.Symbol.Name) {
 			linkage = ir.LinkageExternal
 			visibility = ir.VisibilityHidden
 		}
-		if !g.isProgramEntryFunction(fn.Symbol.Name) {
-			name = g.mangleFunctionName(g.ModuleName, fn.Symbol.Name)
-		}
+		name = g.mangleFunctionName(g.ModuleName, fn.Symbol.Name)
 	}
 	irFn := ir.NewFunction(name, linkage, fn.Attributes)
 	irFn.Visibility = visibility
 	irFn.Signature = g.buildFunctionSignature(fn)
 	g.Module.AddFunction(irFn)
+	if g.isProgramEntryFunction(fn.Symbol.Name) {
+		g.Module.Entry = name
+	}
 
 	g.currentFunction = irFn
 	g.currentBlock = irFn.NewBlock("entry")
@@ -1175,6 +1176,8 @@ func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
 		return g.generateSliceLiteralExpr(n)
 	case *parser.IndexExprNode:
 		return g.generateIndexExpr(n)
+	case *parser.SliceExprNode:
+		return g.generateSliceExpr(n)
 	case *parser.FunctionCallNode:
 		return g.generateFunctionCallExpr(n)
 	case *parser.FieldAccessNode:
@@ -1273,6 +1276,93 @@ func (g *Generator) generateIndexAddress(node *parser.IndexExprNode) ir.Operand 
 		Element: node.GetType(),
 	})
 	return ir.ValueOperand(elementPtrID, types.PointerType{Base: node.GetType()})
+}
+
+func (g *Generator) generateSliceExpr(node *parser.SliceExprNode) ir.Operand {
+	subjectType, ok := types.Underlying(node.Subject.GetType()).(types.SliceType)
+	if !ok {
+		panic(fmt.Sprintf("cannot generate slice expression for %T", types.Underlying(node.Subject.GetType())))
+	}
+
+	subject := g.GenerateExpr(node.Subject)
+	dataID := g.currentFunction.NewValueOfType(types.PointerType{Base: subjectType.Base})
+	g.Emit(ir.ExtractValue{Dest: dataID, Aggregate: subject, Index: 0})
+	lengthID := g.currentFunction.NewValueOfType(types.PrimitiveUsz)
+	g.Emit(ir.ExtractValue{Dest: lengthID, Aggregate: subject, Index: 1})
+	length := ir.ValueOperand(lengthID, types.PrimitiveUsz)
+
+	start := ir.IntConstOperand("0", types.PrimitiveUsz)
+	if node.Start != nil {
+		start = g.GenerateExpr(node.Start)
+	}
+	end := length
+	if node.End != nil {
+		end = g.GenerateExpr(node.End)
+	}
+
+	startAfterEnd := g.currentFunction.NewValueOfType(types.PrimitiveBool)
+	g.Emit(ir.CmpGt{Dest: startAfterEnd, Left: start, Right: end})
+	endAfterLength := g.currentFunction.NewValueOfType(types.PrimitiveBool)
+	g.Emit(ir.CmpGt{Dest: endAfterLength, Left: end, Right: length})
+	invalid := g.currentFunction.NewValueOfType(types.PrimitiveBool)
+	g.Emit(ir.LogicalOr{
+		Dest:  invalid,
+		Left:  ir.ValueOperand(startAfterEnd, types.PrimitiveBool),
+		Right: ir.ValueOperand(endAfterLength, types.PrimitiveBool),
+	})
+
+	panicBlock := g.currentFunction.NewBlock("slice.bounds.panic")
+	validBlock := g.currentFunction.NewBlock("slice.bounds.valid")
+	g.Emit(ir.Branch{
+		Cond: ir.ValueOperand(invalid, types.PrimitiveBool),
+		Then: panicBlock.ID,
+		Else: validBlock.ID,
+	})
+
+	g.currentBlock = panicBlock
+	g.emitRuntimePanic("slice bounds out of range")
+
+	g.currentBlock = validBlock
+	data := ir.ValueOperand(dataID, types.PointerType{Base: subjectType.Base})
+	slicedDataID := g.currentFunction.NewValueOfType(types.PointerType{Base: subjectType.Base})
+	g.Emit(ir.ElementAddress{
+		Dest:    slicedDataID,
+		Base:    data,
+		Index:   start,
+		Element: subjectType.Base,
+	})
+	slicedLengthID := g.currentFunction.NewValueOfType(types.PrimitiveUsz)
+	g.Emit(ir.Sub{Dest: slicedLengthID, Left: end, Right: start})
+
+	first := g.currentFunction.NewValueOfType(node.GetType())
+	g.Emit(ir.InsertValue{
+		Dest:      first,
+		Aggregate: ir.ZeroConstOperand(node.GetType()),
+		Value:     ir.ValueOperand(slicedDataID, types.PointerType{Base: subjectType.Base}),
+		Index:     0,
+	})
+	second := g.currentFunction.NewValueOfType(node.GetType())
+	g.Emit(ir.InsertValue{
+		Dest:      second,
+		Aggregate: ir.ValueOperand(first, node.GetType()),
+		Value:     ir.ValueOperand(slicedLengthID, types.PrimitiveUsz),
+		Index:     1,
+	})
+	return ir.ValueOperand(second, node.GetType())
+}
+
+func (g *Generator) emitRuntimePanic(messageText string) {
+	messageNode := &parser.StringLiteralNode{
+		Value: messageText,
+		Type:  types.SliceType{Base: types.PrimitiveChar, Size: len(messageText)},
+	}
+	message := g.generateStringLiteralExpr(messageNode)
+	runtimeStr := types.SliceType{Base: types.PrimitiveChar, Size: -1}
+	message.Type = runtimeStr
+	panicSig := ir.FunctionSignature{ParamTypes: []types.Type{runtimeStr}, ReturnType: types.PrimitiveVoid}
+	g.addExternForCall("__qk_panic", panicSig, "", true)
+	g.Emit(ir.Call{Name: "__qk_panic", Args: []ir.Operand{message}, Signature: panicSig})
+	g.Emit(ir.Unreachable{})
 }
 
 func (g *Generator) generateStringLiteralExpr(node *parser.StringLiteralNode) ir.Operand {
@@ -1889,6 +1979,11 @@ func (g *Generator) generateRepeatedSliceLiteral(node *parser.SliceLiteralNode, 
 }
 
 func (g *Generator) generateStructLiteralIntoSlot(slot ir.SlotID, node *parser.StructLiteralNode) {
+	if _, ok := types.Underlying(node.GetType()).(types.FlagsType); ok {
+		g.Emit(ir.Store{Slot: slot, Value: g.generateStructLiteralExpr(node)})
+		return
+	}
+
 	if !node.NoInitRemaining || g.initializingGlobal {
 		g.Emit(ir.Store{Slot: slot, Value: ir.ZeroConstOperand(node.GetType())})
 	}
@@ -2067,6 +2162,9 @@ func (g *Generator) generateAddressOfExpr(expr parser.ExpressionNode) ir.Operand
 		if node.ResolvedIdentifier != nil {
 			return g.generateAddressOfExpr(node.ResolvedIdentifier)
 		}
+		if node.IsEnumValue || node.IsFlagValue || node.IsFlagTest || node.MethodSymbol != nil || node.ModulePath != "" {
+			break
+		}
 		base := g.generateFieldSubjectAddress(node.Subject)
 		dest := g.currentFunction.NewValueOfType(types.PointerType{Base: node.GetType()})
 		g.Emit(ir.FieldAddress{Dest: dest, Base: base, Field: node.Field.Name})
@@ -2144,11 +2242,7 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 					callModule = node.Name.ResolvedModuleName
 				}
 			}
-			if g.isProgramEntryFunction(node.Symbol.Name) {
-				name = node.Symbol.Name
-			} else {
-				name = g.mangleFunctionName(callModule, node.Symbol.Name)
-			}
+			name = g.mangleFunctionName(callModule, node.Symbol.Name)
 		}
 
 		if node.Name != nil && node.Name.Module != "" && foreignAttr == nil {
@@ -2388,9 +2482,7 @@ func (g *Generator) functionValueName(node *parser.IdentifierNode) (string, ir.F
 		if node.ResolvedModuleName != "" {
 			module = node.ResolvedModuleName
 		}
-		if !g.isProgramEntryFunction(sym.Name) {
-			name = g.mangleFunctionName(module, sym.Name)
-		}
+		name = g.mangleFunctionName(module, sym.Name)
 	}
 	return name, sig
 }

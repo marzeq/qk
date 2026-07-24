@@ -395,22 +395,59 @@ func (p *Parser) ParsePostfix() (ExpressionNode, error) {
 				p.Inc()
 			}
 
-			index, err := p.ParseExpression()
-			if err != nil {
-				return nil, err
+			var first ExpressionNode
+			if !p.Match(tokeniser.TokenColon) {
+				var err error
+				first, err = p.ParseExpression()
+				if err != nil {
+					return nil, err
+				}
 			}
 
 			for p.Match(tokeniser.TokenNewline) {
 				p.Inc()
 			}
 
+			if p.Match(tokeniser.TokenColon) {
+				p.Inc()
+				for p.Match(tokeniser.TokenNewline) {
+					p.Inc()
+				}
+
+				var end ExpressionNode
+				if !p.Match(tokeniser.TokenCloseSquare) {
+					var err error
+					end, err = p.ParseExpression()
+					if err != nil {
+						return nil, err
+					}
+				}
+
+				for p.Match(tokeniser.TokenNewline) {
+					p.Inc()
+				}
+				if !p.Expect(tokeniser.TokenCloseSquare) {
+					return nil, shared.NewError(p.PrevLoc(), "expected ']'")
+				}
+				expr = &SliceExprNode{
+					Subject: expr,
+					Start:   first,
+					End:     end,
+					Loc:     beginLoc,
+				}
+				continue
+			}
+
+			if first == nil {
+				return nil, shared.NewError(p.CurrLoc(), "expected index or ':'")
+			}
 			if !p.Expect(tokeniser.TokenCloseSquare) {
 				return nil, shared.NewError(p.PrevLoc(), "expected ']'")
 			}
 
 			expr = &IndexExprNode{
 				Subject: expr,
-				Index:   index,
+				Index:   first,
 				Loc:     beginLoc,
 			}
 		case p.Match(tokeniser.TokenDot):

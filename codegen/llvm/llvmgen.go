@@ -15,7 +15,6 @@ import (
 type Emitter struct {
 	Variables    map[ir.SlotID]*symbols.Symbol
 	SlotTypes    map[ir.SlotID]types.Type
-	MainModule   string
 	ModuleName   string
 	TargetTriple string
 	Executable   bool
@@ -54,7 +53,7 @@ func (e *Emitter) EmitModule(out *strings.Builder, m *ir.Module) {
 		e.ExternGlobalEmit(out, global)
 		out.WriteString("\n")
 	}
-	if m.Initializer != "" {
+	if m.Initializer != "" && !e.Executable {
 		fmt.Fprintf(out, "@llvm.global_ctors = appending global [1 x { i32, ptr, ptr }] [{ i32, ptr, ptr } { i32 65535, ptr @%s, ptr null }]\n\n", m.Initializer)
 	}
 	if len(e.stringDefs) > 0 || len(m.Globals) > 0 || len(m.ExternGlobals) > 0 {
@@ -153,19 +152,12 @@ func (e *Emitter) EmitFunction(out *strings.Builder, fn *ir.Function) {
 	e.sretParam = ""
 	returnType := fn.Signature.ReturnType
 	cABI := attributes.UsesCABI(fn.Attributes)
-	if e.isLLVMMainFunction(fn) {
-		returnType = types.PrimitiveI32
-	}
 	returnTypeText := e.TypeEmit(returnType)
 	if cABI {
 		returnTypeText = e.foreignABIReturnType(returnType)
 	}
 	linkage := e.linkageEmit(fn.Linkage)
 	visibility := e.visibilityEmit(fn.Visibility)
-	if e.isLLVMMainFunction(fn) {
-		linkage = ""
-		visibility = ""
-	}
 
 	fmt.Fprintf(out, "define %s%s%s @%s(", linkage, visibility, returnTypeText, fn.Name)
 	paramTypes := fn.Signature.ParamTypes
@@ -1138,11 +1130,6 @@ func (e *Emitter) BranchEmit(out *strings.Builder, b ir.Branch) {
 }
 
 func (e *Emitter) ReturnEmit(out *strings.Builder, r ir.Return) {
-	if e.isLLVMMainFunction(e.currentFn) {
-		out.WriteString("ret i32 0")
-		return
-	}
-
 	if r.HasValue {
 		if attributes.UsesCABI(e.currentFn.Attributes) {
 			e.emitCABIReturn(out, r.Value)
@@ -1186,16 +1173,6 @@ func (e *Emitter) emitCABIReturn(out *strings.Builder, value ir.Operand) {
 	fmt.Fprintf(out, "\n  %s = insertvalue %s undef, %s %s, 0", first, retType, chunks[0].typeName, values[0])
 	fmt.Fprintf(out, "\n  %s = insertvalue %s %s, %s %s, 1", second, retType, first, chunks[1].typeName, values[1])
 	fmt.Fprintf(out, "\n  ret %s %s", retType, second)
-}
-
-func (e *Emitter) isLLVMMainFunction(fn *ir.Function) bool {
-	if !e.Executable {
-		return false
-	}
-	if fn == nil {
-		return false
-	}
-	return e.ModuleName == e.MainModule && fn.Name == "main"
 }
 
 func (e *Emitter) CastEmit(out *strings.Builder, c ir.Cast) {

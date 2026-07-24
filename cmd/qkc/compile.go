@@ -12,8 +12,8 @@ import (
 	"github.com/marzeq/qk/ir"
 )
 
-func buildLLVMModule(mod *ir.Module, moduleName string, mainModule string, isExecutable bool, targetTriple string) string {
-	emitter := &llvm.Emitter{ModuleName: moduleName, Executable: isExecutable, MainModule: mainModule, TargetTriple: targetTriple}
+func buildLLVMModule(mod *ir.Module, moduleName string, executable bool, targetTriple string) string {
+	emitter := &llvm.Emitter{ModuleName: moduleName, TargetTriple: targetTriple, Executable: executable}
 	var output strings.Builder
 	emitter.EmitModule(&output, mod)
 	return output.String()

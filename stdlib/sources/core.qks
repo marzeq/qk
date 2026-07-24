@@ -2,3 +2,5 @@ module std
 
 let HasStdlib = comptime not NoStdlib
 let HasLibc = comptime not NoLibc
+
+pub let mut Args: [str] = ---

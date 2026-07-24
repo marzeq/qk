@@ -2,6 +2,7 @@ package sema
 
 import (
 	"fmt"
+	"math/big"
 	"strconv"
 	"strings"
 
@@ -989,6 +990,61 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			v.errorf(n, "cannot index into non-slice type")
 		}
 
+	case *parser.SliceExprNode:
+		v.validateExpr(n.Subject)
+		if n.Start != nil {
+			v.validateExpr(n.Start)
+			if !types.IsInteger(n.Start.GetType()) {
+				v.errorf(n.Start, "slice start must be integer")
+			} else {
+				n.Start = v.validateExprWithExpected(n.Start, types.PrimitiveUsz)
+			}
+		}
+		if n.End != nil {
+			v.validateExpr(n.End)
+			if !types.IsInteger(n.End.GetType()) {
+				v.errorf(n.End, "slice end must be integer")
+			} else {
+				n.End = v.validateExprWithExpected(n.End, types.PrimitiveUsz)
+			}
+		}
+
+		subjectType, ok := types.Underlying(n.Subject.GetType()).(types.SliceType)
+		if !ok {
+			v.errorf(n, "cannot slice non-slice type")
+			break
+		}
+
+		start, startKnown := staticIntegerValue(n.Start)
+		if n.Start == nil {
+			start = new(big.Int)
+			startKnown = true
+		}
+		end, endKnown := staticIntegerValue(n.End)
+		if n.End == nil && subjectType.Size >= 0 {
+			end = big.NewInt(int64(subjectType.Size))
+			endKnown = true
+		}
+
+		if startKnown && start.Sign() < 0 {
+			v.errorf(n.Start, "slice start cannot be negative")
+		}
+		if endKnown && end.Sign() < 0 {
+			v.errorf(n.End, "slice end cannot be negative")
+		}
+		if startKnown && endKnown && start.Cmp(end) > 0 {
+			v.errorf(n, "slice start %s exceeds end %s", start, end)
+		}
+		if subjectType.Size >= 0 {
+			size := big.NewInt(int64(subjectType.Size))
+			if startKnown && start.Cmp(size) > 0 {
+				v.errorf(n, "slice start %s out of bounds for slice of size %d", start, subjectType.Size)
+			}
+			if endKnown && end.Cmp(size) > 0 {
+				v.errorf(n, "slice end %s out of bounds for slice of size %d", end, subjectType.Size)
+			}
+		}
+
 	case *parser.FieldAccessNode:
 		if n.MethodSymbol != nil && n.MethodSymbol.Template {
 			v.errorf(n, "generic method %q requires type arguments when used as a value", n.Field.Name)
@@ -1572,6 +1628,27 @@ func (v *Validator) validateSliceLiteralWithExpected(n *parser.SliceLiteralNode,
 	}
 
 	n.SetType(expected)
+}
+
+func staticIntegerValue(expr parser.ExpressionNode) (*big.Int, bool) {
+	switch n := expr.(type) {
+	case *parser.IntegerLiteralNode:
+		value, ok := new(big.Int).SetString(n.Value, 10)
+		return value, ok
+	case *parser.UnaryOpNode:
+		if n.Op != parser.UnaryOpNegate {
+			return nil, false
+		}
+		value, ok := staticIntegerValue(n.Operand)
+		if !ok {
+			return nil, false
+		}
+		return new(big.Int).Neg(value), true
+	case *parser.CastNode:
+		return staticIntegerValue(n.Operand)
+	default:
+		return nil, false
+	}
 }
 
 func (v *Validator) validateStructLiteralWithExpected(n *parser.StructLiteralNode, expected types.Type) {

@@ -7,7 +7,11 @@ import (
 	qktarget "github.com/marzeq/qk/target"
 )
 
-func buildFreestandingRuntime(targetTriple string, noLibc, executable bool, mainInitializer string) (string, error) {
+func buildFreestandingRuntime(
+	targetTriple string,
+	noLibc, noStdlib, executable bool,
+	mainInitializer, userMain string,
+) (string, error) {
 	pointerBits, ok := qktarget.PointerBits(qktarget.EffectiveTriple(targetTriple))
 	if !ok {
 		return "", fmt.Errorf("cannot determine pointer width for target %q", targetTriple)
@@ -22,23 +26,23 @@ func buildFreestandingRuntime(targetTriple string, noLibc, executable bool, main
 		return "", fmt.Errorf("freestanding -nolibc executables are currently supported only for Linux x86-64, not target %q", target)
 	}
 	if noLibc && linuxX8664 {
-		if executable {
+		if executable && userMain != "" {
 			initializerDeclaration := ""
 			initializerCall := ""
 			if mainInitializer != "" {
 				initializerDeclaration = fmt.Sprintf("declare hidden void @%s()\n", mainInitializer)
 				initializerCall = fmt.Sprintf("  call void @%s()\n", mainInitializer)
 			}
-			fmt.Fprintf(&out, `declare i32 @main()
+			fmt.Fprintf(&out, `declare hidden void @%s()
 %s
 define void @_start() noreturn nounwind {
 entry:
-%s  %%status = call i32 @main()
-  %%exit = call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i32 %%status)
+%s  call void @%s()
+  %%exit = call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i32 0)
   unreachable
 }
 
-`, initializerDeclaration, initializerCall)
+`, userMain, initializerDeclaration, initializerCall, userMain)
 		}
 		fmt.Fprintf(&out, `define hidden void @__qk_panic({ ptr, %[1]s } %%message) #1 {
 entry:
@@ -56,6 +60,62 @@ entry:
 
 `, usz)
 	} else {
+		if executable && userMain != "" {
+			fmt.Fprintf(&out, "declare hidden void @%s()\n", userMain)
+			initializerCall := ""
+			if mainInitializer != "" {
+				fmt.Fprintf(&out, "declare hidden void @%s()\n", mainInitializer)
+				initializerCall = fmt.Sprintf("  call void @%s()\n", mainInitializer)
+			}
+			if !noStdlib {
+				fmt.Fprintf(&out, `declare %s @strlen(ptr)
+@__qk_std_global_Args = external hidden global { ptr, %s }
+
+define i32 @main(i32 %%argc, ptr %%argv) {
+entry:
+`, usz, usz)
+				argc := "%argc"
+				if pointerBits != 32 {
+					fmt.Fprintf(&out, "  %%argc.usz = zext i32 %%argc to %s\n", usz)
+					argc = "%argc.usz"
+				}
+				fmt.Fprintf(&out, `  %%args.data = alloca { ptr, %[1]s }, %[1]s %[2]s
+  %%args.with-data = insertvalue { ptr, %[1]s } zeroinitializer, ptr %%args.data, 0
+  %%args = insertvalue { ptr, %[1]s } %%args.with-data, %[1]s %[2]s, 1
+  store { ptr, %[1]s } %%args, ptr @__qk_std_global_Args
+  %%args.empty = icmp eq i32 %%argc, 0
+  br i1 %%args.empty, label %%run, label %%args.loop
+
+args.loop:
+  %%arg.index = phi %[1]s [ 0, %%entry ], [ %%arg.next, %%args.loop ]
+  %%argv.slot = getelementptr inbounds ptr, ptr %%argv, %[1]s %%arg.index
+  %%arg.data = load ptr, ptr %%argv.slot
+  %%arg.length = call %[1]s @strlen(ptr %%arg.data)
+  %%arg.with-data = insertvalue { ptr, %[1]s } zeroinitializer, ptr %%arg.data, 0
+  %%arg = insertvalue { ptr, %[1]s } %%arg.with-data, %[1]s %%arg.length, 1
+  %%arg.slot = getelementptr inbounds { ptr, %[1]s }, ptr %%args.data, %[1]s %%arg.index
+  store { ptr, %[1]s } %%arg, ptr %%arg.slot
+  %%arg.next = add nuw %[1]s %%arg.index, 1
+  %%args.finished = icmp eq %[1]s %%arg.next, %[2]s
+  br i1 %%args.finished, label %%run, label %%args.loop
+
+run:
+%[4]s  call void @%[3]s()
+  ret i32 0
+}
+
+`, usz, argc, userMain, initializerCall)
+			} else {
+				fmt.Fprintf(&out, `
+define i32 @main(i32 %%argc, ptr %%argv) {
+entry:
+%s  call void @%s()
+  ret i32 0
+}
+
+`, initializerCall, userMain)
+			}
+		}
 		fmt.Fprintf(&out, `declare %[1]s @write(i32, ptr, %[1]s)
 declare void @abort() noreturn
 

@@ -434,6 +434,18 @@ func (n IndexExprNode) GetLoc() shared.Location { return n.Loc }
 func (n *IndexExprNode) SetType(t types.Type)   { n.Type = t }
 func (n *IndexExprNode) GetType() types.Type    { return n.Type }
 
+type SliceExprNode struct {
+	Subject ExpressionNode
+	Start   ExpressionNode
+	End     ExpressionNode
+	Loc     shared.Location
+	Type    types.Type
+}
+
+func (n SliceExprNode) GetLoc() shared.Location { return n.Loc }
+func (n *SliceExprNode) SetType(t types.Type)   { n.Type = t }
+func (n *SliceExprNode) GetType() types.Type    { return n.Type }
+
 type BinaryOpKind uint
 
 const (

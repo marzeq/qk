@@ -166,6 +166,15 @@ func (w *debugWalker) walkExpr(expr parser.ExpressionNode) {
 		w.walkExpr(n.Subject)
 		w.walkExpr(n.Index)
 
+	case *parser.SliceExprNode:
+		w.walkExpr(n.Subject)
+		if n.Start != nil {
+			w.walkExpr(n.Start)
+		}
+		if n.End != nil {
+			w.walkExpr(n.End)
+		}
+
 	case *parser.FieldAccessNode:
 		if n.MethodSymbol == nil {
 			w.walkExpr(n.Subject)

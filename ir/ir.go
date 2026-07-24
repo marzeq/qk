@@ -200,6 +200,7 @@ type Module struct {
 	Globals       []Global
 	ExternGlobals []ExternGlobal
 	Initializer   string
+	Entry         string
 }
 
 func (m *Module) AddFunction(fn *Function) {

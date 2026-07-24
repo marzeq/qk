@@ -186,6 +186,15 @@ func (a *Analyser) visitExpression(expr parser.ExpressionNode) {
 		a.visitExpression(e.Subject)
 		a.visitExpression(e.Index)
 
+	case *parser.SliceExprNode:
+		a.visitExpression(e.Subject)
+		if e.Start != nil {
+			a.visitExpression(e.Start)
+		}
+		if e.End != nil {
+			a.visitExpression(e.End)
+		}
+
 	case *parser.FieldAccessNode:
 		a.visitExpression(e.Subject)
 		a.resolveModuleField(e)

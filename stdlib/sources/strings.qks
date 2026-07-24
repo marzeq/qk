@@ -15,6 +15,14 @@ pub let str.to_cstr(self): *mut char {
   return buf
 }
 
+pub let str.eq(self, other: str): bool {
+  if len(self) != len(other) {
+    return false
+  }
+
+  return std.libc.memcmp(self.(*char), other.(*char), len(self)) == 0
+}
+
 pub let cstr.to_str(self): str {
   if self == nil {
     return ""

@@ -96,11 +96,29 @@ pub let ferror(stream: *FILE): i32 @foreign
 pub let clearerr(stream: *FILE): void @foreign
 
 pub let fgets(s: *mut char, n: i32, stream: *FILE): *mut char @foreign
+pub let fgetc(stream: *FILE): i32 @foreign
 pub let fputs(s: cstr, stream: *FILE): i32 @foreign
+pub let fputc(ch: i32, stream: *FILE): i32 @foreign
 
 pub let remove(path: cstr): i32 @foreign
 pub let rename(old: cstr, new: cstr): i32 @foreign
 pub let tmpfile(): *FILE @foreign
+
+pub let EOF: i32 = comptime -1
+
+pub let fileno(stream: *FILE): i32 @foreign
+
+pub let read(
+  fd: i32,
+  buf: *mut void,
+  count: usz,
+): isz @foreign
+
+pub let write(
+  fd: i32,
+  buf: *void,
+  count: usz,
+): isz @foreign
 
 // -----------------------------------------------------------------------------
 // memory

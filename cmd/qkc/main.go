@@ -150,13 +150,27 @@ func main() {
 
 	llvmOutputs := make(map[string]string, len(irModules))
 	for _, moduleName := range order {
-		llvmOutputs[moduleName] = buildLLVMModule(irModules[moduleName], moduleName, args.mainModule, args.outputType == OutputExecutable, args.target)
+		llvmOutputs[moduleName] = buildLLVMModule(
+			irModules[moduleName],
+			moduleName,
+			args.outputType == OutputExecutable,
+			args.target,
+		)
 	}
 	mainInitializer := ""
+	userMain := ""
 	if mainIR := irModules[args.mainModule]; mainIR != nil {
 		mainInitializer = mainIR.Initializer
+		userMain = mainIR.Entry
 	}
-	freestandingRuntime, err := buildFreestandingRuntime(args.target, args.noLibc, args.outputType == OutputExecutable, mainInitializer)
+	freestandingRuntime, err := buildFreestandingRuntime(
+		args.target,
+		args.noLibc,
+		args.noStdlib,
+		args.outputType == OutputExecutable,
+		mainInitializer,
+		userMain,
+	)
 	check(err)
 
 	if args.dumpIR {
