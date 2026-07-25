@@ -1279,42 +1279,58 @@ func (g *Generator) generateIndexAddress(node *parser.IndexExprNode) ir.Operand 
 }
 
 func (g *Generator) generateSliceExpr(node *parser.SliceExprNode) ir.Operand {
-	subjectType, ok := types.Underlying(node.Subject.GetType()).(types.SliceType)
-	if !ok {
-		panic(fmt.Sprintf("cannot generate slice expression for %T", types.Underlying(node.Subject.GetType())))
-	}
+	subjectType := types.Underlying(node.Subject.GetType())
+	resultType := types.Underlying(node.GetType()).(types.SliceType)
+	var data ir.Operand
+	var length ir.Operand
+	checkEndAgainstLength := false
 
-	subject := g.GenerateExpr(node.Subject)
-	dataID := g.currentFunction.NewValueOfType(types.PointerType{Base: subjectType.Base})
-	g.Emit(ir.ExtractValue{Dest: dataID, Aggregate: subject, Index: 0})
-	lengthID := g.currentFunction.NewValueOfType(types.PrimitiveUsz)
-	g.Emit(ir.ExtractValue{Dest: lengthID, Aggregate: subject, Index: 1})
-	length := ir.ValueOperand(lengthID, types.PrimitiveUsz)
+	switch subjectType := subjectType.(type) {
+	case types.SliceType:
+		subject := g.GenerateExpr(node.Subject)
+		dataID := g.currentFunction.NewValueOfType(types.PointerType{Base: subjectType.Base})
+		g.Emit(ir.ExtractValue{Dest: dataID, Aggregate: subject, Index: 0})
+		lengthID := g.currentFunction.NewValueOfType(types.PrimitiveUsz)
+		g.Emit(ir.ExtractValue{Dest: lengthID, Aggregate: subject, Index: 1})
+		data = ir.ValueOperand(dataID, types.PointerType{Base: subjectType.Base})
+		length = ir.ValueOperand(lengthID, types.PrimitiveUsz)
+		checkEndAgainstLength = true
+	case types.PointerType:
+		data = g.GenerateExpr(node.Subject)
+	default:
+		panic(fmt.Sprintf("cannot generate slice expression for %T", subjectType))
+	}
 
 	start := ir.IntConstOperand("0", types.PrimitiveUsz)
 	if node.Start != nil {
 		start = g.GenerateExpr(node.Start)
 	}
-	end := length
-	if node.End != nil {
+	var end ir.Operand
+	if node.End == nil {
+		end = length
+	} else {
 		end = g.GenerateExpr(node.End)
 	}
 
 	startAfterEnd := g.currentFunction.NewValueOfType(types.PrimitiveBool)
 	g.Emit(ir.CmpGt{Dest: startAfterEnd, Left: start, Right: end})
-	endAfterLength := g.currentFunction.NewValueOfType(types.PrimitiveBool)
-	g.Emit(ir.CmpGt{Dest: endAfterLength, Left: end, Right: length})
-	invalid := g.currentFunction.NewValueOfType(types.PrimitiveBool)
-	g.Emit(ir.LogicalOr{
-		Dest:  invalid,
-		Left:  ir.ValueOperand(startAfterEnd, types.PrimitiveBool),
-		Right: ir.ValueOperand(endAfterLength, types.PrimitiveBool),
-	})
+	var invalid ir.Operand = ir.ValueOperand(startAfterEnd, types.PrimitiveBool)
+	if checkEndAgainstLength {
+		endAfterLength := g.currentFunction.NewValueOfType(types.PrimitiveBool)
+		g.Emit(ir.CmpGt{Dest: endAfterLength, Left: end, Right: length})
+		invalidID := g.currentFunction.NewValueOfType(types.PrimitiveBool)
+		g.Emit(ir.LogicalOr{
+			Dest:  invalidID,
+			Left:  invalid,
+			Right: ir.ValueOperand(endAfterLength, types.PrimitiveBool),
+		})
+		invalid = ir.ValueOperand(invalidID, types.PrimitiveBool)
+	}
 
 	panicBlock := g.currentFunction.NewBlock("slice.bounds.panic")
 	validBlock := g.currentFunction.NewBlock("slice.bounds.valid")
 	g.Emit(ir.Branch{
-		Cond: ir.ValueOperand(invalid, types.PrimitiveBool),
+		Cond: invalid,
 		Then: panicBlock.ID,
 		Else: validBlock.ID,
 	})
@@ -1323,13 +1339,12 @@ func (g *Generator) generateSliceExpr(node *parser.SliceExprNode) ir.Operand {
 	g.emitRuntimePanic("slice bounds out of range")
 
 	g.currentBlock = validBlock
-	data := ir.ValueOperand(dataID, types.PointerType{Base: subjectType.Base})
-	slicedDataID := g.currentFunction.NewValueOfType(types.PointerType{Base: subjectType.Base})
+	slicedDataID := g.currentFunction.NewValueOfType(types.PointerType{Base: resultType.Base})
 	g.Emit(ir.ElementAddress{
 		Dest:    slicedDataID,
 		Base:    data,
 		Index:   start,
-		Element: subjectType.Base,
+		Element: resultType.Base,
 	})
 	slicedLengthID := g.currentFunction.NewValueOfType(types.PrimitiveUsz)
 	g.Emit(ir.Sub{Dest: slicedLengthID, Left: end, Right: start})
@@ -1338,7 +1353,7 @@ func (g *Generator) generateSliceExpr(node *parser.SliceExprNode) ir.Operand {
 	g.Emit(ir.InsertValue{
 		Dest:      first,
 		Aggregate: ir.ZeroConstOperand(node.GetType()),
-		Value:     ir.ValueOperand(slicedDataID, types.PointerType{Base: subjectType.Base}),
+		Value:     ir.ValueOperand(slicedDataID, types.PointerType{Base: resultType.Base}),
 		Index:     0,
 	})
 	second := g.currentFunction.NewValueOfType(node.GetType())

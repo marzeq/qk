@@ -1156,10 +1156,20 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			}
 		}
 
-		subjectType, ok := types.Underlying(n.Subject.GetType()).(types.SliceType)
-		if !ok {
-			v.errorf(n, "cannot slice non-slice type")
+		subjectType := types.Underlying(n.Subject.GetType())
+		sliceType, isSlice := subjectType.(types.SliceType)
+		pointerType, isPointer := subjectType.(types.PointerType)
+		if !isSlice && !isPointer {
+			v.errorf(n, "cannot slice non-slice or non-pointer type")
 			break
+		}
+		if isPointer {
+			if n.End == nil {
+				v.errorf(n, "pointer slice requires an end bound")
+			}
+			if !types.IsComplete(pointerType.Base) {
+				v.errorf(n, "cannot slice pointer to incomplete type %v", pointerType.Base)
+			}
 		}
 
 		start, startKnown := staticIntegerValue(n.Start)
@@ -1168,8 +1178,8 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			startKnown = true
 		}
 		end, endKnown := staticIntegerValue(n.End)
-		if n.End == nil && subjectType.Size >= 0 {
-			end = big.NewInt(int64(subjectType.Size))
+		if n.End == nil && isSlice && sliceType.Size >= 0 {
+			end = big.NewInt(int64(sliceType.Size))
 			endKnown = true
 		}
 
@@ -1182,13 +1192,13 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		if startKnown && endKnown && start.Cmp(end) > 0 {
 			v.errorf(n, "slice start %s exceeds end %s", start, end)
 		}
-		if subjectType.Size >= 0 {
-			size := big.NewInt(int64(subjectType.Size))
+		if isSlice && sliceType.Size >= 0 {
+			size := big.NewInt(int64(sliceType.Size))
 			if startKnown && start.Cmp(size) > 0 {
-				v.errorf(n, "slice start %s out of bounds for slice of size %d", start, subjectType.Size)
+				v.errorf(n, "slice start %s out of bounds for slice of size %d", start, sliceType.Size)
 			}
 			if endKnown && end.Cmp(size) > 0 {
-				v.errorf(n, "slice end %s out of bounds for slice of size %d", end, subjectType.Size)
+				v.errorf(n, "slice end %s out of bounds for slice of size %d", end, sliceType.Size)
 			}
 		}
 

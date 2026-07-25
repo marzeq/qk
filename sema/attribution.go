@@ -627,6 +627,8 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 				result = defined
 			}
 			n.SetType(result)
+		case types.PointerType:
+			n.SetType(types.SliceType{Base: t.Base, Size: -1, Mutable: t.Mutable})
 		default:
 			a.errorf(n, "cannot slice type %v", n.Subject.GetType())
 			n.SetType(types.ErrorType{})
