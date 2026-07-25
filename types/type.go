@@ -302,6 +302,12 @@ func Substitute(t Type, arguments map[string]Type) Type {
 		return t
 	case TraitType:
 		for i := range t.Methods {
+			for j := range t.Methods[i].GenericParameters {
+				t.Methods[i].GenericParameters[j].Constraint = Substitute(
+					t.Methods[i].GenericParameters[j].Constraint,
+					arguments,
+				)
+			}
 			for j := range t.Methods[i].Parameters {
 				t.Methods[i].Parameters[j] = Substitute(t.Methods[i].Parameters[j], arguments)
 			}
@@ -588,10 +594,11 @@ type StructType struct {
 }
 
 type TraitMethod struct {
-	Name       string
-	Receiver   TraitReceiverKind
-	Parameters []Type
-	ReturnType Type
+	Name              string
+	GenericParameters []TypeParameter
+	Receiver          TraitReceiverKind
+	Parameters        []Type
+	ReturnType        Type
 }
 
 type TraitReceiverKind uint8
@@ -611,13 +618,16 @@ type TraitType struct {
 	Any     bool
 }
 
-func (t TraitType) DynamicIncompatibility() (string, bool) {
+func (t TraitType) DynamicIncompatibility() (method string, reason string, incompatible bool) {
 	for _, method := range t.Methods {
+		if len(method.GenericParameters) != 0 {
+			return method.Name, "is generic", true
+		}
 		if HasSelfType(method.ReturnType) || slices.ContainsFunc(method.Parameters, HasSelfType) {
-			return method.Name, true
+			return method.Name, "uses Self outside its receiver", true
 		}
 	}
-	return "", false
+	return "", "", false
 }
 
 func (t TraitType) Equals(other Type) bool {

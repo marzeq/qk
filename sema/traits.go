@@ -38,21 +38,18 @@ func (a *Analyser) structuralConformance(from types.Type, target types.TraitPoin
 			return nil, false
 		}
 		sig := method.Signature
-		requiredReturn := types.SubstituteSelf(requirement.ReturnType, pointer.Base)
-		if len(sig.Parameters) != len(requirement.Parameters)+1 || sig.ReturnType == nil || !sig.ReturnType.Equals(requiredReturn) {
+		if len(sig.Parameters) != len(requirement.Parameters)+1 {
 			return nil, false
 		}
-		if method.MethodReceiver != requirement.Receiver {
+		available := types.TraitMethod{
+			Name: requirement.Name, GenericParameters: method.GenericParameters,
+			Receiver: method.MethodReceiver, Parameters: sig.Parameters[1:], ReturnType: sig.ReturnType,
+		}
+		if !traitMethodShapeMatches(requirement, available, pointer.Base) {
 			return nil, false
 		}
 		if requirement.Receiver == types.TraitReceiverValue && !types.IsComplete(pointer.Base) {
 			return nil, false
-		}
-		for j, param := range requirement.Parameters {
-			requiredParam := types.SubstituteSelf(param, pointer.Base)
-			if !sig.Parameters[j+1].Equals(requiredParam) {
-				return nil, false
-			}
 		}
 		selected[i] = method
 	}
@@ -117,17 +114,7 @@ func traitImplementsTrait(source, target types.TraitType) bool {
 	for _, required := range target.Methods {
 		found := false
 		for _, available := range source.Methods {
-			if available.Name != required.Name || available.Receiver != required.Receiver || !available.ReturnType.Equals(required.ReturnType) || len(available.Parameters) != len(required.Parameters) {
-				continue
-			}
-			matches := true
-			for i := range required.Parameters {
-				if !available.Parameters[i].Equals(required.Parameters[i]) {
-					matches = false
-					break
-				}
-			}
-			if matches {
+			if traitMethodShapeMatches(required, available, nil) {
 				found = true
 				break
 			}
@@ -137,4 +124,47 @@ func traitImplementsTrait(source, target types.TraitType) bool {
 		}
 	}
 	return true
+}
+
+func traitMethodShapeMatches(required, available types.TraitMethod, self types.Type) bool {
+	if available.Name != required.Name || available.Receiver != required.Receiver ||
+		len(available.Parameters) != len(required.Parameters) ||
+		len(available.GenericParameters) != len(required.GenericParameters) {
+		return false
+	}
+
+	substitutions := make(map[string]types.Type, len(required.GenericParameters))
+	for i, parameter := range required.GenericParameters {
+		substitutions[parameter.Key()] = available.GenericParameters[i]
+	}
+	for i, parameter := range required.GenericParameters {
+		requiredConstraint := substituteTraitMethodType(parameter.Constraint, substitutions, self)
+		availableConstraint := available.GenericParameters[i].Constraint
+		if !optionalTypesEqual(requiredConstraint, availableConstraint) {
+			return false
+		}
+	}
+	for i, parameter := range required.Parameters {
+		requiredParameter := substituteTraitMethodType(parameter, substitutions, self)
+		if !available.Parameters[i].Equals(requiredParameter) {
+			return false
+		}
+	}
+	requiredReturn := substituteTraitMethodType(required.ReturnType, substitutions, self)
+	return optionalTypesEqual(requiredReturn, available.ReturnType)
+}
+
+func substituteTraitMethodType(t types.Type, substitutions map[string]types.Type, self types.Type) types.Type {
+	t = types.Substitute(t, substitutions)
+	if self != nil {
+		t = types.SubstituteSelf(t, self)
+	}
+	return t
+}
+
+func optionalTypesEqual(left, right types.Type) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return left.Equals(right)
 }

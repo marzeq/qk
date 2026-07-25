@@ -1089,6 +1089,11 @@ func (a *Attributor) attributeMethodCall(n *parser.FunctionCallNode) bool {
 				n.SetType(types.ErrorType{})
 				return true
 			}
+			if len(requirement.GenericParameters) != 0 {
+				a.errorf(n, "generic trait method %q cannot be called dynamically", requirement.Name)
+				n.SetType(types.ErrorType{})
+				return true
+			}
 			params := append([]types.Type{member.Subject.GetType()}, requirement.Parameters...)
 			n.Symbol = symbols.NewFunction(requirement.Name, &symbols.FunctionSignature{Parameters: params, RequiredParameters: len(params), ReturnType: requirement.ReturnType})
 			n.Args = append([]parser.ExpressionNode{member.Subject}, n.Args...)
@@ -1197,6 +1202,8 @@ func (a *Attributor) attributeStaticTraitMethodCall(
 		})
 		method.Method = true
 		method.MethodReceiver = requirement.Receiver
+		method.GenericParameters = append([]types.TypeParameter(nil), requirement.GenericParameters...)
+		method.Template = len(method.GenericParameters) != 0
 		method.TraitRequirement = true
 		method.RequirementTrait = view.Trait
 		method.RequirementSlot = requirementSlot
@@ -1204,6 +1211,14 @@ func (a *Attributor) attributeStaticTraitMethodCall(
 		call.Args = append([]parser.ExpressionNode{member.Subject}, call.Args...)
 		call.Symbol = method
 		call.Method = true
+		if method.Template && len(member.Field.TypeArguments) != 0 {
+			arguments := a.analyser.resolveGenericArguments(member.Field.TypeArguments)
+			if !a.analyser.checkGenericArguments(call, method.GenericParameters, arguments) {
+				call.SetType(types.ErrorType{})
+				return true
+			}
+			call.Symbol = dependentGenericFunctionSymbol(method, arguments)
+		}
 		return true
 	}
 
@@ -1226,6 +1241,23 @@ func (a *Attributor) attributeStaticTraitMethodCall(
 		return true
 	}
 	method := methods[requirementSlot]
+	if method.Template && len(member.Field.TypeArguments) != 0 {
+		arguments := a.analyser.resolveGenericArguments(member.Field.TypeArguments)
+		if a.templatesOnly || hasTypeParameters(arguments) {
+			if !a.analyser.checkGenericArguments(call, method.GenericParameters, arguments) {
+				call.SetType(types.ErrorType{})
+				return true
+			}
+			method = dependentGenericFunctionSymbol(method, arguments)
+		} else {
+			specialization := a.analyser.specializeGenericFunction(method, arguments, call)
+			if specialization == nil {
+				call.SetType(types.ErrorType{})
+				return true
+			}
+			method = specialization.Symbol
+		}
+	}
 
 	receiver := member.Subject
 	expected := method.Signature.Parameters[0]

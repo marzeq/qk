@@ -65,7 +65,10 @@ func specializationDisplayName(name string, arguments []types.Type) string {
 
 func (a *Analyser) makeGenericParameters(name string, nodes []parser.GenericParameterNode) []types.TypeParameter {
 	previous := a.typeParameterBindings
-	bindings := make(map[string]types.Type, len(nodes))
+	bindings := make(map[string]types.Type, len(previous)+len(nodes))
+	for name, binding := range previous {
+		bindings[name] = binding
+	}
 	a.typeParameterBindings = bindings
 	parameters := make([]types.TypeParameter, len(nodes))
 	owner := genericOwner(a.currentMod, name)
@@ -527,6 +530,13 @@ func (a *Analyser) instantiateType(t types.Type, substitutions map[string]types.
 		return current
 	case types.TraitType:
 		for i := range current.Methods {
+			for j := range current.Methods[i].GenericParameters {
+				current.Methods[i].GenericParameters[j].Constraint = a.instantiateType(
+					current.Methods[i].GenericParameters[j].Constraint,
+					substitutions,
+					use,
+				)
+			}
 			for j, parameter := range current.Methods[i].Parameters {
 				current.Methods[i].Parameters[j] = a.instantiateType(parameter, substitutions, use)
 			}
@@ -573,6 +583,19 @@ func (a *Analyser) instantiateFunctionSymbol(
 			return substituted
 		}
 		method := methods[original.RequirementSlot]
+		if method.Template {
+			if len(substituted.TypeArguments) != len(method.GenericParameters) || hasTypeParameters(substituted.TypeArguments) {
+				a.errorf(use, "cannot resolve generic trait method %q type arguments", method.Name)
+				cloned[original] = substituted
+				return substituted
+			}
+			specialization := a.specializeGenericFunction(method, substituted.TypeArguments, use)
+			if specialization == nil || specialization.Symbol == nil {
+				cloned[original] = substituted
+				return substituted
+			}
+			method = specialization.Symbol
+		}
 		cloned[original] = method
 		return method
 	}

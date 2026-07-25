@@ -605,6 +605,20 @@ A type parameter may have a structural trait constraint:
 let add<T: std.Add>(left, right: T): T = left.add(right)
 ```
 
+Trait requirements may themselves be generic:
+
+```qk
+let Factory = type trait {
+    let create<T>(*mut self, value: T): T
+}
+```
+
+An implementing attached method must declare the same number of method-scoped
+type parameters with matching constraints and an alpha-equivalent signature.
+Calls through a generic constraint may provide the method arguments explicitly
+or infer them from typed value arguments. The selected concrete attached method
+is specialized during specialization of the enclosing generic function.
+
 The compiler resolves, attributes, and validates a generic function body once,
 using its symbolic type parameters. It does not type-check the body again for
 each concrete call. Consequently, the body may only use operations known from
@@ -1539,7 +1553,10 @@ Traits have no standalone by-value runtime representation. `dyn Trait` and
 concrete value's type identity.
 Traits whose methods use `Self` in a non-receiver parameter or result cannot be
 used as dynamic trait types, because those values have an unknown concrete type
-and size at the dynamic call boundary.
+and size at the dynamic call boundary. Traits with generic method requirements
+are also static-only: their open-ended specializations cannot be represented by
+a finite dynamic vtable. Both forms remain available through generic constraints
+and static trait views.
 Immutable trait pointers can call only `*self` methods; mutable trait pointers can
 call both receiver forms.
 
@@ -2036,8 +2053,7 @@ qkc src \
 
 QK is intentionally small and currently has no:
 
-- Compile-time value parameters, higher-kinded types, trait generics, or
-  inheritance.
+- Compile-time value parameters, higher-kinded types, or inheritance.
 - Closures or captured local functions.
 - Exceptions, coroutines, async functions, or stack unwinding.
 - Macro or compile-time metaprogramming system.

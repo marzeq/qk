@@ -149,8 +149,8 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 			a.errorf(t, "dyn requires a trait type, got %v", base)
 			return types.ErrorType{}
 		}
-		if method, incompatible := trait.DynamicIncompatibility(); incompatible {
-			a.errorf(t, "trait %v cannot be used dynamically because method %q uses Self outside its receiver", trait, method)
+		if method, reason, incompatible := trait.DynamicIncompatibility(); incompatible {
+			a.errorf(t, "trait %v cannot be used dynamically because method %q %s", trait, method, reason)
 			return types.ErrorType{}
 		}
 		return types.TraitPointerType{Trait: trait, Mutable: t.Mutable}
@@ -163,6 +163,21 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 		previousTraitContext := a.resolvingTraitMethodTypes
 		a.resolvingTraitMethodTypes = true
 		for i, method := range t.Methods {
+			genericParameters := a.makeGenericParameters(
+				"<trait-method:"+method.Name+"@"+method.Loc.String()+">",
+				method.GenericParameters,
+			)
+			previousBindings := a.typeParameterBindings
+			if len(genericParameters) != 0 {
+				bindings := make(map[string]types.Type, len(previousBindings)+len(genericParameters))
+				for name, binding := range previousBindings {
+					bindings[name] = binding
+				}
+				for _, parameter := range genericParameters {
+					bindings[parameter.Name] = parameter
+				}
+				a.typeParameterBindings = bindings
+			}
 			params := make([]types.Type, len(method.Args))
 			for j, arg := range method.Args {
 				params[j] = a.resolveTypeNode(arg.Type)
@@ -174,7 +189,11 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 			case parser.MethodReceiverMutablePointer:
 				receiver = types.TraitReceiverMutablePointer
 			}
-			methods[i] = types.TraitMethod{Name: method.Name, Receiver: receiver, Parameters: params, ReturnType: a.resolveTypeNode(method.ReturnType)}
+			methods[i] = types.TraitMethod{
+				Name: method.Name, GenericParameters: genericParameters, Receiver: receiver,
+				Parameters: params, ReturnType: a.resolveTypeNode(method.ReturnType),
+			}
+			a.typeParameterBindings = previousBindings
 		}
 		a.resolvingTraitMethodTypes = previousTraitContext
 		return types.TraitType{Methods: methods}

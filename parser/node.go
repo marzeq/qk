@@ -147,11 +147,12 @@ func (n OpaqueTypeNode) GetLoc() shared.Location { return n.Loc }
 func (n OpaqueTypeNode) _type()                  {}
 
 type TraitMethodNode struct {
-	Name       string
-	Receiver   MethodReceiverKind
-	Args       []*FunctionNodeArg
-	ReturnType TypeNode
-	Loc        shared.Location
+	Name              string
+	GenericParameters []GenericParameterNode
+	Receiver          MethodReceiverKind
+	Args              []*FunctionNodeArg
+	ReturnType        TypeNode
+	Loc               shared.Location
 }
 
 type TraitTypeNode struct {
