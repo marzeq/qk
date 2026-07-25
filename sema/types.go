@@ -42,6 +42,13 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 		return types.MultipleReturnType{Types: result}
 
 	case *parser.NamedTypeNode:
+		if a.resolvingTraitMethodTypes && t.ModName == "" && t.Name == "Self" {
+			if len(t.TypeArguments) != 0 {
+				a.errorf(t, "Self does not accept type arguments")
+				return types.ErrorType{}
+			}
+			return types.SelfType{}
+		}
 		if t.ModName == "" {
 			if parameter, ok := a.typeParameterBindings[t.Name]; ok {
 				if len(t.TypeArguments) != 0 {
@@ -140,6 +147,10 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 			a.errorf(t, "dyn requires a trait type, got %v", base)
 			return types.ErrorType{}
 		}
+		if method, incompatible := trait.DynamicIncompatibility(); incompatible {
+			a.errorf(t, "trait %v cannot be used dynamically because method %q uses Self outside its receiver", trait, method)
+			return types.ErrorType{}
+		}
 		return types.TraitPointerType{Trait: trait, Mutable: t.Mutable}
 
 	case *parser.OpaqueTypeNode:
@@ -147,6 +158,8 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 
 	case *parser.TraitTypeNode:
 		methods := make([]types.TraitMethod, len(t.Methods))
+		previousTraitContext := a.resolvingTraitMethodTypes
+		a.resolvingTraitMethodTypes = true
 		for i, method := range t.Methods {
 			params := make([]types.Type, len(method.Args))
 			for j, arg := range method.Args {
@@ -161,6 +174,7 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 			}
 			methods[i] = types.TraitMethod{Name: method.Name, Receiver: receiver, Parameters: params, ReturnType: a.resolveTypeNode(method.ReturnType)}
 		}
+		a.resolvingTraitMethodTypes = previousTraitContext
 		return types.TraitType{Methods: methods}
 
 	case *parser.FunctionTypeNode:

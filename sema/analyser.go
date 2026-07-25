@@ -21,6 +21,7 @@ type Analyser struct {
 	currentImports                map[string]bool
 	importsByModule               map[string]map[string]bool
 	typeParameterBindings         map[string]types.Type
+	resolvingTraitMethodTypes     bool
 	currentRoot                   *parser.RootNode
 	genericFunctions              map[*symbols.Symbol]*genericFunctionInfo
 	genericValues                 map[*symbols.Symbol]*genericValueInfo

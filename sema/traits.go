@@ -38,7 +38,8 @@ func (a *Analyser) structuralConformance(from types.Type, target types.TraitPoin
 			return nil, false
 		}
 		sig := method.Signature
-		if len(sig.Parameters) != len(requirement.Parameters)+1 || sig.ReturnType == nil || !sig.ReturnType.Equals(requirement.ReturnType) {
+		requiredReturn := types.SubstituteSelf(requirement.ReturnType, pointer.Base)
+		if len(sig.Parameters) != len(requirement.Parameters)+1 || sig.ReturnType == nil || !sig.ReturnType.Equals(requiredReturn) {
 			return nil, false
 		}
 		actualReceiver := types.TraitReceiverValue
@@ -55,7 +56,8 @@ func (a *Analyser) structuralConformance(from types.Type, target types.TraitPoin
 			return nil, false
 		}
 		for j, param := range requirement.Parameters {
-			if !sig.Parameters[j+1].Equals(param) {
+			requiredParam := types.SubstituteSelf(param, pointer.Base)
+			if !sig.Parameters[j+1].Equals(requiredParam) {
 				return nil, false
 			}
 		}

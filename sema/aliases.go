@@ -34,7 +34,10 @@ func (a *Analyser) resolveAlias(info *aliasInfo, node parser.Node, indirect bool
 
 	info.state = aliasResolving
 
+	previousTraitContext := a.resolvingTraitMethodTypes
+	a.resolvingTraitMethodTypes = false
 	resolved := a.resolveTypeNodeAt(info.node.Type, false)
+	a.resolvingTraitMethodTypes = previousTraitContext
 	if trait, ok := resolved.(types.TraitType); ok && !info.node.Transparent {
 		trait.Module = a.currentMod
 		trait.Name = info.node.Name

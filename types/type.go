@@ -15,6 +15,99 @@ type Type interface {
 	String() string
 }
 
+// SelfType is the implementing type of the immediately enclosing trait. It
+// remains symbolic until a structural-conformance check selects a concrete
+// candidate.
+type SelfType struct{}
+
+func (SelfType) Equals(other Type) bool      { _, ok := other.(SelfType); return ok }
+func (SelfType) CanCoerceTo(other Type) bool { return SelfType{}.Equals(other) }
+func (SelfType) CanCastTo(other Type) bool   { return SelfType{}.Equals(other) }
+func (SelfType) String() string              { return "Self" }
+
+// SubstituteSelf replaces a trait's symbolic Self type throughout one method
+// parameter or result type. Nested trait definitions introduce their own Self
+// and are therefore substitution boundaries.
+func SubstituteSelf(t Type, replacement Type) Type {
+	if t == nil {
+		return nil
+	}
+	switch t := t.(type) {
+	case SelfType:
+		return replacement
+	case DefinedType:
+		t.Underlying = SubstituteSelf(t.Underlying, replacement)
+		for i := range t.TypeArguments {
+			t.TypeArguments[i] = SubstituteSelf(t.TypeArguments[i], replacement)
+		}
+		return t
+	case *AliasRef:
+		return t
+	case PointerType:
+		t.Base = SubstituteSelf(t.Base, replacement)
+		return t
+	case SliceType:
+		t.Base = SubstituteSelf(t.Base, replacement)
+		return t
+	case StructType:
+		for i := range t.Fields {
+			t.Fields[i].R = SubstituteSelf(t.Fields[i].R, replacement)
+		}
+		return t
+	case UnionType:
+		for i := range t.Fields {
+			t.Fields[i].R = SubstituteSelf(t.Fields[i].R, replacement)
+		}
+		return t
+	case FunctionType:
+		for i := range t.Parameters {
+			t.Parameters[i] = SubstituteSelf(t.Parameters[i], replacement)
+		}
+		t.ReturnType = SubstituteSelf(t.ReturnType, replacement)
+		t.VariadicElement = SubstituteSelf(t.VariadicElement, replacement)
+		return t
+	case MultipleReturnType:
+		for i := range t.Types {
+			t.Types[i] = SubstituteSelf(t.Types[i], replacement)
+		}
+		return t
+	default:
+		return t
+	}
+}
+
+// HasSelfType reports whether a type depends on its enclosing trait's concrete
+// implementer. Referenced and nested traits own their own Self placeholders.
+func HasSelfType(t Type) bool {
+	switch t := t.(type) {
+	case SelfType:
+		return true
+	case DefinedType:
+		return slices.ContainsFunc(t.TypeArguments, HasSelfType)
+	case PointerType:
+		return HasSelfType(t.Base)
+	case SliceType:
+		return HasSelfType(t.Base)
+	case StructType:
+		for _, field := range t.Fields {
+			if HasSelfType(field.R) {
+				return true
+			}
+		}
+	case UnionType:
+		for _, field := range t.Fields {
+			if HasSelfType(field.R) {
+				return true
+			}
+		}
+	case FunctionType:
+		return slices.ContainsFunc(t.Parameters, HasSelfType) || HasSelfType(t.ReturnType)
+	case MultipleReturnType:
+		return slices.ContainsFunc(t.Types, HasSelfType)
+	}
+	return false
+}
+
 // TypeParameter is a declaration-scoped placeholder used only while describing
 // a generic binding. Owner makes equally named parameters from different
 // declarations distinct.
@@ -227,6 +320,8 @@ func Identity(t Type) string {
 		return "<nil>"
 	}
 	switch t := t.(type) {
+	case SelfType:
+		return "trait-self"
 	case TypeParameter:
 		return "param(" + t.Key() + ")"
 	case DefinedType:
@@ -484,6 +579,15 @@ type TraitType struct {
 	Any     bool
 }
 
+func (t TraitType) DynamicIncompatibility() (string, bool) {
+	for _, method := range t.Methods {
+		if HasSelfType(method.ReturnType) || slices.ContainsFunc(method.Parameters, HasSelfType) {
+			return method.Name, true
+		}
+	}
+	return "", false
+}
+
 func (t TraitType) Equals(other Type) bool {
 	o, ok := Underlying(other).(TraitType)
 	return ok && t.Module == o.Module && t.Name == o.Name && t.Any == o.Any
@@ -561,6 +665,8 @@ func IsComplete(t Type) bool {
 	case OpaqueType:
 		return false
 	case TraitType:
+		return false
+	case SelfType:
 		return false
 	case StructType:
 		for _, field := range t.Fields {

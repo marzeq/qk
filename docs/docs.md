@@ -1506,6 +1506,20 @@ pub let Reader = type trait {
 }
 ```
 
+Within a trait method signature, `Self` names the concrete implementing type:
+
+```qk
+pub let Summable = type trait {
+    let sum(self, other: Self): Self
+}
+```
+
+Conformance substitutes the candidate type for `Self`. A concrete method such
+as `Vec2.sum(self, other: Vec2): Vec2` therefore satisfies this requirement.
+For a generic `T: Summable`, the effective method signature is
+`sum(T, T): T`; specialization later replaces `T` with its concrete argument.
+Static trait views likewise retain and use their concrete type.
+
 `self`, `*self`, and `*mut self` are supported and must match the concrete
 method's receiver exactly. A concrete nominal type conforms structurally when
 its accessible method set contains exact matches for every requirement. No
@@ -1515,6 +1529,9 @@ a copy; they do not move or mutate the original value.
 Traits have no standalone by-value runtime representation. `dyn Trait` and
 `mut dyn Trait` create immutable and mutable dynamic trait types that retain the
 concrete value's type identity.
+Traits whose methods use `Self` in a non-receiver parameter or result cannot be
+used as dynamic trait types, because those values have an unknown concrete type
+and size at the dynamic call boundary.
 Immutable trait pointers can call only `*self` methods; mutable trait pointers can
 call both receiver forms.
 

@@ -166,16 +166,19 @@ func (a *Analyser) withDefinitionContext(module string, trusted bool, bindings m
 	previousScope, previousModule := a.current, a.currentMod
 	previousTrusted, previousImports := a.currentTrustedStandardLibrary, a.currentImports
 	previousAliases, previousBindings := a.aliases, a.typeParameterBindings
+	previousTraitContext := a.resolvingTraitMethodTypes
 	a.currentMod = module
 	a.current = a.modules[module].Scope
 	a.currentTrustedStandardLibrary = trusted
 	a.currentImports = a.importsByModule[module]
 	a.aliases = a.aliasesByModule[module]
 	a.typeParameterBindings = bindings
+	a.resolvingTraitMethodTypes = false
 	action()
 	a.current, a.currentMod = previousScope, previousModule
 	a.currentTrustedStandardLibrary, a.currentImports = previousTrusted, previousImports
 	a.aliases, a.typeParameterBindings = previousAliases, previousBindings
+	a.resolvingTraitMethodTypes = previousTraitContext
 }
 
 func (a *Analyser) specializeGenericAlias(info *genericAliasInfo, arguments []types.Type, use parser.Node, indirect bool) *symbols.Symbol {
