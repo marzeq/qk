@@ -1,15 +1,15 @@
 module std.alloc
 
 pub let Allocator = type trait {
-  let alloc(*mut self, size: usz, align: usz): *mut void
-  let free(*mut self, ptr: *mut void, size: usz, align: usz): void
-  let resize(
+  let new<T>(*mut self): (*mut T, bool)
+  let allocate<T>(*mut self, count: usz): (*mut T, bool)
+  let free<T>(*mut self, ptr: *mut T, count: usz): void
+  let resize<T>(
     *mut self,
-    ptr: *mut void,
-    old_size: usz,
-    new_size: usz,
-    align: usz,
-  ): *mut void
+    ptr: *mut T,
+    old_count: usz,
+    new_count: usz,
+  ): (*mut T, bool)
   let free_all(*mut self): void
 }
 
@@ -53,6 +53,16 @@ let max_usz(a: usz, b: usz): usz =
 
 let min_usz(a: usz, b: usz): usz =
   if a < b { a } else { b }
+
+let checked_size<T>(count: usz): (usz, bool) {
+  let element_size = sizeof(T)
+
+  if element_size != 0 and count > (~0.(usz)) / element_size {
+    return 0.(usz), false
+  }
+
+  return element_size * count, true
+}
 
 pub let GrowingArena.init(
   initial_chunk_size: usz = ArenaDefaultChunkSize,
@@ -135,7 +145,7 @@ let GrowingArena.grow(
   return chunk
 }
 
-pub let GrowingArena.alloc(
+let GrowingArena.allocate_bytes(
   *mut self,
   size: usz,
   align: usz,
@@ -198,7 +208,7 @@ pub let GrowingArena.alloc(
   return result
 }
 
-pub let GrowingArena.free(
+let GrowingArena.free_bytes(
   *mut self,
   ptr: *mut void,
   size: usz,
@@ -211,7 +221,7 @@ pub let GrowingArena.free(
   // use-after-free errors or overlap live allocations.
 }
 
-pub let GrowingArena.resize(
+let GrowingArena.resize_bytes(
   *mut self,
   ptr: *mut void,
   old_size: usz,
@@ -219,7 +229,7 @@ pub let GrowingArena.resize(
   align: usz,
 ): *mut void {
   if ptr == nil {
-    return self.alloc(new_size, align)
+    return self.allocate_bytes(new_size, align)
   }
 
   if new_size == 0 {
@@ -244,7 +254,7 @@ pub let GrowingArena.resize(
     }
   }
 
-  let replacement = self.alloc(new_size, align)
+  let replacement = self.allocate_bytes(new_size, align)
   if replacement == nil {
     return nil
   }
@@ -252,6 +262,62 @@ pub let GrowingArena.resize(
   std.libc.memcpy(replacement, ptr, min_usz(old_size, new_size))
 
   return replacement
+}
+
+pub let GrowingArena.new<T>(*mut self): (*mut T, bool) =
+  self.allocate<T>(1)
+
+pub let GrowingArena.allocate<T>(
+  *mut self,
+  count: usz,
+): (*mut T, bool) {
+  let size, valid = checked_size<T>(count)
+  if not valid {
+    return nil, false
+  }
+
+  if size == 0 {
+    return nil, true
+  }
+
+  let result = self.allocate_bytes(size, alignof(T))
+  return result.(*mut T), result != nil
+}
+
+pub let GrowingArena.free<T>(
+  *mut self,
+  ptr: *mut T,
+  count: usz,
+): void {
+  let size, valid = checked_size<T>(count)
+  if not valid {
+    return
+  }
+
+  self.free_bytes(ptr, size, alignof(T))
+}
+
+pub let GrowingArena.resize<T>(
+  *mut self,
+  ptr: *mut T,
+  old_count: usz,
+  new_count: usz,
+): (*mut T, bool) {
+  let old_size, valid_old_size = checked_size<T>(old_count)
+  let new_size, valid_new_size = checked_size<T>(new_count)
+
+  if not valid_old_size or not valid_new_size {
+    return nil, false
+  }
+
+  let result = self.resize_bytes(
+    ptr,
+    old_size,
+    new_size,
+    alignof(T),
+  )
+
+  return result.(*mut T), result != nil or new_size == 0
 }
 
 pub let GrowingArena.free_all(*mut self): void {

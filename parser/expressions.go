@@ -1498,7 +1498,7 @@ func (p *Parser) ParseTraitType() (*TraitTypeNode, error) {
 		if p.Match(tokeniser.TokenColon) {
 			p.Inc()
 			var err error
-			ret, err = p.ParseType()
+			ret, err = p.parseFunctionReturnType()
 			if err != nil {
 				return nil, err
 			}

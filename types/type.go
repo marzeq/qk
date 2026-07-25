@@ -37,6 +37,7 @@ func SubstituteSelf(t Type, replacement Type) Type {
 		return replacement
 	case DefinedType:
 		t.Underlying = SubstituteSelf(t.Underlying, replacement)
+		t.TypeArguments = append([]Type(nil), t.TypeArguments...)
 		for i := range t.TypeArguments {
 			t.TypeArguments[i] = SubstituteSelf(t.TypeArguments[i], replacement)
 		}
@@ -50,16 +51,19 @@ func SubstituteSelf(t Type, replacement Type) Type {
 		t.Base = SubstituteSelf(t.Base, replacement)
 		return t
 	case StructType:
+		t.Fields = append([]shared.Pair[string, Type](nil), t.Fields...)
 		for i := range t.Fields {
 			t.Fields[i].R = SubstituteSelf(t.Fields[i].R, replacement)
 		}
 		return t
 	case UnionType:
+		t.Fields = append([]shared.Pair[string, Type](nil), t.Fields...)
 		for i := range t.Fields {
 			t.Fields[i].R = SubstituteSelf(t.Fields[i].R, replacement)
 		}
 		return t
 	case FunctionType:
+		t.Parameters = append([]Type(nil), t.Parameters...)
 		for i := range t.Parameters {
 			t.Parameters[i] = SubstituteSelf(t.Parameters[i], replacement)
 		}
@@ -67,6 +71,7 @@ func SubstituteSelf(t Type, replacement Type) Type {
 		t.VariadicElement = SubstituteSelf(t.VariadicElement, replacement)
 		return t
 	case MultipleReturnType:
+		t.Types = append([]Type(nil), t.Types...)
 		for i := range t.Types {
 			t.Types[i] = SubstituteSelf(t.Types[i], replacement)
 		}
@@ -260,6 +265,7 @@ func Substitute(t Type, arguments map[string]Type) Type {
 		return t
 	case DefinedType:
 		t.Underlying = Substitute(t.Underlying, arguments)
+		t.TypeArguments = append([]Type(nil), t.TypeArguments...)
 		for i := range t.TypeArguments {
 			t.TypeArguments[i] = Substitute(t.TypeArguments[i], arguments)
 		}
@@ -273,16 +279,19 @@ func Substitute(t Type, arguments map[string]Type) Type {
 		t.Base = Substitute(t.Base, arguments)
 		return t
 	case StructType:
+		t.Fields = append([]shared.Pair[string, Type](nil), t.Fields...)
 		for i := range t.Fields {
 			t.Fields[i].R = Substitute(t.Fields[i].R, arguments)
 		}
 		return t
 	case UnionType:
+		t.Fields = append([]shared.Pair[string, Type](nil), t.Fields...)
 		for i := range t.Fields {
 			t.Fields[i].R = Substitute(t.Fields[i].R, arguments)
 		}
 		return t
 	case FunctionType:
+		t.Parameters = append([]Type(nil), t.Parameters...)
 		for i := range t.Parameters {
 			t.Parameters[i] = Substitute(t.Parameters[i], arguments)
 		}
@@ -290,6 +299,7 @@ func Substitute(t Type, arguments map[string]Type) Type {
 		t.VariadicElement = Substitute(t.VariadicElement, arguments)
 		return t
 	case MultipleReturnType:
+		t.Types = append([]Type(nil), t.Types...)
 		for i := range t.Types {
 			t.Types[i] = Substitute(t.Types[i], arguments)
 		}
@@ -301,7 +311,10 @@ func Substitute(t Type, arguments map[string]Type) Type {
 		}
 		return t
 	case TraitType:
+		t.Methods = append([]TraitMethod(nil), t.Methods...)
 		for i := range t.Methods {
+			t.Methods[i].GenericParameters = append([]TypeParameter(nil), t.Methods[i].GenericParameters...)
+			t.Methods[i].Parameters = append([]Type(nil), t.Methods[i].Parameters...)
 			for j := range t.Methods[i].GenericParameters {
 				t.Methods[i].GenericParameters[j].Constraint = Substitute(
 					t.Methods[i].GenericParameters[j].Constraint,

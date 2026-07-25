@@ -1512,8 +1512,9 @@ Such operations have native-machine behavior and may be undefined. Some cases,
 such as literal indexing outside a fixed-size slice, are rejected during the
 build.
 
-There is no allocator, exception mechanism, stack unwinding, garbage collector,
-or automatic destructor system. `defer` does not provide exception unwinding.
+There is no language-managed allocation, exception mechanism, stack unwinding,
+garbage collector, or automatic destructor system. The hosted standard library
+provides explicit allocators. `defer` does not provide exception unwinding.
 
 ### 26.1 Traits and dynamic dispatch
 
@@ -1689,7 +1690,41 @@ contents and is available without libc; `cstr.eq` compares pointer identity.
 Logical `and` and `or` deliberately have no method traits because ordinary
 method arguments are eagerly evaluated and cannot preserve short-circuiting.
 
-### 26.3 Display
+### 26.3 Allocation
+
+The `std.alloc` module defines a static-only generic `Allocator` trait:
+
+```qk
+pub let Allocator = type trait {
+    let new<T>(*mut self): (*mut T, bool)
+    let allocate<T>(*mut self, count: usz): (*mut T, bool)
+    let free<T>(*mut self, ptr: *mut T, count: usz): void
+    let resize<T>(
+        *mut self,
+        ptr: *mut T,
+        old_count: usz,
+        new_count: usz,
+    ): (*mut T, bool)
+    let free_all(*mut self): void
+}
+```
+
+Sizes and alignments come from `T`; callers pass element counts rather than byte
+sizes. Allocation and resize return the pointer and an explicit success flag.
+A zero-element allocation succeeds with `nil`, while a count-to-byte-size
+overflow fails without calling the allocator.
+
+`std.alloc.GrowingArena` is the hosted implementation. It grows geometrically,
+can resize its most recent allocation in place, and otherwise allocates and
+copies replacement storage. Individual `free` calls do not reclaim arena
+storage; `free_all` releases every chunk. The trait remains defined for
+`-nolibc` semantic use, but `GrowingArena` requires libc.
+
+Because `Allocator` has generic methods, it is used through concrete values,
+static trait views, or `A: std.alloc.Allocator` constraints rather than
+`dyn std.alloc.Allocator`.
+
+### 26.4 Display
 
 The standard library defines `std.Display` with one value-receiver method:
 
@@ -1746,7 +1781,7 @@ does not prevent invocation through the trait. Converting an existing trait
 pointer to a different trait pointer traps if the concrete type does not conform;
 the two-target form reports failure through its boolean result instead.
 
-### 26.4 Panic
+### 26.5 Panic
 
 `panic(message: str)` writes `panic: `, the message, and a newline to standard
 error, then terminates without stack unwinding. Deferred actions are not run as
