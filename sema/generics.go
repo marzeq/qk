@@ -14,10 +14,7 @@ type genericFunctionInfo struct {
 	node            *parser.FunctionDefNode
 	root            *parser.RootNode
 	module          string
-	trusted         bool
 	specializations map[string]*parser.FunctionDefNode
-	attributed      map[string]bool
-	attributing     map[string]bool
 }
 
 type genericValueInfo struct {
@@ -101,6 +98,50 @@ func typeArgumentBindings(parameters []types.TypeParameter, arguments []types.Ty
 	return bindings
 }
 
+func typeSubstitutionBindings(parameters []types.TypeParameter, arguments []types.Type) map[string]types.Type {
+	bindings := make(map[string]types.Type, len(parameters))
+	for i, parameter := range parameters {
+		bindings[parameter.Key()] = arguments[i]
+	}
+	return bindings
+}
+
+func hasTypeParameters(arguments []types.Type) bool {
+	for _, argument := range arguments {
+		if types.HasTypeParameter(argument) {
+			return true
+		}
+	}
+	return false
+}
+
+func substituteFunctionSignature(signature *symbols.FunctionSignature, substitutions map[string]types.Type) *symbols.FunctionSignature {
+	if signature == nil {
+		return nil
+	}
+	result := *signature
+	result.Parameters = make([]types.Type, len(signature.Parameters))
+	for i, parameter := range signature.Parameters {
+		result.Parameters[i] = types.Substitute(parameter, substitutions)
+	}
+	result.ReturnType = types.Substitute(signature.ReturnType, substitutions)
+	result.VariadicElement = types.Substitute(signature.VariadicElement, substitutions)
+	return &result
+}
+
+func dependentGenericFunctionSymbol(template *symbols.Symbol, arguments []types.Type) *symbols.Symbol {
+	result := *template
+	result.Template = false
+	result.TemplateSymbol = template
+	result.TypeArguments = append([]types.Type(nil), arguments...)
+	result.GenericParameters = nil
+	result.Signature = substituteFunctionSignature(
+		template.Signature,
+		typeSubstitutionBindings(template.GenericParameters, arguments),
+	)
+	return &result
+}
+
 func staticTraitViewForGenericType(t types.Type) *types.StaticTraitView {
 	access := types.TraitReceiverValue
 	if pointer, ok := t.(types.PointerType); ok {
@@ -119,6 +160,14 @@ func staticTraitViewForGenericType(t types.Type) *types.StaticTraitView {
 		return nil
 	}
 	return &types.StaticTraitView{Trait: trait, Access: access}
+}
+
+func genericTypeParameterBase(t types.Type) (types.TypeParameter, bool) {
+	if pointer, ok := t.(types.PointerType); ok {
+		t = pointer.Base
+	}
+	parameter, ok := t.(types.TypeParameter)
+	return parameter, ok
 }
 
 func (a *Analyser) resolveGenericArguments(nodes []parser.TypeNode) []types.Type {
@@ -281,27 +330,310 @@ func (a *Analyser) specializeGenericFunction(template *symbols.Symbol, arguments
 	if existing := info.specializations[key]; existing != nil {
 		return existing
 	}
-	clone := parser.CloneSyntax(info.node).(*parser.FunctionDefNode)
-	clone.GenericParameters = nil
-	clone.Name = specializationName(info.module, template.Name, arguments)
-	if clone.MethodOwner != "" {
-		clone.MethodOwner = ""
+	substitutions := typeSubstitutionBindings(template.GenericParameters, arguments)
+	name := specializationName(info.module, template.Name, arguments)
+	instanceSymbol := a.substituteSymbol(template, substitutions, use)
+	instanceSymbol.Name = name
+	instanceSymbol.Template = false
+	instanceSymbol.TemplateSymbol = template
+	instanceSymbol.TypeArguments = append([]types.Type(nil), arguments...)
+	instanceSymbol.GenericParameters = nil
+
+	instance := &parser.FunctionDefNode{Symbol: instanceSymbol}
+	info.specializations[key] = instance
+
+	symbolsByOriginal := map[*symbols.Symbol]*symbols.Symbol{template: instanceSymbol}
+	mapSymbol := func(original *symbols.Symbol) *symbols.Symbol {
+		return a.instantiateFunctionSymbol(original, substitutions, symbolsByOriginal, use)
 	}
-	info.specializations[key] = clone
-	info.root.Body = append(info.root.Body, clone)
-	bindings := typeArgumentBindings(template.GenericParameters, arguments)
-	a.withDefinitionContext(info.module, info.trusted, bindings, func() {
-		a.collectPlainFunctionSignature(clone)
-		if clone.Symbol != nil {
-			clone.Symbol.TemplateSymbol = template
-			clone.Symbol.TypeArguments = append([]types.Type(nil), arguments...)
-			clone.Symbol.Method = template.Method
-			clone.Symbol.StaticMethod = template.StaticMethod
-			clone.Symbol.MethodReceiver = template.MethodReceiver
+	cloned := parser.CloneSemantic(info.node, func(t types.Type) types.Type {
+		return a.instantiateType(t, substitutions, use)
+	}, mapSymbol, func(node parser.Node) {
+		a.instantiateSemanticNode(node)
+	}).(*parser.FunctionDefNode)
+	cloned.GenericParameters = nil
+	cloned.GenericInstance = true
+	cloned.Name = name
+	cloned.Symbol = instanceSymbol
+	if cloned.MethodOwner != "" {
+		cloned.MethodOwner = ""
+	}
+	*instance = *cloned
+	info.root.Body = append(info.root.Body, instance)
+	return instance
+}
+
+func (a *Analyser) instantiateSemanticNode(node parser.Node) {
+	cast, ok := node.(*parser.CastNode)
+	if !ok {
+		return
+	}
+	if cast.TraitConversion {
+		targetType := cast.Type
+		if cast.Checked {
+			targetType = cast.CheckedType
 		}
-		a.visitFunction(clone)
-	})
-	return clone
+		if target, ok := traitPointer(targetType); ok {
+			methods, conforms := a.structuralConformance(cast.Operand.GetType(), target, cast)
+			if !conforms {
+				a.errorf(cast, "type %v does not conform to %v", cast.ConcreteType, target.Trait)
+			} else {
+				pointer, _ := concretePointer(cast.Operand.GetType())
+				cast.ConcreteType = pointer.Base
+				cast.TraitMethods = methods
+			}
+		}
+	}
+	if cast.GenericAssertion {
+		target := cast.Type
+		if cast.Checked {
+			target = cast.CheckedType
+		}
+		cast.AssertionMatches = cast.Operand.GetType().Equals(target)
+	}
+	if cast.StaticTraitView == nil {
+		return
+	}
+	source := cast.Operand.GetType()
+	pointer, _ := types.Underlying(source).(types.PointerType)
+	_, _, sourceIsPointer, _ := methodOwnerIdentity(source)
+	var concrete types.Type
+	var probe types.PointerType
+	if cast.StaticTraitView.Access == types.TraitReceiverValue {
+		if sourceIsPointer {
+			concrete = pointer.Base
+			probe = pointer
+		} else {
+			concrete = source
+			probe = types.PointerType{Base: source}
+		}
+	} else {
+		concrete = pointer.Base
+		probe = pointer
+	}
+	target := types.TraitPointerType{
+		Trait:   cast.StaticTraitView.Trait,
+		Mutable: cast.StaticTraitView.Access == types.TraitReceiverMutablePointer,
+	}
+	methods, conforms := a.structuralConformance(probe, target, cast)
+	cast.ConcreteType = concrete
+	cast.AssertionMatches = conforms
+	cast.TraitMethods = methods
+}
+
+func (a *Analyser) substituteSymbol(
+	original *symbols.Symbol,
+	substitutions map[string]types.Type,
+	use parser.Node,
+) *symbols.Symbol {
+	result := *original
+	result.Type = a.instantiateType(original.Type, substitutions, use)
+	result.GenericOrigin = a.instantiateType(original.GenericOrigin, substitutions, use)
+	result.Signature = a.instantiateFunctionSignature(original.Signature, substitutions, use)
+	result.TypeInfo = a.instantiateType(original.TypeInfo, substitutions, use)
+	result.TypeArguments = make([]types.Type, len(original.TypeArguments))
+	for i, argument := range original.TypeArguments {
+		result.TypeArguments[i] = a.instantiateType(argument, substitutions, use)
+	}
+	if original.StaticTraitView != nil {
+		view := *original.StaticTraitView
+		if trait, ok := a.instantiateType(view.Trait, substitutions, use).(types.TraitType); ok {
+			view.Trait = trait
+		}
+		result.StaticTraitView = &view
+	}
+	if original.TraitRequirement {
+		if trait, ok := a.instantiateType(original.RequirementTrait, substitutions, use).(types.TraitType); ok {
+			result.RequirementTrait = trait
+		}
+	}
+	return &result
+}
+
+func (a *Analyser) instantiateFunctionSignature(
+	signature *symbols.FunctionSignature,
+	substitutions map[string]types.Type,
+	use parser.Node,
+) *symbols.FunctionSignature {
+	if signature == nil {
+		return nil
+	}
+	result := *signature
+	result.Parameters = make([]types.Type, len(signature.Parameters))
+	for i, parameter := range signature.Parameters {
+		result.Parameters[i] = a.instantiateType(parameter, substitutions, use)
+	}
+	result.ReturnType = a.instantiateType(signature.ReturnType, substitutions, use)
+	result.VariadicElement = a.instantiateType(signature.VariadicElement, substitutions, use)
+	return &result
+}
+
+func (a *Analyser) instantiateType(t types.Type, substitutions map[string]types.Type, use parser.Node) types.Type {
+	t = types.Substitute(t, substitutions)
+	if t == nil {
+		return nil
+	}
+	switch current := t.(type) {
+	case types.DefinedType:
+		for i, argument := range current.TypeArguments {
+			current.TypeArguments[i] = a.instantiateType(argument, substitutions, use)
+		}
+		if current.GenericName != "" && !hasTypeParameters(current.TypeArguments) {
+			module := a.modules[current.Module]
+			if module != nil {
+				if template, ok := module.Scope.Resolve(current.GenericName); ok {
+					if info := a.genericAliases[template]; info != nil {
+						if specialized := a.specializeGenericAlias(info, current.TypeArguments, use, false); specialized != nil {
+							return specialized.TypeInfo
+						}
+					}
+				}
+			}
+		}
+		current.Underlying = a.instantiateType(current.Underlying, substitutions, use)
+		return current
+	case types.PointerType:
+		current.Base = a.instantiateType(current.Base, substitutions, use)
+		return current
+	case types.SliceType:
+		current.Base = a.instantiateType(current.Base, substitutions, use)
+		return current
+	case types.StructType:
+		for i := range current.Fields {
+			current.Fields[i].R = a.instantiateType(current.Fields[i].R, substitutions, use)
+		}
+		return current
+	case types.UnionType:
+		for i := range current.Fields {
+			current.Fields[i].R = a.instantiateType(current.Fields[i].R, substitutions, use)
+		}
+		return current
+	case types.FunctionType:
+		for i, parameter := range current.Parameters {
+			current.Parameters[i] = a.instantiateType(parameter, substitutions, use)
+		}
+		current.ReturnType = a.instantiateType(current.ReturnType, substitutions, use)
+		current.VariadicElement = a.instantiateType(current.VariadicElement, substitutions, use)
+		return current
+	case types.MultipleReturnType:
+		for i, item := range current.Types {
+			current.Types[i] = a.instantiateType(item, substitutions, use)
+		}
+		return current
+	case types.TraitPointerType:
+		if trait, ok := a.instantiateType(current.Trait, substitutions, use).(types.TraitType); ok {
+			current.Trait = trait
+		}
+		return current
+	case types.TraitType:
+		for i := range current.Methods {
+			for j, parameter := range current.Methods[i].Parameters {
+				current.Methods[i].Parameters[j] = a.instantiateType(parameter, substitutions, use)
+			}
+			current.Methods[i].ReturnType = a.instantiateType(current.Methods[i].ReturnType, substitutions, use)
+		}
+		return current
+	default:
+		return current
+	}
+}
+
+func (a *Analyser) instantiateFunctionSymbol(
+	original *symbols.Symbol,
+	substitutions map[string]types.Type,
+	cloned map[*symbols.Symbol]*symbols.Symbol,
+	use parser.Node,
+) *symbols.Symbol {
+	if existing := cloned[original]; existing != nil {
+		return existing
+	}
+	substituted := a.substituteSymbol(original, substitutions, use)
+	if original.TraitRequirement {
+		receiver := substituted.Signature.Parameters[0]
+		var probe types.PointerType
+		if original.RequirementAccess == types.TraitReceiverValue {
+			probe = types.PointerType{Base: receiver}
+		} else {
+			var ok bool
+			probe, ok = types.Underlying(receiver).(types.PointerType)
+			if !ok {
+				a.errorf(use, "cannot instantiate trait receiver %v", receiver)
+				cloned[original] = substituted
+				return substituted
+			}
+		}
+		target := types.TraitPointerType{
+			Trait:   substituted.RequirementTrait,
+			Mutable: original.RequirementAccess == types.TraitReceiverMutablePointer,
+		}
+		methods, conforms := a.structuralConformance(probe, target, use)
+		if !conforms || original.RequirementSlot >= len(methods) {
+			a.errorf(use, "type %v does not implement %v", probe.Base, target.Trait)
+			cloned[original] = substituted
+			return substituted
+		}
+		method := methods[original.RequirementSlot]
+		cloned[original] = method
+		return method
+	}
+	if original.TemplateSymbol != nil {
+		if !hasTypeParameters(substituted.TypeArguments) {
+			switch original.TemplateSymbol.Kind {
+			case symbols.SymbolKindFunction:
+				specialization := a.specializeGenericFunction(
+					original.TemplateSymbol,
+					substituted.TypeArguments,
+					use,
+				)
+				if specialization != nil && specialization.Symbol != nil {
+					cloned[original] = specialization.Symbol
+					return specialization.Symbol
+				}
+			case symbols.SymbolKindVariable:
+				if specialization := a.specializeGenericValue(
+					original.TemplateSymbol,
+					substituted.TypeArguments,
+					use,
+				); specialization != nil {
+					cloned[original] = specialization
+					return specialization
+				}
+			case symbols.SymbolKindType:
+				if specialization := a.specializeGenericAlias(
+					a.genericAliases[original.TemplateSymbol],
+					substituted.TypeArguments,
+					use,
+					false,
+				); specialization != nil {
+					cloned[original] = specialization
+					return specialization
+				}
+			}
+		}
+		cloned[original] = substituted
+		return substituted
+	}
+	if !a.isGlobalSymbol(original) {
+		cloned[original] = substituted
+		return substituted
+	}
+	return original
+}
+
+func (a *Analyser) isGlobalSymbol(symbol *symbols.Symbol) bool {
+	for _, candidate := range a.universe.Symbols {
+		if candidate == symbol {
+			return true
+		}
+	}
+	for _, module := range a.modules {
+		for _, candidate := range module.Scope.Symbols {
+			if candidate == symbol {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func inferGenericArguments(
@@ -404,22 +736,7 @@ func expressionTypes(expressions []parser.ExpressionNode) []types.Type {
 }
 
 func (a *Attributor) attributeGenericSpecialization(template *symbols.Symbol, arguments []types.Type, use parser.Node) *parser.FunctionDefNode {
-	info := a.analyser.genericFunctions[template]
 	specialization := a.analyser.specializeGenericFunction(template, arguments, use)
-	if info == nil || specialization == nil {
-		return nil
-	}
-	key := specializationKey(arguments)
-	if info.attributed[key] || info.attributing[key] {
-		return specialization
-	}
-	info.attributing[key] = true
-	bindings := typeArgumentBindings(template.GenericParameters, arguments)
-	a.analyser.withDefinitionContext(info.module, info.trusted, bindings, func() {
-		a.attributeNode(specialization)
-	})
-	delete(info.attributing, key)
-	info.attributed[key] = true
 	return specialization
 }
 

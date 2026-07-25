@@ -31,6 +31,10 @@ type Symbol struct {
 	StaticMethod      bool                    // attached to a type without a receiver
 	MethodReceiver    types.TraitReceiverKind // receiver form declared by an attached method
 	DefinitionModule  string                  // module that owns the function implementation
+	TraitRequirement  bool
+	RequirementTrait  types.TraitType
+	RequirementSlot   int
+	RequirementAccess types.TraitReceiverKind
 	GenericParameters []types.TypeParameter
 	Template          bool
 	TemplateSymbol    *Symbol

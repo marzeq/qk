@@ -13,8 +13,9 @@ import (
 )
 
 type Attributor struct {
-	analyser *Analyser
-	errors   []error
+	analyser      *Analyser
+	errors        []error
+	templatesOnly bool
 }
 
 func (a *Analyser) NewAttributor() *Attributor {
@@ -26,6 +27,34 @@ func (a *Attributor) errorf(node parser.Node, format string, args ...any) {
 }
 
 func (a *Attributor) AttributeModule(root *parser.RootNode) {
+	a.templatesOnly = false
+	a.selectModule(root)
+	a.attributeNode(root)
+}
+
+func (a *Attributor) AttributeGenericTemplates(root *parser.RootNode) {
+	a.templatesOnly = true
+	a.selectModule(root)
+	for _, node := range root.Body {
+		function, ok := node.(*parser.FunctionDefNode)
+		if !ok || len(function.GenericParameters) == 0 {
+			continue
+		}
+		bindings := make(map[string]types.Type, len(function.Symbol.GenericParameters))
+		for _, parameter := range function.Symbol.GenericParameters {
+			bindings[parameter.Name] = parameter
+		}
+		a.analyser.withDefinitionContext(
+			a.analyser.currentMod,
+			a.analyser.currentTrustedStandardLibrary,
+			bindings,
+			func() { a.attributeNode(function) },
+		)
+	}
+	a.templatesOnly = false
+}
+
+func (a *Attributor) selectModule(root *parser.RootNode) {
 	for _, node := range root.Body {
 		if module, ok := node.(*parser.ModuleNode); ok {
 			a.analyser.currentMod = module.Name
@@ -36,7 +65,6 @@ func (a *Attributor) AttributeModule(root *parser.RootNode) {
 			break
 		}
 	}
-	a.attributeNode(root)
 }
 
 func (a *Attributor) Errors() []error {
@@ -47,6 +75,13 @@ func (a *Attributor) attributeNode(node parser.Node) {
 	switch n := node.(type) {
 	case *parser.RootNode:
 		for _, stmt := range n.Body {
+			if function, ok := stmt.(*parser.FunctionDefNode); ok && len(function.GenericParameters) != 0 {
+				if !a.templatesOnly {
+					continue
+				}
+			} else if a.templatesOnly {
+				continue
+			}
 			a.attributeNode(stmt)
 		}
 
@@ -57,7 +92,7 @@ func (a *Attributor) attributeNode(node parser.Node) {
 		// pass
 
 	case *parser.FunctionDefNode:
-		if len(n.GenericParameters) != 0 {
+		if n.GenericInstance {
 			break
 		}
 		restoreSpecialization := a.enterSpecialization(n.Symbol)
@@ -250,13 +285,26 @@ func (a *Attributor) attributeNode(node parser.Node) {
 func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 	switch n := node.(type) {
 	case *parser.IdentifierNode:
-		if n.Symbol != nil && n.Symbol.TemplateSymbol != nil {
+		if n.Symbol != nil && n.Symbol.TemplateSymbol != nil && !a.templatesOnly && !hasTypeParameters(n.Symbol.TypeArguments) {
 			if specialization := a.attributeGenericSpecialization(n.Symbol.TemplateSymbol, n.Symbol.TypeArguments, n); specialization != nil {
 				n.Symbol = specialization.Symbol
 			}
 		}
 		if n.Symbol != nil && n.Symbol.Template {
-			a.errorf(n, "generic binding %q requires type arguments", n.Symbol.Name)
+			if len(n.ResolvedTypeArgs) == 0 {
+				a.errorf(n, "generic binding %q requires type arguments", n.Symbol.Name)
+				n.SetType(types.ErrorType{})
+			} else if a.templatesOnly || hasTypeParameters(n.ResolvedTypeArgs) {
+				if a.analyser.checkGenericArguments(n, n.Symbol.GenericParameters, n.ResolvedTypeArgs) {
+					n.Symbol = dependentGenericFunctionSymbol(n.Symbol, n.ResolvedTypeArgs)
+				} else {
+					n.SetType(types.ErrorType{})
+				}
+			} else if specialization := a.attributeGenericSpecialization(n.Symbol, n.ResolvedTypeArgs, n); specialization != nil {
+				n.Symbol = specialization.Symbol
+			}
+		}
+		if n.Symbol != nil && n.Symbol.Template {
 			n.SetType(types.ErrorType{})
 		} else if n.Symbol != nil && n.Symbol.Kind == symbols.SymbolKindFunction && n.Symbol.Signature != nil {
 			ret := n.Symbol.Signature.ReturnType
@@ -388,20 +436,35 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 
 		if n.Symbol != nil && n.Symbol.Template {
 			template := n.Symbol
-			arguments, err := inferGenericArguments(
-				template.GenericParameters, template.Signature.Parameters, expressionTypes(n.Args),
-				template.Signature.TypedVariadic, n.VariadicExpansion,
-			)
+			arguments := []types.Type(nil)
+			var err error
+			if n.Name != nil && len(n.Name.ResolvedTypeArgs) != 0 {
+				arguments = n.Name.ResolvedTypeArgs
+			} else {
+				arguments, err = inferGenericArguments(
+					template.GenericParameters, template.Signature.Parameters, expressionTypes(n.Args),
+					template.Signature.TypedVariadic, n.VariadicExpansion,
+				)
+			}
 			if err != nil {
 				a.errorf(n, "%v", err)
 				n.SetType(types.ErrorType{})
+			} else if a.templatesOnly || hasTypeParameters(arguments) {
+				if a.analyser.checkGenericArguments(n, template.GenericParameters, arguments) {
+					n.Symbol = dependentGenericFunctionSymbol(template, arguments)
+					if n.Name != nil {
+						n.Name.Symbol = n.Symbol
+					}
+				} else {
+					n.SetType(types.ErrorType{})
+				}
 			} else if specialization := a.attributeGenericSpecialization(template, arguments, n); specialization != nil {
 				n.Symbol = specialization.Symbol
 				if n.Name != nil {
 					n.Name.Symbol = specialization.Symbol
 				}
 			}
-		} else if n.Symbol != nil && n.Symbol.TemplateSymbol != nil {
+		} else if n.Symbol != nil && n.Symbol.TemplateSymbol != nil && !a.templatesOnly && !hasTypeParameters(n.Symbol.TypeArguments) {
 			template := n.Symbol.TemplateSymbol
 			if specialization := a.attributeGenericSpecialization(template, n.Symbol.TypeArguments, n); specialization != nil {
 				n.Symbol = specialization.Symbol
@@ -588,15 +651,26 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 	case *parser.FieldAccessNode:
 		if n.ResolvedIdentifier != nil {
 			ident := n.ResolvedIdentifier
-			if ident.Symbol.TemplateSymbol != nil {
+			if ident.Symbol.TemplateSymbol != nil && !a.templatesOnly && !hasTypeParameters(ident.Symbol.TypeArguments) {
 				if specialization := a.attributeGenericSpecialization(ident.Symbol.TemplateSymbol, ident.Symbol.TypeArguments, ident); specialization != nil {
 					ident.Symbol = specialization.Symbol
 				}
 			}
 			if ident.Symbol.Template {
-				a.errorf(n, "generic binding %q requires type arguments", ident.Symbol.Name)
-				n.SetType(types.ErrorType{})
-				break
+				if len(ident.ResolvedTypeArgs) == 0 {
+					a.errorf(n, "generic binding %q requires type arguments", ident.Symbol.Name)
+					n.SetType(types.ErrorType{})
+					break
+				}
+				if a.templatesOnly || hasTypeParameters(ident.ResolvedTypeArgs) {
+					if !a.analyser.checkGenericArguments(ident, ident.Symbol.GenericParameters, ident.ResolvedTypeArgs) {
+						n.SetType(types.ErrorType{})
+						break
+					}
+					ident.Symbol = dependentGenericFunctionSymbol(ident.Symbol, ident.ResolvedTypeArgs)
+				} else if specialization := a.attributeGenericSpecialization(ident.Symbol, ident.ResolvedTypeArgs, ident); specialization != nil {
+					ident.Symbol = specialization.Symbol
+				}
 			}
 			switch ident.Symbol.Kind {
 			case symbols.SymbolKindVariable:
@@ -954,12 +1028,20 @@ func (a *Attributor) attributeMethodValue(n *parser.FieldAccessNode) bool {
 	}
 	if method.Template && len(n.Field.TypeArguments) != 0 {
 		arguments := a.analyser.resolveGenericArguments(n.Field.TypeArguments)
-		specialization := a.analyser.specializeGenericFunction(method, arguments, n)
-		if specialization == nil {
-			n.SetType(types.ErrorType{})
-			return true
+		if a.templatesOnly || hasTypeParameters(arguments) {
+			if !a.analyser.checkGenericArguments(n, method.GenericParameters, arguments) {
+				n.SetType(types.ErrorType{})
+				return true
+			}
+			method = dependentGenericFunctionSymbol(method, arguments)
+		} else {
+			specialization := a.analyser.specializeGenericFunction(method, arguments, n)
+			if specialization == nil {
+				n.SetType(types.ErrorType{})
+				return true
+			}
+			method = specialization.Symbol
 		}
-		method = specialization.Symbol
 	}
 	ret := method.Signature.ReturnType
 	if ret == nil {
@@ -1031,12 +1113,20 @@ func (a *Attributor) attributeMethodCall(n *parser.FunctionCallNode) bool {
 	}
 	if method.Template && len(member.Field.TypeArguments) != 0 {
 		arguments := a.analyser.resolveGenericArguments(member.Field.TypeArguments)
-		specialization := a.analyser.specializeGenericFunction(method, arguments, n)
-		if specialization == nil {
-			n.SetType(types.ErrorType{})
-			return true
+		if a.templatesOnly || hasTypeParameters(arguments) {
+			if !a.analyser.checkGenericArguments(n, method.GenericParameters, arguments) {
+				n.SetType(types.ErrorType{})
+				return true
+			}
+			method = dependentGenericFunctionSymbol(method, arguments)
+		} else {
+			specialization := a.analyser.specializeGenericFunction(method, arguments, n)
+			if specialization == nil {
+				n.SetType(types.ErrorType{})
+				return true
+			}
+			method = specialization.Symbol
 		}
-		method = specialization.Symbol
 	}
 	receiver := member.Subject
 	expected := method.Signature.Parameters[0]
@@ -1090,6 +1180,29 @@ func (a *Attributor) attributeStaticTraitMethodCall(
 	}
 
 	subjectType := member.Subject.GetType()
+	if parameter, symbolic := genericTypeParameterBase(subjectType); symbolic {
+		parameters := make([]types.Type, len(requirement.Parameters)+1)
+		parameters[0] = subjectType
+		for i, required := range requirement.Parameters {
+			parameters[i+1] = types.SubstituteSelf(required, parameter)
+		}
+		method := symbols.NewFunction(requirement.Name, &symbols.FunctionSignature{
+			Parameters:         parameters,
+			RequiredParameters: len(parameters),
+			ReturnType:         types.SubstituteSelf(requirement.ReturnType, parameter),
+		})
+		method.Method = true
+		method.MethodReceiver = requirement.Receiver
+		method.TraitRequirement = true
+		method.RequirementTrait = view.Trait
+		method.RequirementSlot = requirementSlot
+		method.RequirementAccess = view.Access
+		call.Args = append([]parser.ExpressionNode{member.Subject}, call.Args...)
+		call.Symbol = method
+		call.Method = true
+		return true
+	}
+
 	_, _, subjectIsPointer, _ := methodOwnerIdentity(subjectType)
 	receiverIsPointer := view.Access != types.TraitReceiverValue || subjectIsPointer
 	var probe types.PointerType

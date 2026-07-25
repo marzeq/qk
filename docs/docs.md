@@ -602,17 +602,24 @@ contents rather than becoming part of its static type.
 A type parameter may have a structural trait constraint:
 
 ```qk
-let preserve<T: Display>(value: T): T = {
-    return value
-}
+let add<T: std.Add>(left, right: T): T = left.add(right)
 ```
 
-Trait constraints do not erase or wrap the argument. A specialization retains
-the concrete `T`, and calls to constrained methods are direct, statically
-resolved calls. The constrained parameter carries the trait's static method
-surface into the specialization, including structurally selected private
-witnesses. A `T` parameter exposes value receivers, `*T` additionally exposes
-immutable pointer receivers, and `*mut T` exposes mutable pointer receivers.
+The compiler resolves, attributes, and validates a generic function body once,
+using its symbolic type parameters. It does not type-check the body again for
+each concrete call. Consequently, the body may only use operations known from
+the parameter's type and constraints. For example, `left + right` is invalid in
+the function above because `+` requires a known numeric type; the `Add`
+constraint guarantees the explicitly declared `left.add(right)` method instead.
+This rule applies even if the generic function is never called.
+
+Trait constraints do not erase or wrap the argument. A concrete instance
+retains the concrete `T`, and calls to constrained methods become direct,
+statically resolved calls. The constrained parameter carries the trait's static
+method surface into semantic instantiation, including structurally selected
+private witnesses. A `T` parameter exposes value receivers, `*T` additionally
+exposes immutable pointer receivers, and `*mut T` exposes mutable pointer
+receivers.
 Typed assertions on values originating from a type parameter
 retain assertion semantics after specialization: `value.(Type)` succeeds only
 when the substituted type is exactly `Type`. A two-target assertion produces
@@ -1517,8 +1524,9 @@ pub let Summable = type trait {
 Conformance substitutes the candidate type for `Self`. A concrete method such
 as `Vec2.sum(self, other: Vec2): Vec2` therefore satisfies this requirement.
 For a generic `T: Summable`, the effective method signature is
-`sum(T, T): T`; specialization later replaces `T` with its concrete argument.
-Static trait views likewise retain and use their concrete type.
+`sum(T, T): T`; semantic instantiation later substitutes the concrete argument
+without type-checking the body again. Static trait views likewise retain and use
+their concrete type.
 
 `self`, `*self`, and `*mut self` are supported and must match the concrete
 method's receiver exactly. A concrete nominal type conforms structurally when

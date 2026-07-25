@@ -1423,7 +1423,11 @@ func (g *Generator) generateCastExpr(node *parser.CastNode) ir.Operand {
 	if node.TraitUnwrap {
 		return g.generateTraitUnwrap(node)
 	}
-	if (node.GenericAssertion || node.StaticTraitView != nil) && !node.AssertionMatches {
+	assertionMatches := node.AssertionMatches
+	if node.GenericAssertion {
+		assertionMatches = node.Operand.GetType().Equals(targetType)
+	}
+	if (node.GenericAssertion || node.StaticTraitView != nil) && !assertionMatches {
 		return g.generateFailedStaticAssertion(node, targetType)
 	}
 
@@ -2236,6 +2240,9 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 			name = export.As
 		} else if foreignAttr == nil && node.Symbol.Name != "panic" {
 			callModule := g.ModuleName
+			if node.Symbol.DefinitionModule != "" {
+				callModule = node.Symbol.DefinitionModule
+			}
 			if node.Name != nil && node.Name.Module != "" {
 				callModule = node.Name.Module
 				if node.Name.ResolvedModuleName != "" {
@@ -2243,11 +2250,10 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 				}
 			}
 			name = g.mangleFunctionName(callModule, node.Symbol.Name)
-		}
-
-		if node.Name != nil && node.Name.Module != "" && foreignAttr == nil {
-			hidden := node.Symbol.Attributes.Get(attributes.AttributeTypeExport) == nil
-			g.addExternForCall(name, callSig, "", hidden)
+			if callModule != g.ModuleName {
+				hidden := node.Symbol.Attributes.Get(attributes.AttributeTypeExport) == nil
+				g.addExternForCall(name, callSig, "", hidden)
+			}
 		}
 
 		if !node.Symbol.Signature.TypedVariadic && len(node.Args) < len(node.Symbol.Signature.Parameters) {
@@ -2255,7 +2261,8 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 			callSig.ParamTypes = append([]types.Type(nil), node.Symbol.Signature.Parameters[:len(node.Args)]...)
 			callSig.Variadic = false
 			callSig.Attributes = nil
-			if node.Name != nil && node.Name.Module != "" {
+			if node.Symbol.DefinitionModule != "" && node.Symbol.DefinitionModule != g.ModuleName ||
+				node.Name != nil && node.Name.Module != "" {
 				hidden := node.Symbol.Attributes.Get(attributes.AttributeTypeExport) == nil
 				g.addExternForCall(name, callSig, "", hidden)
 			}

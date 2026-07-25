@@ -48,9 +48,6 @@ func (a *Analyser) resolveBodies(root *parser.RootNode) {
 	for _, node := range root.Body {
 		switch n := node.(type) {
 		case *parser.FunctionDefNode:
-			if len(n.GenericParameters) != 0 {
-				continue
-			}
 			a.visitFunction(n)
 		case *parser.DeclarationNode:
 			if len(n.GenericParameters) != 0 {
@@ -134,8 +131,7 @@ func (a *Analyser) collectPlainFunctionSignature(n *parser.FunctionDefNode) {
 		if sym.Template {
 			a.genericFunctions[sym] = &genericFunctionInfo{
 				node: n, root: a.currentRoot, module: a.currentMod,
-				trusted: a.currentTrustedStandardLibrary, specializations: make(map[string]*parser.FunctionDefNode),
-				attributed: make(map[string]bool), attributing: make(map[string]bool),
+				specializations: make(map[string]*parser.FunctionDefNode),
 			}
 		}
 	}
@@ -232,8 +228,7 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 	if sym.Template {
 		a.genericFunctions[sym] = &genericFunctionInfo{
 			node: n, root: a.currentRoot, module: a.currentMod,
-			trusted: a.currentTrustedStandardLibrary, specializations: make(map[string]*parser.FunctionDefNode),
-			attributed: make(map[string]bool), attributing: make(map[string]bool),
+			specializations: make(map[string]*parser.FunctionDefNode),
 		}
 	}
 }

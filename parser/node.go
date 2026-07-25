@@ -29,6 +29,7 @@ type IdentifierNode struct {
 	Module             string
 	ResolvedModuleName string
 	TypeArguments      []TypeNode
+	ResolvedTypeArgs   []types.Type
 	Loc                shared.Location
 	Symbol             *symbols.Symbol
 	Type               types.Type
@@ -646,6 +647,7 @@ type FunctionDefNode struct {
 	Attributes        attributes.Attributes
 	Loc               shared.Location
 	Symbol            *symbols.Symbol
+	GenericInstance   bool
 }
 
 type MethodReceiverKind uint8

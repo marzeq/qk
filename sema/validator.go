@@ -14,10 +14,11 @@ import (
 )
 
 type Validator struct {
-	analyser        *Analyser
-	currentFunction *symbols.Symbol
-	errors          []error
-	warnings        []error
+	analyser           *Analyser
+	currentFunction    *symbols.Symbol
+	errors             []error
+	warnings           []error
+	validatingTemplate bool
 }
 
 func (a *Analyser) NewValidator() *Validator {
@@ -33,6 +34,34 @@ func (v *Validator) warnf(node parser.Node, format string, args ...any) {
 }
 
 func (v *Validator) ValidateModule(root *parser.RootNode) {
+	v.validatingTemplate = false
+	v.selectModule(root)
+	v.validateNode(root)
+}
+
+func (v *Validator) ValidateGenericTemplates(root *parser.RootNode) {
+	v.validatingTemplate = true
+	v.selectModule(root)
+	for _, node := range root.Body {
+		function, ok := node.(*parser.FunctionDefNode)
+		if !ok || len(function.GenericParameters) == 0 {
+			continue
+		}
+		bindings := make(map[string]types.Type, len(function.Symbol.GenericParameters))
+		for _, parameter := range function.Symbol.GenericParameters {
+			bindings[parameter.Name] = parameter
+		}
+		v.analyser.withDefinitionContext(
+			v.analyser.currentMod,
+			v.analyser.currentTrustedStandardLibrary,
+			bindings,
+			func() { v.validateNode(function) },
+		)
+	}
+	v.validatingTemplate = false
+}
+
+func (v *Validator) selectModule(root *parser.RootNode) {
 	for _, node := range root.Body {
 		if module, ok := node.(*parser.ModuleNode); ok {
 			v.analyser.currentMod = module.Name
@@ -43,7 +72,6 @@ func (v *Validator) ValidateModule(root *parser.RootNode) {
 			break
 		}
 	}
-	v.validateNode(root)
 }
 
 func (v *Validator) Errors() []error {
@@ -68,7 +96,7 @@ func (v *Validator) validateNode(node parser.Node) {
 		v.validateAttributes(n, n.Attributes, "module", attributes.AttributeTypeLink)
 
 	case *parser.FunctionDefNode:
-		if len(n.GenericParameters) != 0 {
+		if n.GenericInstance || (len(n.GenericParameters) != 0 && !v.validatingTemplate) {
 			return
 		}
 		v.validateAttributes(n, n.Attributes, "function",
@@ -689,6 +717,33 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			if types.HasUntyped(got) {
 				v.errorf(n, "cannot infer concrete type for trait conversion; add a type annotation or cast")
 				break
+			}
+			if parameter, symbolic := genericTypeParameterBase(got); symbolic {
+				constraint, constrained := types.Underlying(parameter.Constraint).(types.TraitType)
+				if constrained && traitImplementsTrait(constraint, target.Trait) {
+					if pointer, isPointer := types.Underlying(got).(types.PointerType); isPointer {
+						if target.Mutable && !pointer.Mutable {
+							v.errorf(n, "cannot cast immutable %v to mutable %v", got, targetType)
+							break
+						}
+						n.ConcreteType = pointer.Base
+					} else {
+						pointer := types.PointerType{Base: got, Mutable: target.Mutable}
+						op := parser.UnaryOpReference
+						if target.Mutable {
+							op = parser.UnaryOpMutableReference
+						}
+						reference := &parser.UnaryOpNode{Op: op, Operand: n.Operand, Loc: n.Operand.GetLoc(), Type: pointer}
+						if !v.validateReferenceTarget(reference, n.Operand, target.Mutable) {
+							break
+						}
+						n.Operand = reference
+						n.ConcreteType = got
+					}
+					n.TraitConversion = true
+					n.GenericAssertion = false
+					break
+				}
 			}
 			pointer := types.PointerType{Base: got, Mutable: target.Mutable}
 			methods, conforms := v.analyser.structuralConformance(pointer, target, n)
@@ -1538,6 +1593,34 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 		if types.HasUntyped(got) {
 			v.errorf(node, "cannot infer concrete type for trait conversion; add a type annotation or cast")
 			return node
+		}
+		if parameter, symbolic := genericTypeParameterBase(got); symbolic {
+			constraint, constrained := types.Underlying(parameter.Constraint).(types.TraitType)
+			if constrained && traitImplementsTrait(constraint, target.Trait) {
+				if pointer, isPointer := types.Underlying(got).(types.PointerType); isPointer {
+					if target.Mutable && !pointer.Mutable {
+						v.errorf(node, "cannot use immutable %v as mutable %v", got, expected)
+						return node
+					}
+					return &parser.CastNode{
+						Operand: node, Loc: node.GetLoc(), Type: expected,
+						TraitConversion: true, ConcreteType: pointer.Base,
+					}
+				}
+				pointer := types.PointerType{Base: got, Mutable: target.Mutable}
+				op := parser.UnaryOpReference
+				if target.Mutable {
+					op = parser.UnaryOpMutableReference
+				}
+				reference := &parser.UnaryOpNode{Op: op, Operand: node, Loc: node.GetLoc(), Type: pointer}
+				if !target.Mutable || v.validateReferenceTarget(reference, node, true) {
+					return &parser.CastNode{
+						Operand: reference, Loc: node.GetLoc(), Type: expected,
+						TraitConversion: true, ConcreteType: got,
+					}
+				}
+				return node
+			}
 		}
 		pointer := types.PointerType{Base: got, Mutable: target.Mutable}
 		methods, conforms := v.analyser.structuralConformance(pointer, target, node)

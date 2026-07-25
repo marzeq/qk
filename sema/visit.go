@@ -68,6 +68,15 @@ func (a *Analyser) visitFunction(n *parser.FunctionDefNode) {
 		return
 	}
 
+	previousBindings := a.typeParameterBindings
+	if n.Symbol.Template {
+		a.typeParameterBindings = make(map[string]types.Type, len(n.Symbol.GenericParameters))
+		for _, parameter := range n.Symbol.GenericParameters {
+			a.typeParameterBindings[parameter.Name] = parameter
+		}
+		defer func() { a.typeParameterBindings = previousBindings }()
+	}
+
 	prev := a.current
 	a.current = symbols.NewScope(prev)
 
@@ -76,11 +85,13 @@ func (a *Analyser) visitFunction(n *parser.FunctionDefNode) {
 			a.visitExpression(arg.Default)
 		}
 		var genericOrigin types.Type
-		if n.Symbol.TemplateSymbol != nil {
+		if n.Symbol.Template {
+			genericOrigin = n.Symbol.Signature.Parameters[i]
+		} else if n.Symbol.TemplateSymbol != nil {
 			genericOrigin = n.Symbol.TemplateSymbol.Signature.Parameters[i]
-			if !types.HasTypeParameter(genericOrigin) {
-				genericOrigin = nil
-			}
+		}
+		if !types.HasTypeParameter(genericOrigin) {
+			genericOrigin = nil
 		}
 		paramSym := &symbols.Symbol{
 			Name:            arg.Name,

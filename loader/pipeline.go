@@ -40,6 +40,31 @@ func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, o
 		info := mods[name]
 
 		for _, root := range info.Roots {
+			attributor.AttributeGenericTemplates(root)
+		}
+	}
+
+	if len(analyser.Errors()) > 0 || len(attributor.Errors()) > 0 {
+		errors := append([]error(nil), analyser.Errors()...)
+		errors = append(errors, attributor.Errors()...)
+		return errors, nil
+	}
+
+	templateValidator := analyser.NewValidator()
+	for _, name := range order {
+		info := mods[name]
+		for _, root := range info.Roots {
+			templateValidator.ValidateGenericTemplates(root)
+		}
+	}
+	if len(templateValidator.Errors()) > 0 {
+		return templateValidator.Errors(), nil
+	}
+	warnings = append(warnings, templateValidator.Warnings()...)
+
+	for _, name := range order {
+		info := mods[name]
+		for _, root := range info.Roots {
 			attributor.AttributeModule(root)
 		}
 	}

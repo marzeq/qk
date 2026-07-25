@@ -68,11 +68,9 @@ func (a *Analyser) resolveGenericIdentifier(n *parser.IdentifierNode, sym *symbo
 	arguments := a.resolveGenericArguments(n.TypeArguments)
 	switch sym.Kind {
 	case symbols.SymbolKindFunction:
-		specialization := a.specializeGenericFunction(sym, arguments, n)
-		if specialization == nil || specialization.Symbol == nil {
-			return nil, false
-		}
-		sym = specialization.Symbol
+		n.ResolvedTypeArgs = arguments
+		n.Symbol = sym
+		return sym, true
 	case symbols.SymbolKindVariable:
 		sym = a.specializeGenericValue(sym, arguments, n)
 	case symbols.SymbolKindType:
