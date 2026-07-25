@@ -18,10 +18,10 @@ const (
 
 func (sysVAMD64ABIGenerator) aggregateParamChunks(e *Emitter, aggregate types.Type) []abiChunk {
 	size, align := e.typeSizeAlign(aggregate)
-	if size > 16 {
+	if size > 16 || e.hasUnalignedAggregateField(aggregate, 0) {
 		return []abiChunk{{
 			typeName:   "ptr",
-			attributes: fmt.Sprintf(" byval(%s) align %d", e.TypeEmit(aggregate), align),
+			attributes: fmt.Sprintf(" byval(%s) align %d", e.TypeEmit(aggregate), max(8, align)),
 			offset:     -1,
 		}}
 	}
@@ -32,6 +32,7 @@ func (sysVAMD64ABIGenerator) aggregateParamChunks(e *Emitter, aggregate types.Ty
 	for i, class := range classes {
 		bytes := min(size-i*8, 8)
 		chunks[i].offset = i * 8
+		chunks[i].size = bytes
 		switch class {
 		case abiClassInteger:
 			chunks[i].typeName = fmt.Sprintf("i%d", bytes*8)
@@ -62,7 +63,7 @@ func (g sysVAMD64ABIGenerator) aggregateReturnChunks(e *Emitter, aggregate types
 
 func (sysVAMD64ABIGenerator) requiresSRet(e *Emitter, aggregate types.Type) bool {
 	size, _ := e.typeSizeAlign(aggregate)
-	return size > 16
+	return size > 16 || e.hasUnalignedAggregateField(aggregate, 0)
 }
 
 func (e *Emitter) classifySysVAggregate(
@@ -77,7 +78,9 @@ func (e *Emitter) classifySysVAggregate(
 		offset := 0
 		for _, field := range t.Fields {
 			_, align := e.typeSizeAlign(field.R)
-			offset = alignTo(offset, align)
+			if !t.Packed {
+				offset = alignTo(offset, align)
+			}
 			e.classifySysVAggregate(field.R, base+offset, classes, floats)
 			size, _ := e.typeSizeAlign(field.R)
 			offset += size
@@ -110,6 +113,32 @@ func (e *Emitter) classifySysVAggregate(
 	default:
 		panic(fmt.Sprintf("unsupported C aggregate field type %T", ty))
 	}
+}
+
+func (e *Emitter) hasUnalignedAggregateField(ty types.Type, base int) bool {
+	switch t := types.Underlying(ty).(type) {
+	case types.StructType:
+		offset := 0
+		for _, field := range t.Fields {
+			_, align := e.typeSizeAlign(field.R)
+			if !t.Packed {
+				offset = alignTo(offset, align)
+			}
+			if (base+offset)%align != 0 || e.hasUnalignedAggregateField(field.R, base+offset) {
+				return true
+			}
+			size, _ := e.typeSizeAlign(field.R)
+			offset += size
+		}
+	case types.UnionType:
+		for _, field := range t.Fields {
+			_, align := e.typeSizeAlign(field.R)
+			if base%align != 0 || e.hasUnalignedAggregateField(field.R, base) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (e *Emitter) markSysVAggregateClass(offset, size int, class abiClass, classes []abiClass) {

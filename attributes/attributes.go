@@ -9,6 +9,7 @@ const (
 	AttributeTypeForeign  AttributeType = "foreign"
 	AttributeTypeLink     AttributeType = "link"
 	AttributeTypeExport   AttributeType = "export"
+	AttributeTypePacked   AttributeType = "packed"
 )
 
 type Attribute interface {
@@ -26,6 +27,10 @@ func (a AttributeInline) GetType() AttributeType { return AttributeTypeInline }
 type AttributeNoInline struct{}
 
 func (a AttributeNoInline) GetType() AttributeType { return AttributeTypeNoInline }
+
+type AttributePacked struct{}
+
+func (a AttributePacked) GetType() AttributeType { return AttributeTypePacked }
 
 type FunctionAttributeForeign struct {
 	From string

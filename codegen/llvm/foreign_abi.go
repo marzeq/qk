@@ -12,6 +12,7 @@ type abiChunk struct {
 	typeName   string
 	attributes string
 	offset     int
+	size       int
 }
 
 type foreignABIGenerator interface {
@@ -96,6 +97,20 @@ func (e *Emitter) foreignABISRetArgument(ty types.Type, value string) string {
 	return argument
 }
 
+func (e *Emitter) abiScratchAllocation(ty types.Type, chunks []abiChunk) (string, bool) {
+	actualSize, _ := e.typeSizeAlign(ty)
+	scratchSize := actualSize
+	for _, chunk := range chunks {
+		if chunk.offset >= 0 {
+			scratchSize = max(scratchSize, chunk.offset+chunk.size)
+		}
+	}
+	if scratchSize == actualSize {
+		return e.TypeEmit(ty), false
+	}
+	return fmt.Sprintf("[%d x i8]", scratchSize), true
+}
+
 func (e *Emitter) targetTriple() string {
 	return qktarget.EffectiveTriple(e.TargetTriple)
 }
@@ -154,6 +169,14 @@ func (e *Emitter) typeSizeAlign(ty types.Type) (int, int) {
 	case types.FlagsType:
 		return e.typeSizeAlign(t.Underlying)
 	case types.StructType:
+		if t.Packed {
+			size := 0
+			for _, field := range t.Fields {
+				fieldSize, _ := e.typeSizeAlign(field.R)
+				size += fieldSize
+			}
+			return size, 1
+		}
 		offset, maxAlign := 0, 1
 		for _, field := range t.Fields {
 			size, align := e.typeSizeAlign(field.R)

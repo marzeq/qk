@@ -362,7 +362,11 @@ func Identity(t Type) string {
 		for i, field := range t.Fields {
 			fields[i] = field.L + ":" + Identity(field.R)
 		}
-		return "struct(" + strings.Join(fields, ",") + ")"
+		packed := ""
+		if t.Packed {
+			packed = "packed:"
+		}
+		return "struct(" + packed + strings.Join(fields, ",") + ")"
 	case UnionType:
 		return "union(" + t.Module + ":" + t.Name + ")"
 	case EnumType:
@@ -553,6 +557,7 @@ func (p PrimitiveType) String() string {
 
 type StructType struct {
 	Fields []shared.Pair[string, Type]
+	Packed bool
 }
 
 type TraitMethod struct {
@@ -779,6 +784,10 @@ func (s StructType) Equals(other Type) bool {
 		return false
 	}
 
+	if s.Packed != otherStruct.Packed {
+		return false
+	}
+
 	if len(s.Fields) != len(otherStruct.Fields) {
 		return false
 	}
@@ -803,7 +812,11 @@ func (s StructType) CanCastTo(other Type) bool {
 
 func (s StructType) String() string {
 	var result strings.Builder
-	result.WriteString("struct { ")
+	result.WriteString("struct ")
+	if s.Packed {
+		result.WriteString("@packed ")
+	}
+	result.WriteString("{ ")
 	writeFields(&result, s.Fields)
 	result.WriteString(" }")
 	return result.String()

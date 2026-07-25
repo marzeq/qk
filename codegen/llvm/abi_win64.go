@@ -12,7 +12,7 @@ func (win64ABIGenerator) aggregateParamChunks(e *Emitter, aggregate types.Type) 
 	size, _ := e.typeSizeAlign(aggregate)
 	switch size {
 	case 1, 2, 4, 8:
-		return []abiChunk{{typeName: fmt.Sprintf("i%d", size*8)}}
+		return []abiChunk{{typeName: fmt.Sprintf("i%d", size*8), size: size}}
 	default:
 		return []abiChunk{{typeName: "ptr", offset: -1}}
 	}

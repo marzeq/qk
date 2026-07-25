@@ -289,13 +289,7 @@ func (e *Emitter) emitCABIParameterPrologue(out *strings.Builder) {
 			fmt.Fprintf(out, "  %%%s = load %s, ptr %%%s.abi0\n", name, e.TypeEmit(param.Type), name)
 			continue
 		}
-		allocationType := e.TypeEmit(param.Type)
-		if st, ok := types.Underlying(param.Type).(types.StructType); ok && len(chunks) == 1 && chunks[0].offset == 0 && chunks[0].typeName == "i64" {
-			size, _ := e.typeSizeAlign(st)
-			if size < 8 {
-				allocationType = "i64"
-			}
-		}
+		allocationType, _ := e.abiScratchAllocation(param.Type, chunks)
 		slot := e.nextABITemp()
 		fmt.Fprintf(out, "  %s = alloca %s\n", slot, allocationType)
 		for j, chunk := range chunks {
@@ -419,14 +413,22 @@ func (e *Emitter) TypeEmit(ty types.Type) string {
 		return e.TypeEmit(ty.Underlying)
 	case types.StructType:
 		var sb strings.Builder
-		sb.WriteString("{ ")
+		if ty.Packed {
+			sb.WriteString("<{ ")
+		} else {
+			sb.WriteString("{ ")
+		}
 		for i, field := range ty.Fields {
 			if i > 0 {
 				sb.WriteString(", ")
 			}
 			sb.WriteString(e.TypeEmit(field.R))
 		}
-		sb.WriteString(" }")
+		if ty.Packed {
+			sb.WriteString(" }>")
+		} else {
+			sb.WriteString(" }")
+		}
 		return sb.String()
 	case types.MultipleReturnType:
 		var sb strings.Builder
@@ -918,11 +920,11 @@ func (e *Emitter) AddressOfGlobalEmit(out *strings.Builder, s ir.AddressOfGlobal
 }
 
 func (e *Emitter) LoadPtrEmit(out *strings.Builder, l ir.LoadPtr) {
-	fmt.Fprintf(out, "%s = load %s, ptr %s", e.ValueIDEmit(l.Dest), e.TypeEmit(e.pointerBaseType(l.Ptr.Type)), e.OperandEmit(l.Ptr))
+	fmt.Fprintf(out, "%s = load %s, ptr %s, align 1", e.ValueIDEmit(l.Dest), e.TypeEmit(e.pointerBaseType(l.Ptr.Type)), e.OperandEmit(l.Ptr))
 }
 
 func (e *Emitter) StorePtrEmit(out *strings.Builder, s ir.StorePtr) {
-	fmt.Fprintf(out, "store %s %s, ptr %s", e.TypeEmit(s.Value.Type), e.OperandEmit(s.Value), e.OperandEmit(s.Ptr))
+	fmt.Fprintf(out, "store %s %s, ptr %s, align 1", e.TypeEmit(s.Value.Type), e.OperandEmit(s.Value), e.OperandEmit(s.Ptr))
 }
 
 func (e *Emitter) FieldAddressEmit(out *strings.Builder, f ir.FieldAddress) {
@@ -1071,18 +1073,10 @@ func (e *Emitter) lowerCallArgument(out *strings.Builder, arg ir.Operand, foreig
 		return []string{fmt.Sprintf("%s %s", e.TypeEmit(arg.Type), e.OperandEmit(arg))}
 	}
 	slot := e.nextABITemp()
-	allocationType := e.TypeEmit(arg.Type)
-	zeroInitialize := false
-	if st, ok := arg.Type.(types.StructType); ok && len(chunks) == 1 && chunks[0].offset == 0 && chunks[0].typeName == "i64" {
-		size, _ := e.typeSizeAlign(st)
-		if size < 8 {
-			allocationType = "i64"
-			zeroInitialize = true
-		}
-	}
+	allocationType, zeroInitialize := e.abiScratchAllocation(arg.Type, chunks)
 	fmt.Fprintf(out, "%s = alloca %s\n  ", slot, allocationType)
 	if zeroInitialize {
-		fmt.Fprintf(out, "store i64 0, ptr %s\n  ", slot)
+		fmt.Fprintf(out, "store %s zeroinitializer, ptr %s\n  ", allocationType, slot)
 	}
 	fmt.Fprintf(out, "store %s %s, ptr %s\n  ", e.TypeEmit(arg.Type), e.OperandEmit(arg), slot)
 	if len(chunks) == 1 && chunks[0].offset == -1 {
@@ -1104,7 +1098,8 @@ func (e *Emitter) lowerCallArgument(out *strings.Builder, arg ir.Operand, foreig
 
 func (e *Emitter) unpackForeignReturn(out *strings.Builder, c ir.Call, callResult string, chunks []abiChunk) {
 	slot := e.nextABITemp()
-	fmt.Fprintf(out, "\n  %s = alloca %s", slot, e.TypeEmit(c.Signature.ReturnType))
+	allocationType, _ := e.abiScratchAllocation(c.Signature.ReturnType, chunks)
+	fmt.Fprintf(out, "\n  %s = alloca %s", slot, allocationType)
 	for i, chunk := range chunks {
 		value := callResult
 		if len(chunks) > 1 {
@@ -1152,7 +1147,12 @@ func (e *Emitter) emitCABIReturn(out *strings.Builder, value ir.Operand) {
 		return
 	}
 	slot := e.nextABITemp()
-	fmt.Fprintf(out, "%s = alloca %s\n  store %s %s, ptr %s", slot, e.TypeEmit(value.Type), e.TypeEmit(value.Type), e.OperandEmit(value), slot)
+	allocationType, zeroInitialize := e.abiScratchAllocation(value.Type, chunks)
+	fmt.Fprintf(out, "%s = alloca %s", slot, allocationType)
+	if zeroInitialize {
+		fmt.Fprintf(out, "\n  store %s zeroinitializer, ptr %s", allocationType, slot)
+	}
+	fmt.Fprintf(out, "\n  store %s %s, ptr %s", e.TypeEmit(value.Type), e.OperandEmit(value), slot)
 	values := make([]string, len(chunks))
 	for i, chunk := range chunks {
 		ptr := slot

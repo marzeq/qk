@@ -432,6 +432,8 @@ func (p *Parser) parseAttribute(defaultName string) (attributes.Attribute, error
 		return p.parseForeignAttribute(defaultName)
 	case attributes.AttributeTypeExport:
 		return p.parseExportAttribute(defaultName)
+	case attributes.AttributeTypePacked:
+		return p.parsePackedAttribute()
 	default:
 		return nil, shared.NewError(nameIdent.Loc, "unknown attribute: %s", nameIdent.Name)
 	}
@@ -533,6 +535,19 @@ func (p *Parser) parseNoReturnAttribute() (attributes.Attribute, error) {
 		}
 	}
 	return attributes.AttributeNoReturn{}, nil
+}
+
+func (p *Parser) parsePackedAttribute() (attributes.Attribute, error) {
+	if p.Match(tokeniser.TokenOpenParen) {
+		p.Inc()
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+		if !p.Expect(tokeniser.TokenCloseParen) {
+			return nil, shared.NewError(p.PrevLoc(), "packed attribute does not take any arguments")
+		}
+	}
+	return attributes.AttributePacked{}, nil
 }
 
 func (p *Parser) parseForeignAttribute(defaultName string) (attributes.Attribute, error) {

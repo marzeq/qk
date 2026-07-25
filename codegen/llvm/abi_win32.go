@@ -12,9 +12,9 @@ func (win32ABIGenerator) aggregateParamChunks(e *Emitter, aggregate types.Type) 
 	size, _ := e.typeSizeAlign(aggregate)
 	switch size {
 	case 4:
-		return []abiChunk{{typeName: "i32"}}
+		return []abiChunk{{typeName: "i32", size: 4}}
 	case 8:
-		return []abiChunk{{typeName: "i32"}, {typeName: "i32", offset: 4}}
+		return []abiChunk{{typeName: "i32", size: 4}, {typeName: "i32", offset: 4, size: 4}}
 	default:
 		return []abiChunk{{
 			typeName:   "ptr",
@@ -28,7 +28,7 @@ func (win32ABIGenerator) aggregateReturnChunks(e *Emitter, aggregate types.Type)
 	size, _ := e.typeSizeAlign(aggregate)
 	switch size {
 	case 1, 2, 4, 8:
-		return []abiChunk{{typeName: fmt.Sprintf("i%d", size*8)}}
+		return []abiChunk{{typeName: fmt.Sprintf("i%d", size*8), size: size}}
 	default:
 		return nil
 	}

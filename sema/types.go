@@ -1,11 +1,13 @@
 package sema
 
 import (
+	"math/big"
+
+	"github.com/marzeq/qk/attributes"
 	"github.com/marzeq/qk/parser"
 	"github.com/marzeq/qk/shared"
 	"github.com/marzeq/qk/symbols"
 	"github.com/marzeq/qk/types"
-	"math/big"
 )
 
 func (a *Analyser) resolveCastTarget(node parser.TypeNode) (types.Type, *types.StaticTraitView) {
@@ -195,6 +197,11 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 		}
 
 	case *parser.StructTypeNode:
+		for _, attr := range t.Attributes {
+			if attr.GetType() != attributes.AttributeTypePacked {
+				a.errorf(t, "@%s attribute does not apply to structs", attr.GetType())
+			}
+		}
 		fields := []shared.Pair[string, types.Type]{}
 		fieldNames := make(map[string]struct{})
 		for _, f := range t.Fields {
@@ -219,6 +226,7 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 		}
 		return types.StructType{
 			Fields: fields,
+			Packed: t.Attributes.Get(attributes.AttributeTypePacked) != nil,
 		}
 
 	case *parser.EnumTypeNode:

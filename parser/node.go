@@ -98,8 +98,9 @@ type StructField struct {
 	Type TypeNode
 }
 type StructTypeNode struct {
-	Fields []StructField
-	Loc    shared.Location
+	Fields     []StructField
+	Loc        shared.Location
+	Attributes attributes.Attributes
 }
 
 func (n StructTypeNode) GetLoc() shared.Location { return n.Loc }

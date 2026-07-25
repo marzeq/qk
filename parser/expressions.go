@@ -1739,6 +1739,11 @@ func (p *Parser) ParseStructType() (*StructTypeNode, error) {
 	}
 	p.Inc()
 
+	attrs, err := p.parseAttributes("")
+	if err != nil {
+		return nil, err
+	}
+
 	if !p.Expect(tokeniser.TokenOpenCurly) {
 		return nil, shared.NewError(p.PrevLoc(), "expected '{'")
 	}
@@ -1798,8 +1803,9 @@ func (p *Parser) ParseStructType() (*StructTypeNode, error) {
 	}
 
 	return &StructTypeNode{
-		Fields: fields,
-		Loc:    beginLoc,
+		Fields:     fields,
+		Loc:        beginLoc,
+		Attributes: attrs,
 	}, nil
 }
 
