@@ -378,7 +378,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 					size = parsed
 				}
 			}
-			n.SetType(types.SliceType{Base: n.RepeatValue.GetType(), Size: size})
+			n.SetType(types.SliceType{Base: n.RepeatValue.GetType(), Size: size, Mutable: true})
 			break
 		}
 		typs := []types.Type{}
@@ -396,13 +396,15 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 				currentType = got
 			}
 			n.SetType(types.SliceType{
-				Base: currentType,
-				Size: len(n.Elements),
+				Base:    currentType,
+				Size:    len(n.Elements),
+				Mutable: true,
 			})
 		} else {
 			n.SetType(types.SliceType{
-				Base: types.PrimitiveVoid,
-				Size: 0,
+				Base:    types.PrimitiveVoid,
+				Size:    0,
+				Mutable: true,
 			})
 		}
 
@@ -620,7 +622,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 
 		switch t := types.Underlying(n.Subject.GetType()).(type) {
 		case types.SliceType:
-			result := types.Type(types.SliceType{Base: t.Base, Size: -1})
+			result := types.Type(types.SliceType{Base: t.Base, Size: -1, Mutable: t.Mutable})
 			if defined, ok := n.Subject.GetType().(types.DefinedType); ok && defined.Module == "" && defined.Name == "str" {
 				result = defined
 			}

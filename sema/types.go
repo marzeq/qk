@@ -192,8 +192,9 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 
 	case *parser.SliceTypeNode:
 		return types.SliceType{
-			Base: a.resolveTypeNodeAt(t.ElementType, indirect),
-			Size: t.Size,
+			Base:    a.resolveTypeNodeAt(t.ElementType, indirect),
+			Size:    t.Size,
+			Mutable: t.Mutable,
 		}
 
 	case *parser.StructTypeNode:

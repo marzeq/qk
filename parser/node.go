@@ -165,6 +165,7 @@ func (n TraitTypeNode) _type()                  {}
 type SliceTypeNode struct {
 	ElementType TypeNode
 	Size        int
+	Mutable     bool
 	Loc         shared.Location
 }
 

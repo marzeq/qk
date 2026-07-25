@@ -387,78 +387,175 @@ func (v *Validator) validateMultiDeclaration(n *parser.MultiDeclarationNode) {
 }
 
 func (v *Validator) validateLValue(expr parser.ExpressionNode) bool {
-	switch e := expr.(type) {
+	return v.validateMutablePlace(expr, false)
+}
 
+func (v *Validator) validateMutablePlace(expr parser.ExpressionNode, reference bool) bool {
+	switch e := expr.(type) {
 	case *parser.IdentifierNode:
 		if !e.GetSymbol().Mutable {
-			v.errorf(e, "cannot assign to immutable symbol")
+			if reference {
+				v.errorf(e, "cannot take mutable reference of immutable variable")
+			} else {
+				v.errorf(e, "cannot assign to immutable symbol")
+			}
 			return false
 		}
 		v.validateExpr(e)
 
 	case *parser.UnaryOpNode:
-		switch e.Op {
-		case parser.UnaryOpDereference:
-			switch ptrType := types.Underlying(e.Operand.GetType()).(type) {
-			case types.PointerType:
-				if ptrType.Base.Equals(types.PrimitiveVoid) {
-					v.errorf(e, "cannot assign to dereferenced void pointer")
-					return false
-				}
-				if !ptrType.Mutable {
-					v.errorf(e, "cannot assign to dereferenced immutable pointer")
-					return false
-				}
-			case types.ErrorType:
-				// do nothing, error already reported
-			default:
-				panic(fmt.Sprintf("unreachable: dereference of non-pointer type %T", e.Operand.GetType()))
-			}
-			v.validateExpr(e.Operand)
-		default:
+		if e.Op != parser.UnaryOpDereference {
 			v.errorf(expr, "invalid assignment target")
 			return false
 		}
+		return v.validateMutableAccessPath(e, true, reference)
 
 	case *parser.FieldAccessNode:
-		if e.ResolvedIdentifier != nil {
-			return v.validateLValue(e.ResolvedIdentifier)
-		}
-		if !v.validateLValue(e.Subject) {
-			return false
-		}
+		return v.validateMutableAccessPath(e, true, reference)
 
 	case *parser.IndexExprNode:
-		// A slice's mutability comes from the place that holds the slice,
-		// whereas a pointer carries the mutability of the pointed-to data.
-		switch subjectType := types.Underlying(e.Subject.GetType()).(type) {
-		case types.SliceType:
-			if !v.validateLValue(e.Subject) {
-				return false
-			}
-
-		case types.PointerType:
-			if subjectType.Base.Equals(types.PrimitiveVoid) {
-				v.errorf(e, "cannot assign to dereferenced void pointer")
-				return false
-			}
-			if !subjectType.Mutable {
-				v.errorf(e, "cannot assign to dereferenced immutable pointer")
-				return false
-			}
-
-		case types.ErrorType:
-			// Do not add an lvalue error after attribution has already reported one.
-		default:
-			v.errorf(e, "cannot assign to index of non-slice type")
-			return false
-		}
+		return v.validateMutableAccessPath(e, true, reference)
 
 	default:
-		v.errorf(expr, "cannot assign to this expression")
+		if reference {
+			v.errorf(expr, "cannot take reference of this expression")
+		} else {
+			v.errorf(expr, "cannot assign to this expression")
+		}
 		return false
 	}
 
+	return true
+}
+
+// validateMutableAccessPath validates every storage/view boundary used to
+// reach a mutation. Pointer bindings are capabilities, so the binding itself
+// need not be mutable, but every pointer that is dereferenced must be *mut.
+// Mutable slices similarly carry element-write capability in their type.
+func (v *Validator) validateMutableAccessPath(expr parser.ExpressionNode, requireMutableRoot bool, reference bool) bool {
+	switch e := expr.(type) {
+	case *parser.IdentifierNode:
+		v.validateExpr(e)
+		if !requireMutableRoot || e.Symbol == nil {
+			return true
+		}
+		switch t := types.Underlying(e.GetType()).(type) {
+		case types.PointerType:
+			return true
+		case types.SliceType:
+			if t.Mutable {
+				return true
+			}
+		}
+		if !e.Symbol.Mutable {
+			if reference {
+				v.errorf(e, "cannot take mutable reference through immutable variable")
+			} else {
+				v.errorf(e, "cannot assign through immutable symbol")
+			}
+			return false
+		}
+		return true
+
+	case *parser.FieldAccessNode:
+		if e.ResolvedIdentifier != nil {
+			return v.validateMutableAccessPath(e.ResolvedIdentifier, requireMutableRoot, reference)
+		}
+		if !v.validateMutableAccessPath(e.Subject, requireMutableRoot, reference) {
+			return false
+		}
+		if pointer, ok := types.Underlying(e.Subject.GetType()).(types.PointerType); ok {
+			return v.validateMutablePointerBoundary(e, pointer, reference)
+		}
+		return true
+
+	case *parser.IndexExprNode:
+		if !v.validateMutableAccessPath(e.Subject, requireMutableRoot, reference) {
+			return false
+		}
+		switch subject := types.Underlying(e.Subject.GetType()).(type) {
+		case types.SliceType:
+			if !subject.Mutable {
+				if reference {
+					v.errorf(e, "cannot take mutable reference through immutable slice view")
+				} else {
+					v.errorf(e, "cannot assign through immutable slice view")
+				}
+				return false
+			}
+		case types.PointerType:
+			return v.validateMutablePointerBoundary(e, subject, reference)
+		case types.ErrorType:
+			return false
+		default:
+			if reference {
+				v.errorf(e, "cannot take mutable reference through non-indexable value")
+			} else {
+				v.errorf(e, "cannot assign to index of non-slice type")
+			}
+			return false
+		}
+		return true
+
+	case *parser.SliceExprNode:
+		return v.validateMutableAccessPath(e.Subject, requireMutableRoot, reference)
+
+	case *parser.UnaryOpNode:
+		if e.Op != parser.UnaryOpDereference {
+			break
+		}
+		pointer, ok := types.Underlying(e.Operand.GetType()).(types.PointerType)
+		if !ok {
+			return false
+		}
+		if !v.validateMutableAccessPath(e.Operand, requireMutableRoot, reference) {
+			return false
+		}
+		return v.validateMutablePointerBoundary(e, pointer, reference)
+
+	case *parser.FunctionCallNode:
+		v.validateExpr(e)
+		switch types.Underlying(e.GetType()).(type) {
+		case types.PointerType, types.SliceType:
+			return true
+		}
+		break
+
+	default:
+		// Casts and pointer arithmetic may also produce a capability. Their
+		// validation prevents immutable-to-mutable upgrades.
+		v.validateExpr(expr)
+		switch types.Underlying(expr.GetType()).(type) {
+		case types.PointerType, types.SliceType:
+			return true
+		}
+	}
+
+	if reference {
+		v.errorf(expr, "cannot take mutable reference through this expression")
+	} else {
+		v.errorf(expr, "cannot assign through this expression")
+	}
+	return false
+}
+
+func (v *Validator) validateMutablePointerBoundary(node parser.Node, pointer types.PointerType, reference bool) bool {
+	if pointer.Base.Equals(types.PrimitiveVoid) {
+		if reference {
+			v.errorf(node, "cannot take mutable reference through void pointer")
+		} else {
+			v.errorf(node, "cannot assign to dereferenced void pointer")
+		}
+		return false
+	}
+	if !pointer.Mutable {
+		if reference {
+			v.errorf(node, "cannot take mutable reference through immutable pointer")
+		} else {
+			v.errorf(node, "cannot assign through immutable pointer")
+		}
+		return false
+	}
 	return true
 }
 
@@ -806,11 +903,6 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		if n.GenericAssertion {
 			n.AssertionMatches = n.Operand.GetType().Equals(targetType)
 			break
-		}
-		if from, ok := types.Underlying(n.Operand.GetType()).(types.SliceType); ok {
-			if to, ok := types.Underlying(targetType).(types.SliceType); ok && from.Base.Equals(to.Base) {
-				break
-			}
 		}
 		if !types.CanExplicitCast(n.Operand.GetType(), targetType) {
 			v.errorf(n, "cannot cast %v to %v", n.Operand.GetType(), targetType)
@@ -1194,7 +1286,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			}
 			v.validateExpr(n.RepeatValue)
 			n.RepeatAmount = v.validateExprWithExpected(n.RepeatAmount, types.PrimitiveUsz)
-			n.SetType(types.SliceType{Base: n.RepeatValue.GetType(), Size: size})
+			n.SetType(types.SliceType{Base: n.RepeatValue.GetType(), Size: size, Mutable: true})
 			break
 		}
 		var common types.Type = nil
@@ -1220,8 +1312,9 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		}
 
 		n.Type = types.SliceType{
-			Base: common,
-			Size: len(n.Elements),
+			Base:    common,
+			Size:    len(n.Elements),
+			Mutable: true,
 		}
 
 		for i, el := range n.Elements {
@@ -1401,14 +1494,13 @@ func hasOffsetField(operand types.Type, name string) bool {
 }
 
 func (v *Validator) validateReferenceTarget(node *parser.UnaryOpNode, target parser.ExpressionNode, mutable bool) bool {
+	if mutable {
+		return v.validateMutablePlace(target, true)
+	}
 	switch target := target.(type) {
 	case *parser.IdentifierNode:
 		if target.Symbol == nil || target.Symbol.Kind != symbols.SymbolKindVariable {
 			v.errorf(node, "cannot take reference of this expression")
-			return false
-		}
-		if mutable && !target.Symbol.Mutable {
-			v.errorf(node, "cannot take mutable reference of immutable variable")
 			return false
 		}
 		return true
@@ -1421,10 +1513,6 @@ func (v *Validator) validateReferenceTarget(node *parser.UnaryOpNode, target par
 		pointer, ok := types.Underlying(target.Operand.GetType()).(types.PointerType)
 		if !ok || pointer.Base.Equals(types.PrimitiveVoid) {
 			v.errorf(node, "cannot take reference of dereferenced void pointer")
-			return false
-		}
-		if mutable && !pointer.Mutable {
-			v.errorf(node, "cannot take mutable reference of dereferenced immutable pointer")
 			return false
 		}
 		return true
@@ -1442,10 +1530,6 @@ func (v *Validator) validateReferenceTarget(node *parser.UnaryOpNode, target par
 		case types.PointerType:
 			if subjectType.Base.Equals(types.PrimitiveVoid) {
 				v.errorf(node, "cannot take reference of index into void pointer")
-				return false
-			}
-			if mutable && !subjectType.Mutable {
-				v.errorf(node, "cannot take mutable reference of index into immutable pointer")
 				return false
 			}
 			return true

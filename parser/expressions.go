@@ -1820,6 +1820,12 @@ func (p *Parser) ParseSliceType() (*SliceTypeNode, error) {
 		p.Inc()
 	}
 
+	mutable := false
+	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordMut) {
+		mutable = true
+		p.Inc()
+	}
+
 	elementType, err := p.ParseType()
 	if err != nil {
 		return nil, err
@@ -1836,6 +1842,7 @@ func (p *Parser) ParseSliceType() (*SliceTypeNode, error) {
 		return &SliceTypeNode{
 			ElementType: elementType,
 			Size:        -1,
+			Mutable:     mutable,
 			Loc:         beginLoc,
 		}, nil
 	}
@@ -1866,6 +1873,7 @@ func (p *Parser) ParseSliceType() (*SliceTypeNode, error) {
 	return &SliceTypeNode{
 		ElementType: elementType,
 		Size:        size,
+		Mutable:     mutable,
 		Loc:         beginLoc,
 	}, nil
 }

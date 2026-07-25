@@ -342,7 +342,11 @@ func Identity(t Type) string {
 		}
 		return "ptr(" + mutable + Identity(t.Base) + ")"
 	case SliceType:
-		return "slice(" + strconv.Itoa(t.Size) + ":" + Identity(t.Base) + ")"
+		mutable := ""
+		if t.Mutable {
+			mutable = "mut:"
+		}
+		return "slice(" + mutable + strconv.Itoa(t.Size) + ":" + Identity(t.Base) + ")"
 	case FunctionType:
 		parameters := make([]string, len(t.Parameters))
 		for i, parameter := range t.Parameters {
@@ -389,7 +393,30 @@ func Identity(t Type) string {
 func castCompatible(from, to Type) bool {
 	from = Underlying(from)
 	to = Underlying(to)
+	if upgradesMutableAccess(from, to) {
+		return false
+	}
 	return from.Equals(to) || from.CanCastTo(to) || to.CanCastTo(from)
+}
+
+func upgradesMutableAccess(from, to Type) bool {
+	switch source := from.(type) {
+	case PointerType:
+		switch target := to.(type) {
+		case PointerType:
+			return target.Mutable && !source.Mutable
+		case SliceType:
+			return target.Mutable && !source.Mutable
+		}
+	case SliceType:
+		switch target := to.(type) {
+		case PointerType:
+			return target.Mutable && !source.Mutable
+		case SliceType:
+			return target.Mutable && !source.Mutable
+		}
+	}
+	return false
 }
 
 func CanExplicitCast(from, to Type) bool {
@@ -903,8 +930,9 @@ func IsPointer(t Type) bool {
 }
 
 type SliceType struct {
-	Base Type
-	Size int
+	Base    Type
+	Size    int
+	Mutable bool
 }
 
 func (a SliceType) Equals(other Type) bool {
@@ -913,7 +941,7 @@ func (a SliceType) Equals(other Type) bool {
 		return false
 	}
 
-	if a.Size != otherSlice.Size {
+	if a.Size != otherSlice.Size || a.Mutable != otherSlice.Mutable {
 		return false
 	}
 
@@ -930,6 +958,9 @@ func (a SliceType) CanCoerceTo(other Type) bool {
 		if a.Base.Equals(PrimitiveChar) && otherPointer.Base.Equals(PrimitiveChar) {
 			return false
 		}
+		if otherPointer.Mutable && !a.Mutable {
+			return false
+		}
 		return a.Base.CanCoerceTo(otherPointer.Base)
 	}
 
@@ -937,11 +968,17 @@ func (a SliceType) CanCoerceTo(other Type) bool {
 	if !ok {
 		return false
 	}
+	if otherSlice.Mutable && !a.Mutable {
+		return false
+	}
 
 	if a.Size != otherSlice.Size && a.Size != -1 && otherSlice.Size != -1 {
 		return false
 	}
 
+	if otherSlice.Mutable {
+		return a.Base.Equals(otherSlice.Base)
+	}
 	return a.Base.CanCoerceTo(otherSlice.Base)
 }
 
@@ -951,20 +988,36 @@ func (a SliceType) CanCastTo(other Type) bool {
 	}
 
 	if otherPointer, ok := other.(PointerType); ok {
+		if otherPointer.Mutable && !a.Mutable {
+			return false
+		}
 		if otherPointer.Base.Equals(PrimitiveVoid) {
 			return true
 		}
 		return a.Base.CanCastTo(otherPointer.Base) || a.Base.Equals(otherPointer.Base)
+	}
+	if otherSlice, ok := other.(SliceType); ok {
+		if otherSlice.Mutable && !a.Mutable {
+			return false
+		}
+		if a.Size != otherSlice.Size && a.Size != -1 && otherSlice.Size != -1 {
+			return false
+		}
+		return a.Base.Equals(otherSlice.Base)
 	}
 
 	return false
 }
 
 func (a SliceType) String() string {
-	if a.Size == -1 {
-		return "[" + a.Base.String() + "]"
+	mutable := ""
+	if a.Mutable {
+		mutable = "mut "
 	}
-	return "[" + a.Base.String() + ", " + strconv.Itoa(a.Size) + "]"
+	if a.Size == -1 {
+		return "[" + mutable + a.Base.String() + "]"
+	}
+	return "[" + mutable + a.Base.String() + ", " + strconv.Itoa(a.Size) + "]"
 }
 
 type FunctionType struct {
@@ -1292,7 +1345,7 @@ func CommonType(a, b Type) Type {
 
 	if as, ok := a.(SliceType); ok {
 		if bs, ok := b.(SliceType); ok && as.Base.Equals(bs.Base) {
-			return SliceType{Base: as.Base, Size: -1}
+			return SliceType{Base: as.Base, Size: -1, Mutable: as.Mutable && bs.Mutable}
 		}
 	}
 

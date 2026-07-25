@@ -22,7 +22,7 @@ pub let cstr.to_str(self): str {
 
   let n = std.libc.strlen(self)
 
-  let mut data: [char] = ['\0'; n]
+  let data: [mut char] = ['\0'; n]
   std.libc.memcpy(data.(*mut char), self, n)
 
   return data.(str)
