@@ -818,7 +818,8 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 			n.StaticTraitView = view
 			target = n.Operand.GetType()
 			if view.Access != types.TraitReceiverValue {
-				if pointer, ok := types.Underlying(target).(types.PointerType); ok {
+				_, _, targetIsPointer, _ := methodOwnerIdentity(target)
+				if pointer, ok := types.Underlying(target).(types.PointerType); ok && targetIsPointer {
 					target = types.PointerType{Base: pointer.Base, Mutable: view.Access == types.TraitReceiverMutablePointer}
 				} else {
 					target = types.PointerType{Base: target, Mutable: view.Access == types.TraitReceiverMutablePointer}
@@ -1039,7 +1040,7 @@ func (a *Attributor) attributeMethodCall(n *parser.FunctionCallNode) bool {
 	}
 	receiver := member.Subject
 	expected := method.Signature.Parameters[0]
-	_, expectsPointer := types.Underlying(expected).(types.PointerType)
+	expectsPointer := method.MethodReceiver != types.TraitReceiverValue
 	if expectsPointer && !receiverIsPointer {
 		op := parser.UnaryOpReference
 		if ptr := types.Underlying(expected).(types.PointerType); ptr.Mutable {
@@ -1089,8 +1090,12 @@ func (a *Attributor) attributeStaticTraitMethodCall(
 	}
 
 	subjectType := member.Subject.GetType()
-	probe, receiverIsPointer := types.Underlying(subjectType).(types.PointerType)
-	if !receiverIsPointer {
+	_, _, subjectIsPointer, _ := methodOwnerIdentity(subjectType)
+	receiverIsPointer := view.Access != types.TraitReceiverValue || subjectIsPointer
+	var probe types.PointerType
+	if receiverIsPointer {
+		probe, _ = types.Underlying(subjectType).(types.PointerType)
+	} else {
 		probe = types.PointerType{Base: subjectType, Mutable: view.Access == types.TraitReceiverMutablePointer}
 	}
 	target := types.TraitPointerType{
@@ -1107,7 +1112,7 @@ func (a *Attributor) attributeStaticTraitMethodCall(
 
 	receiver := member.Subject
 	expected := method.Signature.Parameters[0]
-	_, expectsPointer := types.Underlying(expected).(types.PointerType)
+	expectsPointer := method.MethodReceiver != types.TraitReceiverValue
 	if expectsPointer && !receiverIsPointer {
 		op := parser.UnaryOpReference
 		if ptr := types.Underlying(expected).(types.PointerType); ptr.Mutable {
@@ -1134,7 +1139,7 @@ func methodOwnerIdentity(t types.Type) (module, name string, pointer bool, ok bo
 		return "builtin", "str", false, true
 	}
 	if ptr, isPointer := types.Underlying(t).(types.PointerType); isPointer && !ptr.Mutable && ptr.Base.Equals(types.PrimitiveChar) {
-		return "builtin", "cstr", true, true
+		return "builtin", "cstr", false, true
 	}
 	if ptr, isPointer := types.Underlying(t).(types.PointerType); isPointer {
 		t = ptr.Base

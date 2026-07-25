@@ -24,12 +24,13 @@ type Symbol struct {
 	Type              types.Type // for SymbolKindVariable
 	GenericOrigin     types.Type // pre-substitution type for values originating from a generic parameter
 	StaticTraitView   *types.StaticTraitView
-	Signature         *FunctionSignature // for SymbolKindFunction
-	TypeInfo          types.Type         // for SymbolKindTypeAlias
-	Module            *Module            // for SymbolKindModule
-	Method            bool               // function is attached to a type
-	StaticMethod      bool               // attached to a type without a receiver
-	DefinitionModule  string             // module that owns the function implementation
+	Signature         *FunctionSignature      // for SymbolKindFunction
+	TypeInfo          types.Type              // for SymbolKindTypeAlias
+	Module            *Module                 // for SymbolKindModule
+	Method            bool                    // function is attached to a type
+	StaticMethod      bool                    // attached to a type without a receiver
+	MethodReceiver    types.TraitReceiverKind // receiver form declared by an attached method
+	DefinitionModule  string                  // module that owns the function implementation
 	GenericParameters []types.TypeParameter
 	Template          bool
 	TemplateSymbol    *Symbol

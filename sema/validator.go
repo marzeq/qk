@@ -1257,7 +1257,8 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 func (v *Validator) validateStaticTraitAssertion(node *parser.CastNode) {
 	view := node.StaticTraitView
 	source := node.Operand.GetType()
-	pointer, sourceIsPointer := types.Underlying(source).(types.PointerType)
+	pointer, _ := types.Underlying(source).(types.PointerType)
+	_, _, sourceIsPointer, _ := methodOwnerIdentity(source)
 
 	var concrete types.Type
 	var probe types.PointerType

@@ -42,14 +42,7 @@ func (a *Analyser) structuralConformance(from types.Type, target types.TraitPoin
 		if len(sig.Parameters) != len(requirement.Parameters)+1 || sig.ReturnType == nil || !sig.ReturnType.Equals(requiredReturn) {
 			return nil, false
 		}
-		actualReceiver := types.TraitReceiverValue
-		if receiver, ok := types.Underlying(sig.Parameters[0]).(types.PointerType); ok {
-			actualReceiver = types.TraitReceiverPointer
-			if receiver.Mutable {
-				actualReceiver = types.TraitReceiverMutablePointer
-			}
-		}
-		if actualReceiver != requirement.Receiver {
+		if method.MethodReceiver != requirement.Receiver {
 			return nil, false
 		}
 		if requirement.Receiver == types.TraitReceiverValue && !types.IsComplete(pointer.Base) {

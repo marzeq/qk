@@ -213,10 +213,17 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 	if n.RetTypeNode != nil {
 		ret = a.resolveTypeNode(n.RetTypeNode)
 	}
+	receiver := types.TraitReceiverValue
+	switch n.Receiver {
+	case parser.MethodReceiverPointer:
+		receiver = types.TraitReceiverPointer
+	case parser.MethodReceiverMutablePointer:
+		receiver = types.TraitReceiverMutablePointer
+	}
 	sym := &symbols.Symbol{Name: n.MethodOwner + "." + n.Name, Kind: symbols.SymbolKindFunction,
 		Signature: &symbols.FunctionSignature{Parameters: paramTypes, RequiredParameters: requiredParameters, ReturnType: ret, Variadic: n.HasVariadic, TypedVariadic: n.TypedVariadic},
 		Public:    n.Pub, Attributes: n.Attributes, Method: true, StaticMethod: n.Receiver == parser.MethodReceiverNone,
-		DefinitionModule: a.currentMod, GenericParameters: genericParameters, Template: len(genericParameters) != 0}
+		MethodReceiver: receiver, DefinitionModule: a.currentMod, GenericParameters: genericParameters, Template: len(genericParameters) != 0}
 	a.methods[key][n.Name] = sym
 	if n.TypedVariadic {
 		sym.Signature.VariadicElement = types.Underlying(paramTypes[len(paramTypes)-1]).(types.SliceType).Base

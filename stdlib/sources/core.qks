@@ -4,3 +4,283 @@ let HasStdlib = comptime not NoStdlib
 let HasLibc = comptime not NoLibc
 
 pub let mut Args: [str] = ---
+
+pub let Add = type trait {
+  let add(self, other: Self): Self
+}
+
+pub let Sub = type trait {
+  let sub(self, other: Self): Self
+}
+
+pub let Mul = type trait {
+  let mul(self, other: Self): Self
+}
+
+pub let Div = type trait {
+  let div(self, other: Self): Self
+}
+
+pub let Rem = type trait {
+  let rem(self, other: Self): Self
+}
+
+pub let Neg = type trait {
+  let neg(self): Self
+}
+
+pub let PartialEq = type trait {
+  let eq(self, other: Self): bool
+}
+
+pub let PartialOrd = type trait {
+  let lt(self, other: Self): bool
+  let le(self, other: Self): bool
+  let gt(self, other: Self): bool
+  let ge(self, other: Self): bool
+}
+
+pub let BitAnd = type trait {
+  let bit_and(self, other: Self): Self
+}
+
+pub let BitOr = type trait {
+  let bit_or(self, other: Self): Self
+}
+
+pub let BitXor = type trait {
+  let bit_xor(self, other: Self): Self
+}
+
+pub let Shl = type trait {
+  let shl(self, other: Self): Self
+}
+
+pub let Shr = type trait {
+  let shr(self, other: Self): Self
+}
+
+pub let BitNot = type trait {
+  let bit_not(self): Self
+}
+
+pub let i8.add(self, other: i8): i8 = self + other
+pub let i16.add(self, other: i16): i16 = self + other
+pub let i32.add(self, other: i32): i32 = self + other
+pub let i64.add(self, other: i64): i64 = self + other
+pub let isz.add(self, other: isz): isz = self + other
+pub let u8.add(self, other: u8): u8 = self + other
+pub let u16.add(self, other: u16): u16 = self + other
+pub let u32.add(self, other: u32): u32 = self + other
+pub let u64.add(self, other: u64): u64 = self + other
+pub let usz.add(self, other: usz): usz = self + other
+pub let f32.add(self, other: f32): f32 = self + other
+pub let f64.add(self, other: f64): f64 = self + other
+
+pub let i8.sub(self, other: i8): i8 = self - other
+pub let i16.sub(self, other: i16): i16 = self - other
+pub let i32.sub(self, other: i32): i32 = self - other
+pub let i64.sub(self, other: i64): i64 = self - other
+pub let isz.sub(self, other: isz): isz = self - other
+pub let u8.sub(self, other: u8): u8 = self - other
+pub let u16.sub(self, other: u16): u16 = self - other
+pub let u32.sub(self, other: u32): u32 = self - other
+pub let u64.sub(self, other: u64): u64 = self - other
+pub let usz.sub(self, other: usz): usz = self - other
+pub let f32.sub(self, other: f32): f32 = self - other
+pub let f64.sub(self, other: f64): f64 = self - other
+
+pub let i8.mul(self, other: i8): i8 = self * other
+pub let i16.mul(self, other: i16): i16 = self * other
+pub let i32.mul(self, other: i32): i32 = self * other
+pub let i64.mul(self, other: i64): i64 = self * other
+pub let isz.mul(self, other: isz): isz = self * other
+pub let u8.mul(self, other: u8): u8 = self * other
+pub let u16.mul(self, other: u16): u16 = self * other
+pub let u32.mul(self, other: u32): u32 = self * other
+pub let u64.mul(self, other: u64): u64 = self * other
+pub let usz.mul(self, other: usz): usz = self * other
+pub let f32.mul(self, other: f32): f32 = self * other
+pub let f64.mul(self, other: f64): f64 = self * other
+
+pub let i8.div(self, other: i8): i8 = self / other
+pub let i16.div(self, other: i16): i16 = self / other
+pub let i32.div(self, other: i32): i32 = self / other
+pub let i64.div(self, other: i64): i64 = self / other
+pub let isz.div(self, other: isz): isz = self / other
+pub let u8.div(self, other: u8): u8 = self / other
+pub let u16.div(self, other: u16): u16 = self / other
+pub let u32.div(self, other: u32): u32 = self / other
+pub let u64.div(self, other: u64): u64 = self / other
+pub let usz.div(self, other: usz): usz = self / other
+pub let f32.div(self, other: f32): f32 = self / other
+pub let f64.div(self, other: f64): f64 = self / other
+
+pub let i8.rem(self, other: i8): i8 = self % other
+pub let i16.rem(self, other: i16): i16 = self % other
+pub let i32.rem(self, other: i32): i32 = self % other
+pub let i64.rem(self, other: i64): i64 = self % other
+pub let isz.rem(self, other: isz): isz = self % other
+pub let u8.rem(self, other: u8): u8 = self % other
+pub let u16.rem(self, other: u16): u16 = self % other
+pub let u32.rem(self, other: u32): u32 = self % other
+pub let u64.rem(self, other: u64): u64 = self % other
+pub let usz.rem(self, other: usz): usz = self % other
+pub let f32.rem(self, other: f32): f32 = self % other
+pub let f64.rem(self, other: f64): f64 = self % other
+
+pub let i8.neg(self): i8 = -self
+pub let i16.neg(self): i16 = -self
+pub let i32.neg(self): i32 = -self
+pub let i64.neg(self): i64 = -self
+pub let isz.neg(self): isz = -self
+pub let f32.neg(self): f32 = -self
+pub let f64.neg(self): f64 = -self
+
+pub let i8.eq(self, other: i8): bool = self == other
+pub let i16.eq(self, other: i16): bool = self == other
+pub let i32.eq(self, other: i32): bool = self == other
+pub let i64.eq(self, other: i64): bool = self == other
+pub let isz.eq(self, other: isz): bool = self == other
+pub let u8.eq(self, other: u8): bool = self == other
+pub let u16.eq(self, other: u16): bool = self == other
+pub let u32.eq(self, other: u32): bool = self == other
+pub let u64.eq(self, other: u64): bool = self == other
+pub let usz.eq(self, other: usz): bool = self == other
+pub let f32.eq(self, other: f32): bool = self == other
+pub let f64.eq(self, other: f64): bool = self == other
+pub let char.eq(self, other: char): bool = self == other
+pub let bool.eq(self, other: bool): bool = self == other
+pub let cstr.eq(self, other: cstr): bool = self == other
+
+pub let str.eq(self, other: str): bool {
+  if len(self) != len(other) {
+    return false
+  }
+  let mut index: usz = 0
+  for index < len(self) {
+    if self[index] != other[index] {
+      return false
+    }
+    index += 1
+  }
+  return true
+}
+
+pub let i8.lt(self, other: i8): bool = self < other
+pub let i16.lt(self, other: i16): bool = self < other
+pub let i32.lt(self, other: i32): bool = self < other
+pub let i64.lt(self, other: i64): bool = self < other
+pub let isz.lt(self, other: isz): bool = self < other
+pub let u8.lt(self, other: u8): bool = self < other
+pub let u16.lt(self, other: u16): bool = self < other
+pub let u32.lt(self, other: u32): bool = self < other
+pub let u64.lt(self, other: u64): bool = self < other
+pub let usz.lt(self, other: usz): bool = self < other
+pub let f32.lt(self, other: f32): bool = self < other
+pub let f64.lt(self, other: f64): bool = self < other
+
+pub let i8.le(self, other: i8): bool = self <= other
+pub let i16.le(self, other: i16): bool = self <= other
+pub let i32.le(self, other: i32): bool = self <= other
+pub let i64.le(self, other: i64): bool = self <= other
+pub let isz.le(self, other: isz): bool = self <= other
+pub let u8.le(self, other: u8): bool = self <= other
+pub let u16.le(self, other: u16): bool = self <= other
+pub let u32.le(self, other: u32): bool = self <= other
+pub let u64.le(self, other: u64): bool = self <= other
+pub let usz.le(self, other: usz): bool = self <= other
+pub let f32.le(self, other: f32): bool = self <= other
+pub let f64.le(self, other: f64): bool = self <= other
+
+pub let i8.gt(self, other: i8): bool = self > other
+pub let i16.gt(self, other: i16): bool = self > other
+pub let i32.gt(self, other: i32): bool = self > other
+pub let i64.gt(self, other: i64): bool = self > other
+pub let isz.gt(self, other: isz): bool = self > other
+pub let u8.gt(self, other: u8): bool = self > other
+pub let u16.gt(self, other: u16): bool = self > other
+pub let u32.gt(self, other: u32): bool = self > other
+pub let u64.gt(self, other: u64): bool = self > other
+pub let usz.gt(self, other: usz): bool = self > other
+pub let f32.gt(self, other: f32): bool = self > other
+pub let f64.gt(self, other: f64): bool = self > other
+
+pub let i8.ge(self, other: i8): bool = self >= other
+pub let i16.ge(self, other: i16): bool = self >= other
+pub let i32.ge(self, other: i32): bool = self >= other
+pub let i64.ge(self, other: i64): bool = self >= other
+pub let isz.ge(self, other: isz): bool = self >= other
+pub let u8.ge(self, other: u8): bool = self >= other
+pub let u16.ge(self, other: u16): bool = self >= other
+pub let u32.ge(self, other: u32): bool = self >= other
+pub let u64.ge(self, other: u64): bool = self >= other
+pub let usz.ge(self, other: usz): bool = self >= other
+pub let f32.ge(self, other: f32): bool = self >= other
+pub let f64.ge(self, other: f64): bool = self >= other
+
+pub let i8.bit_and(self, other: i8): i8 = self & other
+pub let i16.bit_and(self, other: i16): i16 = self & other
+pub let i32.bit_and(self, other: i32): i32 = self & other
+pub let i64.bit_and(self, other: i64): i64 = self & other
+pub let isz.bit_and(self, other: isz): isz = self & other
+pub let u8.bit_and(self, other: u8): u8 = self & other
+pub let u16.bit_and(self, other: u16): u16 = self & other
+pub let u32.bit_and(self, other: u32): u32 = self & other
+pub let u64.bit_and(self, other: u64): u64 = self & other
+pub let usz.bit_and(self, other: usz): usz = self & other
+
+pub let i8.bit_or(self, other: i8): i8 = self | other
+pub let i16.bit_or(self, other: i16): i16 = self | other
+pub let i32.bit_or(self, other: i32): i32 = self | other
+pub let i64.bit_or(self, other: i64): i64 = self | other
+pub let isz.bit_or(self, other: isz): isz = self | other
+pub let u8.bit_or(self, other: u8): u8 = self | other
+pub let u16.bit_or(self, other: u16): u16 = self | other
+pub let u32.bit_or(self, other: u32): u32 = self | other
+pub let u64.bit_or(self, other: u64): u64 = self | other
+pub let usz.bit_or(self, other: usz): usz = self | other
+
+pub let i8.bit_xor(self, other: i8): i8 = self ^ other
+pub let i16.bit_xor(self, other: i16): i16 = self ^ other
+pub let i32.bit_xor(self, other: i32): i32 = self ^ other
+pub let i64.bit_xor(self, other: i64): i64 = self ^ other
+pub let isz.bit_xor(self, other: isz): isz = self ^ other
+pub let u8.bit_xor(self, other: u8): u8 = self ^ other
+pub let u16.bit_xor(self, other: u16): u16 = self ^ other
+pub let u32.bit_xor(self, other: u32): u32 = self ^ other
+pub let u64.bit_xor(self, other: u64): u64 = self ^ other
+pub let usz.bit_xor(self, other: usz): usz = self ^ other
+
+pub let i8.shl(self, other: i8): i8 = self << other
+pub let i16.shl(self, other: i16): i16 = self << other
+pub let i32.shl(self, other: i32): i32 = self << other
+pub let i64.shl(self, other: i64): i64 = self << other
+pub let isz.shl(self, other: isz): isz = self << other
+pub let u8.shl(self, other: u8): u8 = self << other
+pub let u16.shl(self, other: u16): u16 = self << other
+pub let u32.shl(self, other: u32): u32 = self << other
+pub let u64.shl(self, other: u64): u64 = self << other
+pub let usz.shl(self, other: usz): usz = self << other
+
+pub let i8.shr(self, other: i8): i8 = self >> other
+pub let i16.shr(self, other: i16): i16 = self >> other
+pub let i32.shr(self, other: i32): i32 = self >> other
+pub let i64.shr(self, other: i64): i64 = self >> other
+pub let isz.shr(self, other: isz): isz = self >> other
+pub let u8.shr(self, other: u8): u8 = self >> other
+pub let u16.shr(self, other: u16): u16 = self >> other
+pub let u32.shr(self, other: u32): u32 = self >> other
+pub let u64.shr(self, other: u64): u64 = self >> other
+pub let usz.shr(self, other: usz): usz = self >> other
+
+pub let i8.bit_not(self): i8 = ~self
+pub let i16.bit_not(self): i16 = ~self
+pub let i32.bit_not(self): i32 = ~self
+pub let i64.bit_not(self): i64 = ~self
+pub let isz.bit_not(self): isz = ~self
+pub let u8.bit_not(self): u8 = ~self
+pub let u16.bit_not(self): u16 = ~self
+pub let u32.bit_not(self): u32 = ~self
+pub let u64.bit_not(self): u64 = ~self
+pub let usz.bit_not(self): usz = ~self

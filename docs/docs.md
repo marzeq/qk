@@ -1625,7 +1625,46 @@ Checked assertions and recasts are available only as the right-hand side of a
 two-target declaration or assignment. Single-target casts retain their existing
 trapping behavior.
 
-### 26.2 Display
+### 26.2 Core operator traits
+
+The standard library defines fine-grained traits for generic code over builtin
+operators. They do not overload operator syntax; their methods apply the
+corresponding existing operator:
+
+| Trait | Required methods | Builtin implementations |
+| --- | --- | --- |
+| `std.Add` | `add(Self): Self` | All integers and floats |
+| `std.Sub` | `sub(Self): Self` | All integers and floats |
+| `std.Mul` | `mul(Self): Self` | All integers and floats |
+| `std.Div` | `div(Self): Self` | All integers and floats |
+| `std.Rem` | `rem(Self): Self` | All integers and floats |
+| `std.Neg` | `neg(): Self` | Signed integers and floats |
+| `std.PartialEq` | `eq(Self): bool` | Integers, floats, `bool`, `char`, `str`, and `cstr` |
+| `std.PartialOrd` | `lt`, `le`, `gt`, and `ge` | All integers and floats |
+| `std.BitAnd` | `bit_and(Self): Self` | All integers |
+| `std.BitOr` | `bit_or(Self): Self` | All integers |
+| `std.BitXor` | `bit_xor(Self): Self` | All integers |
+| `std.Shl` | `shl(Self): Self` | All integers |
+| `std.Shr` | `shr(Self): Self` | All integers |
+| `std.BitNot` | `bit_not(): Self` | All integers |
+
+For example:
+
+```qk
+let sum<T: std.Add>(left: T, right: T): T =
+    left.add(right)
+```
+
+These traits use `Self` outside the receiver and are therefore intended for
+concrete values, static trait views, and generic constraints rather than
+`dyn` dispatch. Numeric methods preserve the corresponding operator's overflow,
+division, remainder, shift, and floating-point behavior. `str.eq` compares
+contents and is available without libc; `cstr.eq` compares pointer identity.
+
+Logical `and` and `or` deliberately have no method traits because ordinary
+method arguments are eagerly evaluated and cannot preserve short-circuiting.
+
+### 26.3 Display
 
 The standard library defines `std.Display` with one value-receiver method:
 
@@ -1682,7 +1721,7 @@ does not prevent invocation through the trait. Converting an existing trait
 pointer to a different trait pointer traps if the concrete type does not conform;
 the two-target form reports failure through its boolean result instead.
 
-### 26.3 Panic
+### 26.4 Panic
 
 `panic(message: str)` writes `panic: `, the message, and a newline to standard
 error, then terminates without stack unwinding. Deferred actions are not run as

@@ -297,6 +297,7 @@ func (a *Analyser) specializeGenericFunction(template *symbols.Symbol, arguments
 			clone.Symbol.TypeArguments = append([]types.Type(nil), arguments...)
 			clone.Symbol.Method = template.Method
 			clone.Symbol.StaticMethod = template.StaticMethod
+			clone.Symbol.MethodReceiver = template.MethodReceiver
 		}
 		a.visitFunction(clone)
 	})
