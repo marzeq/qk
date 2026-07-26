@@ -1954,40 +1954,42 @@ func (g *Generator) generateSliceLiteralExpr(node *parser.SliceLiteralNode) ir.O
 }
 
 func (g *Generator) generateRepeatedSliceLiteral(node *parser.SliceLiteralNode, sliceType types.SliceType, tmpSlot ir.SlotID) ir.Operand {
-	value := g.GenerateExpr(node.RepeatValue)
 	count := g.GenerateExpr(node.RepeatAmount)
 
 	bufferID := g.currentFunction.NewValueOfType(types.PointerType{Base: sliceType.Base})
 	g.Emit(ir.AllocaArray{Dest: bufferID, Element: sliceType.Base, Count: count})
 	buffer := ir.ValueOperand(bufferID, types.PointerType{Base: sliceType.Base})
 
-	indexSlot := g.currentFunction.NewSlot(types.PrimitiveUsz, "repeat.index")
-	g.Emit(ir.Alloca{Slot: indexSlot})
-	g.Emit(ir.Store{Slot: indexSlot, Value: ir.IntConstOperand("0", types.PrimitiveUsz)})
+	if _, noInit := node.RepeatValue.(*parser.NoInitializerNode); !noInit {
+		value := g.GenerateExpr(node.RepeatValue)
+		indexSlot := g.currentFunction.NewSlot(types.PrimitiveUsz, "repeat.index")
+		g.Emit(ir.Alloca{Slot: indexSlot})
+		g.Emit(ir.Store{Slot: indexSlot, Value: ir.IntConstOperand("0", types.PrimitiveUsz)})
 
-	conditionBlock := g.currentFunction.NewBlock("repeat.condition")
-	bodyBlock := g.currentFunction.NewBlock("repeat.body")
-	endBlock := g.currentFunction.NewBlock("repeat.end")
-	g.Emit(ir.Jump{Target: conditionBlock.ID})
+		conditionBlock := g.currentFunction.NewBlock("repeat.condition")
+		bodyBlock := g.currentFunction.NewBlock("repeat.body")
+		endBlock := g.currentFunction.NewBlock("repeat.end")
+		g.Emit(ir.Jump{Target: conditionBlock.ID})
 
-	g.currentBlock = conditionBlock
-	indexID := g.currentFunction.NewValueOfType(types.PrimitiveUsz)
-	g.Emit(ir.Load{Dest: indexID, Slot: indexSlot})
-	index := ir.ValueOperand(indexID, types.PrimitiveUsz)
-	conditionID := g.currentFunction.NewValueOfType(types.PrimitiveBool)
-	g.Emit(ir.CmpLt{Dest: conditionID, Left: index, Right: count})
-	g.Emit(ir.Branch{Cond: ir.ValueOperand(conditionID, types.PrimitiveBool), Then: bodyBlock.ID, Else: endBlock.ID})
+		g.currentBlock = conditionBlock
+		indexID := g.currentFunction.NewValueOfType(types.PrimitiveUsz)
+		g.Emit(ir.Load{Dest: indexID, Slot: indexSlot})
+		index := ir.ValueOperand(indexID, types.PrimitiveUsz)
+		conditionID := g.currentFunction.NewValueOfType(types.PrimitiveBool)
+		g.Emit(ir.CmpLt{Dest: conditionID, Left: index, Right: count})
+		g.Emit(ir.Branch{Cond: ir.ValueOperand(conditionID, types.PrimitiveBool), Then: bodyBlock.ID, Else: endBlock.ID})
 
-	g.currentBlock = bodyBlock
-	elementPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: sliceType.Base})
-	g.Emit(ir.ElementAddress{Dest: elementPtrID, Base: buffer, Index: index, Element: sliceType.Base})
-	g.Emit(ir.StorePtr{Ptr: ir.ValueOperand(elementPtrID, types.PointerType{Base: sliceType.Base}), Value: value})
-	nextID := g.currentFunction.NewValueOfType(types.PrimitiveUsz)
-	g.Emit(ir.Add{Dest: nextID, Left: index, Right: ir.IntConstOperand("1", types.PrimitiveUsz)})
-	g.Emit(ir.Store{Slot: indexSlot, Value: ir.ValueOperand(nextID, types.PrimitiveUsz)})
-	g.Emit(ir.Jump{Target: conditionBlock.ID})
+		g.currentBlock = bodyBlock
+		elementPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: sliceType.Base})
+		g.Emit(ir.ElementAddress{Dest: elementPtrID, Base: buffer, Index: index, Element: sliceType.Base})
+		g.Emit(ir.StorePtr{Ptr: ir.ValueOperand(elementPtrID, types.PointerType{Base: sliceType.Base}), Value: value})
+		nextID := g.currentFunction.NewValueOfType(types.PrimitiveUsz)
+		g.Emit(ir.Add{Dest: nextID, Left: index, Right: ir.IntConstOperand("1", types.PrimitiveUsz)})
+		g.Emit(ir.Store{Slot: indexSlot, Value: ir.ValueOperand(nextID, types.PrimitiveUsz)})
+		g.Emit(ir.Jump{Target: conditionBlock.ID})
 
-	g.currentBlock = endBlock
+		g.currentBlock = endBlock
+	}
 	slicePtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: sliceType})
 	g.Emit(ir.AddressOf{Dest: slicePtrID, Slot: tmpSlot})
 	slicePtr := ir.ValueOperand(slicePtrID, types.PointerType{Base: sliceType})

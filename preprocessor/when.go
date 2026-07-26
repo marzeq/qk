@@ -85,10 +85,36 @@ func (p *Processor) process() ([]tokeniser.Token, error) {
 				return nil, p.compilerError()
 			}
 		}
+		if tok.Type == tokeniser.TokenIdentifier && p.isSliceExtentReference() {
+			if value, ok := p.target.bindings[tok.Value]; ok && value.kind == valueInteger {
+				literal, err := literalToken(value, tok.Loc)
+				if err != nil {
+					return nil, err
+				}
+				result = append(result, literal)
+				p.pos++
+				continue
+			}
+		}
 		result = append(result, tok)
 		p.pos++
 	}
 	return result, nil
+}
+
+func (p *Processor) isSliceExtentReference() bool {
+	previous := p.pos - 1
+	for previous >= 0 && p.tokens[previous].Type == tokeniser.TokenNewline {
+		previous--
+	}
+	next := p.pos + 1
+	for next < len(p.tokens) && p.tokens[next].Type == tokeniser.TokenNewline {
+		next++
+	}
+	if previous < 0 || next >= len(p.tokens) || p.tokens[next].Type != tokeniser.TokenCloseSquare {
+		return false
+	}
+	return p.tokens[previous].Type == tokeniser.TokenComma || p.tokens[previous].Type == tokeniser.TokenSemicolon
 }
 
 func cloneValues(values map[string]Value) map[string]Value {

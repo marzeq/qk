@@ -1302,7 +1302,11 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 					size = parsed
 				}
 			}
-			v.validateExpr(n.RepeatValue)
+			if _, noInit := n.RepeatValue.(*parser.NoInitializerNode); noInit {
+				v.errorf(n, "an uninitialized repeated slice requires an expected slice type")
+			} else {
+				v.validateExpr(n.RepeatValue)
+			}
 			n.RepeatAmount = v.validateExprWithExpected(n.RepeatAmount, types.PrimitiveUsz)
 			n.SetType(types.SliceType{Base: n.RepeatValue.GetType(), Size: size, Mutable: true})
 			break
@@ -1796,7 +1800,11 @@ func (v *Validator) validateSliceLiteralWithExpected(n *parser.SliceLiteralNode,
 				size = parsed
 			}
 		}
-		n.RepeatValue = v.validateExprWithExpected(n.RepeatValue, sliceType.Base)
+		if noInit, ok := n.RepeatValue.(*parser.NoInitializerNode); ok {
+			noInit.SetType(sliceType.Base)
+		} else {
+			n.RepeatValue = v.validateExprWithExpected(n.RepeatValue, sliceType.Base)
+		}
 		n.RepeatAmount = v.validateExprWithExpected(n.RepeatAmount, types.PrimitiveUsz)
 		if sliceType.Size != -1 && size != -1 && size != sliceType.Size {
 			v.errorf(n, "cannot assign repeated slice of size %d to [%v, %d]", size, sliceType.Base, sliceType.Size)
