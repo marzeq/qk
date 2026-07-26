@@ -151,7 +151,17 @@ pub let f32.eq(self, other: f32): bool = self == other
 pub let f64.eq(self, other: f64): bool = self == other
 pub let char.eq(self, other: char): bool = self == other
 pub let bool.eq(self, other: bool): bool = self == other
-pub let cstr.eq(self, other: cstr): bool = self == other
+
+pub let cstr.eq(self, other: cstr): bool {
+  let mut index: usz = 0
+  for self[index] != '\0' and other[index] != '\0' {
+    if self[index] != other[index] {
+      return false
+    }
+    index += 1
+  }
+  return self[index] == other[index]
+}
 
 pub let str.eq(self, other: str): bool {
   if len(self) != len(other) {
