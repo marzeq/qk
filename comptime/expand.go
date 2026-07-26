@@ -2,8 +2,8 @@ package comptime
 
 import (
 	"maps"
+	"math/big"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/marzeq/qk/parser"
@@ -181,26 +181,12 @@ func (e *expander) expandDeclaration() ([]tokeniser.Token, bool, error) {
 		return nil, true, err
 	}
 	rewritten := append([]tokeniser.Token(nil), e.tokens[start:equals]...)
-	if value.kind == valueInteger && !declarationHasType(e.tokens[namePos+1:equals]) {
-		rewritten = append(rewritten,
-			tokeniser.Token{Type: tokeniser.TokenColon, Loc: name.Loc},
-			tokeniser.Token{Type: tokeniser.TokenIdentifier, Value: "i64", Loc: name.Loc},
-		)
-	}
 	rewritten = append(rewritten, e.tokens[equals])
+	rewritten = append(rewritten, e.tokens[equals+1])
 	rewritten = append(rewritten, literal)
 	e.target.bindings[name.Value] = value
 	e.pos = end
 	return rewritten, true, nil
-}
-
-func declarationHasType(tokens []tokeniser.Token) bool {
-	for _, tok := range tokens {
-		if tok.Type == tokeniser.TokenColon {
-			return true
-		}
-	}
-	return false
 }
 
 func whenContinuesPrevious(tokens []tokeniser.Token) bool {
@@ -419,7 +405,7 @@ const (
 type Value struct {
 	kind    valueKind
 	boolean bool
-	integer int64
+	integer *big.Int
 	domain  string
 	name    string
 }
@@ -439,8 +425,8 @@ func evaluate(node parser.ExpressionNode, target targetValues, resolveBinding fu
 	case *parser.BoolLiteralNode:
 		return Value{kind: valueBool, boolean: n.Value == string(tokeniser.KeywordTrue)}, nil
 	case *parser.IntegerLiteralNode:
-		value, err := strconv.ParseInt(n.Value, 10, 64)
-		if err != nil {
+		value, ok := new(big.Int).SetString(n.Value, 10)
+		if !ok {
 			return Value{}, shared.NewError(n.Loc, "invalid integer in compile-time expression")
 		}
 		return Value{kind: valueInteger, integer: value}, nil
@@ -455,7 +441,7 @@ func evaluate(node parser.ExpressionNode, target targetValues, resolveBinding fu
 		case "Environment":
 			return Value{kind: valueEnum, domain: "Environment", name: target.environment}, nil
 		case "PointerBits":
-			return Value{kind: valueInteger, integer: target.pointerBits}, nil
+			return Value{kind: valueInteger, integer: big.NewInt(target.pointerBits)}, nil
 		case "NoLibc":
 			return Value{kind: valueBool, boolean: target.noLibc}, nil
 		case "NoStdlib":
@@ -494,7 +480,7 @@ func evaluate(node parser.ExpressionNode, target targetValues, resolveBinding fu
 			return Value{kind: valueBool, boolean: !operand.boolean}, nil
 		}
 		if n.Op == parser.UnaryOpNegate && operand.kind == valueInteger {
-			return Value{kind: valueInteger, integer: -operand.integer}, nil
+			return Value{kind: valueInteger, integer: new(big.Int).Neg(operand.integer)}, nil
 		}
 		return Value{}, shared.NewError(n.Loc, "invalid unary operator for compile-time value")
 	case *parser.BinaryOpNode:
@@ -529,37 +515,38 @@ func evaluate(node parser.ExpressionNode, target targetValues, resolveBinding fu
 			if left.kind != valueInteger || right.kind != valueInteger {
 				return Value{}, shared.NewError(n.Loc, "arithmetic compile-time operators require integer operands")
 			}
-			if (n.Op == parser.BinaryOpDivide || n.Op == parser.BinaryOpModulo) && right.integer == 0 {
+			if (n.Op == parser.BinaryOpDivide || n.Op == parser.BinaryOpModulo) && right.integer.Sign() == 0 {
 				return Value{}, shared.NewError(n.Loc, "division by zero in compile-time expression")
 			}
-			value := left.integer
+			value := new(big.Int)
 			switch n.Op {
 			case parser.BinaryOpAdd:
-				value += right.integer
+				value.Add(left.integer, right.integer)
 			case parser.BinaryOpSubtract:
-				value -= right.integer
+				value.Sub(left.integer, right.integer)
 			case parser.BinaryOpMultiply:
-				value *= right.integer
+				value.Mul(left.integer, right.integer)
 			case parser.BinaryOpDivide:
-				value /= right.integer
+				value.Quo(left.integer, right.integer)
 			case parser.BinaryOpModulo:
-				value %= right.integer
+				value.Rem(left.integer, right.integer)
 			}
 			return Value{kind: valueInteger, integer: value}, nil
 		case parser.BinaryOpLess, parser.BinaryOpLessEqual, parser.BinaryOpGreater, parser.BinaryOpGreaterEqual:
 			if left.kind != valueInteger || right.kind != valueInteger {
 				return Value{}, shared.NewError(n.Loc, "ordered compile-time comparisons require integer operands")
 			}
+			comparison := left.integer.Cmp(right.integer)
 			var value bool
 			switch n.Op {
 			case parser.BinaryOpLess:
-				value = left.integer < right.integer
+				value = comparison < 0
 			case parser.BinaryOpLessEqual:
-				value = left.integer <= right.integer
+				value = comparison <= 0
 			case parser.BinaryOpGreater:
-				value = left.integer > right.integer
+				value = comparison > 0
 			case parser.BinaryOpGreaterEqual:
-				value = left.integer >= right.integer
+				value = comparison >= 0
 			}
 			return Value{kind: valueBool, boolean: value}, nil
 		default:
@@ -602,7 +589,7 @@ func equalValues(left, right Value, loc shared.Location) (bool, error) {
 	case valueBool:
 		return left.boolean == right.boolean, nil
 	case valueInteger:
-		return left.integer == right.integer, nil
+		return left.integer.Cmp(right.integer) == 0, nil
 	case valueEnum:
 		if left.domain != right.domain {
 			return false, shared.NewError(loc, "cannot compare %s and %s values", left.domain, right.domain)

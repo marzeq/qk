@@ -2,7 +2,6 @@ package comptime
 
 import (
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/marzeq/qk/parser"
@@ -174,7 +173,7 @@ func literalToken(value Value, loc shared.Location) (tokeniser.Token, error) {
 		}
 		return tokeniser.Token{Type: tokeniser.TokenKeyword, Value: text, Loc: loc}, nil
 	case valueInteger:
-		return tokeniser.Token{Type: tokeniser.TokenNumber, Value: strconv.FormatInt(value.integer, 10), Loc: loc}, nil
+		return tokeniser.Token{Type: tokeniser.TokenNumber, Value: value.integer.String(), Loc: loc}, nil
 	default:
 		return tokeniser.Token{}, shared.NewError(loc, "compile-time target values may only be bound after converting them to a boolean or integer")
 	}

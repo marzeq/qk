@@ -145,10 +145,11 @@ func (a *Analyser) visitLocalDeclaration(n *parser.DeclarationNode) {
 	}
 
 	sym := &symbols.Symbol{
-		Name:    n.Name,
-		Kind:    symbols.SymbolKindVariable,
-		Type:    varType,
-		Mutable: n.Mutable,
+		Name:     n.Name,
+		Kind:     symbols.SymbolKindVariable,
+		Type:     varType,
+		Mutable:  n.Mutable,
+		Comptime: n.Comptime,
 	}
 
 	if n.Value != nil {

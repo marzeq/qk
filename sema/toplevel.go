@@ -315,6 +315,7 @@ func (a *Analyser) collectGlobalVariable(n *parser.DeclarationNode) {
 		Type:              varType,
 		Mutable:           n.Mutable,
 		Public:            n.Pub,
+		Comptime:          n.Comptime,
 		Attributes:        n.Attributes,
 		GenericParameters: genericParameters,
 		Template:          len(genericParameters) != 0,

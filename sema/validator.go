@@ -19,10 +19,15 @@ type Validator struct {
 	errors             []error
 	warnings           []error
 	validatingTemplate bool
+	deferredComptime   []*parser.DeclarationNode
+	comptimeReferences map[*symbols.Symbol][]parser.ExpressionNode
 }
 
 func (a *Analyser) NewValidator() *Validator {
-	return &Validator{analyser: a}
+	return &Validator{
+		analyser:           a,
+		comptimeReferences: make(map[*symbols.Symbol][]parser.ExpressionNode),
+	}
 }
 
 func (v *Validator) errorf(node parser.Node, format string, args ...any) {
@@ -80,6 +85,23 @@ func (v *Validator) Errors() []error {
 
 func (v *Validator) Warnings() []error {
 	return v.warnings
+}
+
+// FinaliseComptimeDeclarations resolves deferred untyped compile-time bindings
+// after every module has supplied its ordinary, concrete usage contexts.
+func (v *Validator) FinaliseComptimeDeclarations() {
+	for _, declaration := range v.deferredComptime {
+		symbol := declaration.Symbol
+		if types.HasUntyped(symbol.Type) {
+			v.errorf(declaration, "cannot infer declaration type from untyped numeric value; add a type annotation or cast")
+			symbol.Type = types.ErrorType{}
+			continue
+		}
+		declaration.Value = v.validateExprWithExpected(declaration.Value, symbol.Type)
+		for _, reference := range v.comptimeReferences[symbol] {
+			setComptimeReferenceType(reference, symbol.Type)
+		}
+	}
 }
 
 func (v *Validator) validateNode(node parser.Node) {
@@ -310,6 +332,15 @@ func (v *Validator) finaliseDeclaration(n *parser.DeclarationNode) {
 	}
 
 	if types.HasUntyped(valueType) {
+		if n.Comptime {
+			if n.Symbol.Type != nil && !types.HasUntyped(n.Symbol.Type) {
+				n.Value = v.validateExprWithExpected(n.Value, n.Symbol.Type)
+				return
+			}
+			n.Symbol.Type = valueType
+			v.deferredComptime = append(v.deferredComptime, n)
+			return
+		}
 		if _, ok := valueType.(types.UnresolvedEnum); ok {
 			v.errorf(n, "cannot infer enum type for declaration; add a type annotation")
 		} else {
@@ -798,7 +829,12 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			v.validateSliceLiteralWithExpected(literal, targetType)
 			break
 		}
-		v.validateExpr(n.Operand)
+		if identifier := comptimeIdentifier(n.Operand); identifier != nil && identifier.Symbol != nil &&
+			identifier.Symbol.Comptime && types.IsUntyped(n.Operand.GetType()) {
+			n.Operand = v.validateExprWithExpected(n.Operand, targetType)
+		} else {
+			v.validateExpr(n.Operand)
+		}
 		if n.StaticTraitView != nil {
 			v.validateStaticTraitAssertion(n)
 			break
@@ -1211,6 +1247,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		}
 
 	case *parser.FieldAccessNode:
+		v.trackComptimeReference(n)
 		if n.MethodSymbol != nil && n.MethodSymbol.Template {
 			v.errorf(n, "generic method %q requires type arguments when used as a value", n.Field.Name)
 			return
@@ -1374,9 +1411,11 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		*parser.StringLiteralNode,
 		*parser.CStringLiteralNode,
 		*parser.CharLiteralNode,
-		*parser.NilLiteralNode,
-		*parser.IdentifierNode:
+		*parser.NilLiteralNode:
 		// nothing to validate
+
+	case *parser.IdentifierNode:
+		v.trackComptimeReference(n)
 
 	case *parser.NoInitializerNode:
 		v.errorf(n, "'---' is only valid as a declaration initializer, a struct field initializer, or the final struct initializer entry")
@@ -1587,6 +1626,20 @@ func (v *Validator) createCast(node parser.ExpressionNode, target types.Type) pa
 }
 
 func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expected types.Type) parser.ExpressionNode {
+	if identifier := v.trackComptimeReference(node); identifier != nil {
+		if types.IsUntyped(node.GetType()) {
+			if types.IsUntyped(identifier.Symbol.Type) && expected != nil && !types.IsUntyped(expected) &&
+				node.GetType().CanCoerceTo(expected) {
+				if _, erroneous := expected.(types.ErrorType); !erroneous {
+					identifier.Symbol.Type = expected
+				}
+			}
+			if identifier.Symbol.Type != nil && !types.IsUntyped(identifier.Symbol.Type) {
+				setComptimeReferenceType(node, identifier.Symbol.Type)
+			}
+		}
+	}
+
 	switch n := node.(type) {
 	case *parser.NilLiteralNode:
 		if types.IsPointer(expected) || isTraitPointerType(expected) {
@@ -1673,7 +1726,7 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 	}
 
 	if n, ok := node.(*parser.IdentifierNode); ok &&
-		types.IsUntyped(n.GetType()) && !types.IsUntyped(expected) {
+		types.IsUntyped(n.GetType()) && !types.IsUntyped(expected) && n.GetType().CanCoerceTo(expected) {
 		n.Symbol.Type = expected
 		n.SetType(expected)
 		return n
@@ -1752,6 +1805,36 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 	}
 
 	return node
+}
+
+func comptimeIdentifier(node parser.ExpressionNode) *parser.IdentifierNode {
+	switch n := node.(type) {
+	case *parser.IdentifierNode:
+		return n
+	case *parser.FieldAccessNode:
+		return n.ResolvedIdentifier
+	default:
+		return nil
+	}
+}
+
+func setComptimeReferenceType(node parser.ExpressionNode, t types.Type) {
+	node.SetType(t)
+	if field, ok := node.(*parser.FieldAccessNode); ok {
+		field.ResolvedIdentifier.SetType(t)
+	}
+}
+
+func (v *Validator) trackComptimeReference(node parser.ExpressionNode) *parser.IdentifierNode {
+	identifier := comptimeIdentifier(node)
+	if identifier == nil || identifier.Symbol == nil || !identifier.Symbol.Comptime {
+		return nil
+	}
+	v.comptimeReferences[identifier.Symbol] = append(v.comptimeReferences[identifier.Symbol], node)
+	if identifier.Symbol.Type != nil && !types.IsUntyped(identifier.Symbol.Type) && types.IsUntyped(node.GetType()) {
+		setComptimeReferenceType(node, identifier.Symbol.Type)
+	}
+	return identifier
 }
 
 func isBitwiseOperator(op parser.BinaryOpKind) bool {
