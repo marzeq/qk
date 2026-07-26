@@ -196,7 +196,7 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 				receiver = MethodReceiverMutablePointer
 			}
 		}
-		args = append(args, &FunctionNodeArg{Name: "self", Type: selfType, Mutable: mutablePointer})
+		args = append(args, &FunctionNodeArg{Name: "self", Type: selfType, Mutable: mutablePointer, Loc: self.Loc})
 		if p.Match(tokeniser.TokenComma) {
 			p.Inc()
 		} else if !p.Match(tokeniser.TokenCloseParen) {
@@ -239,6 +239,7 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 		group := []*FunctionNodeArg{{
 			Name:    arg.Name,
 			Mutable: mutable,
+			Loc:     arg.Loc,
 		}}
 		if p.Match(tokeniser.TokenEquals) {
 			p.Inc()
@@ -273,6 +274,7 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 			group = append(group, &FunctionNodeArg{
 				Name:    arg.Name,
 				Mutable: mutable,
+				Loc:     arg.Loc,
 			})
 			if p.Match(tokeniser.TokenEquals) {
 				p.Inc()
@@ -1163,6 +1165,7 @@ func (p *Parser) ParseDeclaration() (*DeclarationNode, error) {
 
 	return &DeclarationNode{
 		Name:              ident.Value,
+		NameLoc:           ident.Loc,
 		GenericParameters: genericParameters,
 		TypeNode:          tpe,
 		Mutable:           mutable,
@@ -1233,12 +1236,14 @@ func (p *Parser) parseMultiDeclaration() (*MultiDeclarationNode, error) {
 	loc := p.CurrLoc()
 	p.Inc() // let
 	names := []string{}
+	nameLocs := []shared.Location{}
 	for {
 		ident, ok := p.ExpectGet(tokeniser.TokenIdentifier)
 		if !ok {
 			return nil, shared.NewError(p.PrevLoc(), "expected declaration name")
 		}
 		names = append(names, ident.Value)
+		nameLocs = append(nameLocs, ident.Loc)
 		if !p.Match(tokeniser.TokenComma) {
 			break
 		}
@@ -1254,7 +1259,7 @@ func (p *Parser) parseMultiDeclaration() (*MultiDeclarationNode, error) {
 	if !isMultiResultSource(value) {
 		return nil, shared.NewError(value.GetLoc(), "multiple declaration requires a function call or checked cast")
 	}
-	return &MultiDeclarationNode{Names: names, Value: value, Loc: p.SpanFrom(loc)}, nil
+	return &MultiDeclarationNode{Names: names, NameLocs: nameLocs, Value: value, Loc: p.SpanFrom(loc)}, nil
 }
 
 func isMultiResultSource(value ExpressionNode) bool {
@@ -1618,6 +1623,7 @@ func (p *Parser) parseRangeOrForEach(beginLoc shared.Location) (Node, error) {
 		}
 		return &RangeForNode{
 			Name:      name.Value,
+			NameLoc:   name.Loc,
 			Start:     iterable,
 			End:       end,
 			Inclusive: inclusive,
@@ -1632,6 +1638,7 @@ func (p *Parser) parseRangeOrForEach(beginLoc shared.Location) (Node, error) {
 	}
 	return &ForEachNode{
 		Name:     name.Value,
+		NameLoc:  name.Loc,
 		Iterable: iterable,
 		Body:     body,
 		Loc:      p.SpanFrom(beginLoc),

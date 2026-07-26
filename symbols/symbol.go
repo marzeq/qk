@@ -20,6 +20,9 @@ type Symbol struct {
 	Mutable  bool
 	Public   bool
 	Comptime bool
+	// Referenced records whether source-level name resolution encountered a use
+	// of this binding after its definition.
+	Referenced bool
 	// InlineComptime marks an untyped compile-time integer that is materialized
 	// independently at each typed use instead of receiving runtime storage.
 	InlineComptime  bool

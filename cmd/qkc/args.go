@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+
+	"github.com/marzeq/qk/shared"
 )
 
 type OutputType int
@@ -31,6 +33,23 @@ const (
 	OptLevelDebug   OptimisationLevel = "g"
 )
 
+type WarningMode string
+
+const (
+	WarningModeShow  WarningMode = "show"
+	WarningModeOff   WarningMode = "off"
+	WarningModeError WarningMode = "error"
+)
+
+func parseWarningMode(value string) (WarningMode, error) {
+	switch WarningMode(value) {
+	case WarningModeShow, WarningModeOff, WarningModeError:
+		return WarningMode(value), nil
+	default:
+		return "", fmt.Errorf("invalid warning mode %q: expected show, off, or error", value)
+	}
+}
+
 type Args struct {
 	baseDir       string
 	file          string
@@ -41,6 +60,8 @@ type Args struct {
 	optLevel      OptimisationLevel
 	verbose       bool
 	debug         bool
+	warningMode   WarningMode
+	warningModes  map[string]WarningMode
 	dumpIR        bool
 	dumpLLVM      bool
 	dumpAsm       bool
@@ -108,7 +129,13 @@ type argumentParser struct {
 
 func newArgumentParser(input []string) *argumentParser {
 	return &argumentParser{
-		args:  &Args{optLevel: OptLevel2, outputType: OutputUnspecified, mainModule: "main"},
+		args: &Args{
+			optLevel:     OptLevel2,
+			outputType:   OutputUnspecified,
+			mainModule:   "main",
+			warningMode:  WarningModeShow,
+			warningModes: make(map[string]WarningMode),
+		},
 		input: input,
 	}
 }
@@ -224,6 +251,34 @@ func (p *argumentParser) parseCurrent() error {
 	case tok == "-d":
 		p.args.debug = true
 		p.index++
+
+	case tok == "-warn":
+		value, err := p.nextValue(tok)
+		if err != nil {
+			return err
+		}
+		mode, err := parseWarningMode(value)
+		if err != nil {
+			return err
+		}
+		p.args.warningMode = mode
+
+	case strings.HasPrefix(tok, "-warn-"):
+		warningType := strings.TrimPrefix(tok, "-warn-")
+		switch warningType {
+		case string(shared.WarningUnusedVariable), string(shared.WarningUnusedParameter):
+		default:
+			return fmt.Errorf("unknown warning type %q", warningType)
+		}
+		value, err := p.nextValue(tok)
+		if err != nil {
+			return err
+		}
+		mode, err := parseWarningMode(value)
+		if err != nil {
+			return err
+		}
+		p.args.warningModes[warningType] = mode
 
 	case tok == "-no-emit":
 		p.args.noEmit = true
@@ -378,6 +433,9 @@ func printUsage() {
 	fmt.Println("  -m <module>        Root module name (default: main)")
 	fmt.Println("  -t <type>          Output type (exe, obj, so)")
 	fmt.Println("  -O <level>         Optimisation level (0, 1, 2, 3, s, z, fast, g)")
+	fmt.Println("  -warn <show|off|error>  Warning mode (default: show)")
+	fmt.Println("  -warn-unused-variable <show|off|error>   Override unused-variable warnings")
+	fmt.Println("  -warn-unused-parameter <show|off|error>  Override unused-parameter warnings")
 	fmt.Println("  -static            Link with static libraries")
 	fmt.Println("  -nolibc            Do not link against the C standard library")
 	fmt.Println("  -nostdlib          Do not load the embedded QK standard library")

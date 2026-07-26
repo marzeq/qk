@@ -29,8 +29,15 @@ func (v *Validator) errorf(node parser.Node, format string, args ...any) {
 	v.errors = append(v.errors, shared.NewError(node.GetLoc(), format, args...))
 }
 
-func (v *Validator) warnf(node parser.Node, format string, args ...any) {
-	v.warnings = append(v.warnings, shared.NewWarning(node.GetLoc(), format, args...))
+func (v *Validator) warnLocf(kind shared.WarningKind, loc shared.Location, format string, args ...any) {
+	v.warnings = append(v.warnings, shared.NewWarning(kind, loc, format, args...))
+}
+
+func (v *Validator) warnIfUnused(symbol *symbols.Symbol, loc shared.Location, warningKind shared.WarningKind, bindingKind string) {
+	if v.analyser.currentTrustedStandardLibrary || symbol == nil || symbol.Name == "_" || symbol.Referenced {
+		return
+	}
+	v.warnLocf(warningKind, loc, "unused %s %q", bindingKind, symbol.Name)
 }
 
 func (v *Validator) ValidateModule(root *parser.RootNode) {
@@ -187,6 +194,11 @@ func (v *Validator) validateNode(node parser.Node) {
 				v.validateNode(n.Body)
 			}
 		}
+		if n.Body != nil {
+			for _, arg := range n.Args {
+				v.warnIfUnused(arg.Symbol, arg.GetLoc(), shared.WarningUnusedParameter, "function parameter")
+			}
+		}
 
 		v.currentFunction = prev
 
@@ -213,8 +225,14 @@ func (v *Validator) validateNode(node parser.Node) {
 		if n.Symbol.Type != nil && !types.IsComplete(n.Symbol.Type) {
 			v.errorf(n, "cannot declare a value of incomplete type %v", n.Symbol.Type)
 		}
+		if v.currentFunction != nil {
+			v.warnIfUnused(n.Symbol, n.NameLoc, shared.WarningUnusedVariable, "variable")
+		}
 	case *parser.MultiDeclarationNode:
 		v.validateMultiDeclaration(n)
+		for i, symbol := range n.Symbols {
+			v.warnIfUnused(symbol, n.NameLocs[i], shared.WarningUnusedVariable, "variable")
+		}
 
 	case *parser.AssignmentNode:
 		v.validateAssignment(n)
@@ -771,6 +789,7 @@ func (v *Validator) validateRangeFor(n *parser.RangeForNode) {
 	}
 
 	v.validateNode(n.Body)
+	v.warnIfUnused(n.Symbol, n.NameLoc, shared.WarningUnusedVariable, "variable")
 
 	iteratorType := types.PrimitiveUsz
 	n.Start = v.validateExprWithExpected(n.Start, iteratorType)
@@ -795,6 +814,7 @@ func (v *Validator) validateForEach(n *parser.ForEachNode) {
 		n.Symbol.Type = slice.Base
 	}
 	v.validateNode(n.Body)
+	v.warnIfUnused(n.Symbol, n.NameLoc, shared.WarningUnusedVariable, "variable")
 }
 
 func (v *Validator) validateReturn(n *parser.ControlKeywordNode) {

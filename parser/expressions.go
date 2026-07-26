@@ -1341,6 +1341,7 @@ func (p *Parser) ParseTraitType() (*TraitTypeNode, error) {
 			args = append(args, &FunctionNodeArg{
 				Name: arg.Name,
 				Type: t,
+				Loc:  arg.Loc,
 			})
 
 			for p.Match(tokeniser.TokenNewline) {

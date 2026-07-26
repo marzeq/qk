@@ -23,7 +23,11 @@ func (a *Analyser) resolveIdentifier(n *parser.IdentifierNode) (*symbols.Symbol,
 			a.errorf(n, "undefined identifier %q", n.Name)
 			return nil, false
 		}
-		return a.resolveGenericIdentifier(n, sym)
+		resolved, ok := a.resolveGenericIdentifier(n, sym)
+		if ok {
+			resolved.Referenced = true
+		}
+		return resolved, ok
 	}
 
 	var mod *symbols.Module
@@ -49,7 +53,11 @@ func (a *Analyser) resolveIdentifier(n *parser.IdentifierNode) (*symbols.Symbol,
 	}
 
 	n.ResolvedModuleName = mod.Name
-	return a.resolveGenericIdentifier(n, sym)
+	resolved, ok := a.resolveGenericIdentifier(n, sym)
+	if ok {
+		resolved.Referenced = true
+	}
+	return resolved, ok
 }
 
 func (a *Analyser) resolveGenericIdentifier(n *parser.IdentifierNode, sym *symbols.Symbol) (*symbols.Symbol, bool) {

@@ -57,10 +57,10 @@ func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, o
 			templateValidator.ValidateGenericTemplates(root)
 		}
 	}
-	if len(templateValidator.Errors()) > 0 {
-		return templateValidator.Errors(), nil
-	}
 	warnings = append(warnings, templateValidator.Warnings()...)
+	if len(templateValidator.Errors()) > 0 {
+		return templateValidator.Errors(), warnings
+	}
 
 	for _, name := range order {
 		info := mods[name]
@@ -72,7 +72,7 @@ func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, o
 	if len(analyser.Errors()) > 0 || len(attributor.Errors()) > 0 {
 		errors := append([]error(nil), analyser.Errors()...)
 		errors = append(errors, attributor.Errors()...)
-		return errors, nil
+		return errors, warnings
 	}
 
 	if verbose && debug {
@@ -87,12 +87,11 @@ func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, o
 			validator.ValidateModule(root)
 		}
 	}
+	warnings = append(warnings, validator.Warnings()...)
 
 	if len(validator.Errors()) > 0 {
-		return validator.Errors(), nil
+		return validator.Errors(), warnings
 	}
-
-	warnings = append(warnings, validator.Warnings()...)
 
 	if verbose && debug {
 		fmt.Println("completed validation phase")

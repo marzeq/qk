@@ -8,10 +8,18 @@ import (
 )
 
 type Error struct {
-	message   string
-	loc       Location
-	isWarning bool
+	message     string
+	loc         Location
+	isWarning   bool
+	warningKind WarningKind
 }
+
+type WarningKind string
+
+const (
+	WarningUnusedVariable  WarningKind = "unused-variable"
+	WarningUnusedParameter WarningKind = "unused-parameter"
+)
 
 func NewError(loc Location, message string, a ...any) Error {
 	return Error{
@@ -21,12 +29,20 @@ func NewError(loc Location, message string, a ...any) Error {
 	}
 }
 
-func NewWarning(loc Location, message string, a ...any) Error {
+func NewWarning(kind WarningKind, loc Location, message string, a ...any) Error {
 	return Error{
-		message:   fmt.Sprintf(message, a...),
-		loc:       loc,
-		isWarning: true,
+		message:     fmt.Sprintf(message, a...),
+		loc:         loc,
+		isWarning:   true,
+		warningKind: kind,
 	}
+}
+
+func (err Error) WarningKind() WarningKind { return err.warningKind }
+
+func (err Error) AsError() Error {
+	err.isWarning = false
+	return err
 }
 
 func (err Error) Error() string {

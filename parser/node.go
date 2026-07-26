@@ -597,9 +597,15 @@ type FunctionNodeArg struct {
 	Default ExpressionNode
 	Mutable bool
 	Symbol  *symbols.Symbol
+	Loc     shared.Location
 }
 
-func (a FunctionNodeArg) GetLoc() shared.Location { return a.Type.GetLoc() }
+func (a FunctionNodeArg) GetLoc() shared.Location {
+	if a.Loc.LC.Line != 0 {
+		return a.Loc
+	}
+	return a.Type.GetLoc()
+}
 
 type GenericParameterNode struct {
 	Name       string
@@ -677,6 +683,7 @@ func (n ForNode) GetLoc() shared.Location { return n.Loc }
 
 type RangeForNode struct {
 	Name      string
+	NameLoc   shared.Location
 	Start     ExpressionNode
 	End       ExpressionNode
 	Inclusive bool
@@ -689,6 +696,7 @@ func (n RangeForNode) GetLoc() shared.Location { return n.Loc }
 
 type ForEachNode struct {
 	Name     string
+	NameLoc  shared.Location
 	Iterable ExpressionNode
 	Body     *BlockNode
 	Loc      shared.Location
@@ -715,6 +723,7 @@ func (n DeferNode) GetLoc() shared.Location { return n.Loc }
 
 type DeclarationNode struct {
 	Name              string
+	NameLoc           shared.Location
 	GenericParameters []GenericParameterNode
 	Mutable           bool
 	Pub               bool
@@ -727,10 +736,11 @@ type DeclarationNode struct {
 }
 
 type MultiDeclarationNode struct {
-	Names   []string
-	Value   ExpressionNode
-	Loc     shared.Location
-	Symbols []*symbols.Symbol
+	Names    []string
+	NameLocs []shared.Location
+	Value    ExpressionNode
+	Loc      shared.Location
+	Symbols  []*symbols.Symbol
 }
 
 func (n MultiDeclarationNode) GetLoc() shared.Location { return n.Loc }

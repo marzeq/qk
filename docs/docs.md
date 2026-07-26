@@ -1921,6 +1921,9 @@ generated executable after the run.
 | `-Olevel` or `-O level` | Set `0`, `1`, `2`, `3`, `s`, `z`, `fast`, or `g`; default `2`. |
 | `-v` | Print verbose build progress. |
 | `-d` | Enable compiler debug detail. |
+| `-warn <show\|off\|error>` | Select warning handling; default `show`. |
+| `-warn-unused-variable <show\|off\|error>` | Override handling for unused-variable warnings. |
+| `-warn-unused-parameter <show\|off\|error>` | Override handling for unused-parameter warnings. |
 
 Numeric optimization levels above 3 are accepted, warned about, and treated as `-O3`.
 
@@ -1969,6 +1972,16 @@ be colored red for errors or yellow for warnings, including spans crossing line
 boundaries. Set `NO_COLOR` to disable diagnostic colors. Several independent
 errors can be reported in one run. Warnings do not prevent output unless an
 error also occurs.
+
+Unused local variables, loop bindings, and function parameters produce
+warnings. Name a binding `_` when it is intentionally unused.
+`-warn off` suppresses warnings, while `-warn error` promotes them to errors and
+prevents output generation.
+Each warning carries a category. A category-specific option overrides `-warn`
+regardless of argument order; categories without an override inherit the global
+mode. For example, `-warn-unused-variable off -warn-unused-parameter
+error -warn show` hides unused variables, rejects unused parameters, and shows
+other warnings.
 
 ## 30. Examples
 

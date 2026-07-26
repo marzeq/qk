@@ -136,10 +136,25 @@ func main() {
 
 	var warnings []error
 	errs, warnings = loader.RunSemanticPipeline(modules, analyser, order, args.verbose, args.debug)
-	checkErrs(errs)
-	for _, w := range warnings {
-		fmt.Println(w)
+	for _, warning := range warnings {
+		mode := args.warningMode
+		if diagnostic, ok := warning.(shared.Error); ok {
+			if override, exists := args.warningModes[string(diagnostic.WarningKind())]; exists {
+				mode = override
+			}
+		}
+		switch mode {
+		case WarningModeShow:
+			fmt.Println(warning)
+		case WarningModeError:
+			if diagnostic, ok := warning.(shared.Error); ok {
+				errs = append(errs, diagnostic.AsError())
+			} else {
+				errs = append(errs, warning)
+			}
+		}
 	}
+	checkErrs(errs)
 
 	if args.verbose && args.debug {
 		fmt.Println("semantic analysis completed successfully")
