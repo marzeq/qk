@@ -1963,9 +1963,12 @@ a freestanding executable must not call libc-backed facilities such as
 
 ## 29. Diagnostics and troubleshooting
 
-Diagnostics include a file, line, column, source excerpt, and marker. Several
-independent errors can be reported in one run. Warnings do not prevent output
-unless an error also occurs.
+Diagnostics include a file, line, column, and source excerpt. Tokens and AST
+nodes retain half-open source spans, allowing the complete offending syntax to
+be colored red for errors or yellow for warnings, including spans crossing line
+boundaries. Set `NO_COLOR` to disable diagnostic colors. Several independent
+errors can be reported in one run. Warnings do not prevent output unless an
+error also occurs.
 
 ## 30. Examples
 

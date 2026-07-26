@@ -59,7 +59,7 @@ func (t *Tokeniser) Next() rune {
 }
 
 func (t *Tokeniser) Inc() *Tokeniser {
-	if t.Next() == '\n' {
+	if t.Peek() == '\n' {
 		t.line++
 		t.col = 1
 	} else if t.Peek() != '\r' {
@@ -258,13 +258,14 @@ func (t *Tokeniser) IgnoreMultilineComment() {
 }
 
 func (t *Tokeniser) GetLoc() shared.Location {
+	lc := shared.LineCol{Line: t.line, Col: t.col}
 	return shared.Location{
 		FilePath:   t.fileOrigin,
 		SourceText: t.sourceText,
-		LC: shared.LineCol{
-			Line: t.line,
-			Col:  t.col,
-		},
+		LC:         lc,
+		EndLC:      lc,
+		Offset:     t.pos,
+		EndOffset:  t.pos,
 	}
 }
 
@@ -274,7 +275,42 @@ func (t *Tokeniser) AddToken(ttype TokenKind, loc shared.Location, _value ...str
 		value = _value[0]
 	}
 
+	end := t.GetLoc()
+	if end.Offset == loc.Offset && ttype != TokenEof {
+		width := tokenWidth(ttype)
+		end = loc
+		for i := 0; i < width && end.EndOffset < len(t.text); i++ {
+			c := t.text[end.EndOffset]
+			end.EndOffset++
+			if c == '\n' {
+				end.EndLC.Line++
+				end.EndLC.Col = 1
+			} else if c != '\r' {
+				end.EndLC.Col++
+			}
+		}
+	} else {
+		loc.EndLC = end.LC
+		loc.EndOffset = end.Offset
+		end = loc
+	}
+	loc.EndLC = end.EndLC
+	loc.EndOffset = end.EndOffset
 	t.tokens = append(t.tokens, Token{Type: ttype, Value: value, Loc: loc})
+}
+
+func tokenWidth(kind TokenKind) int {
+	switch kind {
+	case TokenNoInitializer, TokenShiftLeftBy, TokenShiftRightBy, Token3Dots:
+		return 3
+	case TokenEqualsEquals, TokenNotEquals, TokenLessEquals, TokenGreaterEquals,
+		TokenShiftLeft, TokenShiftRight, TokenIncBy, TokenDecBy, TokenMulBy,
+		TokenDivBy, TokenModBy, TokenBitwiseAndBy, TokenBitwiseOrBy,
+		TokenBitwiseXorBy, TokenIncrement, TokenDecrement, Token2Dots, TokenArrow:
+		return 2
+	default:
+		return 1
+	}
 }
 
 var keywords = map[string]struct{}{

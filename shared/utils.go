@@ -50,13 +50,20 @@ func (err Error) Error() string {
 	}
 
 	lines := strings.Split(source, "\n")
-	lineIdx := err.loc.LC.Line - 1
-	if lineIdx < 0 || lineIdx >= len(lines) {
+	startLineIdx := err.loc.LC.Line - 1
+	if startLineIdx < 0 || startLineIdx >= len(lines) {
 		return err.message
 	}
+	endLC := err.loc.EndLC
+	if endLC.Line <= 0 || endLC.Col <= 0 ||
+		endLC.Line < err.loc.LC.Line ||
+		(endLC.Line == err.loc.LC.Line && endLC.Col <= err.loc.LC.Col) {
+		endLC = LineCol{Line: err.loc.LC.Line, Col: err.loc.LC.Col + 1}
+	}
+	endLineIdx := min(len(lines)-1, endLC.Line-1)
 
-	start := max(0, lineIdx-2)
-	end := min(len(lines)-1, lineIdx+2)
+	start := max(0, startLineIdx-2)
+	end := min(len(lines)-1, endLineIdx+2)
 
 	var b strings.Builder
 	if err.isWarning {
@@ -84,11 +91,30 @@ func (err Error) Error() string {
 
 	for i := start; i <= end; i++ {
 		ln := i + 1
-		if i == lineIdx {
-			fmt.Fprintf(&b, "%s%4d |%s %s  %s(col %d)%s\n",
-				color, ln, reset, lines[i], color, err.loc.LC.Col, reset)
-		} else {
+		if i < startLineIdx || i > endLineIdx {
 			fmt.Fprintf(&b, "%4d | %s\n", ln, lines[i])
+			continue
+		}
+
+		line := []rune(lines[i])
+		highlightStart := 0
+		if i == startLineIdx {
+			highlightStart = max(0, err.loc.LC.Col-1)
+		}
+		highlightEnd := len(line)
+		if i == endLineIdx {
+			highlightEnd = max(0, endLC.Col-1)
+		}
+		highlightStart = min(highlightStart, len(line))
+		highlightEnd = min(max(highlightEnd, highlightStart), len(line))
+		if highlightEnd == highlightStart && highlightStart < len(line) {
+			highlightEnd++
+		}
+		fmt.Fprintf(&b, "%s%4d |%s %s%s%s%s\n", color, ln, reset,
+			string(line[:highlightStart]), color, string(line[highlightStart:highlightEnd]), reset+string(line[highlightEnd:]))
+		if color == "" {
+			markerWidth := max(1, highlightEnd-highlightStart)
+			fmt.Fprintf(&b, "     | %s%s\n", strings.Repeat(" ", highlightStart), strings.Repeat("^", markerWidth))
 		}
 	}
 
@@ -103,8 +129,21 @@ type LineCol struct {
 
 type Location struct {
 	LC         LineCol
+	EndLC      LineCol
+	Offset     int
+	EndOffset  int
 	FilePath   string
 	SourceText string
+}
+
+func (l Location) WithEnd(end Location) Location {
+	l.EndLC = end.EndLC
+	l.EndOffset = end.EndOffset
+	if l.EndLC.Line == 0 {
+		l.EndLC = end.LC
+		l.EndOffset = end.Offset
+	}
+	return l
 }
 
 func (l Location) String() string {

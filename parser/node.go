@@ -9,6 +9,7 @@ import (
 )
 
 type (
+	// Node locations are half-open spans covering the represented source syntax.
 	Node           interface{ GetLoc() shared.Location }
 	ExpressionNode interface {
 		Node

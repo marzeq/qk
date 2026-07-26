@@ -77,12 +77,12 @@ func (p *Parser) ParseSizeOfExpression() (ExpressionNode, error) {
 	case TypeNode:
 		return &SizeOfNode{
 			Operand: node,
-			Loc:     beginLoc,
+			Loc:     p.SpanFrom(beginLoc),
 		}, nil
 	case ExpressionNode:
 		return &SizeOfExprNode{
 			Operand: node,
-			Loc:     beginLoc,
+			Loc:     p.SpanFrom(beginLoc),
 		}, nil
 	}
 
@@ -121,7 +121,7 @@ func (p *Parser) ParseAlignOfExpression() (ExpressionNode, error) {
 	if !p.Expect(tokeniser.TokenCloseParen) {
 		return nil, shared.NewError(p.PrevLoc(), "expected ')' after 'alignof' operand")
 	}
-	node := &AlignOfNode{Loc: beginLoc}
+	node := &AlignOfNode{Loc: p.SpanFrom(beginLoc)}
 	switch operand := operand.(type) {
 	case *NamedTypeNode:
 		// A bare name can denote either a type or a value. Semantic resolution
@@ -167,7 +167,7 @@ func (p *Parser) ParseOffsetOfExpression() (ExpressionNode, error) {
 	if !p.Expect(tokeniser.TokenCloseParen) {
 		return nil, shared.NewError(p.PrevLoc(), "expected ')' after 'offsetof' field")
 	}
-	return &OffsetOfNode{Operand: operand, Field: field.Value, Loc: beginLoc}, nil
+	return &OffsetOfNode{Operand: operand, Field: field.Value, Loc: p.SpanFrom(beginLoc)}, nil
 }
 
 func (p *Parser) ParseLogicalOr() (ExpressionNode, error) {
@@ -192,7 +192,7 @@ func (p *Parser) ParseLogicalOr() (ExpressionNode, error) {
 			Op:       BinaryOpLogicalOr,
 			Operand1: left,
 			Operand2: right,
-			Loc:      beginLoc,
+			Loc:      p.SpanFrom(beginLoc),
 		}
 	}
 
@@ -221,7 +221,7 @@ func (p *Parser) ParseLogicalAnd() (ExpressionNode, error) {
 			Op:       BinaryOpLogicalAnd,
 			Operand1: left,
 			Operand2: right,
-			Loc:      beginLoc,
+			Loc:      p.SpanFrom(beginLoc),
 		}
 	}
 
@@ -245,7 +245,7 @@ func (p *Parser) ParseLogicalNot() (ExpressionNode, error) {
 		return &UnaryOpNode{
 			Op:      UnaryOpLogicalNot,
 			Operand: expr,
-			Loc:     beginLoc,
+			Loc:     p.SpanFrom(beginLoc),
 		}, nil
 	}
 
@@ -289,7 +289,7 @@ func (p *Parser) parseLeftAssociative(
 		if err != nil {
 			return nil, err
 		}
-		left = &BinaryOpNode{Op: op, Operand1: left, Operand2: right, Loc: beginLoc}
+		left = &BinaryOpNode{Op: op, Operand1: left, Operand2: right, Loc: p.SpanFrom(beginLoc)}
 	}
 	return left, nil
 }
@@ -326,7 +326,7 @@ func (p *Parser) ParseUnary() (ExpressionNode, error) {
 		return &UnaryOpNode{
 			Op:      val,
 			Operand: expr,
-			Loc:     beginLoc,
+			Loc:     p.SpanFrom(beginLoc),
 		}, nil
 	}
 
@@ -358,11 +358,14 @@ func (p *Parser) ParsePostfix() (ExpressionNode, error) {
 					return nil, shared.NewError(target.Loc, "generic arguments already specified")
 				}
 				target.TypeArguments = typeArguments
+				target.Loc = p.SpanFrom(target.Loc)
 			case *FieldAccessNode:
 				if len(target.Field.TypeArguments) != 0 {
 					return nil, shared.NewError(target.Field.Loc, "generic arguments already specified")
 				}
 				target.Field.TypeArguments = typeArguments
+				target.Field.Loc = p.SpanFrom(target.Field.Loc)
+				target.Loc = p.SpanFrom(target.Loc)
 			default:
 				return nil, shared.NewError(expr.GetLoc(), "type arguments require a named binding")
 			}
@@ -433,7 +436,7 @@ func (p *Parser) ParsePostfix() (ExpressionNode, error) {
 					Subject: expr,
 					Start:   first,
 					End:     end,
-					Loc:     beginLoc,
+					Loc:     p.SpanFrom(beginLoc),
 				}
 				continue
 			}
@@ -448,7 +451,7 @@ func (p *Parser) ParsePostfix() (ExpressionNode, error) {
 			expr = &IndexExprNode{
 				Subject: expr,
 				Index:   first,
-				Loc:     beginLoc,
+				Loc:     p.SpanFrom(beginLoc),
 			}
 		case p.Match(tokeniser.TokenDot):
 			p.Inc()
@@ -458,7 +461,7 @@ func (p *Parser) ParsePostfix() (ExpressionNode, error) {
 				expr = &UnaryOpNode{
 					Op:      UnaryOpDereference,
 					Operand: expr,
-					Loc:     beginLoc,
+					Loc:     p.SpanFrom(beginLoc),
 				}
 				continue
 			}
@@ -473,7 +476,7 @@ func (p *Parser) ParsePostfix() (ExpressionNode, error) {
 				expr = &UnaryOpNode{
 					Op:      op,
 					Operand: expr,
-					Loc:     beginLoc,
+					Loc:     p.SpanFrom(beginLoc),
 				}
 				continue
 			}
@@ -496,7 +499,7 @@ func (p *Parser) ParsePostfix() (ExpressionNode, error) {
 				expr = &CastNode{
 					ToType:  typ,
 					Operand: expr,
-					Loc:     beginLoc,
+					Loc:     p.SpanFrom(beginLoc),
 				}
 				continue
 			}
@@ -513,7 +516,7 @@ func (p *Parser) ParsePostfix() (ExpressionNode, error) {
 			expr = &FieldAccessNode{
 				Subject: expr,
 				Field:   field,
-				Loc:     beginLoc,
+				Loc:     p.SpanFrom(beginLoc),
 			}
 		default:
 			return expr, nil
@@ -620,7 +623,7 @@ func (p *Parser) ParseComparison() (ExpressionNode, error) {
 			Op:       val,
 			Operand1: left,
 			Operand2: right,
-			Loc:      beginLoc,
+			Loc:      p.SpanFrom(beginLoc),
 		}
 	}
 
@@ -664,7 +667,7 @@ func (p *Parser) ParseAddSub() (ExpressionNode, error) {
 			Op:       val,
 			Operand1: left,
 			Operand2: right,
-			Loc:      beginLoc,
+			Loc:      p.SpanFrom(beginLoc),
 		}
 	}
 
@@ -703,7 +706,7 @@ func (p *Parser) ParseMulDiv() (ExpressionNode, error) {
 			Op:       val,
 			Operand1: left,
 			Operand2: right,
-			Loc:      beginLoc,
+			Loc:      p.SpanFrom(beginLoc),
 		}
 	}
 
@@ -715,7 +718,7 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 	if p.Match(tokeniser.TokenDot) && p.Next().Type == tokeniser.TokenIdentifier {
 		p.Inc()
 		variant := p.Consume()
-		return &EnumLiteralNode{Variant: variant.Value, Loc: beginLoc}, nil
+		return &EnumLiteralNode{Variant: variant.Value, Loc: p.SpanFrom(beginLoc)}, nil
 	}
 	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordIf) {
 		expr, err := p.ParseIfExpression()
@@ -785,7 +788,7 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 
 	if p.Match(tokeniser.TokenNoInitializer) {
 		p.Inc()
-		return &NoInitializerNode{Loc: beginLoc}, nil
+		return &NoInitializerNode{Loc: p.SpanFrom(beginLoc)}, nil
 	}
 
 	if p.Match(tokeniser.TokenIdentifier) {
@@ -837,7 +840,7 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 		return &UnaryOpNode{
 			Op:      UnaryOpSliceLen,
 			Operand: expr,
-			Loc:     beginLoc,
+			Loc:     p.SpanFrom(beginLoc),
 		}, nil
 	}
 
@@ -853,12 +856,12 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 			bLit := p.Consume()
 			return &BoolLiteralNode{
 				Value: bLit.Value,
-				Loc:   beginLoc,
+				Loc:   p.SpanFrom(beginLoc),
 			}, nil
 		case string(tokeniser.KeywordNil):
 			p.Inc()
 			return &NilLiteralNode{
-				Loc: beginLoc,
+				Loc: p.SpanFrom(beginLoc),
 			}, nil
 		}
 	}
@@ -868,7 +871,7 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 		if !p.Match(tokeniser.TokenDot) {
 			return &IntegerLiteralNode{
 				Value: nLit.Value,
-				Loc:   beginLoc,
+				Loc:   p.SpanFrom(beginLoc),
 			}, nil
 		}
 		p.Inc()
@@ -877,18 +880,18 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 				p.Dec()
 				return &IntegerLiteralNode{
 					Value: nLit.Value,
-					Loc:   beginLoc,
+					Loc:   p.SpanFrom(beginLoc),
 				}, nil
 			}
 			return &FloatLiteralNode{
 				Value: nLit.Value + ".0",
-				Loc:   beginLoc,
+				Loc:   p.SpanFrom(beginLoc),
 			}, nil
 		}
 		n2Lit := p.Consume()
 		return &FloatLiteralNode{
 			Value: nLit.Value + "." + n2Lit.Value,
-			Loc:   beginLoc,
+			Loc:   p.SpanFrom(beginLoc),
 		}, nil
 	}
 
@@ -900,7 +903,7 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 		n2Lit := p.Consume()
 		return &FloatLiteralNode{
 			Value: "0." + n2Lit.Value,
-			Loc:   beginLoc,
+			Loc:   p.SpanFrom(beginLoc),
 		}, nil
 	}
 
@@ -908,7 +911,7 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 		cLit := p.Consume()
 		return &CharLiteralNode{
 			Value: []byte(cLit.Value)[0],
-			Loc:   beginLoc,
+			Loc:   p.SpanFrom(beginLoc),
 		}, nil
 	}
 
@@ -916,13 +919,13 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 		sLit := p.Consume()
 		return &StringLiteralNode{
 			Value: sLit.Value,
-			Loc:   beginLoc,
+			Loc:   p.SpanFrom(beginLoc),
 		}, nil
 	}
 
 	if p.Match(tokeniser.TokenCString) {
 		literal := p.Consume()
-		return &CStringLiteralNode{Value: literal.Value, Loc: beginLoc}, nil
+		return &CStringLiteralNode{Value: literal.Value, Loc: p.SpanFrom(beginLoc)}, nil
 	}
 
 	return nil, shared.NewError(p.CurrLoc(), "unexpected token %s", p.Peek())
@@ -998,12 +1001,15 @@ func (p *Parser) ParseCall(callee ExpressionNode) (*FunctionCallNode, error) {
 		Callee:            callee,
 		Args:              args,
 		VariadicExpansion: expanded,
-		Loc:               callee.GetLoc(),
+		Loc:               callee.GetLoc().WithEnd(p.PrevLoc()),
 	}, nil
 }
 
 func (p *Parser) ParseStructLiteral(name *IdentifierNode) (*StructLiteralNode, error) {
 	beginLoc := p.CurrLoc()
+	if name != nil {
+		beginLoc = name.GetLoc()
+	}
 
 	if !p.Expect(tokeniser.TokenOpenCurly) {
 		return nil, shared.NewError(p.PrevLoc(), "expected '{' to start struct literal")
@@ -1015,7 +1021,7 @@ func (p *Parser) ParseStructLiteral(name *IdentifierNode) (*StructLiteralNode, e
 
 	node := &StructLiteralNode{
 		Name: name,
-		Loc:  beginLoc,
+		Loc:  p.SpanFrom(beginLoc),
 	}
 	if p.Match(tokeniser.TokenDot) {
 		for {
@@ -1041,6 +1047,7 @@ func (p *Parser) ParseStructLiteral(name *IdentifierNode) (*StructLiteralNode, e
 		if !p.Expect(tokeniser.TokenCloseCurly) {
 			return nil, shared.NewError(p.PrevLoc(), "expected '}' to end flags literal")
 		}
+		node.Loc = p.SpanFrom(beginLoc)
 		return node, nil
 	}
 	for {
@@ -1099,6 +1106,7 @@ func (p *Parser) ParseStructLiteral(name *IdentifierNode) (*StructLiteralNode, e
 		return nil, shared.NewError(p.PrevLoc(), "expected '}' to end struct literal")
 	}
 
+	node.Loc = p.SpanFrom(beginLoc)
 	return node, nil
 }
 
@@ -1138,7 +1146,7 @@ func (p *Parser) ParseSliceLiteral() (*SliceLiteralNode, error) {
 			return &SliceLiteralNode{
 				RepeatValue:  elem,
 				RepeatAmount: amount,
-				Loc:          beginLoc,
+				Loc:          p.SpanFrom(beginLoc),
 			}, nil
 		}
 		elements = append(elements, elem)
@@ -1155,7 +1163,7 @@ func (p *Parser) ParseSliceLiteral() (*SliceLiteralNode, error) {
 	}
 	return &SliceLiteralNode{
 		Elements: elements,
-		Loc:      beginLoc,
+		Loc:      p.SpanFrom(beginLoc),
 	}, nil
 }
 
@@ -1167,7 +1175,7 @@ func (p *Parser) ParseIdent() (*IdentifierNode, error) {
 	}
 	node := &IdentifierNode{
 		Name: firstIdent.Value,
-		Loc:  beginLoc,
+		Loc:  p.SpanFrom(beginLoc),
 	}
 
 	return node, nil
@@ -1234,7 +1242,7 @@ func (p *Parser) ParseDynType(mutable bool) (*DynTypeNode, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &DynTypeNode{TraitType: trait, Mutable: mutable, Loc: begin}, nil
+	return &DynTypeNode{TraitType: trait, Mutable: mutable, Loc: p.SpanFrom(begin)}, nil
 }
 
 func (p *Parser) ParseTraitType() (*TraitTypeNode, error) {
@@ -1364,13 +1372,13 @@ func (p *Parser) ParseTraitType() (*TraitTypeNode, error) {
 		}
 		methods = append(methods, TraitMethodNode{
 			Name: name.Value, GenericParameters: genericParameters, Receiver: receiver,
-			Args: args, ReturnType: ret, Loc: loc,
+			Args: args, ReturnType: ret, Loc: p.SpanFrom(loc),
 		})
 		if p.Match(tokeniser.TokenComma, tokeniser.TokenSemicolon) {
 			p.Inc()
 		}
 	}
-	return &TraitTypeNode{Methods: methods, Loc: begin}, nil
+	return &TraitTypeNode{Methods: methods, Loc: p.SpanFrom(begin)}, nil
 }
 
 func (p *Parser) ParseUnionType() (*UnionTypeNode, error) {
@@ -1418,7 +1426,7 @@ func (p *Parser) ParseUnionType() (*UnionTypeNode, error) {
 	if len(fields) == 0 {
 		return nil, shared.NewError(beginLoc, "union must declare at least one field")
 	}
-	return &UnionTypeNode{Fields: fields, Loc: beginLoc}, nil
+	return &UnionTypeNode{Fields: fields, Loc: p.SpanFrom(beginLoc)}, nil
 }
 
 func (p *Parser) ParseEnumType() (*EnumTypeNode, error) {
@@ -1487,7 +1495,7 @@ func (p *Parser) ParseEnumType() (*EnumTypeNode, error) {
 	if len(variants) == 0 {
 		return nil, shared.NewError(beginLoc, "enum must declare at least one variant")
 	}
-	return &EnumTypeNode{Variants: variants, Values: values, Loc: beginLoc}, nil
+	return &EnumTypeNode{Variants: variants, Values: values, Loc: p.SpanFrom(beginLoc)}, nil
 }
 
 func enumValueFits32Bits(value string) bool {
@@ -1567,7 +1575,7 @@ func (p *Parser) ParseFlagsType() (*FlagsTypeNode, error) {
 	if len(variants) == 0 {
 		return nil, shared.NewError(beginLoc, "flags must declare at least one member")
 	}
-	return &FlagsTypeNode{Underlying: underlying, Variants: variants, Values: values, Loc: beginLoc}, nil
+	return &FlagsTypeNode{Underlying: underlying, Variants: variants, Values: values, Loc: p.SpanFrom(beginLoc)}, nil
 }
 
 func (p *Parser) parseFlagValue(known map[string]*big.Int) (*big.Int, error) {
@@ -1684,7 +1692,7 @@ func (p *Parser) ParseStructType() (*StructTypeNode, error) {
 
 	return &StructTypeNode{
 		Fields:     fields,
-		Loc:        beginLoc,
+		Loc:        p.SpanFrom(beginLoc),
 		Attributes: attrs,
 	}, nil
 }
@@ -1723,7 +1731,7 @@ func (p *Parser) ParseSliceType() (*SliceTypeNode, error) {
 			ElementType: elementType,
 			Size:        -1,
 			Mutable:     mutable,
-			Loc:         beginLoc,
+			Loc:         p.SpanFrom(beginLoc),
 		}, nil
 	}
 	p.Inc()
@@ -1754,7 +1762,7 @@ func (p *Parser) ParseSliceType() (*SliceTypeNode, error) {
 		ElementType: elementType,
 		Size:        size,
 		Mutable:     mutable,
-		Loc:         beginLoc,
+		Loc:         p.SpanFrom(beginLoc),
 	}, nil
 }
 
@@ -1789,7 +1797,7 @@ func (p *Parser) ParsePointerType() (*PointerTypeNode, error) {
 	return &PointerTypeNode{
 		BaseType: tpe,
 		Mutable:  mutable,
-		Loc:      beginLoc,
+		Loc:      p.SpanFrom(beginLoc),
 	}, nil
 }
 
@@ -1839,7 +1847,7 @@ func (p *Parser) ParseFunctionType() (*FunctionTypeNode, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &FunctionTypeNode{Parameters: params, ReturnType: ret, TypedVariadic: typedVariadic, Loc: beginLoc}, nil
+	return &FunctionTypeNode{Parameters: params, ReturnType: ret, TypedVariadic: typedVariadic, Loc: p.SpanFrom(beginLoc)}, nil
 }
 
 func (p *Parser) ParseNamedType() (*NamedTypeNode, error) {
@@ -1853,7 +1861,7 @@ func (p *Parser) ParseNamedType() (*NamedTypeNode, error) {
 		node := &NamedTypeNode{
 			ModName: "",
 			Name:    ident.Name,
-			Loc:     beginLoc,
+			Loc:     p.SpanFrom(beginLoc),
 		}
 		if p.Match(tokeniser.TokenLess) {
 			arguments, err := p.parseTypeArguments()
@@ -1861,6 +1869,7 @@ func (p *Parser) ParseNamedType() (*NamedTypeNode, error) {
 				return nil, err
 			}
 			node.TypeArguments = arguments
+			node.Loc = p.SpanFrom(beginLoc)
 		}
 		return node, nil
 	}
@@ -1877,7 +1886,7 @@ func (p *Parser) ParseNamedType() (*NamedTypeNode, error) {
 	node := &NamedTypeNode{
 		ModName: strings.Join(parts[:len(parts)-1], "."),
 		Name:    parts[len(parts)-1],
-		Loc:     beginLoc,
+		Loc:     p.SpanFrom(beginLoc),
 	}
 	if p.Match(tokeniser.TokenLess) {
 		arguments, err := p.parseTypeArguments()
@@ -1885,6 +1894,7 @@ func (p *Parser) ParseNamedType() (*NamedTypeNode, error) {
 			return nil, err
 		}
 		node.TypeArguments = arguments
+		node.Loc = p.SpanFrom(beginLoc)
 	}
 	return node, nil
 }

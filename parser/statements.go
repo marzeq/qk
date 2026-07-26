@@ -78,7 +78,7 @@ func (p *Parser) parseBlock(expression bool) (*BlockNode, error) {
 	return &BlockNode{
 		Body:       children,
 		Expression: expression,
-		Loc:        beginLoc,
+		Loc:        p.SpanFrom(beginLoc),
 	}, errors.Join(parseErrors...)
 }
 
@@ -411,7 +411,7 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 		RetTypeNode:       retType,
 		Body:              body,
 		ExpressionBody:    expressionBody,
-		Loc:               beginLoc,
+		Loc:               p.SpanFrom(beginLoc),
 		Attributes:        attrs,
 		HasVariadic:       variadic,
 		TypedVariadic:     typedVariadic,
@@ -776,7 +776,7 @@ func (p *Parser) ParseTypeAlias() (*TypeAliasNode, error) {
 		GenericParameters: genericParameters,
 		Type:              tpe,
 		Transparent:       transparent,
-		Loc:               beginLoc,
+		Loc:               p.SpanFrom(beginLoc),
 	}, nil
 }
 
@@ -851,7 +851,7 @@ func (p *Parser) ParseImport() (*ImportNode, error) {
 	return &ImportNode{
 		Modules: modules,
 		Aliases: aliases,
-		Loc:     beginLoc,
+		Loc:     p.SpanFrom(beginLoc),
 	}, nil
 }
 
@@ -874,7 +874,7 @@ func (p *Parser) ParseModule() (*ModuleNode, error) {
 	return &ModuleNode{
 		Name:       name,
 		Attributes: attrs,
-		Loc:        beginLoc,
+		Loc:        p.SpanFrom(beginLoc),
 	}, nil
 }
 
@@ -1011,7 +1011,7 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 		if !isMultiResultSource(value) {
 			return nil, false, shared.NewError(value.GetLoc(), "multiple assignment requires a function call or checked cast")
 		}
-		return &AssignmentNode{Assignees: assignees, Value: value, Loc: expr.GetLoc()}, true, nil
+		return &AssignmentNode{Assignees: assignees, Value: value, Loc: expr.GetLoc().WithEnd(value.GetLoc())}, true, nil
 	}
 
 	if p.Match(tokeniser.TokenEquals) {
@@ -1091,7 +1091,7 @@ func (p *Parser) ParseDefer() (*DeferNode, error) {
 		}
 		action = expr
 	}
-	return &DeferNode{Action: action, Loc: loc}, nil
+	return &DeferNode{Action: action, Loc: p.SpanFrom(loc)}, nil
 }
 
 func (p *Parser) ParseDeclaration() (*DeclarationNode, error) {
@@ -1175,7 +1175,7 @@ func (p *Parser) ParseDeclaration() (*DeclarationNode, error) {
 		Value:             value,
 		Comptime:          comptime,
 		Attributes:        attrs,
-		Loc:               beginLoc,
+		Loc:               p.SpanFrom(beginLoc),
 	}, nil
 }
 
@@ -1206,6 +1206,7 @@ func (p *Parser) parseGenericParameters() ([]GenericParameterNode, error) {
 				return nil, err
 			}
 			parameter.Constraint = constraint
+			parameter.Loc = name.Loc.WithEnd(constraint.GetLoc())
 		}
 		parameters = append(parameters, parameter)
 		for p.Match(tokeniser.TokenNewline) {
@@ -1259,7 +1260,7 @@ func (p *Parser) parseMultiDeclaration() (*MultiDeclarationNode, error) {
 	if !isMultiResultSource(value) {
 		return nil, shared.NewError(value.GetLoc(), "multiple declaration requires a function call or checked cast")
 	}
-	return &MultiDeclarationNode{Names: names, Value: value, Loc: loc}, nil
+	return &MultiDeclarationNode{Names: names, Value: value, Loc: p.SpanFrom(loc)}, nil
 }
 
 func isMultiResultSource(value ExpressionNode) bool {
@@ -1294,7 +1295,7 @@ func (p *Parser) parseFunctionReturnType() (TypeNode, error) {
 	if !p.Expect(tokeniser.TokenCloseParen) {
 		return nil, shared.NewError(p.PrevLoc(), "expected ')' after return types")
 	}
-	return &MultipleReturnTypeNode{Types: items, Loc: loc}, nil
+	return &MultipleReturnTypeNode{Types: items, Loc: p.SpanFrom(loc)}, nil
 }
 
 func (p *Parser) ParseAssignment(subj ExpressionNode) (*AssignmentNode, error) {
@@ -1310,7 +1311,7 @@ func (p *Parser) ParseAssignment(subj ExpressionNode) (*AssignmentNode, error) {
 	return &AssignmentNode{
 		Assignee: subj,
 		Value:    expr,
-		Loc:      subj.GetLoc(),
+		Loc:      subj.GetLoc().WithEnd(expr.GetLoc()),
 	}, err
 }
 
@@ -1358,9 +1359,9 @@ func (p *Parser) ParseCompoundAssignment(opTok tokeniser.Token, subj ExpressionN
 			Op:       op,
 			Operand1: subj,
 			Operand2: expr,
-			Loc:      expr.GetLoc(),
+			Loc:      subj.GetLoc().WithEnd(expr.GetLoc()),
 		},
-		Loc: subj.GetLoc(),
+		Loc: subj.GetLoc().WithEnd(expr.GetLoc()),
 	}, nil
 }
 
@@ -1404,7 +1405,7 @@ func (p *Parser) parseIf(expression bool) (*IfNode, error) {
 	}
 
 	node := &IfNode{
-		Loc:        beginLoc,
+		Loc:        p.SpanFrom(beginLoc),
 		Expression: expression,
 		IfBranch: IfBranch{
 			Condition: condition,
@@ -1466,6 +1467,14 @@ func (p *Parser) parseIf(expression bool) (*IfNode, error) {
 	if expression && node.ElseBranch == nil {
 		return nil, shared.NewError(beginLoc, "if expression requires an else branch")
 	}
+	endLoc := node.IfBranch.Node.GetLoc()
+	if len(node.ElseIfBranches) != 0 {
+		endLoc = node.ElseIfBranches[len(node.ElseIfBranches)-1].Node.GetLoc()
+	}
+	if node.ElseBranch != nil {
+		endLoc = node.ElseBranch.GetLoc()
+	}
+	node.Loc = beginLoc.WithEnd(endLoc)
 
 	return node, nil
 }
@@ -1505,7 +1514,7 @@ func (p *Parser) ParseControlKeyword() (*ControlKeywordNode, error) {
 		Keyword:      tokeniser.KeywordKind(kw.Value),
 		ReturnValue:  expr,
 		ReturnValues: exprs,
-		Loc:          loc,
+		Loc:          p.SpanFrom(loc),
 	}, nil
 }
 
@@ -1571,7 +1580,7 @@ func (p *Parser) ParseForLoop() (Node, error) {
 	return &ForNode{
 		ExprsOrStmts: exprsOrStmts,
 		Body:         body,
-		Loc:          beginLoc,
+		Loc:          p.SpanFrom(beginLoc),
 	}, nil
 }
 
@@ -1619,7 +1628,7 @@ func (p *Parser) parseRangeOrForEach(beginLoc shared.Location) (Node, error) {
 			End:       end,
 			Inclusive: inclusive,
 			Body:      body,
-			Loc:       beginLoc,
+			Loc:       p.SpanFrom(beginLoc),
 		}, nil
 	}
 
@@ -1631,6 +1640,6 @@ func (p *Parser) parseRangeOrForEach(beginLoc shared.Location) (Node, error) {
 		Name:     name.Value,
 		Iterable: iterable,
 		Body:     body,
-		Loc:      beginLoc,
+		Loc:      p.SpanFrom(beginLoc),
 	}, nil
 }

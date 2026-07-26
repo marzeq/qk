@@ -169,6 +169,13 @@ func (p *Parser) CurrLoc() shared.Location {
 	return p.Peek().Loc
 }
 
+func (p *Parser) SpanFrom(start shared.Location) shared.Location {
+	if p.pos == 0 {
+		return start
+	}
+	return start.WithEnd(p.tokens[p.pos-1].Loc)
+}
+
 func (p *Parser) Consume() tokeniser.Token {
 	c := p.Peek()
 	p.Inc()
@@ -214,6 +221,8 @@ func (p *Parser) Parse() (*RootNode, error) {
 			},
 			FilePath:   eofTok.Loc.FilePath,
 			SourceText: eofTok.Loc.SourceText,
+			EndLC:      eofTok.Loc.LC,
+			EndOffset:  eofTok.Loc.Offset,
 		},
 	}
 	var parseErrors []error
@@ -252,7 +261,8 @@ func (p *Parser) Parse() (*RootNode, error) {
 }
 
 func (p *Parser) parseTopLevel() (Node, error) {
-	e := shared.NewError(p.CurrLoc(), "expected function definition, constant definition, type alias or import statement")
+	startLoc := p.CurrLoc()
+	e := shared.NewError(startLoc, "expected function definition, constant definition, type alias or import statement")
 	if !p.Match(tokeniser.TokenKeyword) {
 		return nil, e
 	}
@@ -284,10 +294,19 @@ func (p *Parser) parseTopLevel() (Node, error) {
 	switch n := node.(type) {
 	case *FunctionDefNode:
 		n.Pub = isPublic
+		if isPublic {
+			n.Loc = startLoc.WithEnd(n.Loc)
+		}
 	case *DeclarationNode:
 		n.Pub = isPublic
+		if isPublic {
+			n.Loc = startLoc.WithEnd(n.Loc)
+		}
 	case *TypeAliasNode:
 		n.Pub = isPublic
+		if isPublic {
+			n.Loc = startLoc.WithEnd(n.Loc)
+		}
 	default:
 		if isPublic {
 			return nil, e
