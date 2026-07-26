@@ -1037,7 +1037,8 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 	case *FunctionCallNode:
 		return expr, true, nil
 	default:
-		return nil, false, shared.NewError(p.CurrLoc(), "expected a valid statement")
+		return nil, false, shared.NewError(expr.GetLoc(),
+			"expression result is unused; assign it to '_' to discard it")
 	}
 }
 

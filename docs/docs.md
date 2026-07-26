@@ -727,6 +727,10 @@ arbitrary unused expressions are not. When a block occurs in expression context,
 its final child may be an arbitrary expression and becomes the block's value.
 Earlier children must still be valid statements. A trailing semicolon does not
 suppress that value; use the block in statement context when no value is wanted.
+An expression of type `void` has no value and cannot initialize a declaration,
+be assigned, be passed as an argument, be returned as a value, or serve as an
+aggregate element or block result. A void-returning call remains valid as a call
+statement.
 
 `return` exits the current function, optionally with a value. `break` exits the
 nearest loop and `continue` starts its next iteration. `break` and `continue` are
