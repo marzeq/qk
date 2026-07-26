@@ -1033,13 +1033,7 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 		return parsed, true, nil
 	}
 
-	switch expr.(type) {
-	case *FunctionCallNode:
-		return expr, true, nil
-	default:
-		return nil, false, shared.NewError(expr.GetLoc(),
-			"expression result is unused; assign it to '_' to discard it")
-	}
+	return expr, true, nil
 }
 
 func (p *Parser) skipGenericParameterLookahead() error {

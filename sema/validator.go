@@ -192,7 +192,7 @@ func (v *Validator) validateNode(node parser.Node) {
 
 	case *parser.BlockNode:
 		for _, stmt := range n.Body {
-			v.validateNode(stmt)
+			v.validateStatement(stmt)
 		}
 
 	case *parser.DeclarationNode:
@@ -267,6 +267,30 @@ func (v *Validator) validateNode(node parser.Node) {
 	default:
 		panic(fmt.Sprintf("unhandled node type %T", n))
 	}
+}
+
+func (v *Validator) validateStatement(node parser.Node) {
+	v.validateNode(node)
+
+	switch n := node.(type) {
+	case *parser.FunctionCallNode:
+		return
+	case *parser.BlockNode:
+		if !n.Expression {
+			return
+		}
+	case *parser.IfNode:
+		if !n.Expression {
+			return
+		}
+	case parser.ExpressionNode:
+		// Any other expression in statement position computes a value that is
+		// immediately discarded. Require that intent to be explicit.
+	default:
+		return
+	}
+
+	v.errorf(node, "expression result is unused; assign it to '_' to discard it")
 }
 
 func isGenericComptimeExpression(node parser.ExpressionNode) bool {
@@ -631,7 +655,7 @@ func (v *Validator) validateExpressionBlock(n *parser.BlockNode, expected types.
 		last--
 	}
 	for _, child := range n.Body[:last] {
-		v.validateNode(child)
+		v.validateStatement(child)
 	}
 
 	if !hasResult {
@@ -714,7 +738,7 @@ func (v *Validator) validateFor(n *parser.ForNode) {
 			}
 		}
 	case 3:
-		v.validateNode(n.ExprsOrStmts[0])
+		v.validateStatement(n.ExprsOrStmts[0])
 		condition, ok := n.ExprsOrStmts[1].(parser.ExpressionNode)
 		if !ok {
 			v.errorf(n.ExprsOrStmts[1], "for loop condition must be an expression")
@@ -724,7 +748,7 @@ func (v *Validator) validateFor(n *parser.ForNode) {
 				v.errorf(condition, "for loop condition must be bool")
 			}
 		}
-		v.validateNode(n.ExprsOrStmts[2])
+		v.validateStatement(n.ExprsOrStmts[2])
 	default:
 		v.errorf(n, "for loop must have a condition or initializer, condition, and post expression")
 		return
