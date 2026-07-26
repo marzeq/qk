@@ -895,7 +895,20 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 	case *parser.CastNode:
 		a.attributeExpr(n.Operand)
 		n.GenericAssertion = genericExpressionOrigin(n.Operand) != nil
-		target, view := a.analyser.resolveCastTarget(n.ToType)
+		var target types.Type
+		view := n.StaticTraitView
+		if n.ToType != nil {
+			target, view = a.analyser.resolveCastTarget(n.ToType)
+		} else {
+			target = n.Type
+			if n.Checked && n.CheckedType != nil {
+				target = n.CheckedType
+			}
+			if target == nil {
+				a.errorf(n, "cast is missing target type")
+				target = types.ErrorType{}
+			}
+		}
 		if view != nil {
 			n.StaticTraitView = view
 			target = n.Operand.GetType()
