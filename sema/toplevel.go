@@ -61,7 +61,7 @@ func (a *Analyser) resolveBodies(root *parser.RootNode) {
 }
 
 func (a *Analyser) collectFunctionSignature(n *parser.FunctionDefNode) {
-	if len(n.GenericParameters) != 0 {
+	if n.IsGeneric() {
 		if n.Attributes.Get(attributes.AttributeTypeForeign) != nil {
 			a.errorf(n, "generic functions cannot be foreign declarations")
 		}
@@ -138,18 +138,15 @@ func (a *Analyser) collectPlainFunctionSignature(n *parser.FunctionDefNode) {
 }
 
 func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
-	genericParameters := a.makeGenericParameters(n.MethodOwner+"."+n.Name, n.GenericParameters)
-	previousBindings := a.typeParameterBindings
-	if len(genericParameters) != 0 {
-		a.typeParameterBindings = make(map[string]types.Type, len(genericParameters))
-		for _, parameter := range genericParameters {
-			a.typeParameterBindings[parameter.Name] = parameter
-		}
-		defer func() { a.typeParameterBindings = previousBindings }()
-	}
 	var ownerType types.Type
 	ownerModule := a.currentMod
+	var ownerParameters []types.TypeParameter
+	implicitGenericOwner := false
 	if info, ok := a.aliases[n.MethodOwner]; ok {
+		if len(n.MethodOwnerGenericParameters) != 0 {
+			a.errorf(n, "non-generic method owner %q does not accept type parameters", n.MethodOwner)
+			return
+		}
 		if info.node.Transparent {
 			a.errorf(n, "cannot attach method to type alias %q", n.MethodOwner)
 			return
@@ -159,7 +156,53 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 			return
 		}
 		ownerType = a.resolveAlias(info, n, false)
+	} else if ownerSymbol, ok := a.current.Resolve(n.MethodOwner); ok && ownerSymbol.Kind == symbols.SymbolKindType && ownerSymbol.Template {
+		info := a.genericAliases[ownerSymbol]
+		if info == nil {
+			a.errorf(n, "unsupported generic method owner %q", n.MethodOwner)
+			return
+		}
+		if info.node.Transparent {
+			a.errorf(n, "cannot attach method to type alias %q", n.MethodOwner)
+			return
+		}
+		if n.Pub && !info.node.Pub {
+			a.errorf(n, "public method %q requires public owner type %q", n.Name, n.MethodOwner)
+			return
+		}
+		if len(n.MethodOwnerGenericParameters) != 0 && len(n.MethodOwnerGenericParameters) != len(info.parameters) {
+			a.errorf(n, "generic method owner %q must declare its %d type parameters before '.'", n.MethodOwner, len(info.parameters))
+			return
+		}
+		for i, parameter := range n.MethodOwnerGenericParameters {
+			if parameter.Name != info.parameters[i].Name || parameter.Constraint != nil {
+				a.errorf(parameter, "method owner must use the general type parameter %q, not a specific type argument", info.parameters[i].Name)
+				return
+			}
+		}
+		ownerParameters = append([]types.TypeParameter(nil), info.parameters...)
+		if len(n.MethodOwnerGenericParameters) == 0 {
+			implicitGenericOwner = true
+			n.MethodOwnerGenericParameters = make([]parser.GenericParameterNode, len(ownerParameters))
+			for i, parameter := range ownerParameters {
+				n.MethodOwnerGenericParameters[i] = parser.GenericParameterNode{Name: parameter.Name, Loc: n.GetLoc()}
+			}
+		}
+		bindImplicitMethodReceiverTypeArguments(n, ownerParameters)
+		arguments := make([]types.Type, len(ownerParameters))
+		for i, parameter := range ownerParameters {
+			arguments[i] = parameter
+		}
+		specialization := a.specializeGenericAlias(info, arguments, n, false)
+		if specialization == nil {
+			return
+		}
+		ownerType = specialization.TypeInfo
 	} else if builtin, ok := a.universe.Resolve(n.MethodOwner); ok && builtin.Kind == symbols.SymbolKindType {
+		if len(n.MethodOwnerGenericParameters) != 0 {
+			a.errorf(n, "builtin method owner %q does not accept type parameters", n.MethodOwner)
+			return
+		}
 		if !a.currentTrustedStandardLibrary {
 			a.errorf(n, "methods on builtin type %q may only be defined by the trusted standard library", n.MethodOwner)
 			return
@@ -181,6 +224,36 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 	} else {
 		a.errorf(n, "cannot attach method to unknown or imported type %q", n.MethodOwner)
 		return
+	}
+
+	previousBindings := a.typeParameterBindings
+	if len(ownerParameters) != 0 {
+		a.typeParameterBindings = make(map[string]types.Type, len(ownerParameters))
+		for _, parameter := range ownerParameters {
+			a.typeParameterBindings[parameter.Name] = parameter
+		}
+	}
+	methodParameterNodes := n.GenericParameters
+	if implicitGenericOwner && hasOwnerParameterPrefix(methodParameterNodes, ownerParameters) {
+		methodParameterNodes = methodParameterNodes[len(ownerParameters):]
+	}
+	for _, parameter := range methodParameterNodes {
+		if _, exists := a.typeParameterBindings[parameter.Name]; exists {
+			a.errorf(parameter, "generic method type parameter %q conflicts with an owner type parameter", parameter.Name)
+			a.typeParameterBindings = previousBindings
+			return
+		}
+	}
+	methodParameters := a.makeGenericParameters(n.MethodOwner+"."+n.Name, methodParameterNodes)
+	genericParameters := append(ownerParameters, methodParameters...)
+	if len(genericParameters) != 0 {
+		if a.typeParameterBindings == nil {
+			a.typeParameterBindings = make(map[string]types.Type, len(genericParameters))
+		}
+		for _, parameter := range methodParameters {
+			a.typeParameterBindings[parameter.Name] = parameter
+		}
+		defer func() { a.typeParameterBindings = previousBindings }()
 	}
 	if fieldExists(types.Underlying(ownerType), n.Name) {
 		a.errorf(n, "cannot define method %q because type %q already has a field with that name", n.Name, n.MethodOwner)
@@ -233,6 +306,36 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 	}
 }
 
+func hasOwnerParameterPrefix(nodes []parser.GenericParameterNode, parameters []types.TypeParameter) bool {
+	if len(parameters) == 0 || len(nodes) < len(parameters) {
+		return false
+	}
+	for i, parameter := range parameters {
+		if nodes[i].Name != parameter.Name || nodes[i].Constraint != nil {
+			return false
+		}
+	}
+	return true
+}
+
+func bindImplicitMethodReceiverTypeArguments(n *parser.FunctionDefNode, parameters []types.TypeParameter) {
+	if n.Receiver == parser.MethodReceiverNone || len(n.Args) == 0 || len(parameters) == 0 {
+		return
+	}
+	var receiver parser.TypeNode = n.Args[0].Type
+	if pointer, ok := receiver.(*parser.PointerTypeNode); ok {
+		receiver = pointer.BaseType
+	}
+	named, ok := receiver.(*parser.NamedTypeNode)
+	if !ok || len(named.TypeArguments) != 0 {
+		return
+	}
+	named.TypeArguments = make([]parser.TypeNode, len(parameters))
+	for i, parameter := range parameters {
+		named.TypeArguments[i] = &parser.NamedTypeNode{Name: parameter.Name, Loc: named.Loc}
+	}
+}
+
 func fieldExists(t types.Type, name string) bool {
 	switch t := t.(type) {
 	case types.StructType:
@@ -257,7 +360,7 @@ func fieldExists(t types.Type, name string) bool {
 func (a *Analyser) precollectTypeAlias(n *parser.TypeAliasNode) {
 	sym := &symbols.Symbol{
 		Name: n.Name, Kind: symbols.SymbolKindType, Public: n.Pub,
-		Template: len(n.GenericParameters) != 0,
+		Template: len(n.GenericParameters) != 0, DefinitionModule: a.currentMod,
 	}
 
 	if !a.defineSymbol(sym, n) {

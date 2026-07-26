@@ -32,7 +32,7 @@ func (w *debugWalker) walkNode(node parser.Node) {
 		}
 
 	case *parser.FunctionDefNode:
-		if len(n.GenericParameters) != 0 {
+		if n.IsGeneric() {
 			break
 		}
 		if n.Symbol == nil || n.Symbol.Signature == nil {

@@ -37,7 +37,7 @@ func (a *Attributor) AttributeGenericTemplates(root *parser.RootNode) {
 	a.selectModule(root)
 	for _, node := range root.Body {
 		function, ok := node.(*parser.FunctionDefNode)
-		if !ok || len(function.GenericParameters) == 0 {
+		if !ok || !function.IsGeneric() {
 			continue
 		}
 		bindings := make(map[string]types.Type, len(function.Symbol.GenericParameters))
@@ -75,7 +75,7 @@ func (a *Attributor) attributeNode(node parser.Node) {
 	switch n := node.(type) {
 	case *parser.RootNode:
 		for _, stmt := range n.Body {
-			if function, ok := stmt.(*parser.FunctionDefNode); ok && len(function.GenericParameters) != 0 {
+			if function, ok := stmt.(*parser.FunctionDefNode); ok && function.IsGeneric() {
 				if !a.templatesOnly {
 					continue
 				}
@@ -959,9 +959,19 @@ func (a *Attributor) attributeMethodValue(n *parser.FieldAccessNode) bool {
 	if ident == nil {
 		return false
 	}
-	module, owner, _, ok := methodOwnerIdentity(ident.Symbol.TypeInfo)
-	if !ok {
-		return false
+	module, owner := "", ""
+	var ownerArguments []types.Type
+	if ident.Symbol.Template && ident.Symbol.Kind == symbols.SymbolKindType {
+		module, owner = ident.Symbol.DefinitionModule, ident.Symbol.Name
+	} else {
+		var ok bool
+		module, owner, _, ok = methodOwnerIdentity(ident.Symbol.TypeInfo)
+		if !ok {
+			return false
+		}
+		if ident.Symbol.Kind == symbols.SymbolKindType && ident.Symbol.TemplateSymbol != nil {
+			ownerArguments = ident.Symbol.TypeArguments
+		}
 	}
 	method := a.analyser.methods[module+":"+owner][n.Field.Name]
 	if method == nil {
@@ -972,8 +982,9 @@ func (a *Attributor) attributeMethodValue(n *parser.FieldAccessNode) bool {
 		n.SetType(types.ErrorType{})
 		return true
 	}
-	if method.Template && len(n.Field.TypeArguments) != 0 {
-		arguments := a.analyser.resolveGenericArguments(n.Field.TypeArguments)
+	if method.Template && (len(ownerArguments) != 0 || len(n.Field.TypeArguments) != 0) {
+		arguments := append([]types.Type(nil), ownerArguments...)
+		arguments = append(arguments, a.analyser.resolveGenericArguments(n.Field.TypeArguments)...)
 		if a.templatesOnly || hasTypeParameters(arguments) {
 			if !a.analyser.checkGenericArguments(n, method.GenericParameters, arguments) {
 				n.SetType(types.ErrorType{})
@@ -1238,6 +1249,9 @@ func methodOwnerIdentity(t types.Type) (module, name string, pointer bool, ok bo
 	}
 	switch t := t.(type) {
 	case types.DefinedType:
+		if t.GenericName != "" {
+			return t.Module, t.GenericName, pointer, true
+		}
 		return t.Module, t.Name, pointer, true
 	case *types.AliasRef:
 		return t.Module, t.Name, pointer, true

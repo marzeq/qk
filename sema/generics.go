@@ -355,6 +355,7 @@ func (a *Analyser) specializeGenericFunction(template *symbols.Symbol, arguments
 		a.instantiateSemanticNode(node)
 	}).(*parser.FunctionDefNode)
 	cloned.GenericParameters = nil
+	cloned.MethodOwnerGenericParameters = nil
 	cloned.GenericInstance = true
 	cloned.Name = name
 	cloned.Symbol = instanceSymbol

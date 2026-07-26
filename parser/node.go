@@ -616,21 +616,22 @@ type GenericParameterNode struct {
 func (n GenericParameterNode) GetLoc() shared.Location { return n.Loc }
 
 type FunctionDefNode struct {
-	Name              string
-	MethodOwner       string
-	Receiver          MethodReceiverKind
-	GenericParameters []GenericParameterNode
-	Args              []*FunctionNodeArg
-	RetTypeNode       TypeNode
-	Body              Node
-	ExpressionBody    bool
-	HasVariadic       bool
-	TypedVariadic     bool
-	Pub               bool
-	Attributes        attributes.Attributes
-	Loc               shared.Location
-	Symbol            *symbols.Symbol
-	GenericInstance   bool
+	Name                         string
+	MethodOwner                  string
+	MethodOwnerGenericParameters []GenericParameterNode
+	Receiver                     MethodReceiverKind
+	GenericParameters            []GenericParameterNode
+	Args                         []*FunctionNodeArg
+	RetTypeNode                  TypeNode
+	Body                         Node
+	ExpressionBody               bool
+	HasVariadic                  bool
+	TypedVariadic                bool
+	Pub                          bool
+	Attributes                   attributes.Attributes
+	Loc                          shared.Location
+	Symbol                       *symbols.Symbol
+	GenericInstance              bool
 }
 
 type MethodReceiverKind uint8
@@ -643,6 +644,10 @@ const (
 )
 
 func (n FunctionDefNode) GetLoc() shared.Location { return n.Loc }
+
+func (n FunctionDefNode) IsGeneric() bool {
+	return len(n.MethodOwnerGenericParameters) != 0 || len(n.GenericParameters) != 0
+}
 
 type TypeAliasNode struct {
 	Name              string

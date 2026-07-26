@@ -144,20 +144,26 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 	if !ok {
 		return nil, shared.NewError(p.PrevLoc(), "expected function name")
 	}
+	leadingGenericParameters, err := p.parseGenericParameters()
+	if err != nil {
+		return nil, err
+	}
 	methodOwner := ""
+	var methodOwnerGenericParameters []GenericParameterNode
+	genericParameters := leadingGenericParameters
 	if p.Match(tokeniser.TokenDot) {
 		p.Inc()
 		methodOwner = name.Value
+		methodOwnerGenericParameters = leadingGenericParameters
 		methodName, ok := p.ExpectGet(tokeniser.TokenIdentifier)
 		if !ok {
 			return nil, shared.NewError(p.PrevLoc(), "expected method name after '.'")
 		}
 		name = methodName
-	}
-
-	genericParameters, err := p.parseGenericParameters()
-	if err != nil {
-		return nil, err
+		genericParameters, err = p.parseGenericParameters()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if !p.Expect(tokeniser.TokenOpenParen) {
@@ -188,7 +194,11 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 			return nil, shared.NewError(p.PrevLoc(), "method's first parameter must be self, *self, or *mut self")
 		}
 		receiver = MethodReceiverValue
-		var selfType TypeNode = &NamedTypeNode{Name: methodOwner, Loc: self.Loc}
+		ownerTypeArguments := make([]TypeNode, len(methodOwnerGenericParameters))
+		for i, parameter := range methodOwnerGenericParameters {
+			ownerTypeArguments[i] = &NamedTypeNode{Name: parameter.Name, Loc: parameter.Loc}
+		}
+		var selfType TypeNode = &NamedTypeNode{Name: methodOwner, TypeArguments: ownerTypeArguments, Loc: self.Loc}
 		if pointer {
 			receiver = MethodReceiverPointer
 			selfType = &PointerTypeNode{BaseType: selfType, Mutable: mutablePointer, Loc: self.Loc}
@@ -405,18 +415,19 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 	}
 
 	return &FunctionDefNode{
-		Name:              name.Value,
-		MethodOwner:       methodOwner,
-		Receiver:          receiver,
-		GenericParameters: genericParameters,
-		Args:              args,
-		RetTypeNode:       retType,
-		Body:              body,
-		ExpressionBody:    expressionBody,
-		Loc:               p.SpanFrom(beginLoc),
-		Attributes:        attrs,
-		HasVariadic:       variadic,
-		TypedVariadic:     typedVariadic,
+		Name:                         name.Value,
+		MethodOwner:                  methodOwner,
+		MethodOwnerGenericParameters: methodOwnerGenericParameters,
+		Receiver:                     receiver,
+		GenericParameters:            genericParameters,
+		Args:                         args,
+		RetTypeNode:                  retType,
+		Body:                         body,
+		ExpressionBody:               expressionBody,
+		Loc:                          p.SpanFrom(beginLoc),
+		Attributes:                   attrs,
+		HasVariadic:                  variadic,
+		TypedVariadic:                typedVariadic,
 	}, nil
 }
 

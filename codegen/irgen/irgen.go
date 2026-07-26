@@ -101,7 +101,7 @@ func (g *Generator) GenerateRoots(roots []*parser.RootNode) *ir.Module {
 			if !ok {
 				continue
 			}
-			if len(node.GenericParameters) != 0 {
+			if node.IsGeneric() {
 				continue
 			}
 			if node.Body == nil {

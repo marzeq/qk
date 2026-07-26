@@ -51,7 +51,7 @@ func (v *Validator) ValidateGenericTemplates(root *parser.RootNode) {
 	v.selectModule(root)
 	for _, node := range root.Body {
 		function, ok := node.(*parser.FunctionDefNode)
-		if !ok || len(function.GenericParameters) == 0 {
+		if !ok || !function.IsGeneric() {
 			continue
 		}
 		bindings := make(map[string]types.Type, len(function.Symbol.GenericParameters))
@@ -103,7 +103,7 @@ func (v *Validator) validateNode(node parser.Node) {
 		v.validateAttributes(n, n.Attributes, "module", attributes.AttributeTypeLink)
 
 	case *parser.FunctionDefNode:
-		if n.GenericInstance || (len(n.GenericParameters) != 0 && !v.validatingTemplate) {
+		if n.GenericInstance || (n.IsGeneric() && !v.validatingTemplate) {
 			return
 		}
 		v.validateAttributes(n, n.Attributes, "function",
