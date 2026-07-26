@@ -1345,8 +1345,13 @@ func (p *Parser) ParseType() (TypeNode, error) {
 	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordEnum) {
 		return p.ParseEnumType()
 	}
-	if p.Match(tokeniser.TokenIdentifier) && p.Peek().Value == "flags" && p.Next().Type == tokeniser.TokenOpenParen {
-		return p.ParseFlagsType()
+	if p.Match(tokeniser.TokenIdentifier) && p.Peek().Value == "flags" {
+		if p.Next().Type == tokeniser.TokenOpenParen {
+			return p.ParseFlagsType()
+		}
+		if p.Next().Type == tokeniser.TokenOpenCurly {
+			return nil, shared.NewError(p.Next().Loc, "expected backing type in parentheses after 'flags'")
+		}
 	}
 	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordUnion) {
 		return p.ParseUnionType()
