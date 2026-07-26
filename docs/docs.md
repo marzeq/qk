@@ -1597,6 +1597,10 @@ let pointer = erased.(*File)
 let copy = erased.(File)
 ```
 
+`nil` is also the zero value of a dynamic trait pointer. Comparing a `dyn Trait`
+or `mut dyn Trait` value with `nil` checks its erased data pointer, so converting
+a typed null pointer to a dynamic trait pointer still compares equal to `nil`.
+
 Assertions check nominal runtime type identity. A mismatch calls `panic` with a
 diagnostic. Trait pointers are QK-ABI-only and cannot cross a C ABI boundary.
 

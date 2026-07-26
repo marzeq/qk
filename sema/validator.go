@@ -961,11 +961,19 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 	case *parser.BinaryOpNode:
 		_, leftEnumShorthand := n.Operand1.(*parser.EnumLiteralNode)
 		_, rightEnumShorthand := n.Operand2.(*parser.EnumLiteralNode)
+		_, leftNil := n.Operand1.(*parser.NilLiteralNode)
+		_, rightNil := n.Operand2.(*parser.NilLiteralNode)
 		switch {
 		case leftEnumShorthand && !rightEnumShorthand:
 			v.validateExpr(n.Operand2)
 			n.Operand1 = v.validateExprWithExpected(n.Operand1, n.Operand2.GetType())
 		case rightEnumShorthand && !leftEnumShorthand:
+			v.validateExpr(n.Operand1)
+			n.Operand2 = v.validateExprWithExpected(n.Operand2, n.Operand1.GetType())
+		case leftNil && !rightNil && (n.Op == parser.BinaryOpEqual || n.Op == parser.BinaryOpNotEqual):
+			v.validateExpr(n.Operand2)
+			n.Operand1 = v.validateExprWithExpected(n.Operand1, n.Operand2.GetType())
+		case rightNil && !leftNil && (n.Op == parser.BinaryOpEqual || n.Op == parser.BinaryOpNotEqual):
 			v.validateExpr(n.Operand1)
 			n.Operand2 = v.validateExprWithExpected(n.Operand2, n.Operand1.GetType())
 		default:
@@ -1577,7 +1585,7 @@ func (v *Validator) createCast(node parser.ExpressionNode, target types.Type) pa
 func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expected types.Type) parser.ExpressionNode {
 	switch n := node.(type) {
 	case *parser.NilLiteralNode:
-		if types.IsPointer(expected) {
+		if types.IsPointer(expected) || isTraitPointerType(expected) {
 			n.SetType(expected)
 			return n
 		}

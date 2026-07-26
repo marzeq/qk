@@ -13,6 +13,19 @@ pub let Allocator = type trait {
   let free_all(*mut self): void
 }
 
+pub let RawAllocator = type trait {
+  let allocate_bytes(*mut self, size: usz, align: usz): *mut void
+  let free_bytes(*mut self, ptr: *mut void, size: usz, align: usz): void
+  let resize_bytes(
+    *mut self,
+    ptr: *mut void,
+    old_size: usz,
+    new_size: usz,
+    align: usz,
+  ): *mut void
+  let free_all(*mut self): void
+}
+
 when not NoLibc {
 
 import std.libc
@@ -145,7 +158,7 @@ let GrowingArena.grow(
   return chunk
 }
 
-let GrowingArena.allocate_bytes(
+pub let GrowingArena.allocate_bytes(
   *mut self,
   size: usz,
   align: usz,
@@ -208,7 +221,7 @@ let GrowingArena.allocate_bytes(
   return result
 }
 
-let GrowingArena.free_bytes(
+pub let GrowingArena.free_bytes(
   *mut self,
   ptr: *mut void,
   size: usz,
@@ -221,7 +234,7 @@ let GrowingArena.free_bytes(
   // use-after-free errors or overlap live allocations.
 }
 
-let GrowingArena.resize_bytes(
+pub let GrowingArena.resize_bytes(
   *mut self,
   ptr: *mut void,
   old_size: usz,

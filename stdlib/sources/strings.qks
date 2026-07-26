@@ -1,11 +1,38 @@
 module std
 
+when NoLibc {
+  let strlen(s: cstr): usz {
+    if s == nil {
+      return 0
+    }
+
+    let mut l: usz = 0
+    for s[l] != '\0' {
+      l += 1
+    }
+    return l
+  }
+} else {
+  import std.libc
+
+  let strlen(s: cstr): usz =
+    std.libc.strlen(s)
+}
+
+pub let cstr.to_str(self): str =
+  self[:strlen(self)].(str)
+
 when not NoLibc {
 
 import std.libc
+import std.alloc
 
-pub let str.to_cstr(self): *mut char {
-  let buf = std.libc.malloc(len(self) + 1).(*mut char)
+pub let str.to_cstr(self, allocator: mut dyn std.alloc.RawAllocator = nil): *mut char {
+  let buf = if allocator != nil {
+    allocator.allocate_bytes(len(self) + 1, alignof(char)).(*mut char)
+  } else {
+    std.libc.malloc(len(self) + 1).(*mut char)
+  }
   if buf == nil {
     return nil
   }
@@ -13,19 +40,6 @@ pub let str.to_cstr(self): *mut char {
   std.libc.memcpy(buf, self.(*char), len(self))
   buf[len(self)] = '\0'
   return buf
-}
-
-pub let cstr.to_str(self): str {
-  if self == nil {
-    return ""
-  }
-
-  let n = std.libc.strlen(self)
-
-  let data: [mut char] = ['\0'; n]
-  std.libc.memcpy(data.(*mut char), self, n)
-
-  return data.(str)
 }
 
 }

@@ -844,6 +844,10 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		case parser.BinaryOpEqual, parser.BinaryOpNotEqual, parser.BinaryOpLess, parser.BinaryOpLessEqual, parser.BinaryOpGreater, parser.BinaryOpGreaterEqual:
 			if types.IsNumeric(t1) && types.IsNumeric(t2) {
 				n.SetType(types.PrimitiveBool)
+			} else if (n.Op == parser.BinaryOpEqual || n.Op == parser.BinaryOpNotEqual) &&
+				((isNilLiteral(n.Operand1) && isTraitPointerType(t2)) ||
+					(isTraitPointerType(t1) && isNilLiteral(n.Operand2))) {
+				n.SetType(types.PrimitiveBool)
 			} else if t1.Equals(t2) {
 				n.SetType(types.PrimitiveBool)
 			} else if types.IsPointer(t1) && types.IsPointer(t2) {
@@ -940,6 +944,16 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 	if node.GetType() == nil {
 		panic("expression without type")
 	}
+}
+
+func isNilLiteral(node parser.ExpressionNode) bool {
+	_, ok := node.(*parser.NilLiteralNode)
+	return ok
+}
+
+func isTraitPointerType(t types.Type) bool {
+	_, ok := types.Underlying(t).(types.TraitPointerType)
+	return ok
 }
 
 func genericExpressionOrigin(node parser.ExpressionNode) types.Type {

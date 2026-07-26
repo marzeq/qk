@@ -280,6 +280,9 @@ func (g *Generator) tryGenerateGlobalInitializer(expr parser.ExpressionNode) (ir
 	case *parser.CStringLiteralNode:
 		return ir.CStringConstOperand(node.Value), true
 	case *parser.NilLiteralNode:
+		if _, traitPointer := types.Underlying(node.GetType()).(types.TraitPointerType); traitPointer {
+			return ir.ZeroConstOperand(node.GetType()), true
+		}
 		return ir.NullConstOperand(node.GetType()), true
 	case *parser.EnumLiteralNode:
 		return ir.IntConstOperand(node.Value, node.GetType()), true
@@ -1417,6 +1420,9 @@ func (g *Generator) generateCStringLiteralExpr(node *parser.CStringLiteralNode) 
 }
 
 func (g *Generator) generateNilLiteralExpr(node *parser.NilLiteralNode) ir.Operand {
+	if _, traitPointer := types.Underlying(node.GetType()).(types.TraitPointerType); traitPointer {
+		return ir.ZeroConstOperand(node.GetType())
+	}
 	return ir.NullConstOperand(node.GetType())
 }
 
@@ -2556,6 +2562,14 @@ func (g *Generator) generateBinaryExpr(node *parser.BinaryOpNode) ir.Operand {
 	if node.Op == parser.BinaryOpLogicalAnd || node.Op == parser.BinaryOpLogicalOr {
 		return g.generateShortCircuitExpr(node)
 	}
+	if node.Op == parser.BinaryOpEqual || node.Op == parser.BinaryOpNotEqual {
+		if isNilTraitComparison(node.Operand1, node.Operand2) {
+			return g.generateTraitNilComparison(node, node.Operand2)
+		}
+		if isNilTraitComparison(node.Operand2, node.Operand1) {
+			return g.generateTraitNilComparison(node, node.Operand1)
+		}
+	}
 	leftPtr, leftIsPtr := types.Underlying(node.Operand1.GetType()).(types.PointerType)
 	_, rightIsPtr := types.Underlying(node.Operand2.GetType()).(types.PointerType)
 	if node.Op == parser.BinaryOpAdd && (leftIsPtr || rightIsPtr) {
@@ -2571,6 +2585,28 @@ func (g *Generator) generateBinaryExpr(node *parser.BinaryOpNode) ir.Operand {
 	left := g.GenerateExpr(node.Operand1)
 	right := g.GenerateExpr(node.Operand2)
 	return g.emitBinaryOperation(node.Op, left, right, node.GetType())
+}
+
+func isNilTraitComparison(nilNode, traitNode parser.ExpressionNode) bool {
+	if _, nilLiteral := nilNode.(*parser.NilLiteralNode); !nilLiteral {
+		return false
+	}
+	_, traitPointer := types.Underlying(traitNode.GetType()).(types.TraitPointerType)
+	return traitPointer
+}
+
+func (g *Generator) generateTraitNilComparison(node *parser.BinaryOpNode, traitNode parser.ExpressionNode) ir.Operand {
+	traitType := types.Underlying(traitNode.GetType()).(types.TraitPointerType)
+	traitValue := g.GenerateExpr(traitNode)
+	dataType := types.PointerType{Base: types.PrimitiveVoid, Mutable: traitType.Mutable}
+	dataID := g.currentFunction.NewValueOfType(dataType)
+	g.Emit(ir.ExtractValue{Dest: dataID, Aggregate: traitValue, Index: 0})
+	return g.emitBinaryOperation(
+		node.Op,
+		ir.ValueOperand(dataID, dataType),
+		ir.NullConstOperand(dataType),
+		node.GetType(),
+	)
 }
 
 func (g *Generator) generatePointerOffset(node *parser.BinaryOpNode, subtract bool) ir.Operand {
