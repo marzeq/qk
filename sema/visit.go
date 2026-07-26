@@ -215,17 +215,20 @@ func (a *Analyser) visitExpression(expr parser.ExpressionNode) {
 		a.visitExpression(e.Subject)
 		a.resolveModuleField(e)
 
-	case *parser.IfExprNode:
+	case *parser.BlockNode:
+		a.visitBlock(e)
+
+	case *parser.IfNode:
 		a.visitExpression(e.IfBranch.Condition)
-		a.visitExpression(e.IfBranch.Node)
+		a.visitBlock(e.IfBranch.Node)
 
 		for _, br := range e.ElseIfBranches {
 			a.visitExpression(br.Condition)
-			a.visitExpression(br.Node)
+			a.visitBlock(br.Node)
 		}
 
 		if e.ElseBranch != nil {
-			a.visitExpression(e.ElseBranch)
+			a.visitBlock(e.ElseBranch)
 		}
 
 	case *parser.StructLiteralNode:
@@ -275,15 +278,6 @@ func (a *Analyser) visitExpression(expr parser.ExpressionNode) {
 
 	case *parser.OffsetOfNode:
 		a.resolveTypeNode(e.Operand)
-
-	case *parser.GivenExprNode:
-		prev := a.current
-		a.current = symbols.NewScope(prev)
-		for _, stmt := range e.Block.Body {
-			a.visit(stmt)
-		}
-		a.visitExpression(e.FinalExpr)
-		a.current = prev
 
 	case *parser.IntegerLiteralNode,
 		*parser.FloatLiteralNode,

@@ -60,7 +60,7 @@ The reserved words are:
 
 ```text
 alias alignof and as break continue defer else enum false for
-given if import in len let module mut nil not offsetof opaque or pub
+if import in len let module mut nil not offsetof opaque or pub
 return sizeof struct trait true type union
 ```
 
@@ -437,10 +437,26 @@ or an expression body:
 let add(a: i32, b: i32): i32 = a + b
 ```
 
-The return type can be inferred from the expression body or from all `return`
-statements in a block body. A function with no value returns `void`. Inference
-requires a concrete and consistent type; annotate returns based only on untyped
-numeric literals:
+An expression body may itself be a block. Its final expression is returned
+implicitly, while explicit early returns remain available:
+
+```qk
+let choose(ready: bool): i32 = {
+    if ready { return 1 }
+    prepare()
+    2
+}
+```
+
+The `=` is significant. A body written directly as `let f() { ... }` is a
+statement body, so its trailing expression is not an implicit return and an
+arbitrary non-call trailing expression is rejected.
+
+The return type can be inferred jointly from the expression body's final value
+and its explicit `return` statements, or from all `return` statements in a
+statement body. A function with no value returns `void`. Inference requires a
+concrete and consistent type; annotate returns based only on untyped numeric
+literals:
 
 ```qk
 let one(): i32 = 1
@@ -697,7 +713,7 @@ function attributes.
 
 ## 9. Statements and blocks
 
-A block is a sequence of statements in braces and introduces a lexical scope:
+A block is a sequence of children in braces and introduces a lexical scope:
 
 ```qk
 {
@@ -707,7 +723,10 @@ A block is a sequence of statements in braces and introduces a lexical scope:
 ```
 
 Statements end at a newline or semicolon. Calls are valid expression statements;
-arbitrary unused expressions are not.
+arbitrary unused expressions are not. When a block occurs in expression context,
+its final child may be an arbitrary expression and becomes the block's value.
+Earlier children must still be valid statements. A trailing semicolon does not
+suppress that value; use the block in statement context when no value is wanted.
 
 `return` exits the current function, optionally with a value. `break` exits the
 nearest loop and `continue` starts its next iteration. `break` and `continue` are
@@ -733,7 +752,7 @@ is left through `return`, `break`, or `continue`.
 
 ## 10. Conditionals
 
-Statement conditionals require `bool` conditions and do not use parentheses:
+Conditionals require `bool` conditions and do not use parentheses:
 
 ```qk
 if ready {
@@ -745,15 +764,25 @@ if ready {
 }
 ```
 
-An `if` can also produce a value. Its branches contain one expression:
+The same `if` can produce a value in expression context. Every branch is a block
+and may contain statements before its final expression:
 
 ```qk
-let sign: i32 = if value < 0 { -1 } else if value > 0 { 1 } else { 0 }
+let sign: i32 = if value < 0 {
+    trace("negative")
+    -1
+} else if value > 0 {
+    1
+} else {
+    0
+}
 ```
 
 Value branches must agree on a type, with numeric promotion applied where
-possible. An expected outer type is propagated into every branch. In value-using
-code, provide an `else` so every path yields a value.
+possible. An expected outer type is propagated into every value-producing
+branch. Expression-context conditionals require `else`. A branch that cannot
+reach the conditional's merge point, such as one ending in `return`, does not
+need to produce a value.
 
 ## 11. Loops and iteration
 
@@ -882,15 +911,17 @@ including promoted fields of anonymous unions.
 
 `len(slice)` returns a slice's length as `usz`.
 
-### 12.6 `given` expressions
+### 12.6 Block expressions
 
-`given` evaluates statements in a nested scope and then yields a final expression:
+A block in expression context evaluates its earlier statements in a nested scope
+and yields its final expression:
 
 ```qk
-let result = given {
+let result = {
     let intermediate = prepare(input)
     defer release(intermediate)
-} -> finish(intermediate)
+    finish(intermediate)
+}
 ```
 
 Names declared in the block are visible to the final expression. The final
@@ -1344,8 +1375,8 @@ the current scope.
 
 Function parameters are visible in the body. Default expressions are resolved in
 the declaring function's scope. Loop iterators are visible only in the loop body.
-Names declared inside a `given` block remain visible to its final expression but
-not outside the `given` expression.
+Names declared inside a block expression remain visible to its final expression
+but not outside the block expression.
 
 Top-level types and function signatures are collected before bodies are resolved,
 allowing forward references and mutually recursive functions. Local values follow

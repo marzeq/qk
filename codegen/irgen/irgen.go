@@ -412,9 +412,17 @@ func (g *Generator) GenerateFunction(fn *parser.FunctionDefNode) {
 
 	g.emitFunctionParams(fn)
 
-	switch body := fn.Body.(type) {
-	case *parser.BlockNode:
-		g.GenerateNode(body)
+	if fn.ExpressionBody {
+		ret := g.GenerateExpr(fn.Body.(parser.ExpressionNode))
+		if !g.currentBlockHasTerminator() {
+			if g.isVoidFunction(fn) {
+				g.Emit(ir.Return{})
+			} else {
+				g.Emit(ir.Return{HasValue: true, Value: ret})
+			}
+		}
+	} else {
+		g.GenerateNode(fn.Body)
 		if !g.currentBlockHasTerminator() {
 			if g.isVoidFunction(fn) {
 				g.Emit(ir.Return{})
@@ -422,18 +430,6 @@ func (g *Generator) GenerateFunction(fn *parser.FunctionDefNode) {
 				panic("non-void function may fall through without return")
 			}
 		}
-	case parser.ExpressionNode:
-		ret := g.GenerateExpr(body)
-		if g.currentBlockHasTerminator() {
-			break
-		}
-		if g.isVoidFunction(fn) {
-			g.Emit(ir.Return{})
-		} else {
-			g.Emit(ir.Return{HasValue: true, Value: ret})
-		}
-	default:
-		panic(fmt.Sprintf("todo: function body %T", body))
 	}
 
 	g.currentEnv = nil
@@ -1168,10 +1164,10 @@ func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
 		return ir.IntConstOperand(n.Value, n.GetType())
 	case *parser.IdentifierNode:
 		return g.generateIdentifierExpr(n)
-	case *parser.IfExprNode:
+	case *parser.BlockNode:
+		return g.generateBlockExpr(n)
+	case *parser.IfNode:
 		return g.generateIfExpr(n)
-	case *parser.GivenExprNode:
-		return g.generateGivenExpr(n)
 	case *parser.BinaryOpNode:
 		return g.generateBinaryExpr(n)
 	case *parser.UnaryOpNode:
@@ -1212,7 +1208,7 @@ func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
 	}
 }
 
-func (g *Generator) generateGivenExpr(node *parser.GivenExprNode) ir.Operand {
+func (g *Generator) generateBlockExpr(node *parser.BlockNode) ir.Operand {
 	prev := g.currentEnv
 	g.currentEnv = NewEnv(prev)
 	g.deferScopes = append(g.deferScopes, nil)
@@ -1221,19 +1217,24 @@ func (g *Generator) generateGivenExpr(node *parser.GivenExprNode) ir.Operand {
 		g.currentEnv = prev
 	}()
 
-	for _, child := range node.Block.Body {
+	resultExpr, hasResult := parser.BlockResult(node)
+	childCount := len(node.Body)
+	if hasResult {
+		childCount--
+	}
+	for _, child := range node.Body[:childCount] {
 		if g.currentBlockHasTerminator() {
 			break
 		}
 		g.GenerateNode(child)
 	}
 	if g.currentBlockHasTerminator() {
-		// Keep generating a well-formed value in an unreachable block. This lets a
-		// given expression contain return, break, or continue without its enclosing
-		// expression trying to append instructions after the terminator.
-		g.currentBlock = g.currentFunction.NewBlock("given.unreachable")
+		return ir.ZeroConstOperand(node.GetType())
 	}
-	result := g.GenerateExpr(node.FinalExpr)
+	if !hasResult {
+		panic("falling-through block expression has no result")
+	}
+	result := g.GenerateExpr(resultExpr)
 	if !g.currentBlockHasTerminator() {
 		g.emitCurrentScopeDefers()
 	}
@@ -2103,10 +2104,14 @@ func (g *Generator) generateFieldSubjectAddress(subject parser.ExpressionNode) i
 	return g.generateAddressOfExpr(subject)
 }
 
-func (g *Generator) generateIfExpr(node *parser.IfExprNode) ir.Operand {
+func (g *Generator) generateIfExpr(node *parser.IfNode) ir.Operand {
 	resultType := node.GetType()
-	tmpSlot := g.currentFunction.NewSlot(resultType, "ifexpr.tmp")
-	g.Emit(ir.Alloca{Slot: tmpSlot})
+	fallsThrough := parser.NodeFallsThrough(node)
+	var tmpSlot ir.SlotID
+	if fallsThrough {
+		tmpSlot = g.currentFunction.NewSlot(resultType, "ifexpr.tmp")
+		g.Emit(ir.Alloca{Slot: tmpSlot})
+	}
 
 	mergeBlock := g.currentFunction.NewBlock("ifexpr.merge")
 	thenBlock := g.currentFunction.NewBlock("ifexpr.then")
@@ -2123,8 +2128,8 @@ func (g *Generator) generateIfExpr(node *parser.IfExprNode) ir.Operand {
 
 	g.currentBlock = thenBlock
 	thenVal := g.GenerateExpr(node.IfBranch.Node)
-	g.Emit(ir.Store{Slot: tmpSlot, Value: thenVal})
 	if !g.currentBlockHasTerminator() {
+		g.Emit(ir.Store{Slot: tmpSlot, Value: thenVal})
 		g.Emit(ir.Jump{Target: mergeBlock.ID})
 	}
 
@@ -2146,8 +2151,8 @@ func (g *Generator) generateIfExpr(node *parser.IfExprNode) ir.Operand {
 
 			g.currentBlock = thenB
 			v := g.GenerateExpr(elif.Node)
-			g.Emit(ir.Store{Slot: tmpSlot, Value: v})
 			if !g.currentBlockHasTerminator() {
+				g.Emit(ir.Store{Slot: tmpSlot, Value: v})
 				g.Emit(ir.Jump{Target: mergeBlock.ID})
 			}
 
@@ -2156,14 +2161,18 @@ func (g *Generator) generateIfExpr(node *parser.IfExprNode) ir.Operand {
 
 		if node.ElseBranch != nil {
 			v := g.GenerateExpr(node.ElseBranch)
-			g.Emit(ir.Store{Slot: tmpSlot, Value: v})
 			if !g.currentBlockHasTerminator() {
+				g.Emit(ir.Store{Slot: tmpSlot, Value: v})
 				g.Emit(ir.Jump{Target: mergeBlock.ID})
 			}
 		}
 	}
 
 	g.currentBlock = mergeBlock
+	if !fallsThrough {
+		g.Emit(ir.Unreachable{})
+		return ir.ZeroConstOperand(resultType)
+	}
 	dst := g.currentFunction.NewValueOfType(resultType)
 	g.Emit(ir.Load{Dest: dst, Slot: tmpSlot})
 	return ir.ValueOperand(dst, resultType)

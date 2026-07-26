@@ -80,6 +80,26 @@ func (p *Parser) trailingBraceStartsStructLiteral() bool {
 	}
 }
 
+func (p *Parser) braceStartsStructLiteral() bool {
+	if !p.Match(tokeniser.TokenOpenCurly) {
+		return false
+	}
+	pos := p.pos + 1
+	for pos < len(p.tokens) && p.tokens[pos].Type == tokeniser.TokenNewline {
+		pos++
+	}
+	if pos >= len(p.tokens) {
+		return false
+	}
+	if p.tokens[pos].Type == tokeniser.TokenCloseCurly ||
+		p.tokens[pos].Type == tokeniser.TokenDot ||
+		p.tokens[pos].Type == tokeniser.TokenNoInitializer {
+		return true
+	}
+	return p.tokens[pos].Type == tokeniser.TokenIdentifier &&
+		pos+1 < len(p.tokens) && p.tokens[pos+1].Type == tokeniser.TokenEquals
+}
+
 func NewParser(tokens []tokeniser.Token) *Parser {
 	return &Parser{
 		pos:    0,

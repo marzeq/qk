@@ -92,7 +92,6 @@ const (
 	KeywordWhen          KeywordKind = "when"
 	KeywordCompilerError KeywordKind = "compiler_error"
 	KeywordElse          KeywordKind = "else"
-	KeywordGiven         KeywordKind = "given"
 	KeywordFor           KeywordKind = "for"
 	KeywordBreak         KeywordKind = "break"
 	KeywordContinue      KeywordKind = "continue"

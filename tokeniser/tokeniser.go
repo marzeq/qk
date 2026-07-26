@@ -292,7 +292,6 @@ var keywords = map[string]struct{}{
 	string(KeywordWhen):          {},
 	string(KeywordCompilerError): {},
 	string(KeywordElse):          {},
-	string(KeywordGiven):         {},
 	string(KeywordFor):           {},
 	string(KeywordBreak):         {},
 	string(KeywordContinue):      {},

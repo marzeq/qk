@@ -10,6 +10,14 @@ import (
 )
 
 func (p *Parser) ParseBlock() (*BlockNode, error) {
+	return p.parseBlock(false)
+}
+
+func (p *Parser) ParseBlockExpression() (*BlockNode, error) {
+	return p.parseBlock(true)
+}
+
+func (p *Parser) parseBlock(expression bool) (*BlockNode, error) {
 	beginLoc := p.CurrLoc()
 	if !p.Expect(tokeniser.TokenOpenCurly) {
 		return nil, shared.NewError(p.PrevLoc(), "expected '{' to start block")
@@ -22,6 +30,23 @@ func (p *Parser) ParseBlock() (*BlockNode, error) {
 	var children []Node
 	var parseErrors []error
 	for !p.Match(tokeniser.TokenCloseCurly, tokeniser.TokenEof) {
+		if expression {
+			start := p.pos
+			posStack := append([]int(nil), p.posStack...)
+			expr, err := p.ParseExpression()
+			if err == nil {
+				for p.Match(tokeniser.TokenSemicolon, tokeniser.TokenNewline) {
+					p.Inc()
+				}
+				if p.Match(tokeniser.TokenCloseCurly) {
+					children = append(children, expr)
+					break
+				}
+			}
+			p.pos = start
+			p.posStack = posStack
+		}
+
 		stmt, semiNeeded, err := p.ParseStatement()
 		if err != nil {
 			parseErrors = append(parseErrors, err)
@@ -51,8 +76,9 @@ func (p *Parser) ParseBlock() (*BlockNode, error) {
 	}
 
 	return &BlockNode{
-		Body: children,
-		Loc:  beginLoc,
+		Body:       children,
+		Expression: expression,
+		Loc:        beginLoc,
 	}, errors.Join(parseErrors...)
 }
 
@@ -337,6 +363,7 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 	}
 
 	var body Node
+	expressionBody := false
 
 	if expectsBody {
 		for p.Match(tokeniser.TokenNewline) {
@@ -351,13 +378,14 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 			body = b
 		} else if p.Match(tokeniser.TokenEquals) {
 			p.Inc() // consume '='
+			expressionBody = true
 
 			for p.Match(tokeniser.TokenNewline) {
 				p.Inc()
 			}
 
 			if p.Match(tokeniser.TokenOpenCurly) {
-				b, err := p.ParseBlock()
+				b, err := p.ParseBlockExpression()
 				if err != nil {
 					return nil, err
 				}
@@ -382,6 +410,7 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 		Args:              args,
 		RetTypeNode:       retType,
 		Body:              body,
+		ExpressionBody:    expressionBody,
 		Loc:               beginLoc,
 		Attributes:        attrs,
 		HasVariadic:       variadic,
@@ -1335,6 +1364,14 @@ func (p *Parser) ParseCompoundAssignment(opTok tokeniser.Token, subj ExpressionN
 }
 
 func (p *Parser) ParseIfStatement() (*IfNode, error) {
+	return p.parseIf(false)
+}
+
+func (p *Parser) ParseIfExpression() (*IfNode, error) {
+	return p.parseIf(true)
+}
+
+func (p *Parser) parseIf(expression bool) (*IfNode, error) {
 	beginLoc := p.CurrLoc()
 	if !p.Expect(tokeniser.TokenKeyword) {
 		return nil, shared.NewError(p.PrevLoc(), "expected 'if'")
@@ -1356,7 +1393,7 @@ func (p *Parser) ParseIfStatement() (*IfNode, error) {
 		p.Inc()
 	}
 
-	thenBlock, err := p.ParseBlock()
+	thenBlock, err := p.parseBlock(expression)
 	if err != nil {
 		return nil, err
 	}
@@ -1366,7 +1403,8 @@ func (p *Parser) ParseIfStatement() (*IfNode, error) {
 	}
 
 	node := &IfNode{
-		Loc: beginLoc,
+		Loc:        beginLoc,
+		Expression: expression,
 		IfBranch: IfBranch{
 			Condition: condition,
 			Node:      thenBlock,
@@ -1400,7 +1438,7 @@ func (p *Parser) ParseIfStatement() (*IfNode, error) {
 				p.Inc()
 			}
 
-			elseifBlock, err := p.ParseBlock()
+			elseifBlock, err := p.parseBlock(expression)
 			if err != nil {
 				return nil, err
 			}
@@ -1415,7 +1453,7 @@ func (p *Parser) ParseIfStatement() (*IfNode, error) {
 				p.Inc()
 			}
 		} else {
-			elseBlock, err := p.ParseBlock()
+			elseBlock, err := p.parseBlock(expression)
 			if err != nil {
 				return nil, err
 			}
@@ -1423,6 +1461,9 @@ func (p *Parser) ParseIfStatement() (*IfNode, error) {
 			node.ElseBranch = elseBlock
 			break
 		}
+	}
+	if expression && node.ElseBranch == nil {
+		return nil, shared.NewError(beginLoc, "if expression requires an else branch")
 	}
 
 	return node, nil

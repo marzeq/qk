@@ -193,15 +193,20 @@ func (w *debugWalker) walkExpr(expr parser.ExpressionNode) {
 			w.walkExpr(el)
 		}
 
-	case *parser.IfExprNode:
+	case *parser.BlockNode:
+		for _, child := range n.Body {
+			w.walkNode(child)
+		}
+
+	case *parser.IfNode:
 		w.walkExpr(n.IfBranch.Condition)
-		w.walkExpr(n.IfBranch.Node)
+		w.walkNode(n.IfBranch.Node)
 		for _, elif := range n.ElseIfBranches {
 			w.walkExpr(elif.Condition)
-			w.walkExpr(elif.Node)
+			w.walkNode(elif.Node)
 		}
 		if n.ElseBranch != nil {
-			w.walkExpr(n.ElseBranch)
+			w.walkNode(n.ElseBranch)
 		}
 
 	case *parser.SizeOfNode:
@@ -227,10 +232,6 @@ func (w *debugWalker) walkExpr(expr parser.ExpressionNode) {
 		for _, field := range n.Fields {
 			w.walkExpr(field.R)
 		}
-	case *parser.GivenExprNode:
-		w.walkNode(n.Block)
-		w.walkExpr(n.FinalExpr)
-
 	default:
 		w.errors = append(w.errors, fmt.Sprintf("unhandled expression type %T", expr))
 	}

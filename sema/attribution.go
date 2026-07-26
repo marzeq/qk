@@ -103,7 +103,11 @@ func (a *Attributor) attributeNode(node parser.Node) {
 			}
 		}
 		if n.Body != nil {
-			a.attributeNode(n.Body)
+			if n.ExpressionBody {
+				a.attributeExpr(n.Body.(parser.ExpressionNode))
+			} else {
+				a.attributeNode(n.Body)
+			}
 		}
 
 		foreignAttr := n.Attributes.Get(attributes.AttributeTypeForeign)
@@ -113,56 +117,19 @@ func (a *Attributor) attributeNode(node parser.Node) {
 		}
 
 		if n.Symbol.Signature.ReturnType == nil {
-			switch b := n.Body.(type) {
-			case *parser.BlockNode:
-				returnNodes := collectFunctionReturnNodes(b.Body)
-				if len(returnNodes) > 0 {
-					var current types.Type
-
-					first := returnNodes[0]
-					if first.ReturnValue == nil {
-						current = types.PrimitiveVoid
-					} else {
-						current = first.ReturnValue.GetType()
-					}
-
-					for _, returnNode := range returnNodes[1:] {
-						var t types.Type
-						if returnNode.ReturnValue == nil {
-							t = types.PrimitiveVoid
-						} else {
-							t = returnNode.ReturnValue.GetType()
-						}
-
-						if types.IsNumeric(current) && types.IsNumeric(t) {
-							got := types.PromoteNumeric(current, t)
-							if current.Equals(types.ErrorType{}) {
-								a.errorf(returnNode, "inconsistent return types: expected %v, got %v", current, t)
-							}
-							current = got
-							continue
-						}
-
-						if !current.Equals(t) {
-							a.errorf(returnNode, "inconsistent return types: expected %v, got %v", current, t)
-							current = types.ErrorType{}
-							break
-						}
-					}
-
-					n.Symbol.Signature.ReturnType = current
+			var candidates []returnTypeCandidate
+			for _, ret := range collectFunctionReturnNodesFromNode(n.Body) {
+				if ret.ReturnValue == nil {
+					candidates = append(candidates, returnTypeCandidate{node: ret, ty: types.PrimitiveVoid})
 				} else {
-					n.Symbol.Signature.ReturnType = types.PrimitiveVoid
+					candidates = append(candidates, returnTypeCandidate{node: ret, ty: ret.ReturnValue.GetType()})
 				}
-
-			case parser.ExpressionNode:
-				n.Symbol.Signature.ReturnType = b.GetType()
-
-			case nil:
-
-			default:
-				panic(fmt.Sprintf("unexpected function body type: %T\n", n.Body))
 			}
+			if n.ExpressionBody && parser.NodeFallsThrough(n.Body) {
+				body := n.Body.(parser.ExpressionNode)
+				candidates = append(candidates, returnTypeCandidate{node: n, ty: body.GetType()})
+			}
+			n.Symbol.Signature.ReturnType = a.mergeReturnTypes(candidates)
 
 			if types.HasUntyped(n.Symbol.Signature.ReturnType) {
 				a.errorf(n, "cannot infer function return type from untyped numeric value; add a return type annotation or cast")
@@ -171,9 +138,7 @@ func (a *Attributor) attributeNode(node parser.Node) {
 		}
 
 	case *parser.BlockNode:
-		for _, stmt := range n.Body {
-			a.attributeNode(stmt)
-		}
+		a.attributeBlock(n)
 
 	case *parser.DeclarationNode:
 		if len(n.GenericParameters) != 0 {
@@ -233,15 +198,7 @@ func (a *Attributor) attributeNode(node parser.Node) {
 		a.attributeExpr(n.Value)
 
 	case *parser.IfNode:
-		a.attributeExpr(n.IfBranch.Condition)
-		a.attributeNode(n.IfBranch.Node)
-		for _, elif := range n.ElseIfBranches {
-			a.attributeExpr(elif.Condition)
-			a.attributeNode(elif.Node)
-		}
-		if n.ElseBranch != nil {
-			a.attributeNode(n.ElseBranch)
-		}
+		a.attributeIf(n)
 
 	case *parser.ForNode:
 		for _, node := range n.ExprsOrStmts {
@@ -483,53 +440,11 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 			}
 		}
 
-	case *parser.IfExprNode:
-		a.attributeExpr(n.IfBranch.Condition)
+	case *parser.BlockNode:
+		a.attributeBlock(n)
 
-		var current types.Type = types.ErrorType{}
-
-		if n.IfBranch.Node != nil {
-			a.attributeExpr(n.IfBranch.Node)
-			current = n.IfBranch.Node.GetType()
-		}
-
-		for _, elif := range n.ElseIfBranches {
-			a.attributeExpr(elif.Condition)
-			a.attributeExpr(elif.Node)
-
-			t := elif.Node.GetType()
-
-			if types.IsNumeric(current) && types.IsNumeric(t) {
-				current = types.PromoteNumeric(current, t)
-				continue
-			}
-
-			if !current.Equals(t) {
-				current = types.ErrorType{}
-				break
-			}
-		}
-
-		if n.ElseBranch != nil {
-			a.attributeExpr(n.ElseBranch)
-			t := n.ElseBranch.GetType()
-
-			if types.IsNumeric(current) && types.IsNumeric(t) {
-				current = types.PromoteNumeric(current, t)
-			} else if !current.Equals(t) {
-				current = types.ErrorType{}
-			}
-		}
-
-		if current.Equals(types.ErrorType{}) {
-			a.errorf(n, "inconsistent types in if expression branches: expected %v, got %v", current, n.GetType())
-		}
-		n.SetType(current)
-
-	case *parser.GivenExprNode:
-		a.attributeNode(n.Block)
-		a.attributeExpr(n.FinalExpr)
-		n.SetType(n.FinalExpr.GetType())
+	case *parser.IfNode:
+		a.attributeIf(n)
 
 	case *parser.UnaryOpNode:
 		a.attributeExpr(n.Operand)
@@ -1364,29 +1279,173 @@ func (a *Attributor) resolveEnumLiteral(n *parser.EnumLiteralNode, expected type
 	n.SetType(expected)
 }
 
+type returnTypeCandidate struct {
+	node parser.Node
+	ty   types.Type
+}
+
+func (a *Attributor) mergeReturnTypes(candidates []returnTypeCandidate) types.Type {
+	if len(candidates) == 0 {
+		return types.PrimitiveVoid
+	}
+	current := candidates[0].ty
+	for _, candidate := range candidates[1:] {
+		if types.IsNumeric(current) && types.IsNumeric(candidate.ty) {
+			current = types.PromoteNumeric(current, candidate.ty)
+			if current.Equals(types.ErrorType{}) {
+				a.errorf(candidate.node, "inconsistent return types")
+				return current
+			}
+			continue
+		}
+		if !current.Equals(candidate.ty) {
+			a.errorf(candidate.node, "inconsistent return types: expected %v, got %v", current, candidate.ty)
+			return types.ErrorType{}
+		}
+	}
+	return current
+}
+
+func (a *Attributor) attributeBlock(n *parser.BlockNode) {
+	for _, child := range n.Body {
+		a.attributeNode(child)
+	}
+	if !n.Expression {
+		n.SetType(types.PrimitiveVoid)
+		return
+	}
+	if result, ok := parser.BlockResult(n); ok {
+		n.SetType(result.GetType())
+		return
+	}
+	if !parser.NodeFallsThrough(n) {
+		n.SetType(types.PrimitiveVoid)
+		return
+	}
+	n.SetType(types.PrimitiveVoid)
+}
+
+func (a *Attributor) attributeIf(n *parser.IfNode) {
+	a.attributeExpr(n.IfBranch.Condition)
+	a.attributeNode(n.IfBranch.Node)
+	for _, branch := range n.ElseIfBranches {
+		a.attributeExpr(branch.Condition)
+		a.attributeNode(branch.Node)
+	}
+	if n.ElseBranch != nil {
+		a.attributeNode(n.ElseBranch)
+	}
+	if !n.Expression {
+		n.SetType(types.PrimitiveVoid)
+		return
+	}
+
+	var candidates []returnTypeCandidate
+	addBranch := func(block *parser.BlockNode) {
+		if block != nil && parser.NodeFallsThrough(block) {
+			candidates = append(candidates, returnTypeCandidate{node: block, ty: block.GetType()})
+		}
+	}
+	addBranch(n.IfBranch.Node)
+	for _, branch := range n.ElseIfBranches {
+		addBranch(branch.Node)
+	}
+	addBranch(n.ElseBranch)
+	if len(candidates) == 0 {
+		n.SetType(types.PrimitiveVoid)
+		return
+	}
+	n.SetType(a.mergeReturnTypes(candidates))
+}
+
 func collectFunctionReturnNodes(body []parser.Node) []*parser.ControlKeywordNode {
 	var returnNodes []*parser.ControlKeywordNode
 
-	for _, stmt := range body {
-		switch n := stmt.(type) {
-		case *parser.ControlKeywordNode:
-			if n.Keyword == tokeniser.KeywordReturn {
-				returnNodes = append(returnNodes, n)
-			}
-		case *parser.IfNode:
-			returnNodes = append(returnNodes, collectFunctionReturnNodes(n.IfBranch.Node.Body)...)
-			for _, elif := range n.ElseIfBranches {
-				returnNodes = append(returnNodes, collectFunctionReturnNodes(elif.Node.Body)...)
-			}
-			if n.ElseBranch != nil {
-				returnNodes = append(returnNodes, collectFunctionReturnNodes(n.ElseBranch.Body)...)
-			}
-		case *parser.ForNode:
-			returnNodes = append(returnNodes, collectFunctionReturnNodes(n.Body.Body)...)
-		case *parser.BlockNode:
-			returnNodes = append(returnNodes, collectFunctionReturnNodes(n.Body)...)
-		}
+	for _, node := range body {
+		returnNodes = append(returnNodes, collectFunctionReturnNodesFromNode(node)...)
 	}
 
 	return returnNodes
+}
+
+func collectFunctionReturnNodesFromNode(node parser.Node) []*parser.ControlKeywordNode {
+	if node == nil {
+		return nil
+	}
+	switch n := node.(type) {
+	case *parser.ControlKeywordNode:
+		if n.Keyword == tokeniser.KeywordReturn {
+			return []*parser.ControlKeywordNode{n}
+		}
+	case *parser.BlockNode:
+		return collectFunctionReturnNodes(n.Body)
+	case *parser.IfNode:
+		result := collectFunctionReturnNodes(n.IfBranch.Node.Body)
+		for _, branch := range n.ElseIfBranches {
+			result = append(result, collectFunctionReturnNodes(branch.Node.Body)...)
+		}
+		if n.ElseBranch != nil {
+			result = append(result, collectFunctionReturnNodes(n.ElseBranch.Body)...)
+		}
+		return result
+	case *parser.ForNode:
+		return collectFunctionReturnNodes(n.Body.Body)
+	case *parser.RangeForNode:
+		return collectFunctionReturnNodes(n.Body.Body)
+	case *parser.ForEachNode:
+		return collectFunctionReturnNodes(n.Body.Body)
+	case *parser.DeclarationNode:
+		return collectFunctionReturnNodesFromExpr(n.Value)
+	case *parser.MultiDeclarationNode:
+		return collectFunctionReturnNodesFromExpr(n.Value)
+	case *parser.AssignmentNode:
+		return collectFunctionReturnNodesFromExpr(n.Value)
+	case parser.ExpressionNode:
+		return collectFunctionReturnNodesFromExpr(n)
+	}
+	return nil
+}
+
+func collectFunctionReturnNodesFromExpr(expr parser.ExpressionNode) []*parser.ControlKeywordNode {
+	if expr == nil {
+		return nil
+	}
+	collect := func(expressions ...parser.ExpressionNode) []*parser.ControlKeywordNode {
+		var result []*parser.ControlKeywordNode
+		for _, expression := range expressions {
+			result = append(result, collectFunctionReturnNodesFromExpr(expression)...)
+		}
+		return result
+	}
+	switch n := expr.(type) {
+	case *parser.BlockNode, *parser.IfNode:
+		return collectFunctionReturnNodesFromNode(n)
+	case *parser.BinaryOpNode:
+		return collect(n.Operand1, n.Operand2)
+	case *parser.UnaryOpNode:
+		return collect(n.Operand)
+	case *parser.FunctionCallNode:
+		return collect(append([]parser.ExpressionNode{n.Callee}, n.Args...)...)
+	case *parser.IndexExprNode:
+		return collect(n.Subject, n.Index)
+	case *parser.SliceExprNode:
+		return collect(n.Subject, n.Start, n.End)
+	case *parser.FieldAccessNode:
+		return collect(n.Subject)
+	case *parser.CastNode:
+		return collect(n.Operand)
+	case *parser.SizeOfExprNode:
+		return collect(n.Operand)
+	case *parser.AlignOfNode:
+		return collect(n.Expression)
+	case *parser.StructLiteralNode:
+		var expressions []parser.ExpressionNode
+		for _, field := range n.Fields {
+			expressions = append(expressions, field.R)
+		}
+		return collect(expressions...)
+	case *parser.SliceLiteralNode:
+		return collect(append(append([]parser.ExpressionNode(nil), n.Elements...), n.RepeatValue, n.RepeatAmount)...)
+	}
+	return nil
 }

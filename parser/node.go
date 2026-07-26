@@ -357,34 +357,6 @@ func (n *FunctionCallNode) GetType() types.Type {
 	return types.ErrorType{}
 }
 
-type IfExprBranch struct {
-	Condition ExpressionNode
-	Node      ExpressionNode
-}
-
-type IfExprNode struct {
-	IfBranch       IfExprBranch
-	ElseIfBranches []IfExprBranch
-	ElseBranch     ExpressionNode
-	Loc            shared.Location
-	Type           types.Type
-}
-
-func (n IfExprNode) GetLoc() shared.Location { return n.Loc }
-func (n *IfExprNode) SetType(t types.Type)   { n.Type = t }
-func (n *IfExprNode) GetType() types.Type    { return n.Type }
-
-type GivenExprNode struct {
-	Block     *BlockNode
-	FinalExpr ExpressionNode
-	Loc       shared.Location
-	Type      types.Type
-}
-
-func (n GivenExprNode) GetLoc() shared.Location { return n.Loc }
-func (n *GivenExprNode) SetType(t types.Type)   { n.Type = t }
-func (n *GivenExprNode) GetType() types.Type    { return n.Type }
-
 type UnaryOpKind uint
 
 const (
@@ -644,6 +616,7 @@ type FunctionDefNode struct {
 	Args              []*FunctionNodeArg
 	RetTypeNode       TypeNode
 	Body              Node
+	ExpressionBody    bool
 	HasVariadic       bool
 	TypedVariadic     bool
 	Pub               bool
@@ -684,10 +657,14 @@ type IfNode struct {
 	IfBranch       IfBranch
 	ElseIfBranches []IfBranch
 	ElseBranch     *BlockNode
+	Expression     bool
 	Loc            shared.Location
+	Type           types.Type
 }
 
 func (n IfNode) GetLoc() shared.Location { return n.Loc }
+func (n *IfNode) SetType(t types.Type)   { n.Type = t }
+func (n *IfNode) GetType() types.Type    { return n.Type }
 
 type ForNode struct {
 	ExprsOrStmts []Node
@@ -770,8 +747,12 @@ type AssignmentNode struct {
 func (n AssignmentNode) GetLoc() shared.Location { return n.Loc }
 
 type BlockNode struct {
-	Body []Node
-	Loc  shared.Location
+	Body       []Node
+	Expression bool
+	Loc        shared.Location
+	Type       types.Type
 }
 
 func (n BlockNode) GetLoc() shared.Location { return n.Loc }
+func (n *BlockNode) SetType(t types.Type)   { n.Type = t }
+func (n *BlockNode) GetType() types.Type    { return n.Type }

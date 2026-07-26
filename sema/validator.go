@@ -160,7 +160,16 @@ func (v *Validator) validateNode(node parser.Node) {
 		}
 
 		if n.Body != nil {
-			v.validateNode(n.Body)
+			if n.ExpressionBody {
+				body := n.Body.(parser.ExpressionNode)
+				if parser.NodeFallsThrough(n.Body) {
+					n.Body = v.validateExprWithExpected(body, n.Symbol.Signature.ReturnType)
+				} else {
+					v.validateExpr(body)
+				}
+			} else {
+				v.validateNode(n.Body)
+			}
 		}
 
 		v.currentFunction = prev
@@ -580,6 +589,65 @@ func (v *Validator) validateIf(n *parser.IfNode) {
 
 	if n.ElseBranch != nil {
 		v.validateNode(n.ElseBranch)
+	}
+}
+
+func (v *Validator) validateExpressionBlock(n *parser.BlockNode, expected types.Type) {
+	result, hasResult := parser.BlockResult(n)
+	last := len(n.Body)
+	if hasResult {
+		last--
+	}
+	for _, child := range n.Body[:last] {
+		v.validateNode(child)
+	}
+
+	if !hasResult {
+		if parser.NodeFallsThrough(n) {
+			v.errorf(n, "block used as expression must end with an expression")
+			n.SetType(types.ErrorType{})
+		}
+		return
+	}
+
+	if expected != nil && parser.NodeFallsThrough(n) {
+		result = v.validateExprWithExpected(result, expected)
+		n.Body[len(n.Body)-1] = result
+		n.SetType(expected)
+	} else {
+		v.validateExpr(result)
+		n.SetType(result.GetType())
+	}
+}
+
+func (v *Validator) validateIfExpression(n *parser.IfNode, expected types.Type) {
+	v.validateExpr(n.IfBranch.Condition)
+	if !n.IfBranch.Condition.GetType().Equals(types.PrimitiveBool) {
+		v.errorf(n, "if expression condition must be bool")
+	}
+
+	validateBranch := func(block *parser.BlockNode) {
+		if expected != nil && parser.NodeFallsThrough(block) {
+			v.validateExprWithExpected(block, expected)
+		} else {
+			v.validateExpr(block)
+		}
+	}
+	validateBranch(n.IfBranch.Node)
+	for _, branch := range n.ElseIfBranches {
+		v.validateExpr(branch.Condition)
+		if !branch.Condition.GetType().Equals(types.PrimitiveBool) {
+			v.errorf(n, "elseif condition must be bool")
+		}
+		validateBranch(branch.Node)
+	}
+	if n.ElseBranch == nil {
+		v.errorf(n, "if expression requires an else branch")
+	} else {
+		validateBranch(n.ElseBranch)
+	}
+	if expected != nil {
+		n.SetType(expected)
 	}
 }
 
@@ -1275,32 +1343,11 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		}
 		n.SetType(fieldType)
 
-	case *parser.IfExprNode:
-		v.validateExpr(n.IfBranch.Condition)
+	case *parser.BlockNode:
+		v.validateExpressionBlock(n, nil)
 
-		if !n.IfBranch.Condition.GetType().Equals(types.PrimitiveBool) {
-			v.errorf(n, "if expression condition must be bool")
-		}
-
-		v.validateExpr(n.IfBranch.Node)
-
-		for _, elif := range n.ElseIfBranches {
-			v.validateExpr(elif.Condition)
-
-			if !elif.Condition.GetType().Equals(types.PrimitiveBool) {
-				v.errorf(n, "elseif condition must be bool")
-			}
-
-			v.validateExpr(elif.Node)
-		}
-
-		if n.ElseBranch != nil {
-			v.validateExpr(n.ElseBranch)
-		}
-
-	case *parser.GivenExprNode:
-		v.validateNode(n.Block)
-		v.validateExpr(n.FinalExpr)
+	case *parser.IfNode:
+		v.validateIfExpression(n, nil)
 
 	case *parser.SliceLiteralNode:
 		if n.RepeatValue != nil {
@@ -1678,22 +1725,11 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 			n.SetType(expected)
 			return n
 		}
-	case *parser.IfExprNode:
-		v.validateExpr(n.IfBranch.Condition)
-		n.IfBranch.Node = v.validateExprWithExpected(n.IfBranch.Node, expected)
-		for i, branch := range n.ElseIfBranches {
-			v.validateExpr(branch.Condition)
-			n.ElseIfBranches[i].Node = v.validateExprWithExpected(branch.Node, expected)
-		}
-		if n.ElseBranch != nil {
-			n.ElseBranch = v.validateExprWithExpected(n.ElseBranch, expected)
-		}
-		n.SetType(expected)
+	case *parser.BlockNode:
+		v.validateExpressionBlock(n, expected)
 		return n
-	case *parser.GivenExprNode:
-		v.validateNode(n.Block)
-		n.FinalExpr = v.validateExprWithExpected(n.FinalExpr, expected)
-		n.SetType(expected)
+	case *parser.IfNode:
+		v.validateIfExpression(n, expected)
 		return n
 	}
 

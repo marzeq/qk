@@ -726,12 +726,21 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 		return expr, nil
 	}
 
-	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordGiven) {
-		expr, err := p.ParseGivenExpression()
+	if p.Match(tokeniser.TokenOpenCurly) {
+		if p.braceStartsStructLiteral() {
+			start := p.pos
+			posStack := append([]int(nil), p.posStack...)
+			literal, err := p.ParseStructLiteral(nil)
+			if err == nil {
+				return literal, nil
+			}
+			p.pos = start
+			p.posStack = posStack
+		}
+		expr, err := p.ParseBlockExpression()
 		if err != nil {
 			return nil, err
 		}
-
 		return expr, nil
 	}
 
@@ -830,10 +839,6 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 			Operand: expr,
 			Loc:     beginLoc,
 		}, nil
-	}
-
-	if p.Match(tokeniser.TokenOpenCurly) {
-		return p.ParseStructLiteral(nil)
 	}
 
 	if p.Match(tokeniser.TokenOpenSquare) {
@@ -995,157 +1000,6 @@ func (p *Parser) ParseCall(callee ExpressionNode) (*FunctionCallNode, error) {
 		VariadicExpansion: expanded,
 		Loc:               callee.GetLoc(),
 	}, nil
-}
-
-func (p *Parser) ParseIfExpression() (*IfExprNode, error) {
-	beginLoc := p.CurrLoc()
-	if !p.Expect(tokeniser.TokenKeyword) {
-		return nil, shared.NewError(p.PrevLoc(), "expected 'if' keyword")
-	}
-
-	for p.Match(tokeniser.TokenNewline) {
-		p.Inc()
-	}
-
-	wasDisambiguatingTrailingBlock := p.disambiguateTrailingBlock
-	p.disambiguateTrailingBlock = true
-	condition, err := p.ParseExpression()
-	p.disambiguateTrailingBlock = wasDisambiguatingTrailingBlock
-	if err != nil {
-		return nil, err
-	}
-
-	for p.Match(tokeniser.TokenNewline) {
-		p.Inc()
-	}
-
-	thenBlock, err := p.ParseBlockExpression()
-	if err != nil {
-		return nil, err
-	}
-
-	for p.Match(tokeniser.TokenNewline) {
-		p.Inc()
-	}
-
-	node := &IfExprNode{
-		Loc: beginLoc,
-		IfBranch: IfExprBranch{
-			Condition: condition,
-			Node:      thenBlock,
-		},
-	}
-
-	for p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordElse) {
-		p.Consume()
-
-		for p.Match(tokeniser.TokenNewline) {
-			p.Inc()
-		}
-
-		if p.Match(tokeniser.TokenKeyword) &&
-			p.Peek().Value == string(tokeniser.KeywordIf) {
-			p.Consume()
-
-			for p.Match(tokeniser.TokenNewline) {
-				p.Inc()
-			}
-
-			wasDisambiguatingTrailingBlock := p.disambiguateTrailingBlock
-			p.disambiguateTrailingBlock = true
-			elseifCondition, err := p.ParseExpression()
-			p.disambiguateTrailingBlock = wasDisambiguatingTrailingBlock
-			if err != nil {
-				return nil, err
-			}
-
-			for p.Match(tokeniser.TokenNewline) {
-				p.Inc()
-			}
-
-			elseifBlock, err := p.ParseBlockExpression()
-			if err != nil {
-				return nil, err
-			}
-
-			elseIfBranch := IfExprBranch{
-				Condition: elseifCondition,
-				Node:      elseifBlock,
-			}
-			node.ElseIfBranches = append(node.ElseIfBranches, elseIfBranch)
-
-			for p.Match(tokeniser.TokenNewline) {
-				p.Inc()
-			}
-		} else {
-			elseBlock, err := p.ParseBlockExpression()
-			if err != nil {
-				return nil, err
-			}
-
-			node.ElseBranch = elseBlock
-			break
-		}
-	}
-
-	return node, nil
-}
-
-func (p *Parser) ParseGivenExpression() (*GivenExprNode, error) {
-	beginLoc := p.CurrLoc()
-	if !p.Expect(tokeniser.TokenKeyword) {
-		return nil, shared.NewError(p.PrevLoc(), "expected 'given' keyword")
-	}
-	for p.Match(tokeniser.TokenNewline) {
-		p.Inc()
-	}
-	block, err := p.ParseBlock()
-	if err != nil {
-		return nil, err
-	}
-	for p.Match(tokeniser.TokenNewline) {
-		p.Inc()
-	}
-	if !p.Expect(tokeniser.TokenArrow) {
-		return nil, shared.NewError(p.PrevLoc(), "expected '->'")
-	}
-	for p.Match(tokeniser.TokenNewline) {
-		p.Inc()
-	}
-	expr, err := p.ParseExpression()
-	if err != nil {
-		return nil, err
-	}
-	return &GivenExprNode{
-		Block:     block,
-		FinalExpr: expr,
-		Loc:       beginLoc,
-	}, nil
-}
-
-func (p *Parser) ParseBlockExpression() (ExpressionNode, error) {
-	if !p.Expect(tokeniser.TokenOpenCurly) {
-		return nil, shared.NewError(p.PrevLoc(), "expected '{' to start block")
-	}
-
-	for p.Match(tokeniser.TokenNewline) {
-		p.Inc()
-	}
-
-	blockExpression, err := p.ParseExpression()
-	if err != nil {
-		return nil, err
-	}
-
-	for p.Match(tokeniser.TokenNewline) {
-		p.Inc()
-	}
-
-	if !p.Expect(tokeniser.TokenCloseCurly) {
-		return nil, shared.NewError(p.PrevLoc(), "expected '}' to end block")
-	}
-
-	return blockExpression, err
 }
 
 func (p *Parser) ParseStructLiteral(name *IdentifierNode) (*StructLiteralNode, error) {
