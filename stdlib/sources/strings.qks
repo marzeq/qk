@@ -19,6 +19,9 @@ when NoLibc {
     std.libc.strlen(s)
 }
 
+// important: this method does not copy self, it just creates a str view of the cstr
+// therefore, the c string must live as long as the returned str is used, otherwise it will be a dangling pointer
+// passing a null pointer is undefined behaviour
 pub let cstr.to_str(self): str =
   self[:strlen(self)].(str)
 
@@ -27,6 +30,8 @@ when not NoLibc {
 import std.libc
 import std.alloc
 
+// important: due to us not being able to guarantee that self contains a null terminator,
+// this method is forced to allocate a new buffer and copy the contents of self into it, appending a null terminator at the end
 pub let str.to_cstr(self, allocator: mut dyn std.alloc.RawAllocator = nil): *mut char {
   let buf = if allocator != nil {
     allocator.allocate_bytes(len(self) + 1, alignof(char)).(*mut char)
