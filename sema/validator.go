@@ -1527,6 +1527,11 @@ func hasOffsetField(operand types.Type, name string) bool {
 }
 
 func (v *Validator) validateReferenceTarget(node *parser.UnaryOpNode, target parser.ExpressionNode, mutable bool) bool {
+	if identifier := comptimeIdentifier(target); identifier != nil && identifier.Symbol != nil && identifier.Symbol.InlineComptime {
+		v.errorf(node, "cannot take reference of untyped compile-time value %q", identifier.Name)
+		return false
+	}
+
 	if mutable {
 		return v.validateMutablePlace(target, true)
 	}
