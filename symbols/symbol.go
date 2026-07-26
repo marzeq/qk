@@ -15,12 +15,16 @@ const (
 )
 
 type Symbol struct {
-	Name       string
-	Kind       SymbolKind
-	Mutable    bool
-	Public     bool
-	Comptime   bool
-	Attributes attributes.Attributes
+	Name     string
+	Kind     SymbolKind
+	Mutable  bool
+	Public   bool
+	Comptime bool
+	// InlineComptime marks an untyped compile-time integer that is materialized
+	// independently at each typed use instead of receiving runtime storage.
+	InlineComptime  bool
+	ComptimeInteger string
+	Attributes      attributes.Attributes
 
 	Type              types.Type // for SymbolKindVariable
 	GenericOrigin     types.Type // pre-substitution type for values originating from a generic parameter

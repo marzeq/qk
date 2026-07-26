@@ -287,6 +287,17 @@ func (a *Analyser) finishGenericTypeAlias(n *parser.TypeAliasNode) {
 	}
 }
 
+func untypedComptimeInteger(n *parser.DeclarationNode) (string, bool) {
+	if !n.Comptime || n.TypeNode != nil {
+		return "", false
+	}
+	literal, ok := n.Value.(*parser.IntegerLiteralNode)
+	if !ok {
+		return "", false
+	}
+	return literal.Value, true
+}
+
 func (a *Analyser) collectGlobalVariable(n *parser.DeclarationNode) {
 	if len(n.GenericParameters) != 0 && !n.Comptime {
 		a.errorf(n, "generic value bindings require a comptime initializer")
@@ -319,6 +330,10 @@ func (a *Analyser) collectGlobalVariable(n *parser.DeclarationNode) {
 		Attributes:        n.Attributes,
 		GenericParameters: genericParameters,
 		Template:          len(genericParameters) != 0,
+	}
+	if value, ok := untypedComptimeInteger(n); ok && len(genericParameters) == 0 {
+		sym.InlineComptime = true
+		sym.ComptimeInteger = value
 	}
 
 	if a.defineSymbol(sym, n) {

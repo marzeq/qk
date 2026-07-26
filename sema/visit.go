@@ -151,6 +151,10 @@ func (a *Analyser) visitLocalDeclaration(n *parser.DeclarationNode) {
 		Mutable:  n.Mutable,
 		Comptime: n.Comptime,
 	}
+	if value, ok := untypedComptimeInteger(n); ok {
+		sym.InlineComptime = true
+		sym.ComptimeInteger = value
+	}
 
 	if n.Value != nil {
 		a.visitExpression(n.Value)

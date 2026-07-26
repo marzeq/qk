@@ -65,6 +65,9 @@ func (w *debugWalker) walkNode(node parser.Node) {
 			}
 			break
 		}
+		if n.Symbol != nil && n.Symbol.InlineComptime {
+			break
+		}
 		if n.Symbol == nil || n.Symbol.Type == nil {
 			w.errors = append(w.errors, "declaration symbol has nil type")
 		} else {

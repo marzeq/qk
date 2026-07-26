@@ -87,7 +87,6 @@ func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, o
 			validator.ValidateModule(root)
 		}
 	}
-	validator.FinaliseComptimeDeclarations()
 
 	if len(validator.Errors()) > 0 {
 		return validator.Errors(), nil

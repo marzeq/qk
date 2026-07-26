@@ -87,7 +87,7 @@ func (g *Generator) GenerateRoots(roots []*parser.RootNode) *ir.Module {
 	for _, root := range roots {
 		for _, node := range root.Body {
 			if node, ok := node.(*parser.DeclarationNode); ok {
-				if len(node.GenericParameters) != 0 {
+				if len(node.GenericParameters) != 0 || node.Symbol.InlineComptime {
 					continue
 				}
 				g.generateGlobalDeclaration(node)
@@ -678,6 +678,9 @@ func (g *Generator) generateDeclaration(node *parser.DeclarationNode) {
 	}
 	if node.Symbol == nil {
 		panic("declaration symbol is nil")
+	}
+	if node.Symbol.InlineComptime {
+		return
 	}
 
 	slot := g.currentFunction.NewSlot(node.Symbol.Type, node.Name)
@@ -2459,6 +2462,15 @@ func (g *Generator) buildCallSignature(node *parser.FunctionCallNode) ir.Functio
 func (g *Generator) generateIdentifierExpr(node *parser.IdentifierNode) ir.Operand {
 	if node.Symbol == nil {
 		panic("identifier symbol is nil")
+	}
+	if node.Symbol.InlineComptime {
+		if types.HasUntyped(node.GetType()) {
+			panic("untyped compile-time integer reached IR generation")
+		}
+		if types.IsFloat(node.GetType()) {
+			return ir.FloatConstOperand(node.Symbol.ComptimeInteger, node.GetType())
+		}
+		return ir.IntConstOperand(node.Symbol.ComptimeInteger, node.GetType())
 	}
 	if node.Symbol.Kind == symbols.SymbolKindFunction {
 		name, sig := g.functionValueName(node)
