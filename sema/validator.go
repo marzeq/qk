@@ -684,7 +684,12 @@ func (v *Validator) validateExpressionBlock(n *parser.BlockNode, expected types.
 		return
 	}
 
-	if expected != nil && parser.NodeFallsThrough(n) {
+	if !parser.NodeFallsThrough(n) {
+		v.validateStatement(result)
+		return
+	}
+
+	if expected != nil {
 		result = v.validateExprWithExpected(result, expected)
 		n.Body[len(n.Body)-1] = result
 		n.SetType(expected)

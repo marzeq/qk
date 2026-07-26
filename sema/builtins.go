@@ -1,6 +1,7 @@
 package sema
 
 import (
+	"github.com/marzeq/qk/attributes"
 	"github.com/marzeq/qk/symbols"
 	"github.com/marzeq/qk/types"
 )
@@ -35,9 +36,11 @@ func (a *Analyser) predefineBuiltins() {
 	a.universe.Define(symbols.NewType("cstr", types.PointerType{
 		Base: types.PrimitiveChar,
 	}))
-	a.universe.Define(symbols.NewFunction("panic", &symbols.FunctionSignature{
+	panicSymbol := symbols.NewFunction("panic", &symbols.FunctionSignature{
 		Parameters:         []types.Type{types.StrType()},
 		RequiredParameters: 1,
 		ReturnType:         types.PrimitiveVoid,
-	}))
+	})
+	panicSymbol.Attributes = attributes.Attributes{attributes.AttributeNoReturn{}}
+	a.universe.Define(panicSymbol)
 }
