@@ -1661,6 +1661,7 @@ func (p *Parser) ParseFlagsType() (*FlagsTypeNode, error) {
 	}
 	known := map[string]*big.Int{}
 	var variants, values []string
+	valueMode := -1 // 0 is implicit, 1 is explicit.
 	for {
 		for p.Match(tokeniser.TokenNewline) {
 			p.Inc()
@@ -1676,12 +1677,25 @@ func (p *Parser) ParseFlagsType() (*FlagsTypeNode, error) {
 		if _, exists := known[name.Value]; exists {
 			return nil, shared.NewError(name.Loc, "duplicate flag %q", name.Value)
 		}
-		if !p.Expect(tokeniser.TokenEquals) {
-			return nil, shared.NewError(p.PrevLoc(), "flags require explicit values")
+		hasExplicitValue := p.Match(tokeniser.TokenEquals)
+		mode := 0
+		if hasExplicitValue {
+			mode = 1
 		}
-		value, err := p.parseFlagValue(known)
-		if err != nil {
-			return nil, err
+		if valueMode != -1 && valueMode != mode {
+			return nil, shared.NewError(name.Loc, "cannot mix implicit and explicit flag values")
+		}
+		valueMode = mode
+		var value *big.Int
+		if hasExplicitValue {
+			p.Inc()
+			var err error
+			value, err = p.parseFlagValue(known)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			value = new(big.Int).Lsh(big.NewInt(1), uint(len(variants)))
 		}
 		known[name.Value] = value
 		variants, values = append(variants, name.Value), append(values, value.String())

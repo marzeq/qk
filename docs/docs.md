@@ -1207,9 +1207,19 @@ already supplies it. Enum values support equality with the same enum type.
 
 ### Bit flags
 
-Flags are nominal, fixed-width integer masks. Every member requires an explicit
-value written as hexadecimal, a `1 << bit` expression, or a composition of
-earlier members:
+Flags are nominal, fixed-width integer masks. When values are omitted, each
+member is assigned the next bit in declaration order, beginning with `1 << 0`:
+
+```qk
+let Features = type flags(u32) {
+    logging,
+    metrics,
+    tracing,
+}
+```
+
+Alternatively, every member may have an explicit value written as hexadecimal,
+a `1 << bit` expression, or a composition of earlier members:
 
 ```qk
 let Features = type flags(u32) {
@@ -1220,8 +1230,9 @@ let Features = type flags(u32) {
 }
 ```
 
-Implicit values and standalone decimal values are rejected. A flags literal
-combines named masks; an empty literal has value zero:
+One flags declaration cannot mix implicit and explicit values. Standalone
+decimal values are rejected. A flags literal combines named masks; an empty
+literal has value zero:
 
 ```qk
 let enabled = Features { .logging, .metrics }
