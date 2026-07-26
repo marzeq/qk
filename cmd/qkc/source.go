@@ -8,12 +8,12 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/marzeq/qk/comptime"
 	"github.com/marzeq/qk/parser"
-	"github.com/marzeq/qk/preprocessor"
 	"github.com/marzeq/qk/tokeniser"
 )
 
-func parseFile(path string, config preprocessor.Config) (*parser.RootNode, error) {
+func parseFile(path string, config comptime.Config) (*parser.RootNode, error) {
 	t, err := tokeniser.NewTokeniserFromFile(path)
 	if err != nil {
 		return nil, err
@@ -23,7 +23,7 @@ func parseFile(path string, config preprocessor.Config) (*parser.RootNode, error
 	if err != nil {
 		return nil, err
 	}
-	toks, err = preprocessor.Process(toks, config)
+	toks, err = comptime.Expand(toks, config)
 	if err != nil {
 		return nil, err
 	}

@@ -10,10 +10,10 @@ import (
 	"strings"
 
 	"github.com/marzeq/qk/attributes"
+	"github.com/marzeq/qk/comptime"
 	"github.com/marzeq/qk/ir"
 	"github.com/marzeq/qk/loader"
 	"github.com/marzeq/qk/parser"
-	"github.com/marzeq/qk/preprocessor"
 	"github.com/marzeq/qk/sema"
 	"github.com/marzeq/qk/shared"
 	"github.com/marzeq/qk/stdlib"
@@ -30,7 +30,7 @@ func main() {
 		searchRoot = filepath.Dir(args.file)
 	}
 	searchPaths := buildSearchPaths(searchRoot)
-	preprocessorConfig := preprocessor.Config{TargetTriple: args.target, NoLibc: args.noLibc, NoStdlib: args.noStdlib}
+	comptimeConfig := comptime.Config{TargetTriple: args.target, NoLibc: args.noLibc, NoStdlib: args.noStdlib}
 	embeddedStdlibSources, err := stdlib.ReadSources()
 	check(err)
 	selectedStdlibSources := embeddedStdlibSources
@@ -67,12 +67,12 @@ func main() {
 	if !args.noStdlib {
 		maps.Copy(compileTimeSources, selectedStdlibSources)
 	}
-	preprocessorConfig.ModuleBindings, err = preprocessor.ResolveModuleBindings(compileTimeSources, preprocessorConfig)
+	comptimeConfig.ModuleBindings, err = comptime.ResolveModuleBindings(compileTimeSources, comptimeConfig)
 	check(err)
 
 	var partials []*loader.PartialModuleInfo
 	if args.file != "" {
-		ast, err := parseFile(args.file, preprocessorConfig)
+		ast, err := parseFile(args.file, comptimeConfig)
 		check(err)
 		info, err := loader.CollectModuleInfo(ast, false)
 		check(err)
@@ -87,7 +87,7 @@ func main() {
 		if samePath(file, args.file) {
 			continue
 		}
-		ast, err := parseFile(file, preprocessorConfig)
+		ast, err := parseFile(file, comptimeConfig)
 		check(err)
 
 		info, err := loader.CollectModuleInfo(ast, false)
@@ -101,14 +101,14 @@ func main() {
 	if !args.noStdlib {
 		if args.stdlibPath != "" {
 			for _, file := range stdlibFiles {
-				ast, err := parseFile(file, preprocessorConfig)
+				ast, err := parseFile(file, comptimeConfig)
 				check(err)
 				info, err := loader.CollectModuleInfo(ast, true)
 				check(err)
 				partials = append(partials, info)
 			}
 		} else {
-			stdlibPartials, err := stdlib.ParseTrustedSources(selectedStdlibSources, preprocessorConfig)
+			stdlibPartials, err := stdlib.ParseTrustedSources(selectedStdlibSources, comptimeConfig)
 			check(err)
 			partials = append(partials, stdlibPartials...)
 		}

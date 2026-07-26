@@ -3,16 +3,16 @@ package stdlib
 import (
 	"sort"
 
+	"github.com/marzeq/qk/comptime"
 	"github.com/marzeq/qk/loader"
 	"github.com/marzeq/qk/parser"
-	"github.com/marzeq/qk/preprocessor"
 	"github.com/marzeq/qk/sema"
 	"github.com/marzeq/qk/tokeniser"
 )
 
 // ParseTrustedSources runs the normal QK frontend over trusted standard-library
 // source text and returns module fragments ready for the compilation pipeline.
-func ParseTrustedSources(sources map[string]string, config preprocessor.Config) ([]*loader.PartialModuleInfo, error) {
+func ParseTrustedSources(sources map[string]string, config comptime.Config) ([]*loader.PartialModuleInfo, error) {
 	origins := make([]string, 0, len(sources))
 	for origin := range sources {
 		origins = append(origins, origin)
@@ -26,7 +26,7 @@ func ParseTrustedSources(sources map[string]string, config preprocessor.Config) 
 		if err != nil {
 			return nil, err
 		}
-		tokens, err = preprocessor.Process(tokens, config)
+		tokens, err = comptime.Expand(tokens, config)
 		if err != nil {
 			return nil, err
 		}
@@ -45,8 +45,8 @@ func ParseTrustedSources(sources map[string]string, config preprocessor.Config) 
 
 // Check typechecks trusted standard-library sources without generating IR or
 // native output. All semantic diagnostics are returned together.
-func Check(sources map[string]string, config preprocessor.Config) []error {
-	values, err := preprocessor.ResolveModuleBindings(sources, config)
+func Check(sources map[string]string, config comptime.Config) []error {
+	values, err := comptime.ResolveModuleBindings(sources, config)
 	if err != nil {
 		return []error{err}
 	}
@@ -73,7 +73,7 @@ func Check(sources map[string]string, config preprocessor.Config) []error {
 }
 
 // CheckEmbedded typechecks the standard library embedded in this build.
-func CheckEmbedded(config preprocessor.Config) []error {
+func CheckEmbedded(config comptime.Config) []error {
 	sources, err := ReadSources()
 	if err != nil {
 		return []error{err}

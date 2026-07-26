@@ -1,6 +1,7 @@
-package preprocessor
+package comptime
 
 import (
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -11,7 +12,7 @@ import (
 	"github.com/marzeq/qk/tokeniser"
 )
 
-type Processor struct {
+type expander struct {
 	tokens []tokeniser.Token
 	pos    int
 	target targetValues
@@ -25,7 +26,9 @@ type Config struct {
 	ModuleBindings map[string]Value
 }
 
-func Process(tokens []tokeniser.Token, config Config) ([]tokeniser.Token, error) {
+// Expand evaluates compile-time declarations and selects compile-time branches,
+// returning the token stream that should continue through the compiler pipeline.
+func Expand(tokens []tokeniser.Token, config Config) ([]tokeniser.Token, error) {
 	target := targetFromTriple(config.TargetTriple)
 	target.noLibc = config.NoLibc
 	target.noStdlib = config.NoStdlib
@@ -39,25 +42,25 @@ func Process(tokens []tokeniser.Token, config Config) ([]tokeniser.Token, error)
 			}
 		}
 	}
-	p := &Processor{tokens: tokens, target: target}
-	return p.process()
+	e := &expander{tokens: tokens, target: target}
+	return e.expand()
 }
 
-func (p *Processor) process() ([]tokeniser.Token, error) {
-	result := make([]tokeniser.Token, 0, len(p.tokens))
-	for p.pos < len(p.tokens) {
-		tok := p.tokens[p.pos]
+func (e *expander) expand() ([]tokeniser.Token, error) {
+	result := make([]tokeniser.Token, 0, len(e.tokens))
+	for e.pos < len(e.tokens) {
+		tok := e.tokens[e.pos]
 		if tok.Type == tokeniser.TokenOpenCurly {
-			p.scopes = append(p.scopes, p.target.bindings)
-			p.target.bindings = cloneValues(p.target.bindings)
-		} else if tok.Type == tokeniser.TokenCloseCurly && len(p.scopes) != 0 {
-			p.target.bindings = p.scopes[len(p.scopes)-1]
-			p.scopes = p.scopes[:len(p.scopes)-1]
+			e.scopes = append(e.scopes, e.target.bindings)
+			e.target.bindings = cloneValues(e.target.bindings)
+		} else if tok.Type == tokeniser.TokenCloseCurly && len(e.scopes) != 0 {
+			e.target.bindings = e.scopes[len(e.scopes)-1]
+			e.scopes = e.scopes[:len(e.scopes)-1]
 		}
 		if tok.Type == tokeniser.TokenKeyword {
 			switch tok.Value {
 			case string(tokeniser.KeywordLet):
-				rewritten, ok, err := p.processCompileTimeDeclaration()
+				rewritten, ok, err := e.expandDeclaration()
 				if err != nil {
 					return nil, err
 				}
@@ -72,7 +75,7 @@ func (p *Processor) process() ([]tokeniser.Token, error) {
 						result = result[:len(result)-1]
 					}
 				}
-				selected, err := p.processWhen()
+				selected, err := e.expandWhen()
 				if err != nil {
 					return nil, err
 				}
@@ -82,72 +85,70 @@ func (p *Processor) process() ([]tokeniser.Token, error) {
 				result = append(result, selected...)
 				continue
 			case string(tokeniser.KeywordCompilerError):
-				return nil, p.compilerError()
+				return nil, e.compilerError()
 			}
 		}
-		if tok.Type == tokeniser.TokenIdentifier && p.isSliceExtentReference() {
-			if value, ok := p.target.bindings[tok.Value]; ok && value.kind == valueInteger {
+		if tok.Type == tokeniser.TokenIdentifier && e.isSliceExtentReference() {
+			if value, ok := e.target.bindings[tok.Value]; ok && value.kind == valueInteger {
 				literal, err := literalToken(value, tok.Loc)
 				if err != nil {
 					return nil, err
 				}
 				result = append(result, literal)
-				p.pos++
+				e.pos++
 				continue
 			}
 		}
 		result = append(result, tok)
-		p.pos++
+		e.pos++
 	}
 	return result, nil
 }
 
-func (p *Processor) isSliceExtentReference() bool {
-	previous := p.pos - 1
-	for previous >= 0 && p.tokens[previous].Type == tokeniser.TokenNewline {
+func (e *expander) isSliceExtentReference() bool {
+	previous := e.pos - 1
+	for previous >= 0 && e.tokens[previous].Type == tokeniser.TokenNewline {
 		previous--
 	}
-	next := p.pos + 1
-	for next < len(p.tokens) && p.tokens[next].Type == tokeniser.TokenNewline {
+	next := e.pos + 1
+	for next < len(e.tokens) && e.tokens[next].Type == tokeniser.TokenNewline {
 		next++
 	}
-	if previous < 0 || next >= len(p.tokens) || p.tokens[next].Type != tokeniser.TokenCloseSquare {
+	if previous < 0 || next >= len(e.tokens) || e.tokens[next].Type != tokeniser.TokenCloseSquare {
 		return false
 	}
-	return p.tokens[previous].Type == tokeniser.TokenComma || p.tokens[previous].Type == tokeniser.TokenSemicolon
+	return e.tokens[previous].Type == tokeniser.TokenComma || e.tokens[previous].Type == tokeniser.TokenSemicolon
 }
 
 func cloneValues(values map[string]Value) map[string]Value {
 	cloned := make(map[string]Value, len(values))
-	for name, value := range values {
-		cloned[name] = value
-	}
+	maps.Copy(cloned, values)
 	return cloned
 }
 
-func (p *Processor) processCompileTimeDeclaration() ([]tokeniser.Token, bool, error) {
-	start := p.pos
+func (e *expander) expandDeclaration() ([]tokeniser.Token, bool, error) {
+	start := e.pos
 	namePos := start + 1
-	if namePos < len(p.tokens) && p.tokens[namePos].Type == tokeniser.TokenKeyword && p.tokens[namePos].Value == string(tokeniser.KeywordMut) {
+	if namePos < len(e.tokens) && e.tokens[namePos].Type == tokeniser.TokenKeyword && e.tokens[namePos].Value == string(tokeniser.KeywordMut) {
 		namePos++
 	}
-	if namePos >= len(p.tokens) || p.tokens[namePos].Type != tokeniser.TokenIdentifier {
+	if namePos >= len(e.tokens) || e.tokens[namePos].Type != tokeniser.TokenIdentifier {
 		return nil, false, nil
 	}
 	equals := namePos + 1
-	for equals < len(p.tokens) && p.tokens[equals].Type != tokeniser.TokenEquals && p.tokens[equals].Type != tokeniser.TokenNewline && p.tokens[equals].Type != tokeniser.TokenSemicolon {
-		if p.tokens[equals].Type == tokeniser.TokenLess {
+	for equals < len(e.tokens) && e.tokens[equals].Type != tokeniser.TokenEquals && e.tokens[equals].Type != tokeniser.TokenNewline && e.tokens[equals].Type != tokeniser.TokenSemicolon {
+		if e.tokens[equals].Type == tokeniser.TokenLess {
 			return nil, false, nil
 		}
 		equals++
 	}
-	if equals+1 >= len(p.tokens) || p.tokens[equals].Type != tokeniser.TokenEquals || p.tokens[equals+1].Type != tokeniser.TokenIdentifier || p.tokens[equals+1].Value != "comptime" {
+	if equals+1 >= len(e.tokens) || e.tokens[equals].Type != tokeniser.TokenEquals || e.tokens[equals+1].Type != tokeniser.TokenIdentifier || e.tokens[equals+1].Value != "comptime" {
 		return nil, false, nil
 	}
 	exprStart := equals + 2
 	end, parens, squares := exprStart, 0, 0
-	for end < len(p.tokens) {
-		tok := p.tokens[end]
+	for end < len(e.tokens) {
+		tok := e.tokens[end]
 		switch tok.Type {
 		case tokeniser.TokenOpenParen:
 			parens++
@@ -163,15 +164,15 @@ func (p *Processor) processCompileTimeDeclaration() ([]tokeniser.Token, bool, er
 		}
 		end++
 	}
-	name := p.tokens[namePos]
+	name := e.tokens[namePos]
 	if end == exprStart {
 		return nil, true, shared.NewError(name.Loc, "expected expression after comptime")
 	}
-	expr, err := parseCondition(p.tokens[exprStart:end], name.Loc)
+	expr, err := parseCondition(e.tokens[exprStart:end], name.Loc)
 	if err != nil {
 		return nil, true, err
 	}
-	value, err := evaluate(expr, p.target, nil)
+	value, err := evaluate(expr, e.target, nil)
 	if err != nil {
 		return nil, true, err
 	}
@@ -179,17 +180,17 @@ func (p *Processor) processCompileTimeDeclaration() ([]tokeniser.Token, bool, er
 	if err != nil {
 		return nil, true, err
 	}
-	rewritten := append([]tokeniser.Token(nil), p.tokens[start:equals]...)
-	if value.kind == valueInteger && !declarationHasType(p.tokens[namePos+1:equals]) {
+	rewritten := append([]tokeniser.Token(nil), e.tokens[start:equals]...)
+	if value.kind == valueInteger && !declarationHasType(e.tokens[namePos+1:equals]) {
 		rewritten = append(rewritten,
 			tokeniser.Token{Type: tokeniser.TokenColon, Loc: name.Loc},
 			tokeniser.Token{Type: tokeniser.TokenIdentifier, Value: "i64", Loc: name.Loc},
 		)
 	}
-	rewritten = append(rewritten, p.tokens[equals])
+	rewritten = append(rewritten, e.tokens[equals])
 	rewritten = append(rewritten, literal)
-	p.target.bindings[name.Value] = value
-	p.pos = end
+	e.target.bindings[name.Value] = value
+	e.pos = end
 	return rewritten, true, nil
 }
 
@@ -229,37 +230,37 @@ func whenContinuesPrevious(tokens []tokeniser.Token) bool {
 	}
 }
 
-func (p *Processor) compilerError() error {
-	directive := p.tokens[p.pos]
-	p.pos++
-	if p.pos >= len(p.tokens) || p.tokens[p.pos].Type != tokeniser.TokenOpenParen {
+func (e *expander) compilerError() error {
+	directive := e.tokens[e.pos]
+	e.pos++
+	if e.pos >= len(e.tokens) || e.tokens[e.pos].Type != tokeniser.TokenOpenParen {
 		return shared.NewError(directive.Loc, "expected '(' after 'compiler_error'")
 	}
-	p.pos++
-	for p.pos < len(p.tokens) && p.tokens[p.pos].Type == tokeniser.TokenNewline {
-		p.pos++
+	e.pos++
+	for e.pos < len(e.tokens) && e.tokens[e.pos].Type == tokeniser.TokenNewline {
+		e.pos++
 	}
-	if p.pos >= len(p.tokens) || p.tokens[p.pos].Type != tokeniser.TokenString {
+	if e.pos >= len(e.tokens) || e.tokens[e.pos].Type != tokeniser.TokenString {
 		return shared.NewError(directive.Loc, "expected a string message in 'compiler_error'")
 	}
-	message := p.tokens[p.pos].Value
-	p.pos++
-	for p.pos < len(p.tokens) && p.tokens[p.pos].Type == tokeniser.TokenNewline {
-		p.pos++
+	message := e.tokens[e.pos].Value
+	e.pos++
+	for e.pos < len(e.tokens) && e.tokens[e.pos].Type == tokeniser.TokenNewline {
+		e.pos++
 	}
-	if p.pos >= len(p.tokens) || p.tokens[p.pos].Type != tokeniser.TokenCloseParen {
+	if e.pos >= len(e.tokens) || e.tokens[e.pos].Type != tokeniser.TokenCloseParen {
 		return shared.NewError(directive.Loc, "expected ')' after 'compiler_error' message")
 	}
 	return shared.NewError(directive.Loc, "%s", message)
 }
 
-func (p *Processor) processWhen() ([]tokeniser.Token, error) {
+func (e *expander) expandWhen() ([]tokeniser.Token, error) {
 	matched := false
 	var selected []tokeniser.Token
 	for {
-		when := p.tokens[p.pos]
-		p.pos++
-		conditionTokens, err := p.readCondition()
+		when := e.tokens[e.pos]
+		e.pos++
+		conditionTokens, err := e.readCondition()
 		if err != nil {
 			return nil, err
 		}
@@ -267,14 +268,14 @@ func (p *Processor) processWhen() ([]tokeniser.Token, error) {
 		if err != nil {
 			return nil, err
 		}
-		value, err := evaluate(condition, p.target, nil)
+		value, err := evaluate(condition, e.target, nil)
 		if err != nil {
 			return nil, err
 		}
 		if value.kind != valueBool {
 			return nil, shared.NewError(condition.GetLoc(), "compile-time condition must be boolean")
 		}
-		body, err := p.readBlock()
+		body, err := e.readBlock()
 		if err != nil {
 			return nil, err
 		}
@@ -283,17 +284,17 @@ func (p *Processor) processWhen() ([]tokeniser.Token, error) {
 			selected = body
 		}
 
-		next := p.skipNewlines(p.pos)
-		if next >= len(p.tokens) || p.tokens[next].Type != tokeniser.TokenKeyword ||
-			p.tokens[next].Value != string(tokeniser.KeywordElse) {
+		next := e.skipNewlines(e.pos)
+		if next >= len(e.tokens) || e.tokens[next].Type != tokeniser.TokenKeyword ||
+			e.tokens[next].Value != string(tokeniser.KeywordElse) {
 			break
 		}
-		p.pos = p.skipNewlines(next + 1)
-		if p.pos < len(p.tokens) && p.tokens[p.pos].Type == tokeniser.TokenKeyword &&
-			p.tokens[p.pos].Value == string(tokeniser.KeywordWhen) {
+		e.pos = e.skipNewlines(next + 1)
+		if e.pos < len(e.tokens) && e.tokens[e.pos].Type == tokeniser.TokenKeyword &&
+			e.tokens[e.pos].Value == string(tokeniser.KeywordWhen) {
 			continue
 		}
-		body, err = p.readBlock()
+		body, err = e.readBlock()
 		if err != nil {
 			return nil, err
 		}
@@ -304,10 +305,10 @@ func (p *Processor) processWhen() ([]tokeniser.Token, error) {
 	}
 
 	selected = trimBoundaryNewlines(selected)
-	nested := &Processor{tokens: selected, target: p.target}
-	processed, err := nested.process()
-	p.target.bindings = nested.target.bindings
-	return processed, err
+	nested := &expander{tokens: selected, target: e.target}
+	expanded, err := nested.expand()
+	e.target.bindings = nested.target.bindings
+	return expanded, err
 }
 
 func trimBoundaryNewlines(tokens []tokeniser.Token) []tokeniser.Token {
@@ -321,11 +322,11 @@ func trimBoundaryNewlines(tokens []tokeniser.Token) []tokeniser.Token {
 	return tokens[start:end]
 }
 
-func (p *Processor) readCondition() ([]tokeniser.Token, error) {
-	start := p.pos
+func (e *expander) readCondition() ([]tokeniser.Token, error) {
+	start := e.pos
 	parenDepth, squareDepth := 0, 0
-	for p.pos < len(p.tokens) {
-		tok := p.tokens[p.pos]
+	for e.pos < len(e.tokens) {
+		tok := e.tokens[e.pos]
 		switch tok.Type {
 		case tokeniser.TokenOpenParen:
 			parenDepth++
@@ -337,11 +338,11 @@ func (p *Processor) readCondition() ([]tokeniser.Token, error) {
 			squareDepth--
 		case tokeniser.TokenOpenCurly:
 			if parenDepth == 0 && squareDepth == 0 {
-				if p.pos == start {
+				if e.pos == start {
 					return nil, shared.NewError(tok.Loc, "expected condition after 'when'")
 				}
-				condition := p.tokens[start:p.pos]
-				p.pos++
+				condition := e.tokens[start:e.pos]
+				e.pos++
 				return condition, nil
 			}
 		case tokeniser.TokenEof:
@@ -350,41 +351,41 @@ func (p *Processor) readCondition() ([]tokeniser.Token, error) {
 		if parenDepth < 0 || squareDepth < 0 {
 			return nil, shared.NewError(tok.Loc, "unbalanced delimiter in compile-time condition")
 		}
-		p.pos++
+		e.pos++
 	}
-	return nil, shared.NewError(p.tokens[start-1].Loc, "expected '{' after compile-time condition")
+	return nil, shared.NewError(e.tokens[start-1].Loc, "expected '{' after compile-time condition")
 }
 
-func (p *Processor) readBlock() ([]tokeniser.Token, error) {
-	if p.pos == 0 || p.tokens[p.pos-1].Type != tokeniser.TokenOpenCurly {
-		if p.pos >= len(p.tokens) || p.tokens[p.pos].Type != tokeniser.TokenOpenCurly {
-			loc := p.tokens[min(p.pos, len(p.tokens)-1)].Loc
+func (e *expander) readBlock() ([]tokeniser.Token, error) {
+	if e.pos == 0 || e.tokens[e.pos-1].Type != tokeniser.TokenOpenCurly {
+		if e.pos >= len(e.tokens) || e.tokens[e.pos].Type != tokeniser.TokenOpenCurly {
+			loc := e.tokens[min(e.pos, len(e.tokens)-1)].Loc
 			return nil, shared.NewError(loc, "expected '{' after 'else'")
 		}
-		p.pos++
+		e.pos++
 	}
-	start, depth := p.pos, 1
-	for p.pos < len(p.tokens) {
-		switch p.tokens[p.pos].Type {
+	start, depth := e.pos, 1
+	for e.pos < len(e.tokens) {
+		switch e.tokens[e.pos].Type {
 		case tokeniser.TokenOpenCurly:
 			depth++
 		case tokeniser.TokenCloseCurly:
 			depth--
 			if depth == 0 {
-				body := p.tokens[start:p.pos]
-				p.pos++
+				body := e.tokens[start:e.pos]
+				e.pos++
 				return body, nil
 			}
 		case tokeniser.TokenEof:
-			return nil, shared.NewError(p.tokens[p.pos].Loc, "expected '}' to close compile-time block")
+			return nil, shared.NewError(e.tokens[e.pos].Loc, "expected '}' to close compile-time block")
 		}
-		p.pos++
+		e.pos++
 	}
-	return nil, shared.NewError(p.tokens[start-1].Loc, "expected '}' to close compile-time block")
+	return nil, shared.NewError(e.tokens[start-1].Loc, "expected '}' to close compile-time block")
 }
 
-func (p *Processor) skipNewlines(pos int) int {
-	for pos < len(p.tokens) && p.tokens[pos].Type == tokeniser.TokenNewline {
+func (e *expander) skipNewlines(pos int) int {
+	for pos < len(e.tokens) && e.tokens[pos].Type == tokeniser.TokenNewline {
 		pos++
 	}
 	return pos
@@ -414,7 +415,7 @@ const (
 	valueEnumLiteral
 )
 
-// Value is a value resolved during compile-time preprocessing.
+// Value is a value resolved during compile-time expansion.
 type Value struct {
 	kind    valueKind
 	boolean bool

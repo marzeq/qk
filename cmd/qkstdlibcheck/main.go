@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/marzeq/qk/preprocessor"
+	"github.com/marzeq/qk/comptime"
 	"github.com/marzeq/qk/stdlib"
 )
 
@@ -18,7 +18,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	errs := stdlib.CheckEmbedded(preprocessor.Config{TargetTriple: *targetTriple, NoLibc: *noLibc})
+	errs := stdlib.CheckEmbedded(comptime.Config{TargetTriple: *targetTriple, NoLibc: *noLibc})
 	for _, err := range errs {
 		fmt.Fprintln(os.Stderr, err)
 	}

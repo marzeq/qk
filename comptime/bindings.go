@@ -1,4 +1,4 @@
-package preprocessor
+package comptime
 
 import (
 	"sort"
@@ -18,7 +18,7 @@ type moduleBindingDeclaration struct {
 }
 
 // ResolveModuleBindings resolves file-scope compile-time declarations in
-// their canonical module namespaces before individual files are processed.
+// their canonical module namespaces before individual files are expanded.
 func ResolveModuleBindings(sources map[string]string, config Config) (map[string]Value, error) {
 	origins := make([]string, 0, len(sources))
 	for origin := range sources {
@@ -104,7 +104,7 @@ func tokenModule(tokens []tokeniser.Token) string {
 func topLevelCompileTimeDeclarations(tokens []tokeniser.Token, module string) []moduleBindingDeclaration {
 	var declarations []moduleBindingDeclaration
 	depth := 0
-	for index := 0; index < len(tokens); index++ {
+	for index := range tokens {
 		switch tokens[index].Type {
 		case tokeniser.TokenOpenCurly:
 			depth++
