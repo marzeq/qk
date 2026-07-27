@@ -782,7 +782,9 @@ func (v *Validator) validateMatch(n *parser.MatchNode, expected types.Type) {
 			v.recordMatchCoverage(arm.Pattern, covered, &wildcard)
 		}
 		if n.Expression {
-			if expected != nil && parser.NodeFallsThrough(arm.Body) {
+			if !parser.NodeFallsThrough(arm.Body) {
+				v.validateExpr(arm.Body)
+			} else if expected != nil {
 				arm.Body = v.validateExprWithExpected(arm.Body, expected)
 			} else {
 				v.validateValueExpr(arm.Body)
