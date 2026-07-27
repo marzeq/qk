@@ -1413,10 +1413,12 @@ func (p *Parser) ParseUnionType() (*UnionTypeNode, error) {
 			return nil, err
 		}
 		fields = append(fields, StructField{Name: name.Name, Type: fieldType})
-		if !p.Match(tokeniser.TokenComma, tokeniser.TokenNewline) {
+		if p.Match(tokeniser.TokenCloseCurly) {
 			break
 		}
-		p.Inc()
+		if !p.Expect(tokeniser.TokenComma) {
+			return nil, shared.NewError(p.PrevLoc(), "expected ',' after union field")
+		}
 		for p.Match(tokeniser.TokenNewline) {
 			p.Inc()
 		}
@@ -1649,10 +1651,12 @@ func (p *Parser) ParseStructType() (*StructTypeNode, error) {
 				return nil, err
 			}
 			fields = append(fields, StructField{Type: fieldType})
-			if !p.Match(tokeniser.TokenComma, tokeniser.TokenNewline) {
+			if p.Match(tokeniser.TokenCloseCurly) {
 				break
 			}
-			p.Inc()
+			if !p.Expect(tokeniser.TokenComma) {
+				return nil, shared.NewError(p.PrevLoc(), "expected ',' after struct field")
+			}
 			for p.Match(tokeniser.TokenNewline) {
 				p.Inc()
 			}
@@ -1677,10 +1681,12 @@ func (p *Parser) ParseStructType() (*StructTypeNode, error) {
 			Type: fieldType,
 		})
 
-		if !p.Match(tokeniser.TokenComma, tokeniser.TokenNewline) {
+		if p.Match(tokeniser.TokenCloseCurly) {
 			break
 		}
-		p.Inc()
+		if !p.Expect(tokeniser.TokenComma) {
+			return nil, shared.NewError(p.PrevLoc(), "expected ',' after struct field")
+		}
 
 		for p.Match(tokeniser.TokenNewline) {
 			p.Inc()

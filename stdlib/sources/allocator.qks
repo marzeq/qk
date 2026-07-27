@@ -33,26 +33,26 @@ import std.libc
 let ArenaDefaultChunkSize: usz = comptime 64 * 1024
 
 let ArenaChunk = type struct {
-  previous: *mut ArenaChunk
+  previous: *mut ArenaChunk,
 
   // Pointer to the aligned storage following this header.
-  data: *mut u8
+  data: *mut u8,
 
-  capacity: usz
-  used: usz
+  capacity: usz,
+  used: usz,
 }
 
 pub let GrowingArena = type struct {
-  current: *mut ArenaChunk
+  current: *mut ArenaChunk,
 
   // Minimum size of the next chunk. This grows geometrically.
-  next_chunk_size: usz
+  next_chunk_size: usz,
 
   // The most recent allocation can be resized in place.
-  last_ptr: *mut void
-  last_offset: usz
-  last_size: usz
-  last_align: usz
+  last_ptr: *mut void,
+  last_offset: usz,
+  last_size: usz,
+  last_align: usz,
 }
 
 let is_power_of_two(value: usz): bool =

@@ -591,8 +591,8 @@ let identity<T>(value: T): T = {
 }
 
 let Pair<T> = type struct {
-    left: T
-    right: T
+    left: T,
+    right: T,
 }
 
 let layout_size<T>: usz = comptime sizeof(T) + 3
@@ -1134,21 +1134,22 @@ An anonymous struct type declares ordered named fields:
 
 ```qk
 struct {
-    tag: u32
-    payload: [u8, 16]
+    tag: u32,
+    payload: [u8, 16],
 }
 ```
 
 Structs may be empty. Field order is layout order; target ABI rules determine
 alignment and padding. Anonymous struct identity is structural: field names,
-order, and types must match.
+order, and types must match. Fields are comma-separated; a trailing comma is
+allowed, and a newline does not act as a separator.
 
 Most structs are given nominal identity:
 
 ```qk
 pub let Header = type struct {
-    tag: u32
-    payload: [u8, 16]
+    tag: u32,
+    payload: [u8, 16],
 }
 ```
 
@@ -1160,8 +1161,8 @@ cross pointer indirection:
 
 ```qk
 let Node = type struct {
-    next: *Node
-    value: i32
+    next: *Node,
+    value: i32,
 }
 ```
 
@@ -1171,16 +1172,17 @@ A union overlays non-empty named fields:
 
 ```qk
 let Value = type union {
-    integer: i64
-    real: f64
-    pointer: *void
+    integer: i64,
+    real: f64,
+    pointer: *void,
 }
 ```
 
 Its size is sufficient for its largest field and its alignment is the maximum
 field alignment. Named unions are nominal types. QK does not track an active
 field; reading a different field from the one most recently written exposes the
-underlying representation.
+underlying representation. Union fields are comma-separated and may end with a
+trailing comma; a newline does not separate them.
 
 A union literal initializes exactly one field:
 
@@ -1192,11 +1194,11 @@ An unnamed union can be embedded directly in a struct:
 
 ```qk
 let Token = type struct {
-    kind: TokenKind
+    kind: TokenKind,
     union {
-        integer: i64
-        text: str
-    }
+        integer: i64,
+        text: str,
+    },
 }
 ```
 
@@ -2032,8 +2034,8 @@ the path, establishes the dependency.
 module geometry
 
 pub let Point = type struct {
-    x: f64
-    y: f64
+    x: f64,
+    y: f64,
 }
 
 pub let Point.translated(self, dx = 0.0, dy = 0.0: f64): Point {
@@ -2055,11 +2057,11 @@ module values
 pub let ValueKind = type enum { integer, real }
 
 pub let Value = type struct {
-    kind: ValueKind
+    kind: ValueKind,
     union {
-        integer: i64
-        real: f64
-    }
+        integer: i64,
+        real: f64,
+    },
 }
 
 pub let integer_value(value: i64): Value = Value {
