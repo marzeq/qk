@@ -728,6 +728,9 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 
 		return expr, nil
 	}
+	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordMatch) {
+		return p.ParseMatch(true)
+	}
 
 	if p.Match(tokeniser.TokenOpenCurly) {
 		if p.braceStartsStructLiteral() {
@@ -761,6 +764,21 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 
 	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordOffsetof) {
 		return p.ParseOffsetOfExpression()
+	}
+	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordRepr) {
+		begin := p.CurrLoc()
+		p.Inc()
+		if !p.Expect(tokeniser.TokenOpenParen) {
+			return nil, shared.NewError(p.PrevLoc(), "expected '(' after 'repr'")
+		}
+		operand, err := p.ParseExpression()
+		if err != nil {
+			return nil, err
+		}
+		if !p.Expect(tokeniser.TokenCloseParen) {
+			return nil, shared.NewError(p.PrevLoc(), "expected ')' after 'repr' operand")
+		}
+		return &ReprNode{Operand: operand, Loc: p.SpanFrom(begin)}, nil
 	}
 
 	if p.Match(tokeniser.TokenOpenParen) {
@@ -1182,6 +1200,21 @@ func (p *Parser) ParseIdent() (*IdentifierNode, error) {
 }
 
 func (p *Parser) ParseType() (TypeNode, error) {
+	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordReprof) {
+		begin := p.CurrLoc()
+		p.Inc()
+		if !p.Expect(tokeniser.TokenOpenParen) {
+			return nil, shared.NewError(p.PrevLoc(), "expected '(' after 'reprof'")
+		}
+		operand, err := p.ParseType()
+		if err != nil {
+			return nil, err
+		}
+		if !p.Expect(tokeniser.TokenCloseParen) {
+			return nil, shared.NewError(p.PrevLoc(), "expected ')' after 'reprof' operand")
+		}
+		return &ReprTypeNode{Operand: operand, Loc: p.SpanFrom(begin)}, nil
+	}
 	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordDyn) {
 		return p.ParseDynType(false)
 	}
@@ -1388,6 +1421,37 @@ func (p *Parser) ParseUnionType() (*UnionTypeNode, error) {
 		return nil, shared.NewError(p.CurrLoc(), "expected 'union'")
 	}
 	p.Inc()
+	var tagType TypeNode
+	autoTag := false
+	if p.Match(tokeniser.TokenOpenParen) {
+		p.Inc()
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+		if p.Match(tokeniser.TokenAt) {
+			p.Inc()
+			attribute, err := p.ParseIdent()
+			if err != nil {
+				return nil, err
+			}
+			if attribute.Name != "auto" {
+				return nil, shared.NewError(attribute.Loc, "unknown tagged union attribute @%s; expected @auto", attribute.Name)
+			}
+			autoTag = true
+		} else {
+			var err error
+			tagType, err = p.ParseType()
+			if err != nil {
+				return nil, err
+			}
+		}
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+		if !p.Expect(tokeniser.TokenCloseParen) {
+			return nil, shared.NewError(p.PrevLoc(), "expected ')' after tagged union tag type")
+		}
+	}
 	if !p.Expect(tokeniser.TokenOpenCurly) {
 		return nil, shared.NewError(p.PrevLoc(), "expected '{' after union")
 	}
@@ -1395,6 +1459,7 @@ func (p *Parser) ParseUnionType() (*UnionTypeNode, error) {
 		p.Inc()
 	}
 	fields := []StructField{}
+	variants := []TaggedUnionVariantNode{}
 	seen := map[string]struct{}{}
 	for !p.Match(tokeniser.TokenCloseCurly) {
 		name, err := p.ParseIdent()
@@ -1405,6 +1470,57 @@ func (p *Parser) ParseUnionType() (*UnionTypeNode, error) {
 			return nil, shared.NewError(name.Loc, "duplicate union field %q", name.Name)
 		}
 		seen[name.Name] = struct{}{}
+		if tagType != nil || autoTag {
+			variant := TaggedUnionVariantNode{Name: name.Name, Loc: name.Loc}
+			if p.Match(tokeniser.TokenOpenParen) {
+				p.Inc()
+				for p.Match(tokeniser.TokenNewline) {
+					p.Inc()
+				}
+				fieldNames := map[string]struct{}{}
+				for !p.Match(tokeniser.TokenCloseParen) {
+					fieldName := ""
+					fieldLoc := p.CurrLoc()
+					if p.Match(tokeniser.TokenIdentifier) && p.Next().Type == tokeniser.TokenColon {
+						fieldName = p.Consume().Value
+						if _, duplicate := fieldNames[fieldName]; duplicate {
+							return nil, shared.NewError(fieldLoc, "duplicate tagged union payload field %q", fieldName)
+						}
+						fieldNames[fieldName] = struct{}{}
+						p.Inc()
+					}
+					fieldType, err := p.ParseType()
+					if err != nil {
+						return nil, err
+					}
+					variant.Fields = append(variant.Fields, StructField{Name: fieldName, Type: fieldType})
+					if p.Match(tokeniser.TokenCloseParen) {
+						break
+					}
+					if !p.Expect(tokeniser.TokenComma) {
+						return nil, shared.NewError(p.PrevLoc(), "expected ',' after tagged union payload field")
+					}
+					for p.Match(tokeniser.TokenNewline) {
+						p.Inc()
+					}
+				}
+				if !p.Expect(tokeniser.TokenCloseParen) {
+					return nil, shared.NewError(p.PrevLoc(), "expected ')' after tagged union payload")
+				}
+				variant.Loc = name.Loc.WithEnd(p.PrevLoc())
+			}
+			variants = append(variants, variant)
+			if p.Match(tokeniser.TokenCloseCurly) {
+				break
+			}
+			if !p.Expect(tokeniser.TokenComma) {
+				return nil, shared.NewError(p.PrevLoc(), "expected ',' after tagged union variant")
+			}
+			for p.Match(tokeniser.TokenNewline) {
+				p.Inc()
+			}
+			continue
+		}
 		if !p.Expect(tokeniser.TokenColon) {
 			return nil, shared.NewError(p.PrevLoc(), "expected ':' after union field")
 		}
@@ -1426,10 +1542,228 @@ func (p *Parser) ParseUnionType() (*UnionTypeNode, error) {
 	if !p.Expect(tokeniser.TokenCloseCurly) {
 		return nil, shared.NewError(p.PrevLoc(), "expected '}' after union")
 	}
-	if len(fields) == 0 {
+	if tagType == nil && !autoTag && len(fields) == 0 {
 		return nil, shared.NewError(beginLoc, "union must declare at least one field")
 	}
-	return &UnionTypeNode{Fields: fields, Loc: p.SpanFrom(beginLoc)}, nil
+	if autoTag && len(variants) == 0 {
+		return nil, shared.NewError(beginLoc, "auto-tagged union must declare at least one variant")
+	}
+	return &UnionTypeNode{TagType: tagType, AutoTag: autoTag, Fields: fields, Variants: variants, Loc: p.SpanFrom(beginLoc)}, nil
+}
+
+func (p *Parser) ParseMatch(expression bool) (*MatchNode, error) {
+	begin := p.CurrLoc()
+	kw, ok := p.ExpectGet(tokeniser.TokenKeyword)
+	if !ok || kw.Value != string(tokeniser.KeywordMatch) {
+		return nil, shared.NewError(p.PrevLoc(), "expected 'match'")
+	}
+	for p.Match(tokeniser.TokenNewline) {
+		p.Inc()
+	}
+	oldDisambiguation := p.disambiguateTrailingBlock
+	p.disambiguateTrailingBlock = true
+	subject, err := p.ParseExpression()
+	p.disambiguateTrailingBlock = oldDisambiguation
+	if err != nil {
+		return nil, err
+	}
+	node := &MatchNode{Subject: subject, Expression: expression}
+	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordAs) {
+		p.Inc()
+		binding, ok := p.ExpectGet(tokeniser.TokenIdentifier)
+		if !ok {
+			return nil, shared.NewError(p.PrevLoc(), "expected binding name after 'as'")
+		}
+		node.BindingName, node.BindingLoc = binding.Value, binding.Loc
+	}
+	for p.Match(tokeniser.TokenNewline) {
+		p.Inc()
+	}
+	if !p.Expect(tokeniser.TokenOpenCurly) {
+		return nil, shared.NewError(p.PrevLoc(), "expected '{' after match subject")
+	}
+	for p.Match(tokeniser.TokenNewline) {
+		p.Inc()
+	}
+	for !p.Match(tokeniser.TokenCloseCurly) {
+		armBegin := p.CurrLoc()
+		pattern, err := p.parseMatchPattern()
+		if err != nil {
+			return nil, err
+		}
+		var guard ExpressionNode
+		if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordIf) {
+			p.Inc()
+			guard, err = p.ParseExpression()
+			if err != nil {
+				return nil, err
+			}
+		}
+		if !p.Expect(tokeniser.TokenFatArrow) {
+			return nil, shared.NewError(p.PrevLoc(), "expected '=>' after match pattern")
+		}
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+		var body ExpressionNode
+		if !expression && p.Match(tokeniser.TokenOpenCurly) {
+			body, err = p.ParseBlock()
+		} else {
+			body, err = p.ParseExpression()
+		}
+		if err != nil {
+			return nil, err
+		}
+		node.Arms = append(node.Arms, MatchArmNode{
+			Pattern: pattern, Guard: guard, Body: body, Loc: armBegin.WithEnd(body.GetLoc()),
+		})
+		if p.Match(tokeniser.TokenCloseCurly) {
+			break
+		}
+		if !p.Expect(tokeniser.TokenComma) {
+			return nil, shared.NewError(p.PrevLoc(), "expected ',' after match arm")
+		}
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+	}
+	if len(node.Arms) == 0 {
+		return nil, shared.NewError(begin, "match must declare at least one arm")
+	}
+	if !p.Expect(tokeniser.TokenCloseCurly) {
+		return nil, shared.NewError(p.PrevLoc(), "expected '}' after match arms")
+	}
+	node.Loc = p.SpanFrom(begin)
+	return node, nil
+}
+
+func (p *Parser) parseMatchPattern() (*MatchPatternNode, error) {
+	begin := p.CurrLoc()
+	first, err := p.parseMatchPatternTerm()
+	if err != nil {
+		return nil, err
+	}
+	alternatives := []*MatchPatternNode{first}
+	for p.Match(tokeniser.TokenPipe) {
+		p.Inc()
+		alternative, err := p.parseMatchPatternTerm()
+		if err != nil {
+			return nil, err
+		}
+		alternatives = append(alternatives, alternative)
+	}
+	if len(alternatives) == 1 {
+		return first, nil
+	}
+	return &MatchPatternNode{Kind: MatchPatternAlternative, Alternatives: alternatives, Loc: begin.WithEnd(alternatives[len(alternatives)-1].Loc)}, nil
+}
+
+func (p *Parser) parseMatchPatternTerm() (*MatchPatternNode, error) {
+	begin := p.CurrLoc()
+	pattern, err := p.parseMatchPatternAtom()
+	if err != nil {
+		return nil, err
+	}
+	if !p.Match(tokeniser.Token2Dots) {
+		return pattern, nil
+	}
+	if pattern.Kind != MatchPatternLiteral {
+		return nil, shared.NewError(pattern.Loc, "range pattern must start with a literal")
+	}
+	p.Inc()
+	end, err := p.parseMatchPatternLiteral()
+	if err != nil {
+		return nil, shared.NewError(p.CurrLoc(), "expected literal after '..' in match range")
+	}
+	return &MatchPatternNode{Kind: MatchPatternRange, Start: pattern.Literal, End: end, Loc: begin.WithEnd(end.GetLoc())}, nil
+}
+
+func (p *Parser) parseMatchPatternAtom() (*MatchPatternNode, error) {
+	begin := p.CurrLoc()
+	if p.Match(tokeniser.TokenIdentifier) && p.Peek().Value == "_" {
+		p.Inc()
+		return &MatchPatternNode{Kind: MatchPatternWildcard, Loc: p.SpanFrom(begin)}, nil
+	}
+	if p.Match(tokeniser.TokenDot) {
+		p.Inc()
+		variant, ok := p.ExpectGet(tokeniser.TokenIdentifier)
+		if !ok {
+			return nil, shared.NewError(p.PrevLoc(), "expected variant name after '.'")
+		}
+		pattern := &MatchPatternNode{Kind: MatchPatternVariant, Variant: variant.Value, Loc: p.SpanFrom(begin)}
+		if p.Match(tokeniser.TokenOpenParen) {
+			pattern.Payload = true
+			p.Inc()
+			for p.Match(tokeniser.TokenNewline) {
+				p.Inc()
+			}
+			for !p.Match(tokeniser.TokenCloseParen) {
+				binding, ok := p.ExpectGet(tokeniser.TokenIdentifier)
+				if !ok {
+					return nil, shared.NewError(p.PrevLoc(), "expected payload binding in variant pattern")
+				}
+				entry := MatchBinding{Name: binding.Value, Loc: binding.Loc}
+				if p.Match(tokeniser.TokenEquals) {
+					p.Inc()
+					entry.Field = entry.Name
+					bound, ok := p.ExpectGet(tokeniser.TokenIdentifier)
+					if !ok {
+						return nil, shared.NewError(p.PrevLoc(), "expected binding name after '=' in variant pattern")
+					}
+					entry.Name, entry.Loc = bound.Value, bound.Loc
+				}
+				pattern.Bindings = append(pattern.Bindings, entry)
+				if p.Match(tokeniser.TokenCloseParen) {
+					break
+				}
+				if !p.Expect(tokeniser.TokenComma) {
+					return nil, shared.NewError(p.PrevLoc(), "expected ',' after variant pattern binding")
+				}
+				for p.Match(tokeniser.TokenNewline) {
+					p.Inc()
+				}
+			}
+			if !p.Expect(tokeniser.TokenCloseParen) {
+				return nil, shared.NewError(p.PrevLoc(), "expected ')' after variant pattern")
+			}
+			pattern.Loc = p.SpanFrom(begin)
+		}
+		return pattern, nil
+	}
+	literal, err := p.parseMatchPatternLiteral()
+	if err != nil {
+		return nil, err
+	}
+	return &MatchPatternNode{Kind: MatchPatternLiteral, Literal: literal, Loc: literal.GetLoc()}, nil
+}
+
+func (p *Parser) parseMatchPatternLiteral() (ExpressionNode, error) {
+	begin := p.CurrLoc()
+	switch {
+	case p.Match(tokeniser.TokenNumber):
+		tok := p.Consume()
+		if strings.Contains(tok.Value, ".") {
+			return &FloatLiteralNode{Value: tok.Value, Loc: p.SpanFrom(begin)}, nil
+		}
+		return &IntegerLiteralNode{Value: tok.Value, Loc: p.SpanFrom(begin)}, nil
+	case p.Match(tokeniser.TokenChar):
+		tok := p.Consume()
+		return &CharLiteralNode{Value: tok.Value[0], Loc: p.SpanFrom(begin)}, nil
+	case p.Match(tokeniser.TokenString):
+		tok := p.Consume()
+		return &StringLiteralNode{Value: tok.Value, Loc: p.SpanFrom(begin)}, nil
+	case p.Match(tokeniser.TokenCString):
+		tok := p.Consume()
+		return &CStringLiteralNode{Value: tok.Value, Loc: p.SpanFrom(begin)}, nil
+	case p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordTrue):
+		p.Inc()
+		return &BoolLiteralNode{Value: string(tokeniser.KeywordTrue), Loc: p.SpanFrom(begin)}, nil
+	case p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordFalse):
+		p.Inc()
+		return &BoolLiteralNode{Value: string(tokeniser.KeywordFalse), Loc: p.SpanFrom(begin)}, nil
+	default:
+		return nil, shared.NewError(begin, "expected match pattern")
+	}
 }
 
 func (p *Parser) ParseEnumType() (*EnumTypeNode, error) {

@@ -73,6 +73,7 @@ const (
 	Token2Dots
 	Token3Dots
 	TokenArrow
+	TokenFatArrow
 	TokenAt
 )
 
@@ -90,6 +91,8 @@ const (
 	KeywordType          KeywordKind = "type"
 	KeywordAlias         KeywordKind = "alias"
 	KeywordIf            KeywordKind = "if"
+	KeywordMatch         KeywordKind = "match"
+	KeywordAs            KeywordKind = "as"
 	KeywordWhen          KeywordKind = "when"
 	KeywordCompilerError KeywordKind = "compiler_error"
 	KeywordElse          KeywordKind = "else"
@@ -110,6 +113,8 @@ const (
 	KeywordSizeof        KeywordKind = "sizeof"
 	KeywordAlignof       KeywordKind = "alignof"
 	KeywordOffsetof      KeywordKind = "offsetof"
+	KeywordRepr          KeywordKind = "repr"
+	KeywordReprof        KeywordKind = "reprof"
 	KeywordLen           KeywordKind = "len"
 	KeywordIn            KeywordKind = "in"
 )
@@ -220,6 +225,8 @@ func (t Token) String() string {
 		return "..."
 	case TokenArrow:
 		return "->"
+	case TokenFatArrow:
+		return "=>"
 	case TokenAt:
 		return "@"
 	default:

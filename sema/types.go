@@ -2,6 +2,7 @@ package sema
 
 import (
 	"math/big"
+	"strconv"
 
 	"github.com/marzeq/qk/attributes"
 	"github.com/marzeq/qk/parser"
@@ -36,6 +37,15 @@ func (a *Analyser) resolveTypeNode(n parser.TypeNode) types.Type {
 
 func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Type {
 	switch t := n.(type) {
+	case *parser.ReprTypeNode:
+		operand := a.resolveTypeNodeAt(t.Operand, indirect)
+		repr, ok := types.TaggedUnionRepr(operand)
+		if !ok {
+			a.errorf(t, "reprof requires an explicitly tagged union type, got %v", operand)
+			return types.ErrorType{}
+		}
+		return repr
+
 	case *parser.MultipleReturnTypeNode:
 		result := make([]types.Type, len(t.Types))
 		for i, item := range t.Types {
@@ -275,6 +285,82 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 		return types.FlagsType{Underlying: primitive, Variants: append([]string(nil), t.Variants...), Values: append([]string(nil), t.Values...)}
 
 	case *parser.UnionTypeNode:
+		if t.TagType != nil || t.AutoTag {
+			var tagType types.Type
+			if t.AutoTag {
+				variants := make([]string, len(t.Variants))
+				values := make([]string, len(t.Variants))
+				for i, variant := range t.Variants {
+					variants[i] = variant.Name
+					values[i] = strconv.Itoa(i)
+				}
+				tagType = types.EnumType{
+					IdentityName: a.currentMod + ":auto-tag:" + t.Loc.FilePath + ":" + strconv.Itoa(t.Loc.Offset),
+					Variants:     variants,
+					Values:       values,
+				}
+			} else {
+				tagType = a.resolveTypeNodeAt(t.TagType, indirect)
+			}
+			tagEnum, ok := types.Underlying(tagType).(types.EnumType)
+			if !ok {
+				a.errorf(t, "tagged union tag type must be an enum")
+				return types.ErrorType{}
+			}
+			tagValues := make(map[string]string, len(tagEnum.Values))
+			for i, value := range tagEnum.Values {
+				if previous, duplicate := tagValues[value]; duplicate {
+					a.errorf(t.TagType, "tag enum members %q and %q have the same value %s", previous, tagEnum.Variants[i], value)
+				}
+				tagValues[value] = tagEnum.Variants[i]
+			}
+			info := &types.TaggedUnionInfo{Tag: tagType, Auto: t.AutoTag}
+			payloadFields := make([]shared.Pair[string, types.Type], 0, len(t.Variants))
+			seen := make(map[string]bool, len(t.Variants))
+			for _, variantNode := range t.Variants {
+				tagValue, exists := tagEnum.VariantValue(variantNode.Name)
+				if !exists {
+					a.errorf(variantNode, "tag enum %v has no member %q", tagType, variantNode.Name)
+					continue
+				}
+				seen[variantNode.Name] = true
+				variant := types.TaggedUnionVariant{Name: variantNode.Name, TagValue: tagValue}
+				named, positional := false, false
+				for index, field := range variantNode.Fields {
+					name := field.Name
+					if name == "" {
+						positional = true
+						name = strconv.Itoa(index)
+					} else {
+						named = true
+					}
+					variant.Fields = append(variant.Fields, shared.Pair[string, types.Type]{
+						L: name, R: a.resolveTypeNodeAt(field.Type, indirect),
+					})
+				}
+				if named && positional {
+					a.errorf(variantNode, "tagged union variant %q cannot mix named and positional payload fields", variantNode.Name)
+				}
+				info.Variants = append(info.Variants, variant)
+				if len(variant.Fields) != 0 {
+					payloadFields = append(payloadFields, shared.Pair[string, types.Type]{
+						L: variant.Name, R: types.StructType{Fields: variant.Fields},
+					})
+				}
+			}
+			for _, member := range tagEnum.Variants {
+				if !seen[member] {
+					a.errorf(t, "tagged union is missing variant %q from tag enum %v", member, tagType)
+				}
+			}
+			return types.StructType{
+				Fields: []shared.Pair[string, types.Type]{
+					{L: "$tag", R: tagType},
+					{L: "$payload", R: types.UnionType{Fields: payloadFields}},
+				},
+				TaggedUnion: info,
+			}
+		}
 		fields := make([]shared.Pair[string, types.Type], 0, len(t.Fields))
 		for _, field := range t.Fields {
 			fields = append(fields, shared.Pair[string, types.Type]{L: field.Name, R: a.resolveTypeNodeAt(field.Type, indirect)})

@@ -5,6 +5,7 @@ import (
 
 	"github.com/marzeq/qk/parser"
 	"github.com/marzeq/qk/symbols"
+	"github.com/marzeq/qk/types"
 )
 
 func (a *Analyser) resolveIdentifier(n *parser.IdentifierNode) (*symbols.Symbol, bool) {
@@ -93,6 +94,12 @@ func (a *Analyser) resolveGenericIdentifier(n *parser.IdentifierNode, sym *symbo
 }
 
 func (a *Analyser) resolveFunctionCall(n *parser.FunctionCallNode) {
+	if a.resolveTaggedUnionConstructor(n) {
+		for _, arg := range n.Args {
+			a.visitExpression(arg)
+		}
+		return
+	}
 	if n.Name != nil {
 		sym, ok := a.resolveIdentifier(n.Name)
 		if !ok {
@@ -117,6 +124,58 @@ func (a *Analyser) resolveFunctionCall(n *parser.FunctionCallNode) {
 	for _, arg := range n.Args {
 		a.visitExpression(arg)
 	}
+}
+
+func (a *Analyser) resolveTaggedUnionConstructor(n *parser.FunctionCallNode) bool {
+	member, ok := n.Callee.(*parser.FieldAccessNode)
+	if !ok {
+		return false
+	}
+	var symbol *symbols.Symbol
+	switch owner := member.Subject.(type) {
+	case *parser.IdentifierNode:
+		resolved, ok := a.resolveIdentifier(owner)
+		if !ok {
+			return false
+		}
+		symbol = resolved
+	case *parser.FieldAccessNode:
+		a.visitExpression(owner)
+		if owner.ResolvedIdentifier != nil {
+			symbol = owner.ResolvedIdentifier.Symbol
+		}
+	}
+	if symbol == nil || symbol.Kind != symbols.SymbolKindType {
+		return false
+	}
+	if symbol.Template {
+		generic := a.genericAliases[symbol]
+		if generic == nil {
+			return false
+		}
+		arguments := make([]types.Type, len(generic.parameters))
+		for i := range generic.parameters {
+			arguments[i] = generic.parameters[i]
+		}
+		specialization := a.specializeGenericAlias(generic, arguments, n, false)
+		if specialization == nil {
+			return true
+		}
+		n.TaggedUnionTemplate = symbol
+		symbol = specialization
+	}
+	info, tagged := types.TaggedUnion(symbol.TypeInfo)
+	if !tagged {
+		return false
+	}
+	_, index, exists := info.Variant(member.Field.Name)
+	if !exists {
+		return false
+	}
+	n.TaggedUnionType = symbol.TypeInfo
+	n.TaggedUnionVariant = index
+	n.SetType(symbol.TypeInfo)
+	return true
 }
 
 func (a *Analyser) resolveModuleField(n *parser.FieldAccessNode) bool {

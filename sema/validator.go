@@ -141,6 +141,9 @@ func (v *Validator) validateNode(node parser.Node) {
 			if usesCABI && types.HasTraitPointer(param) {
 				v.errorf(n.Args[i].Type, "trait pointers cannot cross the c ABI")
 			}
+			if usesCABI && types.HasTaggedUnion(param) {
+				v.errorf(n.Args[i].Type, "tagged unions cannot cross the c ABI; expose an explicitly tagged union through reprof(...) instead")
+			}
 			if !types.IsComplete(param) {
 				v.errorf(n.Args[i].Type, "function parameter cannot have incomplete type %v", param)
 			}
@@ -164,6 +167,8 @@ func (v *Validator) validateNode(node parser.Node) {
 			v.errorf(n, "function return cannot have incomplete type %v", ret)
 		} else if usesCABI && ret != nil && types.HasTraitPointer(ret) {
 			v.errorf(n, "trait pointers cannot cross the c ABI")
+		} else if usesCABI && ret != nil && types.HasTaggedUnion(ret) {
+			v.errorf(n, "tagged unions cannot cross the c ABI; expose an explicitly tagged union through reprof(...) instead")
 		}
 		if ret := n.Symbol.Signature.ReturnType; ret != nil && !ret.Equals(types.PrimitiveVoid) {
 			if _, multiple := ret.(types.MultipleReturnType); !multiple && hasVoidValue(ret) {
@@ -225,6 +230,9 @@ func (v *Validator) validateNode(node parser.Node) {
 		if n.Symbol.Type != nil && !types.IsComplete(n.Symbol.Type) {
 			v.errorf(n, "cannot declare a value of incomplete type %v", n.Symbol.Type)
 		}
+		if n.Attributes.Get(attributes.AttributeTypeForeign) != nil && types.HasTaggedUnion(n.Symbol.Type) {
+			v.errorf(n, "tagged unions cannot cross a foreign boundary; expose an explicitly tagged union through reprof(...) instead")
+		}
 		if v.currentFunction != nil {
 			v.warnIfUnused(n.Symbol, n.NameLoc, shared.WarningUnusedVariable, "variable")
 		}
@@ -239,6 +247,9 @@ func (v *Validator) validateNode(node parser.Node) {
 
 	case *parser.IfNode:
 		v.validateIf(n)
+
+	case *parser.MatchNode:
+		v.validateMatch(n, nil)
 
 	case *parser.ForNode:
 		v.validateFor(n)
@@ -298,6 +309,10 @@ func (v *Validator) validateStatement(node parser.Node) {
 			return
 		}
 	case *parser.IfNode:
+		if !n.Expression {
+			return
+		}
+	case *parser.MatchNode:
 		if !n.Expression {
 			return
 		}
@@ -747,6 +762,177 @@ func (v *Validator) validateIfExpression(n *parser.IfNode, expected types.Type) 
 	}
 }
 
+func (v *Validator) validateMatch(n *parser.MatchNode, expected types.Type) {
+	v.validateValueExpr(n.Subject)
+	subjectType := n.Subject.GetType()
+	covered := map[string]bool{}
+	wildcard := false
+	for i := range n.Arms {
+		arm := &n.Arms[i]
+		v.validateMatchPattern(arm.Pattern, subjectType)
+		if wildcard || v.matchPatternFullyCovered(arm.Pattern, covered) {
+			v.errorf(arm.Pattern, "match arm is unreachable because an earlier arm already covers its pattern")
+		}
+		if arm.Guard != nil {
+			v.validateExpr(arm.Guard)
+			if !arm.Guard.GetType().Equals(types.PrimitiveBool) {
+				v.errorf(arm.Guard, "match arm guard must be bool")
+			}
+		} else {
+			v.recordMatchCoverage(arm.Pattern, covered, &wildcard)
+		}
+		if n.Expression {
+			if expected != nil && parser.NodeFallsThrough(arm.Body) {
+				arm.Body = v.validateExprWithExpected(arm.Body, expected)
+			} else {
+				v.validateValueExpr(arm.Body)
+			}
+		} else {
+			v.validateStatement(arm.Body)
+		}
+		for _, binding := range matchPatternBindings(arm.Pattern) {
+			v.warnIfUnused(binding.Symbol, binding.Loc, shared.WarningUnusedVariable, "match binding")
+		}
+	}
+	if n.Binding != nil {
+		v.warnIfUnused(n.Binding, n.BindingLoc, shared.WarningUnusedVariable, "match subject binding")
+	}
+	if !v.matchIsExhaustive(subjectType, covered, wildcard) {
+		v.errorf(n, "match is not exhaustive; add the missing cases or a '_' arm")
+	}
+	if !n.Expression {
+		n.SetType(types.PrimitiveVoid)
+	} else if expected != nil {
+		n.SetType(expected)
+	}
+}
+
+func (v *Validator) validateMatchPattern(pattern *parser.MatchPatternNode, subjectType types.Type) {
+	if pattern == nil {
+		return
+	}
+	switch pattern.Kind {
+	case parser.MatchPatternWildcard, parser.MatchPatternVariant:
+		return
+	case parser.MatchPatternAlternative:
+		for _, alternative := range pattern.Alternatives {
+			if len(matchPatternBindings(alternative)) != 0 {
+				v.errorf(alternative, "alternative match patterns cannot bind payload values")
+			}
+			v.validateMatchPattern(alternative, subjectType)
+		}
+	case parser.MatchPatternLiteral:
+		switch pattern.Literal.(type) {
+		case *parser.FloatLiteralNode:
+			v.errorf(pattern, "floating-point match patterns are not supported; use an 'if' guard")
+			return
+		case *parser.StringLiteralNode, *parser.CStringLiteralNode:
+			v.errorf(pattern, "string match patterns are not supported; use an 'if' guard")
+			return
+		}
+		pattern.Literal = v.validateExprWithExpected(pattern.Literal, subjectType)
+	case parser.MatchPatternRange:
+		if !types.IsInteger(subjectType) && !subjectType.Equals(types.PrimitiveChar) {
+			v.errorf(pattern, "range pattern requires an integer or char subject")
+			return
+		}
+		pattern.Start = v.validateExprWithExpected(pattern.Start, subjectType)
+		pattern.End = v.validateExprWithExpected(pattern.End, subjectType)
+	}
+}
+
+func (v *Validator) recordMatchCoverage(pattern *parser.MatchPatternNode, covered map[string]bool, wildcard *bool) {
+	if pattern == nil {
+		return
+	}
+	switch pattern.Kind {
+	case parser.MatchPatternWildcard:
+		*wildcard = true
+	case parser.MatchPatternVariant:
+		covered[v.matchPatternCoverageKey(pattern)] = true
+	case parser.MatchPatternLiteral:
+		if key := v.matchPatternCoverageKey(pattern); key != "" {
+			covered[key] = true
+		}
+	case parser.MatchPatternAlternative:
+		for _, alternative := range pattern.Alternatives {
+			v.recordMatchCoverage(alternative, covered, wildcard)
+		}
+	}
+}
+
+func (v *Validator) matchPatternFullyCovered(pattern *parser.MatchPatternNode, covered map[string]bool) bool {
+	if pattern == nil {
+		return false
+	}
+	switch pattern.Kind {
+	case parser.MatchPatternVariant, parser.MatchPatternLiteral:
+		key := v.matchPatternCoverageKey(pattern)
+		return key != "" && covered[key]
+	case parser.MatchPatternAlternative:
+		if len(pattern.Alternatives) == 0 {
+			return false
+		}
+		for _, alternative := range pattern.Alternatives {
+			if !v.matchPatternFullyCovered(alternative, covered) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
+func (v *Validator) matchPatternCoverageKey(pattern *parser.MatchPatternNode) string {
+	if pattern == nil {
+		return ""
+	}
+	if pattern.Kind == parser.MatchPatternVariant {
+		if pattern.TagValue != "" {
+			return "variant-value:" + pattern.TagValue
+		}
+		return "variant:" + pattern.Variant
+	}
+	if pattern.Kind != parser.MatchPatternLiteral {
+		return ""
+	}
+	switch literal := pattern.Literal.(type) {
+	case *parser.BoolLiteralNode:
+		return "bool:" + literal.Value
+	case *parser.IntegerLiteralNode:
+		return "integer:" + literal.Value
+	case *parser.CharLiteralNode:
+		return fmt.Sprintf("char:%d", literal.Value)
+	}
+	return ""
+}
+
+func (v *Validator) matchIsExhaustive(subjectType types.Type, covered map[string]bool, wildcard bool) bool {
+	if wildcard {
+		return true
+	}
+	if info, tagged := types.TaggedUnion(subjectType); tagged {
+		for _, variant := range info.Variants {
+			if !covered["variant-value:"+variant.TagValue] {
+				return false
+			}
+		}
+		return true
+	}
+	if enumType, ok := types.Underlying(subjectType).(types.EnumType); ok {
+		for _, value := range enumType.Values {
+			if !covered["variant-value:"+value] {
+				return false
+			}
+		}
+		return true
+	}
+	if subjectType.Equals(types.PrimitiveBool) {
+		return covered["bool:true"] && covered["bool:false"]
+	}
+	return false
+}
+
 func (v *Validator) validateFor(n *parser.ForNode) {
 	switch len(n.ExprsOrStmts) {
 	case 0:
@@ -862,6 +1048,23 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		n.SetType(types.ErrorType{})
 
 	case *parser.FunctionCallNode:
+		if n.TaggedUnionType != nil {
+			info, _ := types.TaggedUnion(n.TaggedUnionType)
+			if n.TaggedUnionVariant < 0 || n.TaggedUnionVariant >= len(info.Variants) {
+				v.errorf(n, "invalid tagged union constructor")
+				return
+			}
+			variant := info.Variants[n.TaggedUnionVariant]
+			if len(n.Args) != len(variant.Fields) {
+				v.errorf(n, "tagged union variant %q expects %d arguments, but %d provided", variant.Name, len(variant.Fields), len(n.Args))
+				return
+			}
+			for i := range n.Args {
+				n.Args[i] = v.validateExprWithExpected(n.Args[i], variant.Fields[i].R)
+			}
+			n.SetType(n.TaggedUnionType)
+			return
+		}
 		var params []types.Type
 		variadic := false
 		typedVariadic := false
@@ -1081,6 +1284,9 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		if !types.CanExplicitCast(n.Operand.GetType(), targetType) {
 			v.errorf(n, "cannot cast %v to %v", n.Operand.GetType(), targetType)
 		}
+
+	case *parser.ReprNode:
+		v.validateExpr(n.Operand)
 
 	case *parser.UnaryOpNode:
 		v.validateExpr(n.Operand)
@@ -1447,6 +1653,9 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 	case *parser.IfNode:
 		v.validateIfExpression(n, nil)
 
+	case *parser.MatchNode:
+		v.validateMatch(n, nil)
+
 	case *parser.SliceLiteralNode:
 		if n.RepeatValue != nil {
 			size := -1
@@ -1805,6 +2014,25 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 		}
 	}
 
+	if call, ok := node.(*parser.FunctionCallNode); ok {
+		if literal, shorthand := call.Callee.(*parser.EnumLiteralNode); shorthand {
+			if info, tagged := types.TaggedUnion(expected); tagged {
+				variant, index, exists := info.Variant(literal.Variant)
+				if !exists {
+					v.errorf(literal, "%s has no variant %q", expected, literal.Variant)
+					call.TaggedUnionType = types.ErrorType{}
+					return call
+				}
+				literal.Value = variant.TagValue
+				literal.SetType(info.Tag)
+				call.TaggedUnionType = expected
+				call.TaggedUnionVariant = index
+				v.validateExpr(call)
+				return call
+			}
+		}
+	}
+
 	switch n := node.(type) {
 	case *parser.NilLiteralNode:
 		if types.IsPointer(expected) || isTraitPointerType(expected) {
@@ -1820,6 +2048,26 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 		case types.FlagsType:
 			value, exists = t.VariantValue(n.Variant)
 		default:
+			if info, tagged := types.TaggedUnion(expected); tagged {
+				variant, index, variantExists := info.Variant(n.Variant)
+				if !variantExists {
+					v.errorf(n, "%s has no variant %q", expected, n.Variant)
+					n.SetType(types.ErrorType{})
+					return n
+				}
+				if len(variant.Fields) != 0 {
+					v.errorf(n, "tagged union variant %q requires %d payload arguments", variant.Name, len(variant.Fields))
+					n.SetType(types.ErrorType{})
+					return n
+				}
+				n.Value = variant.TagValue
+				n.SetType(info.Tag)
+				constructor := &parser.FunctionCallNode{
+					Callee: n, Loc: n.Loc, TaggedUnionType: expected, TaggedUnionVariant: index,
+				}
+				v.validateExpr(constructor)
+				return constructor
+			}
 			v.errorf(n, "member shorthand .%s requires an expected enum or flags type", n.Variant)
 			n.SetType(types.ErrorType{})
 			return n
@@ -1876,6 +2124,9 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 		return n
 	case *parser.IfNode:
 		v.validateIfExpression(n, expected)
+		return n
+	case *parser.MatchNode:
+		v.validateMatch(n, expected)
 		return n
 	}
 
@@ -2130,6 +2381,11 @@ func (v *Validator) validateStructLiteralWithExpected(n *parser.StructLiteralNod
 	structType, ok := types.Underlying(expected).(types.StructType)
 	if !ok {
 		v.errorf(n, "cannot use struct literal for non-struct type %v", expected)
+		n.SetType(types.ErrorType{})
+		return
+	}
+	if structType.TaggedUnion != nil {
+		v.errorf(n, "tagged union values must be constructed with %v.Variant(...) syntax", expected)
 		n.SetType(types.ErrorType{})
 		return
 	}

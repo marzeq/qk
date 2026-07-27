@@ -60,8 +60,8 @@ The reserved words are:
 
 ```text
 alias alignof and as break continue defer else enum false for
-if import in len let module mut nil not offsetof opaque or pub
-return sizeof struct trait true type union
+if import in len let match module mut nil not offsetof opaque or pub
+repr reprof return sizeof struct trait true type union
 ```
 
 Primitive type names such as `i32` and `void` are predefined identifiers. They
@@ -788,6 +788,38 @@ branch. Expression-context conditionals require `else`. A branch that cannot
 reach the conditional's merge point, such as one ending in `return`, does not
 need to produce a value.
 
+### 10.1 Matches
+
+`match` selects an arm by pattern. It works in statement and expression
+contexts, evaluates its subject exactly once, and requires comma-separated arms:
+
+```qk
+let label: str = match status {
+    .ready => "ready",
+    .waiting => "waiting",
+    .failed => "failed",
+}
+```
+
+An optional `as` binding names the evaluated subject throughout the arms.
+Runtime arm conditions use `if`; `when` remains compile-time-only:
+
+```qk
+let category: i32 = match calculate() as value {
+    0 => 0,
+    1 | 2 => 1,
+    3..10 if value < 8 => 2,
+    _ => 3,
+}
+```
+
+Integer and character ranges are half-open. Literal patterns support integers,
+characters, and booleans. Floating-point and string patterns are rejected; use
+an `if` guard for those comparisons. `_` is the wildcard pattern. Every match
+must be exhaustive: enums and tagged unions must cover every variant, booleans
+must cover both values, and other scalar types normally require `_`. A guarded
+arm does not count toward exhaustive coverage because its condition may fail.
+
 ## 11. Loops and iteration
 
 `for` provides all loop forms. An empty header is an infinite loop:
@@ -1210,6 +1242,151 @@ let integer = token.integer
 ```
 
 Union fields must be unique and complete by value.
+
+### 19.1 Manually tagged unions
+
+An explicit enum can provide the discriminant for a tagged union:
+
+```qk
+let ValueTag = type enum {
+    Foo,
+    Bar,
+    Empty,
+}
+
+let Value = type union(ValueTag) {
+    Foo(i32, i64),
+    Bar(name: str, age: u8),
+    Empty,
+}
+```
+
+When custom tag values and a separately named tag type are unnecessary, the
+compiler can synthesize the enum from the union variants:
+
+```qk
+let Option<T> = type union(@auto) {
+    Some(T),
+    None,
+}
+```
+
+The inferred members receive ordinary implicit enum values in declaration
+order, starting at zero. The generated enum is compiler-private: an `@auto`
+union exposes neither `.tag` nor the `repr`/`reprof` escape hatch. Constructors,
+contextual `.Variant` construction, and exhaustive `match` work identically to
+explicitly tagged unions. Use `union(TagEnum)` when code needs custom tag values,
+a separately usable tag type, raw representation access, or a C-ABI-compatible
+representation view.
+
+Each tag enum member must have exactly one same-named union variant, and tag
+values must be unique. Variant order does not affect tag values. A payload is either entirely
+positional or entirely named; empty variants omit the parentheses. Construct a
+value by qualifying the variant with the tagged-union type and supplying payload
+values in declaration order:
+
+```qk
+let foo = Value.Foo(10, 20)
+let person = Value.Bar("Ada", 37)
+let empty = Value.Empty()
+```
+
+For a generic tagged union, constructor payloads infer omitted type arguments
+when every generic parameter is determined by a typed payload value:
+
+```qk
+let Option<T> = type union(OptionTag) {
+    Some(T),
+    None,
+}
+
+let option = Option.Some("value") // Option<str>
+let none = Option<str>.None()      // T cannot be inferred from an empty payload
+```
+
+As with generic function inference, untyped numeric values do not choose a
+concrete type argument. When the tagged-union type is already expected, the
+owner may be shortened to a leading dot:
+
+```qk
+let option: Option<str> = .Some("value")
+let none: Option<str> = .None
+```
+
+The representation is the target-native equivalent of a C struct containing
+the enum tag followed by a payload union. Each non-empty payload is a struct;
+empty variants occupy only the tag. Padding and aggregate ABI classification
+therefore follow the same target rules as ordinary QK structs and unions.
+
+Use `repr(value)` to explicitly obtain that ordinary structure. Its type is
+written `reprof(T)`:
+
+```qk
+let raw: reprof(Option<str>) = repr(option)
+
+if raw.tag == .Some {
+    std.println("{}", raw.payload.Some._0)
+}
+```
+
+The result is a value copy with a structural type equivalent to:
+
+```qk
+type struct {
+    tag: OptionTag,
+    payload: union {
+        Some: struct {
+            _0: str,
+        },
+    },
+}
+```
+
+Positional fields are exposed as `_0`, `_1`, and so on, while named payload
+fields retain their declared names. Empty variants have no payload-union field.
+The raw type has the exact layout of the tagged union but no tagged-union
+semantics, so it cannot be matched with variant patterns.
+
+An immutable pointer can be viewed without copying:
+
+```qk
+let view: *reprof(Option<str>) = repr(option.&)
+```
+
+Mutable pointers are rejected because changing the tag independently from the
+active payload could violate the tagged union's invariant. `repr` and `reprof`
+accept only explicitly tagged `union(TagEnum)` unions; `union(@auto)` keeps its
+tag and representation private.
+
+Nominal tagged unions cannot occur anywhere in a C-ABI `@foreign` or `@export`
+parameter or result type, including behind pointers or nested inside another
+aggregate. The explicit `reprof(T)` structure may cross the C ABI, provided its
+own fields are otherwise C-ABI-compatible:
+
+```qk
+let consume(value: reprof(Option<i32>)): void @foreign
+let produce(): reprof(Option<i32>) @export = repr(Option<i32>.None())
+```
+
+Use `abi "qk"` when a QK function intentionally needs to expose the nominal
+tagged-union type directly.
+
+Tagged-union patterns select the tag and bind payload fields. Positional
+patterns bind in declaration order; named patterns may reorder fields:
+
+```qk
+let result: i64 = match value as whole {
+    .Foo(first, second) if first > 0 => second,
+    .Foo(_, second) => second,
+    .Bar(age = age, name = _) => age.(i64),
+    .Empty => 0,
+}
+```
+
+Payload bindings are immutable and scoped to their arm, while the optional
+subject binding is scoped to the complete match. Tagged unions and matches may
+appear in generic types and generic functions; specialization substitutes their
+payload and binding types normally.
 
 ## 20. Enums
 

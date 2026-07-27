@@ -107,6 +107,14 @@ type StructTypeNode struct {
 func (n StructTypeNode) GetLoc() shared.Location { return n.Loc }
 func (n StructTypeNode) _type()                  {}
 
+type ReprTypeNode struct {
+	Operand TypeNode
+	Loc     shared.Location
+}
+
+func (n ReprTypeNode) GetLoc() shared.Location { return n.Loc }
+func (n ReprTypeNode) _type()                  {}
+
 type EnumTypeNode struct {
 	Name     string
 	Module   string
@@ -131,14 +139,25 @@ func (n FlagsTypeNode) GetLoc() shared.Location { return n.Loc }
 func (n FlagsTypeNode) _type()                  {}
 
 type UnionTypeNode struct {
-	Name   string
-	Module string
-	Fields []StructField
-	Loc    shared.Location
+	Name     string
+	Module   string
+	TagType  TypeNode
+	AutoTag  bool
+	Fields   []StructField
+	Variants []TaggedUnionVariantNode
+	Loc      shared.Location
 }
 
 func (n UnionTypeNode) GetLoc() shared.Location { return n.Loc }
 func (n UnionTypeNode) _type()                  {}
+
+type TaggedUnionVariantNode struct {
+	Name   string
+	Fields []StructField
+	Loc    shared.Location
+}
+
+func (n TaggedUnionVariantNode) GetLoc() shared.Location { return n.Loc }
 
 type OpaqueTypeNode struct {
 	Loc shared.Location
@@ -235,6 +254,16 @@ type IntegerLiteralNode struct {
 func (n IntegerLiteralNode) GetLoc() shared.Location { return n.Loc }
 func (n *IntegerLiteralNode) SetType(t types.Type)   { n.Type = t }
 func (n *IntegerLiteralNode) GetType() types.Type    { return n.Type }
+
+type ReprNode struct {
+	Operand ExpressionNode
+	Loc     shared.Location
+	Type    types.Type
+}
+
+func (n ReprNode) GetLoc() shared.Location { return n.Loc }
+func (n *ReprNode) SetType(t types.Type)   { n.Type = t }
+func (n *ReprNode) GetType() types.Type    { return n.Type }
 
 type FloatLiteralNode struct {
 	Value string
@@ -337,11 +366,20 @@ type FunctionCallNode struct {
 	TypedVariadicStart int
 	TypedVariadicSlice types.Type
 	VariadicExpansion  bool
+
+	TaggedUnionType    types.Type
+	TaggedUnionVariant int
+	// TaggedUnionTemplate is set when a generic union constructor omits its
+	// owner type arguments. Attribution infers them from the payload arguments.
+	TaggedUnionTemplate *symbols.Symbol
 }
 
 func (n FunctionCallNode) GetLoc() shared.Location { return n.Loc }
 func (n *FunctionCallNode) SetType(t types.Type)   {}
 func (n *FunctionCallNode) GetType() types.Type {
+	if n.TaggedUnionType != nil {
+		return n.TaggedUnionType
+	}
 	if n.Symbol != nil && n.Symbol.Kind == symbols.SymbolKindFunction && n.Symbol.Signature != nil {
 		if n.Symbol.Signature.ReturnType == nil {
 			return types.PrimitiveVoid
@@ -677,6 +715,63 @@ type IfNode struct {
 func (n IfNode) GetLoc() shared.Location { return n.Loc }
 func (n *IfNode) SetType(t types.Type)   { n.Type = t }
 func (n *IfNode) GetType() types.Type    { return n.Type }
+
+type MatchPatternKind uint8
+
+const (
+	MatchPatternWildcard MatchPatternKind = iota
+	MatchPatternLiteral
+	MatchPatternVariant
+	MatchPatternRange
+	MatchPatternAlternative
+)
+
+type MatchBinding struct {
+	Name   string
+	Field  string
+	Loc    shared.Location
+	Symbol *symbols.Symbol
+}
+
+type MatchPatternNode struct {
+	Kind         MatchPatternKind
+	Literal      ExpressionNode
+	Start        ExpressionNode
+	End          ExpressionNode
+	Variant      string
+	Bindings     []MatchBinding
+	Payload      bool
+	Alternatives []*MatchPatternNode
+	TagValue     string
+	PayloadType  types.Type
+	Loc          shared.Location
+}
+
+func (n MatchPatternNode) GetLoc() shared.Location { return n.Loc }
+
+type MatchArmNode struct {
+	Pattern *MatchPatternNode
+	Guard   ExpressionNode
+	Body    ExpressionNode
+	Loc     shared.Location
+}
+
+func (n MatchArmNode) GetLoc() shared.Location { return n.Loc }
+
+type MatchNode struct {
+	Subject     ExpressionNode
+	BindingName string
+	BindingLoc  shared.Location
+	Binding     *symbols.Symbol
+	Arms        []MatchArmNode
+	Expression  bool
+	Loc         shared.Location
+	Type        types.Type
+}
+
+func (n MatchNode) GetLoc() shared.Location { return n.Loc }
+func (n *MatchNode) SetType(t types.Type)   { n.Type = t }
+func (n *MatchNode) GetType() types.Type    { return n.Type }
 
 type ForNode struct {
 	ExprsOrStmts []Node

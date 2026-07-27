@@ -108,6 +108,15 @@ func (w *debugWalker) walkNode(node parser.Node) {
 			w.walkNode(n.ElseBranch)
 		}
 
+	case *parser.MatchNode:
+		w.walkExpr(n.Subject)
+		for _, arm := range n.Arms {
+			if arm.Guard != nil {
+				w.walkExpr(arm.Guard)
+			}
+			w.walkExpr(arm.Body)
+		}
+
 	case *parser.ForNode:
 		w.walkNode(n.Body)
 
@@ -147,6 +156,9 @@ func (w *debugWalker) walkExpr(expr parser.ExpressionNode) {
 		w.walkExpr(n.Operand)
 		w.checkType(n.Type)
 
+	case *parser.ReprNode:
+		w.walkExpr(n.Operand)
+
 	case *parser.UnaryOpNode:
 		w.walkExpr(n.Operand)
 
@@ -158,7 +170,7 @@ func (w *debugWalker) walkExpr(expr parser.ExpressionNode) {
 		// Instance method calls are resolved directly to their function symbol;
 		// the member-shaped callee is syntax for receiver dispatch, not a bound
 		// method expression with its own type.
-		if n.Symbol == nil {
+		if n.Symbol == nil && n.TaggedUnionType == nil {
 			w.walkExpr(n.Callee)
 		}
 		for _, arg := range n.Args {
@@ -207,6 +219,15 @@ func (w *debugWalker) walkExpr(expr parser.ExpressionNode) {
 		}
 		if n.ElseBranch != nil {
 			w.walkNode(n.ElseBranch)
+		}
+
+	case *parser.MatchNode:
+		w.walkExpr(n.Subject)
+		for _, arm := range n.Arms {
+			if arm.Guard != nil {
+				w.walkExpr(arm.Guard)
+			}
+			w.walkExpr(arm.Body)
 		}
 
 	case *parser.SizeOfNode:

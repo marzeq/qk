@@ -200,6 +200,9 @@ func (a *Attributor) attributeNode(node parser.Node) {
 	case *parser.IfNode:
 		a.attributeIf(n)
 
+	case *parser.MatchNode:
+		a.attributeMatch(n)
+
 	case *parser.ForNode:
 		for _, node := range n.ExprsOrStmts {
 			a.attributeNode(node)
@@ -366,6 +369,45 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		}
 
 	case *parser.FunctionCallNode:
+		if n.TaggedUnionType != nil {
+			for _, arg := range n.Args {
+				a.attributeExpr(arg)
+			}
+			if n.TaggedUnionTemplate != nil {
+				info, tagged := types.TaggedUnion(n.TaggedUnionType)
+				if !tagged || n.TaggedUnionVariant < 0 || n.TaggedUnionVariant >= len(info.Variants) {
+					a.errorf(n, "invalid tagged union constructor")
+					n.TaggedUnionType = types.ErrorType{}
+					break
+				}
+				variant := info.Variants[n.TaggedUnionVariant]
+				if len(n.Args) != len(variant.Fields) {
+					break
+				}
+				patterns := make([]types.Type, len(variant.Fields))
+				for i := range variant.Fields {
+					patterns[i] = variant.Fields[i].R
+				}
+				generic := a.analyser.genericAliases[n.TaggedUnionTemplate]
+				arguments, err := inferGenericArguments(
+					generic.parameters, patterns, expressionTypes(n.Args), false, false,
+				)
+				if err != nil {
+					a.errorf(n, "%v", err)
+					n.TaggedUnionType = types.ErrorType{}
+					break
+				}
+				specialization := a.analyser.specializeGenericAlias(generic, arguments, n, false)
+				if specialization == nil {
+					n.TaggedUnionType = types.ErrorType{}
+					break
+				}
+				n.TaggedUnionType = specialization.TypeInfo
+				n.TaggedUnionTemplate = nil
+			}
+			n.SetType(n.TaggedUnionType)
+			break
+		}
 		methodHandled := false
 		if n.Symbol == nil {
 			methodHandled = a.attributeMethodCall(n)
@@ -445,6 +487,9 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 
 	case *parser.IfNode:
 		a.attributeIf(n)
+
+	case *parser.MatchNode:
+		a.attributeMatch(n)
 
 	case *parser.UnaryOpNode:
 		a.attributeExpr(n.Operand)
@@ -651,6 +696,11 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		if ptr, ok := subjectType.(types.PointerType); ok {
 			subjectType = types.Underlying(ptr.Base)
 		}
+		if info, tagged := types.TaggedUnion(subjectType); tagged && info.Auto && n.Field.Name == "tag" {
+			a.errorf(n, "the tag of an @auto tagged union is compiler-private")
+			n.SetType(types.ErrorType{})
+			break
+		}
 		switch t := subjectType.(type) {
 		case types.FlagsType:
 			value, exists := t.VariantValue(n.Field.Name)
@@ -842,6 +892,32 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		} else {
 			n.SetType(target)
 		}
+
+	case *parser.ReprNode:
+		a.attributeExpr(n.Operand)
+		operand := n.Operand.GetType()
+		if pointer, ok := types.Underlying(operand).(types.PointerType); ok {
+			if pointer.Mutable {
+				a.errorf(n, "repr does not permit mutable tagged union pointers")
+				n.SetType(types.ErrorType{})
+				break
+			}
+			repr, tagged := types.TaggedUnionRepr(pointer.Base)
+			if !tagged {
+				a.errorf(n, "repr requires an explicitly tagged union value or immutable pointer, got %v", operand)
+				n.SetType(types.ErrorType{})
+				break
+			}
+			n.SetType(types.PointerType{Base: repr})
+			break
+		}
+		repr, tagged := types.TaggedUnionRepr(operand)
+		if !tagged {
+			a.errorf(n, "repr requires an explicitly tagged union value or immutable pointer, got %v", operand)
+			n.SetType(types.ErrorType{})
+			break
+		}
+		n.SetType(repr)
 
 	case *parser.SizeOfNode:
 		n.SetType(types.PrimitiveUsz)
@@ -1372,6 +1448,112 @@ func (a *Attributor) attributeIf(n *parser.IfNode) {
 	n.SetType(a.mergeReturnTypes(candidates))
 }
 
+func (a *Attributor) attributeMatch(n *parser.MatchNode) {
+	a.attributeExpr(n.Subject)
+	if n.Binding != nil {
+		n.Binding.Type = n.Subject.GetType()
+	}
+	for i := range n.Arms {
+		arm := &n.Arms[i]
+		a.attributeMatchPattern(arm.Pattern, n.Subject.GetType())
+		if arm.Guard != nil {
+			a.attributeExpr(arm.Guard)
+		}
+		a.attributeExpr(arm.Body)
+	}
+	if !n.Expression {
+		n.SetType(types.PrimitiveVoid)
+		return
+	}
+	var candidates []returnTypeCandidate
+	for i := range n.Arms {
+		body := n.Arms[i].Body
+		if parser.NodeFallsThrough(body) {
+			candidates = append(candidates, returnTypeCandidate{node: body, ty: body.GetType()})
+		}
+	}
+	if len(candidates) == 0 {
+		n.SetType(types.PrimitiveVoid)
+		return
+	}
+	n.SetType(a.mergeReturnTypes(candidates))
+}
+
+func (a *Attributor) attributeMatchPattern(pattern *parser.MatchPatternNode, subjectType types.Type) {
+	if pattern == nil {
+		return
+	}
+	switch pattern.Kind {
+	case parser.MatchPatternLiteral:
+		a.attributeExpr(pattern.Literal)
+	case parser.MatchPatternRange:
+		a.attributeExpr(pattern.Start)
+		a.attributeExpr(pattern.End)
+	case parser.MatchPatternAlternative:
+		for _, alternative := range pattern.Alternatives {
+			a.attributeMatchPattern(alternative, subjectType)
+		}
+	case parser.MatchPatternVariant:
+		if info, tagged := types.TaggedUnion(subjectType); tagged {
+			variant, _, ok := info.Variant(pattern.Variant)
+			if !ok {
+				a.errorf(pattern, "tagged union %v has no variant %q", subjectType, pattern.Variant)
+				return
+			}
+			pattern.TagValue = variant.TagValue
+			pattern.PayloadType = types.StructType{Fields: variant.Fields}
+			if len(variant.Fields) == 0 && pattern.Payload {
+				a.errorf(pattern, "empty variant .%s pattern does not take parentheses", variant.Name)
+			}
+			if len(pattern.Bindings) != len(variant.Fields) {
+				a.errorf(pattern, "variant %q pattern expects %d payload bindings, but %d provided", variant.Name, len(variant.Fields), len(pattern.Bindings))
+				return
+			}
+			seenFields := map[string]bool{}
+			for i := range pattern.Bindings {
+				binding := &pattern.Bindings[i]
+				fieldIndex := i
+				if binding.Field != "" {
+					fieldIndex = -1
+					for j, field := range variant.Fields {
+						if field.L == binding.Field {
+							fieldIndex = j
+							break
+						}
+					}
+					if fieldIndex < 0 {
+						a.errorf(pattern, "variant %q has no payload field %q", variant.Name, binding.Field)
+						continue
+					}
+					if seenFields[binding.Field] {
+						a.errorf(pattern, "payload field %q appears more than once in pattern", binding.Field)
+					}
+					seenFields[binding.Field] = true
+				}
+				binding.Field = variant.Fields[fieldIndex].L
+				if binding.Symbol != nil {
+					binding.Symbol.Type = variant.Fields[fieldIndex].R
+				}
+			}
+			return
+		}
+		enumType, ok := types.Underlying(subjectType).(types.EnumType)
+		if !ok {
+			a.errorf(pattern, "variant pattern .%s requires an enum or tagged union subject", pattern.Variant)
+			return
+		}
+		value, ok := enumType.VariantValue(pattern.Variant)
+		if !ok {
+			a.errorf(pattern, "enum %v has no member %q", subjectType, pattern.Variant)
+			return
+		}
+		if pattern.Payload {
+			a.errorf(pattern, "enum member .%s has no payload", pattern.Variant)
+		}
+		pattern.TagValue = value
+	}
+}
+
 func collectFunctionReturnNodes(body []parser.Node) []*parser.ControlKeywordNode {
 	var returnNodes []*parser.ControlKeywordNode
 
@@ -1400,6 +1582,12 @@ func collectFunctionReturnNodesFromNode(node parser.Node) []*parser.ControlKeywo
 		}
 		if n.ElseBranch != nil {
 			result = append(result, collectFunctionReturnNodes(n.ElseBranch.Body)...)
+		}
+		return result
+	case *parser.MatchNode:
+		var result []*parser.ControlKeywordNode
+		for _, arm := range n.Arms {
+			result = append(result, collectFunctionReturnNodesFromExpr(arm.Body)...)
 		}
 		return result
 	case *parser.ForNode:
@@ -1432,7 +1620,7 @@ func collectFunctionReturnNodesFromExpr(expr parser.ExpressionNode) []*parser.Co
 		return result
 	}
 	switch n := expr.(type) {
-	case *parser.BlockNode, *parser.IfNode:
+	case *parser.BlockNode, *parser.IfNode, *parser.MatchNode:
 		return collectFunctionReturnNodesFromNode(n)
 	case *parser.BinaryOpNode:
 		return collect(n.Operand1, n.Operand2)

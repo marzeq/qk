@@ -587,6 +587,8 @@ func (g *Generator) GenerateNode(node parser.Node) {
 		g.registerDefer(n)
 	case *parser.IfNode:
 		g.generateIf(n)
+	case *parser.MatchNode:
+		g.generateMatch(n)
 	case *parser.ForNode:
 		g.generateFor(n)
 	case *parser.RangeForNode:
@@ -1168,6 +1170,8 @@ func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
 		return g.generateBlockExpr(n)
 	case *parser.IfNode:
 		return g.generateIfExpr(n)
+	case *parser.MatchNode:
+		return g.generateMatch(n)
 	case *parser.BinaryOpNode:
 		return g.generateBinaryExpr(n)
 	case *parser.UnaryOpNode:
@@ -1181,11 +1185,18 @@ func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
 	case *parser.SliceExprNode:
 		return g.generateSliceExpr(n)
 	case *parser.FunctionCallNode:
+		if n.TaggedUnionType != nil {
+			return g.generateTaggedUnionConstructor(n)
+		}
 		return g.generateFunctionCallExpr(n)
 	case *parser.FieldAccessNode:
 		return g.generateFieldAccessExpr(n)
 	case *parser.CastNode:
 		return g.generateCastExpr(n)
+	case *parser.ReprNode:
+		value := g.GenerateExpr(n.Operand)
+		value.Type = n.GetType()
+		return value
 	case *parser.SizeOfNode:
 		return g.generateSizeOfExpr(n)
 	case *parser.SizeOfExprNode:
@@ -1893,6 +1904,221 @@ func (g *Generator) generateStructLiteralExpr(node *parser.StructLiteralNode) ir
 	dst := g.currentFunction.NewValueOfType(node.GetType())
 	g.Emit(ir.Load{Dest: dst, Slot: tmpSlot})
 	return ir.ValueOperand(dst, node.GetType())
+}
+
+func (g *Generator) generateTaggedUnionConstructor(node *parser.FunctionCallNode) ir.Operand {
+	info, ok := types.TaggedUnion(node.TaggedUnionType)
+	if !ok || node.TaggedUnionVariant < 0 || node.TaggedUnionVariant >= len(info.Variants) {
+		panic("invalid tagged union constructor")
+	}
+	variant := info.Variants[node.TaggedUnionVariant]
+	slot := g.currentFunction.NewSlot(node.TaggedUnionType, "tagged.union")
+	g.Emit(ir.Alloca{Slot: slot})
+	g.Emit(ir.Store{Slot: slot, Value: ir.ZeroConstOperand(node.TaggedUnionType)})
+	baseID := g.currentFunction.NewValueOfType(types.PointerType{Base: node.TaggedUnionType})
+	g.Emit(ir.AddressOf{Dest: baseID, Slot: slot})
+	base := ir.ValueOperand(baseID, types.PointerType{Base: node.TaggedUnionType})
+
+	tagPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: info.Tag})
+	g.Emit(ir.FieldAddress{Dest: tagPtrID, Base: base, Field: "$tag"})
+	g.Emit(ir.StorePtr{
+		Ptr:   ir.ValueOperand(tagPtrID, types.PointerType{Base: info.Tag}),
+		Value: ir.IntConstOperand(variant.TagValue, info.Tag),
+	})
+
+	if len(variant.Fields) != 0 {
+		storage := types.Underlying(node.TaggedUnionType).(types.StructType)
+		payloadUnion := storage.Fields[1].R
+		payloadPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: payloadUnion})
+		g.Emit(ir.FieldAddress{Dest: payloadPtrID, Base: base, Field: "$payload"})
+		payloadPtr := ir.ValueOperand(payloadPtrID, types.PointerType{Base: payloadUnion})
+		variantType := types.StructType{Fields: variant.Fields}
+		variantPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: variantType})
+		g.Emit(ir.FieldAddress{Dest: variantPtrID, Base: payloadPtr, Field: variant.Name})
+		variantPtr := ir.ValueOperand(variantPtrID, types.PointerType{Base: variantType})
+		for i, field := range variant.Fields {
+			fieldPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: field.R})
+			g.Emit(ir.FieldAddress{Dest: fieldPtrID, Base: variantPtr, Field: field.L})
+			g.Emit(ir.StorePtr{
+				Ptr:   ir.ValueOperand(fieldPtrID, types.PointerType{Base: field.R}),
+				Value: g.GenerateExpr(node.Args[i]),
+			})
+		}
+	}
+
+	resultID := g.currentFunction.NewValueOfType(node.TaggedUnionType)
+	g.Emit(ir.Load{Dest: resultID, Slot: slot})
+	return ir.ValueOperand(resultID, node.TaggedUnionType)
+}
+
+func (g *Generator) generateMatch(node *parser.MatchNode) ir.Operand {
+	previousEnv := g.currentEnv
+	g.currentEnv = NewEnv(previousEnv)
+	defer func() { g.currentEnv = previousEnv }()
+
+	subjectSlot := g.currentFunction.NewSlot(node.Subject.GetType(), "match.subject")
+	g.Emit(ir.Alloca{Slot: subjectSlot})
+	g.Emit(ir.Store{Slot: subjectSlot, Value: g.GenerateExpr(node.Subject)})
+	if node.Binding != nil {
+		g.currentEnv.Variables[node.Binding] = subjectSlot
+	}
+
+	var resultSlot ir.SlotID
+	fallsThrough := node.Expression && parser.NodeFallsThrough(node)
+	if fallsThrough {
+		resultSlot = g.currentFunction.NewSlot(node.GetType(), "match.result")
+		g.Emit(ir.Alloca{Slot: resultSlot})
+	}
+	mergeBlock := g.currentFunction.NewBlock("match.merge")
+
+	for index := range node.Arms {
+		arm := &node.Arms[index]
+		setupBlock := g.currentFunction.NewBlock(fmt.Sprintf("match.arm.%d.setup", index))
+		bodyBlock := g.currentFunction.NewBlock(fmt.Sprintf("match.arm.%d.body", index))
+		nextBlock := g.currentFunction.NewBlock(fmt.Sprintf("match.arm.%d.next", index))
+		condition := g.generateMatchPatternCondition(arm.Pattern, subjectSlot, node.Subject.GetType())
+		g.Emit(ir.Branch{Cond: condition, Then: setupBlock.ID, Else: nextBlock.ID})
+
+		g.currentBlock = setupBlock
+		armEnv := NewEnv(g.currentEnv)
+		g.currentEnv = armEnv
+		g.bindMatchPattern(arm.Pattern, subjectSlot, node.Subject.GetType())
+		if arm.Guard != nil {
+			guard := g.GenerateExpr(arm.Guard)
+			g.Emit(ir.Branch{Cond: guard, Then: bodyBlock.ID, Else: nextBlock.ID})
+		} else {
+			g.Emit(ir.Jump{Target: bodyBlock.ID})
+		}
+
+		g.currentBlock = bodyBlock
+		if node.Expression {
+			value := g.GenerateExpr(arm.Body)
+			if !g.currentBlockHasTerminator() {
+				if fallsThrough {
+					g.Emit(ir.Store{Slot: resultSlot, Value: value})
+				}
+				g.Emit(ir.Jump{Target: mergeBlock.ID})
+			}
+		} else {
+			g.GenerateNode(arm.Body)
+			if !g.currentBlockHasTerminator() {
+				g.Emit(ir.Jump{Target: mergeBlock.ID})
+			}
+		}
+		g.currentEnv = armEnv.Parent
+		g.currentBlock = nextBlock
+	}
+
+	g.Emit(ir.Unreachable{})
+	g.currentBlock = mergeBlock
+	if node.Expression {
+		if !fallsThrough {
+			g.Emit(ir.Unreachable{})
+			return ir.ZeroConstOperand(node.GetType())
+		}
+		resultID := g.currentFunction.NewValueOfType(node.GetType())
+		g.Emit(ir.Load{Dest: resultID, Slot: resultSlot})
+		return ir.ValueOperand(resultID, node.GetType())
+	}
+	if !parser.NodeFallsThrough(node) {
+		g.Emit(ir.Unreachable{})
+	}
+	return ir.Operand{}
+}
+
+func (g *Generator) generateMatchPatternCondition(pattern *parser.MatchPatternNode, subjectSlot ir.SlotID, subjectType types.Type) ir.Operand {
+	switch pattern.Kind {
+	case parser.MatchPatternWildcard:
+		return ir.BoolConstOperand(true)
+	case parser.MatchPatternVariant:
+		if info, tagged := types.TaggedUnion(subjectType); tagged {
+			tag := g.loadTaggedUnionTag(subjectSlot, subjectType, info.Tag)
+			return g.emitBinaryOperation(parser.BinaryOpEqual, tag, ir.IntConstOperand(pattern.TagValue, info.Tag), types.PrimitiveBool)
+		}
+		subject := g.loadMatchSubject(subjectSlot, subjectType)
+		return g.emitBinaryOperation(parser.BinaryOpEqual, subject, ir.IntConstOperand(pattern.TagValue, subjectType), types.PrimitiveBool)
+	case parser.MatchPatternLiteral:
+		subject := g.loadMatchSubject(subjectSlot, subjectType)
+		return g.emitBinaryOperation(parser.BinaryOpEqual, subject, g.GenerateExpr(pattern.Literal), types.PrimitiveBool)
+	case parser.MatchPatternRange:
+		subject := g.loadMatchSubject(subjectSlot, subjectType)
+		start := g.GenerateExpr(pattern.Start)
+		end := g.GenerateExpr(pattern.End)
+		atLeast := g.emitBinaryOperation(parser.BinaryOpGreaterEqual, subject, start, types.PrimitiveBool)
+		below := g.emitBinaryOperation(parser.BinaryOpLess, subject, end, types.PrimitiveBool)
+		return g.emitBinaryOperation(parser.BinaryOpBitwiseAnd, atLeast, below, types.PrimitiveBool)
+	case parser.MatchPatternAlternative:
+		result := ir.BoolConstOperand(false)
+		for _, alternative := range pattern.Alternatives {
+			condition := g.generateMatchPatternCondition(alternative, subjectSlot, subjectType)
+			result = g.emitBinaryOperation(parser.BinaryOpBitwiseOr, result, condition, types.PrimitiveBool)
+		}
+		return result
+	default:
+		panic("unsupported match pattern")
+	}
+}
+
+func (g *Generator) loadMatchSubject(slot ir.SlotID, subjectType types.Type) ir.Operand {
+	valueID := g.currentFunction.NewValueOfType(subjectType)
+	g.Emit(ir.Load{Dest: valueID, Slot: slot})
+	return ir.ValueOperand(valueID, subjectType)
+}
+
+func (g *Generator) loadTaggedUnionTag(slot ir.SlotID, subjectType, tagType types.Type) ir.Operand {
+	baseID := g.currentFunction.NewValueOfType(types.PointerType{Base: subjectType})
+	g.Emit(ir.AddressOf{Dest: baseID, Slot: slot})
+	tagPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: tagType})
+	g.Emit(ir.FieldAddress{
+		Dest: tagPtrID, Base: ir.ValueOperand(baseID, types.PointerType{Base: subjectType}), Field: "$tag",
+	})
+	tagID := g.currentFunction.NewValueOfType(tagType)
+	g.Emit(ir.LoadPtr{Dest: tagID, Ptr: ir.ValueOperand(tagPtrID, types.PointerType{Base: tagType})})
+	return ir.ValueOperand(tagID, tagType)
+}
+
+func (g *Generator) bindMatchPattern(pattern *parser.MatchPatternNode, subjectSlot ir.SlotID, subjectType types.Type) {
+	if pattern.Kind != parser.MatchPatternVariant || len(pattern.Bindings) == 0 {
+		return
+	}
+	info, tagged := types.TaggedUnion(subjectType)
+	if !tagged {
+		return
+	}
+	variant, _, ok := info.Variant(pattern.Variant)
+	if !ok || len(variant.Fields) == 0 {
+		return
+	}
+	storage := types.Underlying(subjectType).(types.StructType)
+	payloadUnion := storage.Fields[1].R
+	baseID := g.currentFunction.NewValueOfType(types.PointerType{Base: subjectType})
+	g.Emit(ir.AddressOf{Dest: baseID, Slot: subjectSlot})
+	payloadPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: payloadUnion})
+	g.Emit(ir.FieldAddress{
+		Dest: payloadPtrID,
+		Base: ir.ValueOperand(baseID, types.PointerType{Base: subjectType}), Field: "$payload",
+	})
+	variantType := types.StructType{Fields: variant.Fields}
+	variantPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: variantType})
+	g.Emit(ir.FieldAddress{
+		Dest: variantPtrID,
+		Base: ir.ValueOperand(payloadPtrID, types.PointerType{Base: payloadUnion}), Field: variant.Name,
+	})
+	variantPtr := ir.ValueOperand(variantPtrID, types.PointerType{Base: variantType})
+	for _, binding := range pattern.Bindings {
+		if binding.Symbol == nil {
+			continue
+		}
+		fieldType := binding.Symbol.Type
+		fieldPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: fieldType})
+		g.Emit(ir.FieldAddress{Dest: fieldPtrID, Base: variantPtr, Field: binding.Field})
+		valueID := g.currentFunction.NewValueOfType(fieldType)
+		g.Emit(ir.LoadPtr{Dest: valueID, Ptr: ir.ValueOperand(fieldPtrID, types.PointerType{Base: fieldType})})
+		slot := g.currentFunction.NewSlot(fieldType, binding.Name)
+		g.currentEnv.Variables[binding.Symbol] = slot
+		g.Emit(ir.Alloca{Slot: slot})
+		g.Emit(ir.Store{Slot: slot, Value: ir.ValueOperand(valueID, fieldType)})
+	}
 }
 
 func (g *Generator) generateSliceLiteralExpr(node *parser.SliceLiteralNode) ir.Operand {

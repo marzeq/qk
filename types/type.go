@@ -55,6 +55,18 @@ func SubstituteSelf(t Type, replacement Type) Type {
 		for i := range t.Fields {
 			t.Fields[i].R = SubstituteSelf(t.Fields[i].R, replacement)
 		}
+		if t.TaggedUnion != nil {
+			info := *t.TaggedUnion
+			info.Tag = SubstituteSelf(info.Tag, replacement)
+			info.Variants = append([]TaggedUnionVariant(nil), info.Variants...)
+			for i := range info.Variants {
+				info.Variants[i].Fields = append([]shared.Pair[string, Type](nil), info.Variants[i].Fields...)
+				for j := range info.Variants[i].Fields {
+					info.Variants[i].Fields[j].R = SubstituteSelf(info.Variants[i].Fields[j].R, replacement)
+				}
+			}
+			t.TaggedUnion = &info
+		}
 		return t
 	case UnionType:
 		t.Fields = append([]shared.Pair[string, Type](nil), t.Fields...)
@@ -283,6 +295,18 @@ func Substitute(t Type, arguments map[string]Type) Type {
 		for i := range t.Fields {
 			t.Fields[i].R = Substitute(t.Fields[i].R, arguments)
 		}
+		if t.TaggedUnion != nil {
+			info := *t.TaggedUnion
+			info.Tag = Substitute(info.Tag, arguments)
+			info.Variants = append([]TaggedUnionVariant(nil), info.Variants...)
+			for i := range info.Variants {
+				info.Variants[i].Fields = append([]shared.Pair[string, Type](nil), info.Variants[i].Fields...)
+				for j := range info.Variants[i].Fields {
+					info.Variants[i].Fields[j].R = Substitute(info.Variants[i].Fields[j].R, arguments)
+				}
+			}
+			t.TaggedUnion = &info
+		}
 		return t
 	case UnionType:
 		t.Fields = append([]shared.Pair[string, Type](nil), t.Fields...)
@@ -393,6 +417,9 @@ func Identity(t Type) string {
 	case UnionType:
 		return "union(" + t.Module + ":" + t.Name + ")"
 	case EnumType:
+		if t.IdentityName != "" {
+			return "enum(" + t.IdentityName + ")"
+		}
 		return "enum(" + t.Module + ":" + t.Name + ")"
 	case FlagsType:
 		return "flags(" + t.String() + ")"
@@ -602,8 +629,75 @@ func (p PrimitiveType) String() string {
 }
 
 type StructType struct {
-	Fields []shared.Pair[string, Type]
-	Packed bool
+	Fields      []shared.Pair[string, Type]
+	Packed      bool
+	TaggedUnion *TaggedUnionInfo
+}
+
+type TaggedUnionInfo struct {
+	Tag      Type
+	Variants []TaggedUnionVariant
+	Auto     bool
+}
+
+type TaggedUnionVariant struct {
+	Name     string
+	TagValue string
+	Fields   []shared.Pair[string, Type]
+}
+
+func TaggedUnion(t Type) (*TaggedUnionInfo, bool) {
+	st, ok := Underlying(t).(StructType)
+	if !ok || st.TaggedUnion == nil {
+		return nil, false
+	}
+	return st.TaggedUnion, true
+}
+
+// TaggedUnionRepr returns the ordinary source-visible struct and union type
+// that has the same layout as an explicitly tagged union. Auto tags remain
+// compiler-private and intentionally have no raw representation view.
+func TaggedUnionRepr(t Type) (StructType, bool) {
+	storage, ok := Underlying(t).(StructType)
+	if !ok || storage.TaggedUnion == nil || storage.TaggedUnion.Auto {
+		return StructType{}, false
+	}
+	payload := make([]shared.Pair[string, Type], 0, len(storage.TaggedUnion.Variants))
+	for _, variant := range storage.TaggedUnion.Variants {
+		if len(variant.Fields) == 0 {
+			continue
+		}
+		fields := make([]shared.Pair[string, Type], len(variant.Fields))
+		for i, field := range variant.Fields {
+			name := field.L
+			if _, positional := strconv.Atoi(name); positional == nil {
+				name = "_" + name
+			}
+			fields[i] = shared.Pair[string, Type]{L: name, R: field.R}
+		}
+		payload = append(payload, shared.Pair[string, Type]{
+			L: variant.Name, R: StructType{Fields: fields},
+		})
+	}
+	return StructType{
+		Packed: storage.Packed,
+		Fields: []shared.Pair[string, Type]{
+			{L: "tag", R: storage.TaggedUnion.Tag},
+			{L: "payload", R: UnionType{Fields: payload}},
+		},
+	}, true
+}
+
+func (i *TaggedUnionInfo) Variant(name string) (TaggedUnionVariant, int, bool) {
+	if i == nil {
+		return TaggedUnionVariant{}, -1, false
+	}
+	for index, variant := range i.Variants {
+		if variant.Name == name {
+			return variant, index, true
+		}
+	}
+	return TaggedUnionVariant{}, -1, false
 }
 
 type TraitMethod struct {
@@ -748,10 +842,11 @@ func IsComplete(t Type) bool {
 }
 
 type EnumType struct {
-	Module   string
-	Name     string
-	Variants []string
-	Values   []string
+	Module       string
+	Name         string
+	IdentityName string
+	Variants     []string
+	Values       []string
 }
 
 type FlagsType struct {
@@ -806,7 +901,13 @@ func (u UnionType) String() string {
 
 func (e EnumType) Equals(other Type) bool {
 	o, ok := other.(EnumType)
-	return ok && e.Module == o.Module && e.Name == o.Name
+	if !ok {
+		return false
+	}
+	if e.IdentityName != "" || o.IdentityName != "" {
+		return e.IdentityName != "" && e.IdentityName == o.IdentityName
+	}
+	return e.Module == o.Module && e.Name == o.Name
 }
 func (e EnumType) CanCoerceTo(other Type) bool { return e.Equals(other) }
 func (e EnumType) CanCastTo(other Type) bool   { return e.Equals(other) }
@@ -1302,6 +1403,63 @@ func HasTraitPointer(t Type) bool {
 		}
 	case SliceType:
 		return HasTraitPointer(t.Base)
+	}
+	return false
+}
+
+// HasTaggedUnion reports whether a nominal tagged union occurs anywhere in a
+// type, including behind pointer or slice indirection.
+func HasTaggedUnion(t Type) bool {
+	return hasTaggedUnion(t, make(map[string]bool), make(map[*AliasRef]bool))
+}
+
+func hasTaggedUnion(t Type, defined map[string]bool, aliases map[*AliasRef]bool) bool {
+	switch t := t.(type) {
+	case DefinedType:
+		key := Identity(t)
+		if defined[key] {
+			return false
+		}
+		defined[key] = true
+		return hasTaggedUnion(t.Underlying, defined, aliases)
+	case *AliasRef:
+		if aliases[t] || t.Target == nil || *t.Target == nil {
+			return false
+		}
+		aliases[t] = true
+		return hasTaggedUnion(*t.Target, defined, aliases)
+	case PointerType:
+		return hasTaggedUnion(t.Base, defined, aliases)
+	case SliceType:
+		return hasTaggedUnion(t.Base, defined, aliases)
+	case StructType:
+		if t.TaggedUnion != nil {
+			return true
+		}
+		for _, field := range t.Fields {
+			if hasTaggedUnion(field.R, defined, aliases) {
+				return true
+			}
+		}
+	case UnionType:
+		for _, field := range t.Fields {
+			if hasTaggedUnion(field.R, defined, aliases) {
+				return true
+			}
+		}
+	case FunctionType:
+		for _, parameter := range t.Parameters {
+			if hasTaggedUnion(parameter, defined, aliases) {
+				return true
+			}
+		}
+		return hasTaggedUnion(t.ReturnType, defined, aliases)
+	case MultipleReturnType:
+		for _, item := range t.Types {
+			if hasTaggedUnion(item, defined, aliases) {
+				return true
+			}
+		}
 	}
 	return false
 }

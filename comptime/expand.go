@@ -209,7 +209,7 @@ func whenContinuesPrevious(tokens []tokeniser.Token) bool {
 		tokeniser.TokenPipe, tokeniser.TokenCaret, tokeniser.TokenShiftLeft,
 		tokeniser.TokenShiftRight, tokeniser.TokenEqualsEquals, tokeniser.TokenNotEquals,
 		tokeniser.TokenLess, tokeniser.TokenLessEquals, tokeniser.TokenGreater,
-		tokeniser.TokenGreaterEquals, tokeniser.TokenArrow:
+		tokeniser.TokenGreaterEquals, tokeniser.TokenArrow, tokeniser.TokenFatArrow:
 		return true
 	default:
 		return false

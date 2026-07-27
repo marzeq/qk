@@ -125,7 +125,7 @@ func isStatementStart(tok tokeniser.Token) bool {
 	case string(tokeniser.KeywordLet),
 		string(tokeniser.KeywordReturn), string(tokeniser.KeywordBreak),
 		string(tokeniser.KeywordContinue), string(tokeniser.KeywordDefer),
-		string(tokeniser.KeywordIf), string(tokeniser.KeywordFor):
+		string(tokeniser.KeywordIf), string(tokeniser.KeywordMatch), string(tokeniser.KeywordFor):
 		return true
 	default:
 		return false
@@ -985,6 +985,9 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 			return node, true, err
 		case string(tokeniser.KeywordIf):
 			node, err := p.ParseIfStatement()
+			return node, false, err
+		case string(tokeniser.KeywordMatch):
+			node, err := p.ParseMatch(false)
 			return node, false, err
 		case string(tokeniser.KeywordFor):
 			node, err := p.ParseForLoop()

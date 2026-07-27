@@ -20,7 +20,7 @@ function! GetQkIndent() abort
   " Indent after an opening delimiter or an unfinished expression.
   if l:previous_line =~# '[{[(]\s*$'
     let l:indent += l:width
-  elseif l:previous_line =~# '\%([=,+\-*/%&|^]\|->\)\s*$'
+  elseif l:previous_line =~# '\%([=,+\-*/%&|^]\|->\|=>\)\s*$'
     let l:indent += l:width
   endif
 

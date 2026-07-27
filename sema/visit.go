@@ -29,6 +29,9 @@ func (a *Analyser) visit(node parser.Node) {
 	case *parser.IfNode:
 		a.visitIf(n)
 
+	case *parser.MatchNode:
+		a.visitMatch(n)
+
 	case *parser.ForNode:
 		a.visitFor(n)
 
@@ -231,6 +234,9 @@ func (a *Analyser) visitExpression(expr parser.ExpressionNode) {
 			a.visitBlock(e.ElseBranch)
 		}
 
+	case *parser.MatchNode:
+		a.visitMatch(e)
+
 	case *parser.StructLiteralNode:
 		a.visitStructLiteral(e)
 
@@ -245,6 +251,9 @@ func (a *Analyser) visitExpression(expr parser.ExpressionNode) {
 		}
 
 	case *parser.CastNode:
+		a.visitExpression(e.Operand)
+
+	case *parser.ReprNode:
 		a.visitExpression(e.Operand)
 
 	case *parser.SizeOfNode:
@@ -321,6 +330,56 @@ func (a *Analyser) visitIf(n *parser.IfNode) {
 	if n.ElseBranch != nil {
 		a.visitBlock(n.ElseBranch)
 	}
+}
+
+func (a *Analyser) visitMatch(n *parser.MatchNode) {
+	a.visitExpression(n.Subject)
+	previous := a.current
+	a.current = symbols.NewScope(previous)
+	defer func() { a.current = previous }()
+	if n.BindingName != "" && n.BindingName != "_" {
+		binding := symbols.NewVariable(n.BindingName, nil)
+		if a.defineSymbol(binding, n) {
+			n.Binding = binding
+		}
+	}
+	for armIndex := range n.Arms {
+		arm := &n.Arms[armIndex]
+		armScope := symbols.NewScope(a.current)
+		a.current = armScope
+		for _, binding := range matchPatternBindings(arm.Pattern) {
+			if binding.Name == "_" {
+				continue
+			}
+			symbol := symbols.NewVariable(binding.Name, nil)
+			if a.defineSymbol(symbol, arm.Pattern) {
+				binding.Symbol = symbol
+			}
+		}
+		if arm.Guard != nil {
+			a.visitExpression(arm.Guard)
+		}
+		a.visitExpression(arm.Body)
+		a.current = armScope.Parent
+	}
+}
+
+func matchPatternBindings(pattern *parser.MatchPatternNode) []*parser.MatchBinding {
+	if pattern == nil {
+		return nil
+	}
+	if pattern.Kind == parser.MatchPatternAlternative {
+		var result []*parser.MatchBinding
+		for _, alternative := range pattern.Alternatives {
+			result = append(result, matchPatternBindings(alternative)...)
+		}
+		return result
+	}
+	result := make([]*parser.MatchBinding, len(pattern.Bindings))
+	for i := range pattern.Bindings {
+		result[i] = &pattern.Bindings[i]
+	}
+	return result
 }
 
 func (a *Analyser) visitFor(n *parser.ForNode) {

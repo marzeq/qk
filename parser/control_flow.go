@@ -20,6 +20,9 @@ func BlockResult(block *BlockNode) (ExpressionNode, bool) {
 	if conditional, ok := expr.(*IfNode); ok && !conditional.Expression {
 		return nil, false
 	}
+	if match, ok := expr.(*MatchNode); ok && !match.Expression {
+		return nil, false
+	}
 	return expr, true
 }
 
@@ -47,6 +50,13 @@ func NodeFallsThrough(node Node) bool {
 			}
 		}
 		return NodeFallsThrough(n.ElseBranch)
+	case *MatchNode:
+		for _, arm := range n.Arms {
+			if NodeFallsThrough(arm.Body) {
+				return true
+			}
+		}
+		return false
 	case *FunctionCallNode:
 		return n.Symbol == nil || n.Symbol.Attributes.Get(attributes.AttributeTypeNoReturn) == nil
 	default:

@@ -30,12 +30,12 @@ syn keyword qkConstant nil
 " Language words
 syn keyword qkDeclaration let mut pub module import comptime
 syn keyword qkTypeKeyword type alias struct union enum opaque trait dyn flags
-syn keyword qkConditional if else when
+syn keyword qkConditional if else when match
 syn keyword qkRepeat for in
 syn keyword qkStatement break continue return defer
 syn keyword qkOperator and or not as
 syn keyword qkOperator is implements
-syn keyword qkBuiltin sizeof alignof offsetof len compiler_error
+syn keyword qkBuiltin sizeof alignof offsetof len repr reprof compiler_error
 
 " Function and module attributes.
 syn match qkAttribute "@[A-Za-z_][A-Za-z0-9_]*"
