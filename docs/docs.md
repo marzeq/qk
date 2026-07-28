@@ -1288,8 +1288,11 @@ values in declaration order:
 ```qk
 let foo = Value.Foo(10, 20)
 let person = Value.Bar("Ada", 37)
-let empty = Value.Empty()
+let empty = Value.Empty
 ```
+
+Payload variants require call syntax. Empty variants may omit the parentheses;
+the existing `Value.Empty()` spelling is also accepted.
 
 For a generic tagged union, constructor payloads infer omitted type arguments
 when every generic parameter is determined by a typed payload value:
@@ -1301,7 +1304,7 @@ let Option<T> = type union(OptionTag) {
 }
 
 let option = Option.Some("value") // Option<str>
-let none = Option<str>.None()      // T cannot be inferred from an empty payload
+let none = Option<str>.None        // T cannot be inferred from an empty payload
 ```
 
 As with generic function inference, untyped numeric values do not choose a
@@ -1365,7 +1368,7 @@ own fields are otherwise C-ABI-compatible:
 
 ```qk
 let consume(value: reprof(Option<i32>)): void @foreign
-let produce(): reprof(Option<i32>) @export = repr(Option<i32>.None())
+let produce(): reprof(Option<i32>) @export = repr(Option<i32>.None)
 ```
 
 Use `abi "qk"` when a QK function intentionally needs to expose the nominal

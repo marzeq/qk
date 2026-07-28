@@ -51,16 +51,20 @@ type FieldAccessNode struct {
 	Subject ExpressionNode
 	Field   *IdentifierNode
 
-	Loc          shared.Location
-	Type         types.Type
-	EnumValue    string
-	IsEnumValue  bool
-	IsFlagValue  bool
-	IsFlagTest   bool
-	FlagValue    string
-	FlagType     types.Type
-	MethodSymbol *symbols.Symbol
-	MethodModule string
+	Loc         shared.Location
+	Type        types.Type
+	EnumValue   string
+	IsEnumValue bool
+	IsFlagValue bool
+	IsFlagTest  bool
+	FlagValue   string
+	FlagType    types.Type
+	// TaggedUnionType is set when this field access constructs an empty
+	// tagged-union variant without parentheses.
+	TaggedUnionType    types.Type
+	TaggedUnionVariant int
+	MethodSymbol       *symbols.Symbol
+	MethodModule       string
 	// ResolvedIdentifier is set when this dotted access names a declaration in
 	// an imported module rather than a value field.
 	ResolvedIdentifier *IdentifierNode

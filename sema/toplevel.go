@@ -9,52 +9,67 @@ import (
 	"github.com/marzeq/qk/types"
 )
 
-func (a *Analyser) collectTopLevel(root *parser.RootNode) {
-	for _, node := range root.Body {
-		if n, ok := node.(*parser.ImportNode); ok {
-			a.collectImport(n)
+func (a *Analyser) collectTopLevels(roots []*parser.RootNode) {
+	for _, root := range roots {
+		a.currentRoot = root
+		for _, node := range root.Body {
+			if n, ok := node.(*parser.ImportNode); ok {
+				a.collectImport(n)
+			}
 		}
 	}
 
-	for _, node := range root.Body {
-		if n, ok := node.(*parser.TypeAliasNode); ok {
-			a.precollectTypeAlias(n)
+	for _, root := range roots {
+		a.currentRoot = root
+		for _, node := range root.Body {
+			if n, ok := node.(*parser.TypeAliasNode); ok {
+				a.precollectTypeAlias(n)
+			}
 		}
 	}
 
-	for _, node := range root.Body {
-		if n, ok := node.(*parser.TypeAliasNode); ok && len(n.GenericParameters) != 0 {
-			a.finishGenericTypeAlias(n)
+	for _, root := range roots {
+		a.currentRoot = root
+		for _, node := range root.Body {
+			if n, ok := node.(*parser.TypeAliasNode); ok && len(n.GenericParameters) != 0 {
+				a.finishGenericTypeAlias(n)
+			}
 		}
 	}
 
-	for _, node := range root.Body {
-		switch n := node.(type) {
-		case *parser.FunctionDefNode:
-			a.collectFunctionSignature(n)
-		case *parser.DeclarationNode:
-			a.collectGlobalVariable(n)
+	for _, root := range roots {
+		a.currentRoot = root
+		for _, node := range root.Body {
+			switch n := node.(type) {
+			case *parser.FunctionDefNode:
+				a.collectFunctionSignature(n)
+			case *parser.DeclarationNode:
+				a.collectGlobalVariable(n)
+			}
 		}
 	}
 }
 
-func (a *Analyser) resolveBodies(root *parser.RootNode) {
+func (a *Analyser) resolveModuleBodies(roots []*parser.RootNode) {
 	for _, info := range a.aliases {
 		if info.state == aliasUnseen {
 			a.resolveAlias(info, info.node, false)
 		}
 	}
 
-	for _, node := range root.Body {
-		switch n := node.(type) {
-		case *parser.FunctionDefNode:
-			a.visitFunction(n)
-		case *parser.DeclarationNode:
-			if len(n.GenericParameters) != 0 {
-				continue
-			}
-			if n.Value != nil {
-				a.visitExpression(n.Value)
+	for _, root := range roots {
+		a.currentRoot = root
+		for _, node := range root.Body {
+			switch n := node.(type) {
+			case *parser.FunctionDefNode:
+				a.visitFunction(n)
+			case *parser.DeclarationNode:
+				if len(n.GenericParameters) != 0 {
+					continue
+				}
+				if n.Value != nil {
+					a.visitExpression(n.Value)
+				}
 			}
 		}
 	}
@@ -128,6 +143,7 @@ func (a *Analyser) collectPlainFunctionSignature(n *parser.FunctionDefNode) {
 
 	if a.defineSymbol(sym, n) {
 		n.Symbol = sym
+		a.functionDefinitions[sym] = &functionDefinitionInfo{node: n, module: a.currentMod}
 		if sym.Template {
 			a.genericFunctions[sym] = &genericFunctionInfo{
 				node: n, root: a.currentRoot, module: a.currentMod,
@@ -298,6 +314,7 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 		sym.Signature.VariadicElement = types.Underlying(paramTypes[len(paramTypes)-1]).(types.SliceType).Base
 	}
 	n.Symbol = sym
+	a.functionDefinitions[sym] = &functionDefinitionInfo{node: n, module: a.currentMod}
 	if sym.Template {
 		a.genericFunctions[sym] = &genericFunctionInfo{
 			node: n, root: a.currentRoot, module: a.currentMod,

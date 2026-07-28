@@ -512,6 +512,14 @@ func (v *Validator) validateMutablePlace(expr parser.ExpressionNode, reference b
 		return v.validateMutableAccessPath(e, true, reference)
 
 	case *parser.FieldAccessNode:
+		if e.TaggedUnionType != nil {
+			if reference {
+				v.errorf(e, "cannot take mutable reference of this expression")
+			} else {
+				v.errorf(e, "cannot assign to this expression")
+			}
+			return false
+		}
 		return v.validateMutableAccessPath(e, true, reference)
 
 	case *parser.IndexExprNode:
@@ -559,6 +567,14 @@ func (v *Validator) validateMutableAccessPath(expr parser.ExpressionNode, requir
 		return true
 
 	case *parser.FieldAccessNode:
+		if e.TaggedUnionType != nil {
+			if reference {
+				v.errorf(e, "cannot take mutable reference of this expression")
+			} else {
+				v.errorf(e, "cannot assign to this expression")
+			}
+			return false
+		}
 		if e.ResolvedIdentifier != nil {
 			return v.validateMutableAccessPath(e.ResolvedIdentifier, requireMutableRoot, reference)
 		}
@@ -1593,6 +1609,9 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		}
 
 	case *parser.FieldAccessNode:
+		if n.TaggedUnionType != nil {
+			return
+		}
 		if n.MethodSymbol != nil && n.MethodSymbol.Template {
 			v.errorf(n, "generic method %q requires type arguments when used as a value", n.Field.Name)
 			return
@@ -1916,6 +1935,10 @@ func (v *Validator) validateReferenceTarget(node *parser.UnaryOpNode, target par
 		return true
 
 	case *parser.FieldAccessNode:
+		if target.TaggedUnionType != nil {
+			v.errorf(node, "cannot take reference of this expression")
+			return false
+		}
 		if target.ResolvedIdentifier != nil {
 			return v.validateReferenceTarget(node, target.ResolvedIdentifier, mutable)
 		}

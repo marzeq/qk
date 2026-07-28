@@ -16,11 +16,28 @@ type Attributor struct {
 	analyser      *Analyser
 	errors        []error
 	templatesOnly bool
+	functionState map[*symbols.Symbol]functionAttributionState
 }
 
 func (a *Analyser) NewAttributor() *Attributor {
-	return &Attributor{analyser: a}
+	return &Attributor{
+		analyser:      a,
+		functionState: make(map[*symbols.Symbol]functionAttributionState),
+	}
 }
+
+type functionDefinitionInfo struct {
+	node   *parser.FunctionDefNode
+	module string
+}
+
+type functionAttributionState uint8
+
+const (
+	functionUnattributed functionAttributionState = iota
+	functionAttributing
+	functionAttributed
+)
 
 func (a *Attributor) errorf(node parser.Node, format string, args ...any) {
 	a.errors = append(a.errors, shared.NewError(node.GetLoc(), format, args...))
@@ -95,6 +112,11 @@ func (a *Attributor) attributeNode(node parser.Node) {
 		if n.GenericInstance {
 			break
 		}
+		if a.functionState[n.Symbol] != functionUnattributed {
+			break
+		}
+		a.functionState[n.Symbol] = functionAttributing
+		defer func() { a.functionState[n.Symbol] = functionAttributed }()
 		restoreSpecialization := a.enterSpecialization(n.Symbol)
 		defer restoreSpecialization()
 		for _, arg := range n.Args {
@@ -250,6 +272,9 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 				n.Symbol = specialization.Symbol
 			}
 		}
+		if n.Symbol != nil {
+			a.attributeFunctionDefinition(n.Symbol)
+		}
 		if n.Symbol != nil && n.Symbol.Template {
 			if len(n.ResolvedTypeArgs) == 0 {
 				a.errorf(n, "generic binding %q requires type arguments", n.Symbol.Name)
@@ -267,6 +292,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		if n.Symbol != nil && n.Symbol.Template {
 			n.SetType(types.ErrorType{})
 		} else if n.Symbol != nil && n.Symbol.Kind == symbols.SymbolKindFunction && n.Symbol.Signature != nil {
+			a.attributeFunctionDefinition(n.Symbol)
 			ret := n.Symbol.Signature.ReturnType
 			if ret == nil {
 				ret = types.PrimitiveVoid
@@ -426,7 +452,11 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 					n.Name.ResolvedModuleName = member.MethodModule
 				}
 			}
-		} else if n.Symbol != nil && n.Symbol.Signature.ReturnType != nil {
+		}
+		if n.Symbol != nil {
+			a.attributeFunctionDefinition(n.Symbol)
+		}
+		if n.Symbol != nil && n.Symbol.Signature.ReturnType != nil {
 			n.SetType(n.Symbol.Signature.ReturnType)
 		} else if n.Symbol != nil {
 			n.SetType(types.PrimitiveVoid)
@@ -475,6 +505,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 			}
 		}
 		if n.Symbol != nil {
+			a.attributeFunctionDefinition(n.Symbol)
 			if n.Symbol.Signature.ReturnType != nil {
 				n.SetType(n.Symbol.Signature.ReturnType)
 			} else {
@@ -620,6 +651,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 					ident.Symbol = specialization.Symbol
 				}
 			}
+			a.attributeFunctionDefinition(ident.Symbol)
 			if ident.Symbol.Template {
 				if len(ident.ResolvedTypeArgs) == 0 {
 					a.errorf(n, "generic binding %q requires type arguments", ident.Symbol.Name)
@@ -640,6 +672,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 			case symbols.SymbolKindVariable:
 				ident.SetType(ident.Symbol.Type)
 			case symbols.SymbolKindFunction:
+				a.attributeFunctionDefinition(ident.Symbol)
 				ret := ident.Symbol.Signature.ReturnType
 				if ret == nil {
 					ret = types.PrimitiveVoid
@@ -658,6 +691,21 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 			break
 		}
 		if ident := resolvedTypeIdentifier(n.Subject); ident != nil {
+			if info, tagged := types.TaggedUnion(ident.Symbol.TypeInfo); tagged {
+				variant, index, exists := info.Variant(n.Field.Name)
+				if !exists {
+					a.errorf(n, "tagged union %v has no variant %q", ident.Symbol.TypeInfo, n.Field.Name)
+					n.SetType(types.ErrorType{})
+				} else if len(variant.Fields) != 0 {
+					a.errorf(n, "tagged union variant %q requires %d payload arguments", variant.Name, len(variant.Fields))
+					n.SetType(types.ErrorType{})
+				} else {
+					n.TaggedUnionType = ident.Symbol.TypeInfo
+					n.TaggedUnionVariant = index
+					n.SetType(ident.Symbol.TypeInfo)
+				}
+				break
+			}
 			if enumType, ok := types.Underlying(ident.Symbol.TypeInfo).(types.EnumType); ok {
 				ident.SetType(enumType)
 				value, exists := enumType.VariantValue(n.Field.Name)
@@ -1058,6 +1106,7 @@ func (a *Attributor) attributeMethodValue(n *parser.FieldAccessNode) bool {
 		n.SetType(types.ErrorType{})
 		return true
 	}
+	a.attributeFunctionDefinition(method)
 	if method.Template && (len(ownerArguments) != 0 || len(n.Field.TypeArguments) != 0) {
 		arguments := append([]types.Type(nil), ownerArguments...)
 		arguments = append(arguments, a.analyser.resolveGenericArguments(n.Field.TypeArguments)...)
@@ -1084,6 +1133,33 @@ func (a *Attributor) attributeMethodValue(n *parser.FieldAccessNode) bool {
 	n.MethodModule = method.DefinitionModule
 	n.SetType(types.PointerType{Base: types.FunctionType{Parameters: method.Signature.Parameters, ReturnType: ret, TypedVariadic: method.Signature.TypedVariadic, VariadicElement: method.Signature.VariadicElement}})
 	return true
+}
+
+func (a *Attributor) attributeFunctionDefinition(symbol *symbols.Symbol) {
+	if symbol == nil || symbol.Signature == nil || symbol.Signature.ReturnType != nil || a.functionState[symbol] != functionUnattributed {
+		return
+	}
+	definition := a.analyser.functionDefinitions[symbol]
+	if definition == nil {
+		return
+	}
+	mod := a.analyser.modules[definition.module]
+	if mod == nil {
+		return
+	}
+	bindings := map[string]types.Type(nil)
+	if definition.node.IsGeneric() {
+		bindings = make(map[string]types.Type, len(symbol.GenericParameters))
+		for _, parameter := range symbol.GenericParameters {
+			bindings[parameter.Name] = parameter
+		}
+	}
+	previousTemplatesOnly := a.templatesOnly
+	a.templatesOnly = definition.node.IsGeneric()
+	defer func() { a.templatesOnly = previousTemplatesOnly }()
+	a.analyser.withDefinitionContext(definition.module, mod.TrustedStandardLibrary, bindings, func() {
+		a.attributeNode(definition.node)
+	})
 }
 
 func resolvedTypeIdentifier(expr parser.ExpressionNode) *parser.IdentifierNode {

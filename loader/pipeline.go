@@ -20,10 +20,7 @@ func ComputeModuleOrder(mods map[string]*ModuleInfo, primaryModule string) ([]st
 func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, order []string, verbose, debug bool) (errors []error, warnings []error) {
 	for _, name := range order {
 		info := mods[name]
-
-		for _, root := range info.Roots {
-			analyser.AnalyseModule(root, name, info.TrustedStandardLibrary)
-		}
+		analyser.AnalyseModuleRoots(info.Roots, name, info.TrustedStandardLibrary)
 	}
 
 	if len(analyser.Errors()) > 0 {

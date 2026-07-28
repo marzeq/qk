@@ -704,10 +704,21 @@ func inferGenericArguments(
 func inferGenericType(pattern, actual types.Type, inferred map[string]types.Type) error {
 	if parameter, ok := pattern.(types.TypeParameter); ok {
 		if types.HasUntyped(actual) {
-			return fmt.Errorf("untyped numeric value cannot infer type argument %s", parameter.Name)
+			if previous, exists := inferred[parameter.Key()]; !exists || types.HasUntyped(previous) {
+				inferred[parameter.Key()] = actual
+			}
+			// A typed argument may replace or already have replaced this
+			// placeholder; validation then performs the numeric coercion.
+			return nil
 		}
-		if previous, exists := inferred[parameter.Key()]; exists && !previous.Equals(actual) {
-			return fmt.Errorf("conflicting inferred types for %s: %v and %v", parameter.Name, previous, actual)
+		if previous, exists := inferred[parameter.Key()]; exists {
+			if types.HasUntyped(previous) {
+				inferred[parameter.Key()] = actual
+				return nil
+			}
+			if !previous.Equals(actual) {
+				return fmt.Errorf("conflicting inferred types for %s: %v and %v", parameter.Name, previous, actual)
+			}
 		}
 		inferred[parameter.Key()] = actual
 		return nil

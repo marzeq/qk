@@ -1190,6 +1190,11 @@ func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
 		}
 		return g.generateFunctionCallExpr(n)
 	case *parser.FieldAccessNode:
+		if n.TaggedUnionType != nil {
+			return g.generateTaggedUnionConstructor(&parser.FunctionCallNode{
+				Loc: n.Loc, TaggedUnionType: n.TaggedUnionType, TaggedUnionVariant: n.TaggedUnionVariant,
+			})
+		}
 		return g.generateFieldAccessExpr(n)
 	case *parser.CastNode:
 		return g.generateCastExpr(n)
@@ -2424,6 +2429,9 @@ func (g *Generator) generateAddressOfExpr(expr parser.ExpressionNode) ir.Operand
 		g.Emit(ir.AddressOf{Dest: addr, Slot: slot})
 		return ir.ValueOperand(addr, types.PointerType{Base: ident.GetType()})
 	case *parser.FieldAccessNode:
+		if node.TaggedUnionType != nil {
+			break
+		}
 		if node.ResolvedIdentifier != nil {
 			return g.generateAddressOfExpr(node.ResolvedIdentifier)
 		}

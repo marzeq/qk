@@ -191,7 +191,7 @@ func (w *debugWalker) walkExpr(expr parser.ExpressionNode) {
 		}
 
 	case *parser.FieldAccessNode:
-		if n.MethodSymbol == nil {
+		if n.MethodSymbol == nil && n.TaggedUnionType == nil {
 			w.walkExpr(n.Subject)
 		}
 
