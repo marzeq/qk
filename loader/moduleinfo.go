@@ -78,7 +78,7 @@ func CollectModuleInfo(root *parser.RootNode, trustedStandardLibrary bool) (*Par
 type ModuleInfo struct {
 	Name                   string
 	Imports                []string
-	Roots                  []*parser.RootNode
+	Root                   *parser.RootNode
 	Links                  []attributes.Link
 	TrustedStandardLibrary bool
 }
@@ -91,14 +91,14 @@ func BuildModules(partials []*PartialModuleInfo) (map[string]*ModuleInfo, error)
 			if existing.TrustedStandardLibrary != p.TrustedStandardLibrary {
 				return nil, fmt.Errorf("cannot mix trusted and untrusted sources in module %q", p.Name)
 			}
-			existing.Roots = append(existing.Roots, p.Root)
+			mergeModuleRoot(existing.Root, p.Root)
 			existing.Imports = mergeImports(existing.Imports, p.Imports)
 			existing.Links = append(existing.Links, p.Links...)
 		} else {
 			modules[p.Name] = &ModuleInfo{
 				Name:                   p.Name,
 				Imports:                unique(p.Imports),
-				Roots:                  []*parser.RootNode{p.Root},
+				Root:                   cloneModuleRoot(p.Root),
 				Links:                  append([]attributes.Link(nil), p.Links...),
 				TrustedStandardLibrary: p.TrustedStandardLibrary,
 			}
@@ -106,6 +106,22 @@ func BuildModules(partials []*PartialModuleInfo) (map[string]*ModuleInfo, error)
 	}
 
 	return modules, nil
+}
+
+func cloneModuleRoot(root *parser.RootNode) *parser.RootNode {
+	return &parser.RootNode{
+		Body: append([]parser.Node(nil), root.Body...),
+		Loc:  root.Loc,
+	}
+}
+
+func mergeModuleRoot(destination, source *parser.RootNode) {
+	for _, node := range source.Body {
+		if _, isModule := node.(*parser.ModuleNode); isModule {
+			continue
+		}
+		destination.Body = append(destination.Body, node)
+	}
 }
 
 func mergeImports(a, b []string) []string {

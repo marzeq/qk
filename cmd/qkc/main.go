@@ -209,29 +209,27 @@ func main() {
 
 	foundMain := false
 	mainModule := modules[args.mainModule]
-	for _, root := range mainModule.Roots {
-		for _, stmt := range root.Body {
-			switch fn := stmt.(type) {
-			case *parser.FunctionDefNode:
-				if fn.Name == "main" {
-					if len(fn.GenericParameters) != 0 {
-						fatal("%v", shared.NewError(fn.Loc, "main function must not be generic"))
-					}
-					if len(fn.Args) != 0 {
-						fatal("%v", shared.NewError(fn.Loc, "main function must not have arguments"))
-					}
-					if fn.Body == nil {
-						fatal("%v", shared.NewError(fn.Loc, "main function must have a body"))
-					}
-					if fn.Symbol.Signature.ReturnType != types.PrimitiveVoid {
-						fatal("%v", shared.NewError(fn.Loc, "main function must return void"))
-					}
-					if len(fn.Symbol.Attributes) != 0 {
-						fatal("%v", shared.NewError(fn.Loc, "main function must not have attributes"))
-					}
-					foundMain = true
-					break
+	for _, stmt := range mainModule.Root.Body {
+		switch fn := stmt.(type) {
+		case *parser.FunctionDefNode:
+			if fn.Name == "main" {
+				if len(fn.GenericParameters) != 0 {
+					fatal("%v", shared.NewError(fn.Loc, "main function must not be generic"))
 				}
+				if len(fn.Args) != 0 {
+					fatal("%v", shared.NewError(fn.Loc, "main function must not have arguments"))
+				}
+				if fn.Body == nil {
+					fatal("%v", shared.NewError(fn.Loc, "main function must have a body"))
+				}
+				if fn.Symbol.Signature.ReturnType != types.PrimitiveVoid {
+					fatal("%v", shared.NewError(fn.Loc, "main function must return void"))
+				}
+				if len(fn.Symbol.Attributes) != 0 {
+					fatal("%v", shared.NewError(fn.Loc, "main function must not have attributes"))
+				}
+				foundMain = true
+				break
 			}
 		}
 	}

@@ -64,13 +64,6 @@ func (a *Analyser) errorf(node parser.Node, format string, args ...any) {
 }
 
 func (a *Analyser) AnalyseModule(root *parser.RootNode, name string, trustedStandardLibrary bool) {
-	a.AnalyseModuleRoots([]*parser.RootNode{root}, name, trustedStandardLibrary)
-}
-
-// AnalyseModuleRoots analyses all source roots that contribute to one module.
-// Top-level declarations are collected across every root before any body is
-// resolved, so the module scope does not depend on source discovery order.
-func (a *Analyser) AnalyseModuleRoots(roots []*parser.RootNode, name string, trustedStandardLibrary bool) {
 	// Aliases are module-local; method tables remain available so later modules
 	// can resolve methods exported by their imports.
 	if a.aliasesByModule[name] == nil {
@@ -91,11 +84,12 @@ func (a *Analyser) AnalyseModuleRoots(roots []*parser.RootNode, name string, tru
 	a.currentMod = name
 	a.currentTrustedStandardLibrary = trustedStandardLibrary
 	a.currentImports = a.importsByModule[name]
+	a.currentRoot = root
 	if a.currentImports == nil {
 		a.currentImports = make(map[string]bool)
 		a.importsByModule[name] = a.currentImports
 	}
 
-	a.collectTopLevels(roots)
-	a.resolveModuleBodies(roots)
+	a.collectTopLevel(root)
+	a.resolveBodies(root)
 }

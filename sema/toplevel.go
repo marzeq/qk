@@ -9,67 +9,52 @@ import (
 	"github.com/marzeq/qk/types"
 )
 
-func (a *Analyser) collectTopLevels(roots []*parser.RootNode) {
-	for _, root := range roots {
-		a.currentRoot = root
-		for _, node := range root.Body {
-			if n, ok := node.(*parser.ImportNode); ok {
-				a.collectImport(n)
-			}
+func (a *Analyser) collectTopLevel(root *parser.RootNode) {
+	for _, node := range root.Body {
+		if n, ok := node.(*parser.ImportNode); ok {
+			a.collectImport(n)
 		}
 	}
 
-	for _, root := range roots {
-		a.currentRoot = root
-		for _, node := range root.Body {
-			if n, ok := node.(*parser.TypeAliasNode); ok {
-				a.precollectTypeAlias(n)
-			}
+	for _, node := range root.Body {
+		if n, ok := node.(*parser.TypeAliasNode); ok {
+			a.precollectTypeAlias(n)
 		}
 	}
 
-	for _, root := range roots {
-		a.currentRoot = root
-		for _, node := range root.Body {
-			if n, ok := node.(*parser.TypeAliasNode); ok && len(n.GenericParameters) != 0 {
-				a.finishGenericTypeAlias(n)
-			}
+	for _, node := range root.Body {
+		if n, ok := node.(*parser.TypeAliasNode); ok && len(n.GenericParameters) != 0 {
+			a.finishGenericTypeAlias(n)
 		}
 	}
 
-	for _, root := range roots {
-		a.currentRoot = root
-		for _, node := range root.Body {
-			switch n := node.(type) {
-			case *parser.FunctionDefNode:
-				a.collectFunctionSignature(n)
-			case *parser.DeclarationNode:
-				a.collectGlobalVariable(n)
-			}
+	for _, node := range root.Body {
+		switch n := node.(type) {
+		case *parser.FunctionDefNode:
+			a.collectFunctionSignature(n)
+		case *parser.DeclarationNode:
+			a.collectGlobalVariable(n)
 		}
 	}
 }
 
-func (a *Analyser) resolveModuleBodies(roots []*parser.RootNode) {
+func (a *Analyser) resolveBodies(root *parser.RootNode) {
 	for _, info := range a.aliases {
 		if info.state == aliasUnseen {
 			a.resolveAlias(info, info.node, false)
 		}
 	}
 
-	for _, root := range roots {
-		a.currentRoot = root
-		for _, node := range root.Body {
-			switch n := node.(type) {
-			case *parser.FunctionDefNode:
-				a.visitFunction(n)
-			case *parser.DeclarationNode:
-				if len(n.GenericParameters) != 0 {
-					continue
-				}
-				if n.Value != nil {
-					a.visitExpression(n.Value)
-				}
+	for _, node := range root.Body {
+		switch n := node.(type) {
+		case *parser.FunctionDefNode:
+			a.visitFunction(n)
+		case *parser.DeclarationNode:
+			if len(n.GenericParameters) != 0 {
+				continue
+			}
+			if n.Value != nil {
+				a.visitExpression(n.Value)
 			}
 		}
 	}

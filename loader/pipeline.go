@@ -20,7 +20,7 @@ func ComputeModuleOrder(mods map[string]*ModuleInfo, primaryModule string) ([]st
 func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, order []string, verbose, debug bool) (errors []error, warnings []error) {
 	for _, name := range order {
 		info := mods[name]
-		analyser.AnalyseModuleRoots(info.Roots, name, info.TrustedStandardLibrary)
+		analyser.AnalyseModule(info.Root, name, info.TrustedStandardLibrary)
 	}
 
 	if len(analyser.Errors()) > 0 {
@@ -35,10 +35,7 @@ func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, o
 
 	for _, name := range order {
 		info := mods[name]
-
-		for _, root := range info.Roots {
-			attributor.AttributeGenericTemplates(root)
-		}
+		attributor.AttributeGenericTemplates(info.Root)
 	}
 
 	if len(analyser.Errors()) > 0 || len(attributor.Errors()) > 0 {
@@ -50,9 +47,7 @@ func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, o
 	templateValidator := analyser.NewValidator()
 	for _, name := range order {
 		info := mods[name]
-		for _, root := range info.Roots {
-			templateValidator.ValidateGenericTemplates(root)
-		}
+		templateValidator.ValidateGenericTemplates(info.Root)
 	}
 	warnings = append(warnings, templateValidator.Warnings()...)
 	if len(templateValidator.Errors()) > 0 {
@@ -61,9 +56,7 @@ func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, o
 
 	for _, name := range order {
 		info := mods[name]
-		for _, root := range info.Roots {
-			attributor.AttributeModule(root)
-		}
+		attributor.AttributeModule(info.Root)
 	}
 
 	if len(analyser.Errors()) > 0 || len(attributor.Errors()) > 0 {
@@ -80,9 +73,7 @@ func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, o
 
 	for _, name := range order {
 		info := mods[name]
-		for _, root := range info.Roots {
-			validator.ValidateModule(root)
-		}
+		validator.ValidateModule(info.Root)
 	}
 	warnings = append(warnings, validator.Warnings()...)
 
@@ -97,9 +88,7 @@ func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, o
 	if debug {
 		for _, name := range order {
 			info := mods[name]
-			for _, root := range info.Roots {
-				analyser.DebugCheck(root)
-			}
+			analyser.DebugCheck(info.Root)
 		}
 
 		if verbose {
@@ -125,7 +114,7 @@ func GenerateIRModules(mods map[string]*ModuleInfo, mainModule string, order []s
 			ModuleName: name, MainModule: mainModule,
 			DependencyInitializers: dependencyInitializers,
 		}
-		modIR := gen.GenerateRoots(info.Roots)
+		modIR := gen.Generate(info.Root)
 		deduplicateIRDeclarations(modIR)
 		out[name] = modIR
 	}
