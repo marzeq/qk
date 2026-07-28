@@ -45,6 +45,10 @@ func (p *Parser) trailingBraceStartsStructLiteral() bool {
 			depth++
 		case tokeniser.TokenCloseCurly:
 			depth--
+		case tokeniser.TokenFatArrow:
+			if depth == 1 {
+				return false
+			}
 		}
 		if depth == 0 {
 			pos++

@@ -987,7 +987,12 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 			node, err := p.ParseIfStatement()
 			return node, false, err
 		case string(tokeniser.KeywordMatch):
+			start := p.pos
 			node, err := p.ParseMatch(false)
+			if err == nil && p.tokenContinuesExpression() {
+				p.pos = start
+				goto expressionStatement
+			}
 			return node, false, err
 		case string(tokeniser.KeywordFor):
 			node, err := p.ParseForLoop()
@@ -1002,6 +1007,7 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 		return node, true, err
 	}
 
+expressionStatement:
 	expr, err := p.ParseExpression()
 	if err != nil {
 		return nil, false, err
@@ -1050,6 +1056,21 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 	}
 
 	return expr, true, nil
+}
+
+func (p *Parser) tokenContinuesExpression() bool {
+	if p.Match(tokeniser.TokenOpenParen, tokeniser.TokenOpenSquare, tokeniser.TokenDot,
+		tokeniser.TokenAsterisk, tokeniser.TokenSlash, tokeniser.TokenPercent,
+		tokeniser.TokenPlus, tokeniser.TokenMinus,
+		tokeniser.TokenShiftLeft, tokeniser.TokenShiftRight,
+		tokeniser.TokenLess, tokeniser.TokenLessEquals,
+		tokeniser.TokenGreater, tokeniser.TokenGreaterEquals,
+		tokeniser.TokenEqualsEquals, tokeniser.TokenNotEquals,
+		tokeniser.TokenAmpersand, tokeniser.TokenPipe, tokeniser.TokenCaret) {
+		return true
+	}
+	return p.Match(tokeniser.TokenKeyword) &&
+		(p.Peek().Value == string(tokeniser.KeywordAnd) || p.Peek().Value == string(tokeniser.KeywordOr))
 }
 
 func (p *Parser) skipGenericParameterLookahead() error {
