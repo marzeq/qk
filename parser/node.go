@@ -189,13 +189,21 @@ func (n TraitTypeNode) _type()                  {}
 
 type SliceTypeNode struct {
 	ElementType TypeNode
-	Size        int
 	Mutable     bool
 	Loc         shared.Location
 }
 
 func (n SliceTypeNode) GetLoc() shared.Location { return n.Loc }
 func (n SliceTypeNode) _type()                  {}
+
+type ArrayTypeNode struct {
+	ElementType TypeNode
+	Length      ExpressionNode
+	Loc         shared.Location
+}
+
+func (n ArrayTypeNode) GetLoc() shared.Location { return n.Loc }
+func (n ArrayTypeNode) _type()                  {}
 
 type PointerTypeNode struct {
 	BaseType TypeNode

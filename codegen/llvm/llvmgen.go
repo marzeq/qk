@@ -446,6 +446,8 @@ func (e *Emitter) TypeEmit(ty types.Type) string {
 		return fmt.Sprintf("[%d x i%d]", size/align, align*8)
 	case types.SliceType:
 		return fmt.Sprintf("{ ptr, %s }", e.pointerIntType())
+	case types.ArrayType:
+		return fmt.Sprintf("[%d x %s]", ty.Length, e.TypeEmit(ty.Base))
 	case types.FunctionType:
 		var sb strings.Builder
 		sb.WriteString(e.TypeEmit(ty.ReturnType))
@@ -941,6 +943,20 @@ func (e *Emitter) FieldAddressEmit(out *strings.Builder, f ir.FieldAddress) {
 }
 
 func (e *Emitter) ElementAddressEmit(out *strings.Builder, eaddr ir.ElementAddress) {
+	if pointer, ok := types.Underlying(eaddr.Base.Type).(types.PointerType); ok {
+		if array, ok := types.Underlying(pointer.Base).(types.ArrayType); ok {
+			fmt.Fprintf(
+				out,
+				"%s = getelementptr inbounds %s, ptr %s, i32 0, %s %s",
+				e.ValueIDEmit(eaddr.Dest),
+				e.TypeEmit(array),
+				e.OperandEmit(eaddr.Base),
+				e.TypeEmit(eaddr.Index.Type),
+				e.OperandEmit(eaddr.Index),
+			)
+			return
+		}
+	}
 	fmt.Fprintf(
 		out,
 		"%s = getelementptr inbounds %s, ptr %s, %s %s",

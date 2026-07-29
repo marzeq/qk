@@ -222,9 +222,16 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 	case *parser.SliceTypeNode:
 		return types.SliceType{
 			Base:    a.resolveTypeNodeAt(t.ElementType, indirect),
-			Size:    t.Size,
 			Mutable: t.Mutable,
 		}
+
+	case *parser.ArrayTypeNode:
+		length, ok := staticIntegerValue(t.Length)
+		if !ok || !length.IsInt64() || length.Sign() < 0 || length.BitLen() >= strconv.IntSize {
+			a.errorf(t.Length, "array length must be a non-negative compile-time integer")
+			return types.ErrorType{}
+		}
+		return types.ArrayType{Base: a.resolveTypeNodeAt(t.ElementType, indirect), Length: int(length.Int64())}
 
 	case *parser.StructTypeNode:
 		for _, attr := range t.Attributes {

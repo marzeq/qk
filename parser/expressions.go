@@ -1196,7 +1196,7 @@ func (p *Parser) ParseType() (TypeNode, error) {
 	}
 
 	if p.Match(tokeniser.TokenOpenSquare) {
-		return p.ParseSliceType()
+		return p.ParseArrayOrSliceType()
 	}
 
 	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordStruct) {
@@ -2000,7 +2000,7 @@ func (p *Parser) ParseStructType() (*StructTypeNode, error) {
 	}, nil
 }
 
-func (p *Parser) ParseSliceType() (*SliceTypeNode, error) {
+func (p *Parser) ParseArrayOrSliceType() (TypeNode, error) {
 	beginLoc := p.CurrLoc()
 
 	if !p.Expect(tokeniser.TokenOpenSquare) {
@@ -2011,62 +2011,35 @@ func (p *Parser) ParseSliceType() (*SliceTypeNode, error) {
 		p.Inc()
 	}
 
-	mutable := false
-	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordMut) {
-		mutable = true
+	if p.Match(tokeniser.TokenCloseSquare) {
 		p.Inc()
+		mutable := false
+		if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordMut) {
+			mutable = true
+			p.Inc()
+		}
+		elementType, err := p.ParseType()
+		if err != nil {
+			return nil, err
+		}
+		return &SliceTypeNode{ElementType: elementType, Mutable: mutable, Loc: p.SpanFrom(beginLoc)}, nil
 	}
 
+	length, err := p.ParseExpression()
+	if err != nil {
+		return nil, err
+	}
+	for p.Match(tokeniser.TokenNewline) {
+		p.Inc()
+	}
+	if !p.Expect(tokeniser.TokenCloseSquare) {
+		return nil, shared.NewError(p.PrevLoc(), "expected ']' after array length")
+	}
 	elementType, err := p.ParseType()
 	if err != nil {
 		return nil, err
 	}
-
-	for p.Match(tokeniser.TokenNewline) {
-		p.Inc()
-	}
-
-	if !p.Match(tokeniser.TokenComma) {
-		if !p.Expect(tokeniser.TokenCloseSquare) {
-			return nil, shared.NewError(p.PrevLoc(), "expected ']' to end slice type")
-		}
-		return &SliceTypeNode{
-			ElementType: elementType,
-			Size:        -1,
-			Mutable:     mutable,
-			Loc:         p.SpanFrom(beginLoc),
-		}, nil
-	}
-	p.Inc()
-
-	for p.Match(tokeniser.TokenNewline) {
-		p.Inc()
-	}
-
-	sizeToken, ok := p.ExpectGet(tokeniser.TokenNumber)
-	if !ok {
-		return nil, shared.NewError(p.PrevLoc(), "expected slice size")
-	}
-
-	size, err := strconv.Atoi(sizeToken.Value)
-	if err != nil {
-		return nil, shared.NewError(sizeToken.Loc, "invalid slice size: %s", sizeToken.Value)
-	}
-
-	for p.Match(tokeniser.TokenNewline) {
-		p.Inc()
-	}
-
-	if !p.Expect(tokeniser.TokenCloseSquare) {
-		return nil, shared.NewError(p.PrevLoc(), "expected ']' to end slice type")
-	}
-
-	return &SliceTypeNode{
-		ElementType: elementType,
-		Size:        size,
-		Mutable:     mutable,
-		Loc:         p.SpanFrom(beginLoc),
-	}, nil
+	return &ArrayTypeNode{ElementType: elementType, Length: length, Loc: p.SpanFrom(beginLoc)}, nil
 }
 
 func (p *Parser) ParsePointerType() (*PointerTypeNode, error) {
@@ -2125,7 +2098,7 @@ func (p *Parser) ParseFunctionType() (*FunctionTypeNode, error) {
 			return nil, err
 		}
 		if isTypedVariadic {
-			param = &SliceTypeNode{ElementType: param, Size: -1, Loc: param.GetLoc()}
+			param = &SliceTypeNode{ElementType: param, Loc: param.GetLoc()}
 			typedVariadic = true
 		}
 		params = append(params, param)

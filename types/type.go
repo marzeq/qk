@@ -50,6 +50,9 @@ func SubstituteSelf(t Type, replacement Type) Type {
 	case SliceType:
 		t.Base = SubstituteSelf(t.Base, replacement)
 		return t
+	case ArrayType:
+		t.Base = SubstituteSelf(t.Base, replacement)
+		return t
 	case StructType:
 		t.Fields = append([]shared.Pair[string, Type](nil), t.Fields...)
 		for i := range t.Fields {
@@ -105,6 +108,8 @@ func HasSelfType(t Type) bool {
 		return HasSelfType(t.Base)
 	case SliceType:
 		return HasSelfType(t.Base)
+	case ArrayType:
+		return HasSelfType(t.Base)
 	case StructType:
 		for _, field := range t.Fields {
 			if HasSelfType(field.R) {
@@ -154,6 +159,8 @@ func HasTypeParameter(t Type) bool {
 		return HasTypeParameter(t.Base)
 	case SliceType:
 		return HasTypeParameter(t.Base)
+	case ArrayType:
+		return HasTypeParameter(t.Base)
 	case StructType:
 		for _, field := range t.Fields {
 			if HasTypeParameter(field.R) {
@@ -193,11 +200,11 @@ type DefinedType struct {
 }
 
 // StrType returns the nominal builtin string type. Its representation is a
-// dynamic character slice, but it is intentionally distinct from [char].
+// dynamic character slice, but it is intentionally distinct from []char.
 func StrType() DefinedType {
 	return DefinedType{
 		Name:       "str",
-		Underlying: SliceType{Base: PrimitiveChar, Size: -1},
+		Underlying: SliceType{Base: PrimitiveChar},
 	}
 }
 
@@ -288,6 +295,9 @@ func Substitute(t Type, arguments map[string]Type) Type {
 		t.Base = Substitute(t.Base, arguments)
 		return t
 	case SliceType:
+		t.Base = Substitute(t.Base, arguments)
+		return t
+	case ArrayType:
 		t.Base = Substitute(t.Base, arguments)
 		return t
 	case StructType:
@@ -389,7 +399,9 @@ func Identity(t Type) string {
 		if t.Mutable {
 			mutable = "mut:"
 		}
-		return "slice(" + mutable + strconv.Itoa(t.Size) + ":" + Identity(t.Base) + ")"
+		return "slice(" + mutable + Identity(t.Base) + ")"
+	case ArrayType:
+		return "array(" + strconv.Itoa(t.Length) + ":" + Identity(t.Base) + ")"
 	case FunctionType:
 		parameters := make([]string, len(t.Parameters))
 		for i, parameter := range t.Parameters {
@@ -831,6 +843,8 @@ func IsComplete(t Type) bool {
 		}
 	case SliceType:
 		return IsComplete(t.Base)
+	case ArrayType:
+		return IsComplete(t.Base)
 	case MultipleReturnType:
 		for _, item := range t.Types {
 			if !IsComplete(item) {
@@ -1055,7 +1069,6 @@ func IsPointer(t Type) bool {
 
 type SliceType struct {
 	Base    Type
-	Size    int
 	Mutable bool
 }
 
@@ -1065,7 +1078,7 @@ func (a SliceType) Equals(other Type) bool {
 		return false
 	}
 
-	if a.Size != otherSlice.Size || a.Mutable != otherSlice.Mutable {
+	if a.Mutable != otherSlice.Mutable {
 		return false
 	}
 
@@ -1085,7 +1098,7 @@ func (a SliceType) CanCoerceTo(other Type) bool {
 		if otherPointer.Mutable && !a.Mutable {
 			return false
 		}
-		return a.Base.CanCoerceTo(otherPointer.Base)
+		return otherPointer.Base.Equals(PrimitiveVoid) || a.Base.Equals(otherPointer.Base)
 	}
 
 	otherSlice, ok := other.(SliceType)
@@ -1096,14 +1109,7 @@ func (a SliceType) CanCoerceTo(other Type) bool {
 		return false
 	}
 
-	if a.Size != otherSlice.Size && a.Size != -1 && otherSlice.Size != -1 {
-		return false
-	}
-
-	if otherSlice.Mutable {
-		return a.Base.Equals(otherSlice.Base)
-	}
-	return a.Base.CanCoerceTo(otherSlice.Base)
+	return a.Base.Equals(otherSlice.Base)
 }
 
 func (a SliceType) CanCastTo(other Type) bool {
@@ -1124,10 +1130,10 @@ func (a SliceType) CanCastTo(other Type) bool {
 		if otherSlice.Mutable && !a.Mutable {
 			return false
 		}
-		if a.Size != otherSlice.Size && a.Size != -1 && otherSlice.Size != -1 {
-			return false
-		}
 		return a.Base.Equals(otherSlice.Base)
+	}
+	if otherArray, ok := other.(ArrayType); ok {
+		return a.Base.Equals(otherArray.Base)
 	}
 
 	return false
@@ -1138,11 +1144,53 @@ func (a SliceType) String() string {
 	if a.Mutable {
 		mutable = "mut "
 	}
-	if a.Size == -1 {
-		return "[" + mutable + a.Base.String() + "]"
-	}
-	return "[" + mutable + a.Base.String() + ", " + strconv.Itoa(a.Size) + "]"
+	return "[]" + mutable + a.Base.String()
 }
+
+type ArrayType struct {
+	Base   Type
+	Length int
+}
+
+func (a ArrayType) Equals(other Type) bool {
+	o, ok := other.(ArrayType)
+	return ok && a.Length == o.Length && a.Base.Equals(o.Base)
+}
+
+func (a ArrayType) CanCoerceTo(other Type) bool {
+	if a.Equals(other) {
+		return true
+	}
+	s, ok := other.(SliceType)
+	return ok && !s.Mutable && a.Base.Equals(s.Base)
+}
+
+func (a ArrayType) CanCastTo(other Type) bool {
+	if a.Equals(other) {
+		return true
+	}
+	s, ok := other.(SliceType)
+	return ok && a.Base.Equals(s.Base)
+}
+
+func (a ArrayType) String() string {
+	return "[" + strconv.Itoa(a.Length) + "]" + a.Base.String()
+}
+
+// SequenceType is the provisional type of an array/slice literal before an
+// expected type selects its storage representation. It must not reach IR.
+type SequenceType struct {
+	Base   Type
+	Length int
+}
+
+func (s SequenceType) Equals(other Type) bool {
+	o, ok := other.(SequenceType)
+	return ok && s.Length == o.Length && s.Base.Equals(o.Base)
+}
+func (s SequenceType) CanCoerceTo(Type) bool { return false }
+func (s SequenceType) CanCastTo(Type) bool   { return false }
+func (s SequenceType) String() string        { return "<array or slice literal>" }
 
 type FunctionType struct {
 	Parameters      []Type
@@ -1363,6 +1411,10 @@ func HasUntyped(t Type) bool {
 	switch t := t.(type) {
 	case SliceType:
 		return HasUntyped(t.Base)
+	case ArrayType:
+		return HasUntyped(t.Base)
+	case SequenceType:
+		return HasUntyped(t.Base)
 	case PointerType:
 		return HasUntyped(t.Base)
 	case TraitPointerType:
@@ -1403,6 +1455,8 @@ func HasTraitPointer(t Type) bool {
 		}
 	case SliceType:
 		return HasTraitPointer(t.Base)
+	case ArrayType:
+		return HasTraitPointer(t.Base)
 	}
 	return false
 }
@@ -1431,6 +1485,8 @@ func hasTaggedUnion(t Type, defined map[string]bool, aliases map[*AliasRef]bool)
 	case PointerType:
 		return hasTaggedUnion(t.Base, defined, aliases)
 	case SliceType:
+		return hasTaggedUnion(t.Base, defined, aliases)
+	case ArrayType:
 		return hasTaggedUnion(t.Base, defined, aliases)
 	case StructType:
 		if t.TaggedUnion != nil {
@@ -1515,19 +1571,10 @@ func PromoteNumeric(a, b Type) Type {
 	return PromoteIntegers(pa, pb)
 }
 
-// CommonType finds the type shared by values in aggregate literals. In
-// addition to numeric promotion, fixed-size slices with the same element type
-// widen to an unsized slice. This lets differently sized string literals share
-// the builtin str representation without erasing distinct element types.
+// CommonType finds the type shared by values in aggregate literals.
 func CommonType(a, b Type) Type {
 	if a.Equals(b) {
 		return a
-	}
-
-	if as, ok := a.(SliceType); ok {
-		if bs, ok := b.(SliceType); ok && as.Base.Equals(bs.Base) {
-			return SliceType{Base: as.Base, Size: -1, Mutable: as.Mutable && bs.Mutable}
-		}
 	}
 
 	return PromoteNumeric(a, b)

@@ -127,7 +127,7 @@ A character literal contains one byte:
 '\n'
 ```
 
-Ordinary string literals have fixed-size slice type `[char, N]`:
+Ordinary string literals have the nominal dynamic-slice type `str`:
 
 ```qk
 "hello"
@@ -520,7 +520,7 @@ let sum(values: ...i64): i64 {
     return result
 }
 
-let inspect(values: ...dyn Any) { /* values has type [dyn Any] */ }
+let inspect(values: ...dyn Any) { /* values has type []dyn Any */ }
 ```
 
 Calls accept zero or more separately checked arguments. Inside the function, the
@@ -535,7 +535,7 @@ inspect(number.&, file.&)
 An existing slice can supply the complete variadic tail with postfix `...`:
 
 ```qk
-let numbers: [i64, 3] = [10, 20, 30]
+let numbers: [3]i64 = [10, 20, 30]
 sum(numbers...)
 ```
 
@@ -928,7 +928,7 @@ factory().items[index].process()
 Supported postfix forms are:
 
 - `callee(args...)` — call.
-- `value[index]` — slice or pointer indexing.
+- `value[index]` — array, slice, or pointer indexing.
 - `value.field` — field or method selection.
 - `value.*` — pointer dereference.
 - `value.&` — immutable reference.
@@ -960,7 +960,8 @@ function types have no object alignment.
 `offsetof(Type, field)` produces a field offset as `usz` for structs and unions,
 including promoted fields of anonymous unions.
 
-`len(slice)` returns a slice's length as `usz`.
+`len(value)` returns an array or slice length as `usz`. Array length is a
+compile-time constant.
 
 ### 12.6 Block expressions
 
@@ -1037,24 +1038,27 @@ let other: Mode = .write
 Leading-dot shorthand is also resolved from the opposite operand in a comparison
 and from parameter, return, assignment, field, or aggregate context.
 
-### 13.3 Slice literals
+### 13.3 Sequence literals
 
 List elements directly:
 
 ```qk
-let values: [i32, 3] = [1, 2, 3]
+let values: [3]i32 = [1, 2, 3]
 ```
 
 or repeat one value:
 
 ```qk
-let zeroes: [u8, 4096] = [0; 4096]
+let zeroes: [4096]u8 = [0; 4096]
 ```
 
-An unconstrained non-empty literal chooses a common element type and has fixed
-size equal to its element count. Empty literals need an expected slice type. The
-repeat amount is converted to `usz`; a literal repeat count contributes a known
-fixed size.
+Sequence literals are representation-polymorphic. An expected `[N]T` constructs
+an inline array and requires exactly `N` elements; an expected `[]T` or `[]mut T`
+constructs backing storage and a slice view. The expected element type is
+propagated into every element. An unconstrained literal is rejected because the
+compiler cannot choose array or slice representation. Empty literals likewise
+need an expected type. A repeated array literal requires a compile-time count
+matching `N`, while a repeated slice literal may use a runtime `usz` count.
 
 ## 14. Primitive types
 
@@ -1075,7 +1079,7 @@ cannot be stored by value.
 The predefined aliases are:
 
 ```qk
-str  // [char]
+str  // nominal []char
 cstr // *char
 ```
 
@@ -1145,21 +1149,42 @@ complete, non-`void`, non-function base type.
 QK pointers are unmanaged native addresses. The language performs no lifetime,
 aliasing, ownership, or null-safety analysis.
 
-## 17. Slices
+## 17. Arrays and slices
 
-A slice type is either dynamic or fixed-size:
+Arrays are inline values; slices are pointer-and-length views:
 
 ```qk
-[T]     // dynamic length
-[T, N]  // fixed length
+[N]T    // inline array containing N elements
+[]T     // immutable slice view
+[]mut T // mutable slice view
 ```
 
-Fixed-size slices contain their elements inline. Dynamic slices carry a data
-pointer and length. Their length is available through `len`.
+Array length is part of type identity and may be any non-negative compile-time
+integer expression. Array assignment, arguments, and results copy the inline
+elements. Array writability follows the containing place, just as for a struct;
+there is no `[N]mut T` type. Slice mutability instead records permission to write
+through the aliased storage. Mutable slices implicitly weaken to immutable
+slices, but the reverse conversion is forbidden.
 
-A fixed slice can be used where a compatible dynamic slice is expected. Fixed
-slices of different known sizes are not interchangeable. Element types follow
-their normal coercion rules.
+```qk
+let N = comptime 3
+let values: [N]i32 = [1; N]
+```
+
+An addressable `[N]T` implicitly borrows as `[]T`; a writable array place may
+also borrow as `[]mut T`. `array[:]` is the explicit full-view spelling, and
+`array.(SliceType)` is the equivalent explicit cast. These conversions never
+copy and never extend the array's lifetime. Element types must match exactly.
+
+A slice never implicitly converts to an array. `slice.([N]T)` checks that its
+runtime length equals `N`, copies all elements into a new array, and traps on a
+mismatch. The two-target form `let array, ok = slice.([N]T)` instead yields a
+zero array and `false` on mismatch. Arrays with different lengths do not convert,
+and array/slice conversions never perform element-wise numeric conversions.
+
+QK-ABI functions pass and return arrays by value. Arrays may appear inline in
+C-compatible structs, but a direct C-ABI array parameter or result is rejected
+because C adjusts array parameters to pointers and cannot return arrays by value.
 
 Slices can convert to compatible element pointers. Character slices are an
 exception: `str` is not implicitly a `cstr`, because it is length-delimited and
@@ -1170,8 +1195,9 @@ Indexing accepts an integer. The compiler diagnoses a literal index outside a
 known fixed size. General runtime indexing is not bounds checked; an invalid index
 has native undefined behavior.
 
-Mutation through a slice index depends on the mutability of the place holding the
-slice. Mutation through a pointer index depends on pointer mutability.
+Mutation through an array index depends on the array place. Mutation through a
+slice or pointer index depends on the `[]mut T` or `*mut T` capability, regardless
+of whether the binding holding that descriptor is itself reassignable.
 
 Slice element types must be complete. Literals, repetition, and iteration are
 described in Sections 11 and 13.
@@ -1183,7 +1209,7 @@ An anonymous struct type declares ordered named fields:
 ```qk
 struct {
     tag: u32,
-    payload: [u8, 16],
+    payload: [16]u8,
 }
 ```
 
@@ -1197,7 +1223,7 @@ Most structs are given nominal identity:
 ```qk
 pub let Header = type struct {
     tag: u32,
-    payload: [u8, 16],
+    payload: [16]u8,
 }
 ```
 
@@ -1560,7 +1586,7 @@ data reached through a pointer, not to code.
 The callable type does not encode symbol linkage, C/QK ABI selection, defaults,
 or bare C variadic behavior. Preserve those properties by calling a declared
 function directly when they matter. Typed QK variadic behavior is retained by
-the callable type because it uses an ordinary fixed slice ABI.
+the callable type because it uses an ordinary dynamic-slice ABI.
 
 ## 23. Scopes and name resolution
 
@@ -1753,7 +1779,7 @@ checked at runtime:
 - Invalid values manufactured by casts.
 
 Such operations have native-machine behavior and may be undefined. Some cases,
-such as literal indexing outside a fixed-size slice, are rejected during the
+such as literal indexing outside an array, are rejected during the
 build.
 
 There is no language-managed allocation, exception mechanism, stack unwinding,
@@ -1768,7 +1794,7 @@ A trait is a nominal, unsized set of method requirements:
 pub let Reader = type trait {
     let name(self): str
     let position(*self): usz
-    let read(*mut self, buffer: [mut u8]): usz
+    let read(*mut self, buffer: []mut u8): usz
 }
 ```
 
@@ -2265,7 +2291,7 @@ pub let Point.translated(self, dx = 0.0, dy = 0.0: f64): Point {
     return Point.{ x = self.x + dx, y = self.y + dy }
 }
 
-pub let translate_all(mut points: [Point], dx, dy: f64) {
+pub let translate_all(points: []mut Point, dx, dy: f64) {
     for i in 0..len(points) {
         points[i] = points[i].translated(dx, dy)
     }

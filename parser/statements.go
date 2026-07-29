@@ -311,7 +311,7 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 			if group[0].Default != nil {
 				return nil, shared.NewError(beginLoc, "typed variadic parameter cannot have a default")
 			}
-			argType = &SliceTypeNode{ElementType: argType, Size: -1, Loc: argType.GetLoc()}
+			argType = &SliceTypeNode{ElementType: argType, Loc: argType.GetLoc()}
 			typedVariadic = true
 		}
 

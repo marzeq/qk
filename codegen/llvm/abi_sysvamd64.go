@@ -93,6 +93,11 @@ func (e *Emitter) classifySysVAggregate(
 		pointerSize := e.pointerBytes()
 		e.markSysVAggregateClass(base, pointerSize, abiClassInteger, classes)
 		e.markSysVAggregateClass(base+pointerSize, pointerSize, abiClassInteger, classes)
+	case types.ArrayType:
+		elementSize, _ := e.typeSizeAlign(t.Base)
+		for i := 0; i < t.Length; i++ {
+			e.classifySysVAggregate(t.Base, base+i*elementSize, classes, floats)
+		}
 	case types.PointerType:
 		e.markSysVAggregateClass(base, 8, abiClassInteger, classes)
 	case types.EnumType:

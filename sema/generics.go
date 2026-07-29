@@ -502,6 +502,9 @@ func (a *Analyser) instantiateType(t types.Type, substitutions map[string]types.
 	case types.SliceType:
 		current.Base = a.instantiateType(current.Base, substitutions, use)
 		return current
+	case types.ArrayType:
+		current.Base = a.instantiateType(current.Base, substitutions, use)
+		return current
 	case types.StructType:
 		for i := range current.Fields {
 			current.Fields[i].R = a.instantiateType(current.Fields[i].R, substitutions, use)
@@ -703,6 +706,9 @@ func inferGenericArguments(
 
 func inferGenericType(pattern, actual types.Type, inferred map[string]types.Type) error {
 	if parameter, ok := pattern.(types.TypeParameter); ok {
+		if _, ambiguous := actual.(types.SequenceType); ambiguous {
+			return nil
+		}
 		if types.HasUntyped(actual) {
 			if previous, exists := inferred[parameter.Key()]; !exists || types.HasUntyped(previous) {
 				inferred[parameter.Key()] = actual
@@ -731,11 +737,25 @@ func inferGenericType(pattern, actual types.Type, inferred map[string]types.Type
 		}
 		return inferGenericType(pattern.Base, actual.Base, inferred)
 	case types.SliceType:
-		actual, ok := actual.(types.SliceType)
-		if !ok {
-			return nil
+		switch actual := actual.(type) {
+		case types.SliceType:
+			return inferGenericType(pattern.Base, actual.Base, inferred)
+		case types.SequenceType:
+			return inferGenericType(pattern.Base, actual.Base, inferred)
 		}
-		return inferGenericType(pattern.Base, actual.Base, inferred)
+		return nil
+	case types.ArrayType:
+		switch actual := actual.(type) {
+		case types.ArrayType:
+			if pattern.Length == actual.Length {
+				return inferGenericType(pattern.Base, actual.Base, inferred)
+			}
+		case types.SequenceType:
+			if pattern.Length == actual.Length {
+				return inferGenericType(pattern.Base, actual.Base, inferred)
+			}
+		}
+		return nil
 	case types.DefinedType:
 		actual, ok := actual.(types.DefinedType)
 		if !ok || pattern.Module != actual.Module || pattern.GenericName == "" || pattern.GenericName != actual.GenericName ||

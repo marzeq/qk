@@ -24,7 +24,7 @@ type foreignABIGenerator interface {
 func (e *Emitter) foreignABIAggregate(ty types.Type) (types.Type, foreignABIGenerator) {
 	ty = types.Underlying(ty)
 	switch ty.(type) {
-	case types.StructType, types.UnionType, types.SliceType:
+	case types.StructType, types.UnionType, types.SliceType, types.ArrayType:
 	default:
 		return nil, nil
 	}
@@ -80,7 +80,7 @@ func (e *Emitter) foreignABIReturnType(ty types.Type) string {
 func (e *Emitter) foreignABIReturnUsesSRet(ty types.Type) bool {
 	aggregate := types.Underlying(ty)
 	switch aggregate.(type) {
-	case types.StructType, types.UnionType, types.SliceType:
+	case types.StructType, types.UnionType, types.SliceType, types.ArrayType:
 	default:
 		return false
 	}
@@ -164,6 +164,9 @@ func (e *Emitter) typeSizeAlign(ty types.Type) (int, int) {
 	case types.SliceType:
 		// Slices are represented as { data pointer, length }.
 		return e.pointerBytes() * 2, e.pointerBytes()
+	case types.ArrayType:
+		elementSize, elementAlign := e.typeSizeAlign(t.Base)
+		return elementSize * t.Length, elementAlign
 	case types.EnumType:
 		return 4, 4
 	case types.FlagsType:

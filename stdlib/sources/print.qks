@@ -3,7 +3,7 @@ module std
 pub let HasPrint = comptime not NoLibc
 
 when HasPrint {
-let display_print_argument(index: usz, arguments: [dyn Any]): void {
+let display_print_argument(index: usz, arguments: []dyn Any): void {
   if index >= len(arguments) {
     "<?>".display()
     return

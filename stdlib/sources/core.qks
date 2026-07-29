@@ -3,7 +3,7 @@ module std
 let HasStdlib = comptime not NoStdlib
 let HasLibc = comptime not NoLibc
 
-pub let mut Args: [str] = ---
+pub let mut Args: []str = ---
 
 pub let Add = type trait {
   let add(self, other: Self): Self

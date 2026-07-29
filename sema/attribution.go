@@ -242,8 +242,11 @@ func (a *Attributor) attributeNode(node parser.Node) {
 	case *parser.ForEachNode:
 		a.attributeExpr(n.Iterable)
 		if n.Symbol != nil {
-			if slice, ok := types.Underlying(n.Iterable.GetType()).(types.SliceType); ok {
-				n.Symbol.Type = slice.Base
+			switch iterable := types.Underlying(n.Iterable.GetType()).(type) {
+			case types.SliceType:
+				n.Symbol.Type = iterable.Base
+			case types.ArrayType:
+				n.Symbol.Type = iterable.Base
 			}
 		}
 		a.attributeNode(n.Body)
@@ -364,7 +367,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 					size = parsed
 				}
 			}
-			n.SetType(types.SliceType{Base: n.RepeatValue.GetType(), Size: size, Mutable: true})
+			n.SetType(types.SequenceType{Base: n.RepeatValue.GetType(), Length: size})
 			break
 		}
 		typs := []types.Type{}
@@ -381,17 +384,9 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 				}
 				currentType = got
 			}
-			n.SetType(types.SliceType{
-				Base:    currentType,
-				Size:    len(n.Elements),
-				Mutable: true,
-			})
+			n.SetType(types.SequenceType{Base: currentType, Length: len(n.Elements)})
 		} else {
-			n.SetType(types.SliceType{
-				Base:    types.PrimitiveVoid,
-				Size:    0,
-				Mutable: true,
-			})
+			n.SetType(types.SequenceType{Base: types.PrimitiveVoid, Length: 0})
 		}
 
 	case *parser.FunctionCallNode:
@@ -558,10 +553,10 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 			}
 		case parser.UnaryOpSliceLen:
 			switch types.Underlying(n.Operand.GetType()).(type) {
-			case types.SliceType:
+			case types.SliceType, types.ArrayType:
 				n.SetType(types.PrimitiveUsz)
 			default:
-				a.errorf(n, "cannot get length of non-slice type: %v", n.Operand.GetType())
+				a.errorf(n, "cannot get length of non-array-or-slice type: %v", n.Operand.GetType())
 				n.SetType(types.ErrorType{})
 			}
 		case parser.UnaryOpBitwiseNot:
@@ -583,6 +578,8 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 
 		switch t := types.Underlying(n.Subject.GetType()).(type) {
 		case types.SliceType:
+			n.SetType(t.Base)
+		case types.ArrayType:
 			n.SetType(t.Base)
 		case types.PointerType:
 			n.SetType(t.Base)
@@ -613,13 +610,15 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 
 		switch t := types.Underlying(n.Subject.GetType()).(type) {
 		case types.SliceType:
-			result := types.Type(types.SliceType{Base: t.Base, Size: -1, Mutable: t.Mutable})
+			result := types.Type(types.SliceType{Base: t.Base, Mutable: t.Mutable})
 			if defined, ok := n.Subject.GetType().(types.DefinedType); ok && defined.Module == "" && defined.Name == "str" {
 				result = defined
 			}
 			n.SetType(result)
 		case types.PointerType:
-			n.SetType(types.SliceType{Base: t.Base, Size: -1, Mutable: t.Mutable})
+			n.SetType(types.SliceType{Base: t.Base, Mutable: t.Mutable})
+		case types.ArrayType:
+			n.SetType(types.SliceType{Base: t.Base, Mutable: mutableArrayPlace(n.Subject)})
 		default:
 			a.errorf(n, "cannot slice type %v", n.Subject.GetType())
 			n.SetType(types.ErrorType{})
@@ -996,6 +995,26 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 	if node.GetType() == nil {
 		panic("expression without type")
 	}
+}
+
+func mutableArrayPlace(expr parser.ExpressionNode) bool {
+	switch n := expr.(type) {
+	case *parser.IdentifierNode:
+		return n.Symbol != nil && n.Symbol.Mutable
+	case *parser.FieldAccessNode:
+		if n.ResolvedIdentifier != nil {
+			return mutableArrayPlace(n.ResolvedIdentifier)
+		}
+		return mutableArrayPlace(n.Subject)
+	case *parser.IndexExprNode:
+		return mutableArrayPlace(n.Subject)
+	case *parser.UnaryOpNode:
+		if n.Op == parser.UnaryOpDereference {
+			pointer, ok := types.Underlying(n.Operand.GetType()).(types.PointerType)
+			return ok && pointer.Mutable
+		}
+	}
+	return false
 }
 
 func isNilLiteral(node parser.ExpressionNode) bool {

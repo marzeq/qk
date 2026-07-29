@@ -266,7 +266,13 @@ func (w *debugWalker) checkType(t types.Type) {
 	case types.ErrorType:
 		w.errors = append(w.errors, "ErrorType remains after validation")
 
+	case types.SequenceType:
+		w.errors = append(w.errors, "unresolved sequence literal type remains after validation")
+
 	case types.SliceType:
+		w.checkType(tt.Base)
+
+	case types.ArrayType:
 		w.checkType(tt.Base)
 
 	case types.PointerType:

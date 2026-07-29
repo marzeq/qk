@@ -11,15 +11,13 @@ type aarch64ABIGenerator struct {
 }
 
 func (g aarch64ABIGenerator) aggregateParamChunks(e *Emitter, aggregate types.Type) []abiChunk {
-	if st, isStruct := aggregate.(types.StructType); isStruct {
-		if element, count, ok := homogeneousFloatAggregate(st); ok && count <= 4 {
-			size, _ := e.typeSizeAlign(aggregate)
-			chunk := abiChunk{typeName: fmt.Sprintf("[%d x %s]", count, element), size: size}
-			if g.linux && count > 1 {
-				chunk.attributes = " alignstack(8)"
-			}
-			return []abiChunk{chunk}
+	if element, count, ok := homogeneousFloatAggregate(aggregate); ok && count <= 4 {
+		size, _ := e.typeSizeAlign(aggregate)
+		chunk := abiChunk{typeName: fmt.Sprintf("[%d x %s]", count, element), size: size}
+		if g.linux && count > 1 {
+			chunk.attributes = " alignstack(8)"
 		}
+		return []abiChunk{chunk}
 	}
 
 	size, _ := e.typeSizeAlign(aggregate)
@@ -34,11 +32,9 @@ func (g aarch64ABIGenerator) aggregateParamChunks(e *Emitter, aggregate types.Ty
 }
 
 func (g aarch64ABIGenerator) aggregateReturnChunks(e *Emitter, aggregate types.Type) []abiChunk {
-	if st, isStruct := aggregate.(types.StructType); isStruct {
-		if element, count, ok := homogeneousFloatAggregate(st); ok && count <= 4 {
-			size, _ := e.typeSizeAlign(aggregate)
-			return []abiChunk{{typeName: fmt.Sprintf("[%d x %s]", count, element), size: size}}
-		}
+	if element, count, ok := homogeneousFloatAggregate(aggregate); ok && count <= 4 {
+		size, _ := e.typeSizeAlign(aggregate)
+		return []abiChunk{{typeName: fmt.Sprintf("[%d x %s]", count, element), size: size}}
 	}
 
 	size, _ := e.typeSizeAlign(aggregate)
@@ -57,7 +53,7 @@ func (aarch64ABIGenerator) requiresSRet(e *Emitter, aggregate types.Type) bool {
 	return size > 16
 }
 
-func homogeneousFloatAggregate(st types.StructType) (element string, count int, ok bool) {
+func homogeneousFloatAggregate(aggregate types.Type) (element string, count int, ok bool) {
 	var primitive types.PrimitiveType
 	var visit func(types.Type) bool
 	visit = func(ty types.Type) bool {
@@ -80,11 +76,18 @@ func homogeneousFloatAggregate(st types.StructType) (element string, count int, 
 				}
 			}
 			return true
+		case types.ArrayType:
+			for range t.Length {
+				if !visit(t.Base) {
+					return false
+				}
+			}
+			return true
 		default:
 			return false
 		}
 	}
-	if !visit(st) || count == 0 {
+	if !visit(aggregate) || count == 0 {
 		return "", 0, false
 	}
 	if primitive == types.PrimitiveF32 {

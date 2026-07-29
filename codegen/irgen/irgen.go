@@ -5,6 +5,7 @@ import (
 	"hash/fnv"
 	"math/big"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/marzeq/qk/attributes"
@@ -1067,18 +1068,20 @@ func (g *Generator) generateForEach(node *parser.ForEachNode) {
 	if node.Symbol == nil {
 		panic("for-each loop symbol is nil")
 	}
-	sliceType, ok := types.Underlying(node.Iterable.GetType()).(types.SliceType)
-	if !ok {
-		panic("for-each iterable is not a slice")
+	iterableType := types.Underlying(node.Iterable.GetType())
+	switch iterableType.(type) {
+	case types.SliceType, types.ArrayType:
+	default:
+		panic("for-each iterable is not an array or slice")
 	}
 
 	prevEnv := g.currentEnv
 	g.currentEnv = NewEnv(prevEnv)
 	defer func() { g.currentEnv = prevEnv }()
 
-	sliceSlot := g.currentFunction.NewSlot(sliceType, "for.each.slice")
-	g.Emit(ir.Alloca{Slot: sliceSlot})
-	g.Emit(ir.Store{Slot: sliceSlot, Value: g.GenerateExpr(node.Iterable)})
+	iterableSlot := g.currentFunction.NewSlot(node.Iterable.GetType(), "for.each.iterable")
+	g.Emit(ir.Alloca{Slot: iterableSlot})
+	g.Emit(ir.Store{Slot: iterableSlot, Value: g.GenerateExpr(node.Iterable)})
 	indexSlot := g.currentFunction.NewSlot(types.PrimitiveUsz, "for.each.index")
 	g.Emit(ir.Alloca{Slot: indexSlot})
 	g.Emit(ir.Store{Slot: indexSlot, Value: ir.IntConstOperand("0", types.PrimitiveUsz)})
@@ -1094,13 +1097,19 @@ func (g *Generator) generateForEach(node *parser.ForEachNode) {
 
 	g.currentBlock = conditionBlock
 	index := g.loadSlot(indexSlot, types.PrimitiveUsz)
-	length := g.sliceLength(sliceSlot, sliceType)
+	var length ir.Operand
+	switch t := iterableType.(type) {
+	case types.SliceType:
+		length = g.sliceLength(iterableSlot, t)
+	case types.ArrayType:
+		length = ir.IntConstOperand(strconv.Itoa(t.Length), types.PrimitiveUsz)
+	}
 	condition := g.currentFunction.NewValueOfType(types.PrimitiveBool)
 	g.Emit(ir.CmpLt{Dest: condition, Left: index, Right: length})
 	g.Emit(ir.Branch{Cond: ir.ValueOperand(condition, types.PrimitiveBool), Then: bodyBlock.ID, Else: endBlock.ID})
 
 	g.currentBlock = bodyBlock
-	g.storeForEachElement(sliceSlot, sliceType, index, elementSlot)
+	g.storeForEachElement(iterableSlot, iterableType, index, elementSlot)
 	popLoop := g.pushLoopTargets(endBlock.ID, postBlock.ID)
 	g.generateBlock(node.Body)
 	popLoop()
@@ -1134,24 +1143,36 @@ func (g *Generator) sliceLength(slot ir.SlotID, sliceType types.SliceType) ir.Op
 	return ir.ValueOperand(lengthID, types.PrimitiveUsz)
 }
 
-func (g *Generator) storeForEachElement(sliceSlot ir.SlotID, sliceType types.SliceType, index ir.Operand, elementSlot ir.SlotID) {
-	slicePtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: sliceType})
-	g.Emit(ir.AddressOf{Dest: slicePtrID, Slot: sliceSlot})
-	slicePtr := ir.ValueOperand(slicePtrID, types.PointerType{Base: sliceType})
-	basePtrPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: types.PointerType{Base: sliceType.Base}})
-	g.Emit(ir.FieldAddress{Dest: basePtrPtrID, Base: slicePtr, Field: "0"})
-	basePtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: sliceType.Base})
-	g.Emit(ir.LoadPtr{Dest: basePtrID, Ptr: ir.ValueOperand(basePtrPtrID, types.PointerType{Base: types.PointerType{Base: sliceType.Base}})})
-	elementPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: sliceType.Base})
+func (g *Generator) storeForEachElement(iterableSlot ir.SlotID, iterableType types.Type, index ir.Operand, elementSlot ir.SlotID) {
+	var base ir.Operand
+	var elementType types.Type
+	switch t := iterableType.(type) {
+	case types.SliceType:
+		elementType = t.Base
+		slicePtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: t})
+		g.Emit(ir.AddressOf{Dest: slicePtrID, Slot: iterableSlot})
+		slicePtr := ir.ValueOperand(slicePtrID, types.PointerType{Base: t})
+		basePtrPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: types.PointerType{Base: t.Base}})
+		g.Emit(ir.FieldAddress{Dest: basePtrPtrID, Base: slicePtr, Field: "0"})
+		basePtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: t.Base})
+		g.Emit(ir.LoadPtr{Dest: basePtrID, Ptr: ir.ValueOperand(basePtrPtrID, types.PointerType{Base: types.PointerType{Base: t.Base}})})
+		base = ir.ValueOperand(basePtrID, types.PointerType{Base: t.Base})
+	case types.ArrayType:
+		elementType = t.Base
+		arrayPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: t})
+		g.Emit(ir.AddressOf{Dest: arrayPtrID, Slot: iterableSlot})
+		base = ir.ValueOperand(arrayPtrID, types.PointerType{Base: t})
+	}
+	elementPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: elementType})
 	g.Emit(ir.ElementAddress{
 		Dest:    elementPtrID,
-		Base:    ir.ValueOperand(basePtrID, types.PointerType{Base: sliceType.Base}),
+		Base:    base,
 		Index:   index,
-		Element: sliceType.Base,
+		Element: elementType,
 	})
-	elementID := g.currentFunction.NewValueOfType(sliceType.Base)
-	g.Emit(ir.LoadPtr{Dest: elementID, Ptr: ir.ValueOperand(elementPtrID, types.PointerType{Base: sliceType.Base})})
-	g.Emit(ir.Store{Slot: elementSlot, Value: ir.ValueOperand(elementID, sliceType.Base)})
+	elementID := g.currentFunction.NewValueOfType(elementType)
+	g.Emit(ir.LoadPtr{Dest: elementID, Ptr: ir.ValueOperand(elementPtrID, types.PointerType{Base: elementType})})
+	g.Emit(ir.Store{Slot: elementSlot, Value: ir.ValueOperand(elementID, elementType)})
 }
 
 func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
@@ -1287,6 +1308,9 @@ func (g *Generator) generateIndexAddress(node *parser.IndexExprNode) ir.Operand 
 		})
 		base = ir.ValueOperand(dataPtrID, types.PointerType{Base: subjectType.Base})
 
+	case types.ArrayType:
+		base = g.generateAddressOfExpr(node.Subject)
+
 	case types.PointerType:
 		base = g.GenerateExpr(node.Subject)
 
@@ -1320,6 +1344,15 @@ func (g *Generator) generateSliceExpr(node *parser.SliceExprNode) ir.Operand {
 		g.Emit(ir.ExtractValue{Dest: lengthID, Aggregate: subject, Index: 1})
 		data = ir.ValueOperand(dataID, types.PointerType{Base: subjectType.Base})
 		length = ir.ValueOperand(lengthID, types.PrimitiveUsz)
+		checkEndAgainstLength = true
+	case types.ArrayType:
+		arrayPtr := g.generateAddressOfExpr(node.Subject)
+		dataID := g.currentFunction.NewValueOfType(types.PointerType{Base: subjectType.Base})
+		g.Emit(ir.ElementAddress{
+			Dest: dataID, Base: arrayPtr, Index: ir.IntConstOperand("0", types.PrimitiveUsz), Element: subjectType.Base,
+		})
+		data = ir.ValueOperand(dataID, types.PointerType{Base: subjectType.Base})
+		length = ir.IntConstOperand(strconv.Itoa(subjectType.Length), types.PrimitiveUsz)
 		checkEndAgainstLength = true
 	case types.PointerType:
 		data = g.GenerateExpr(node.Subject)
@@ -1395,10 +1428,10 @@ func (g *Generator) generateSliceExpr(node *parser.SliceExprNode) ir.Operand {
 func (g *Generator) emitRuntimePanic(messageText string) {
 	messageNode := &parser.StringLiteralNode{
 		Value: messageText,
-		Type:  types.SliceType{Base: types.PrimitiveChar, Size: len(messageText)},
+		Type:  types.SliceType{Base: types.PrimitiveChar},
 	}
 	message := g.generateStringLiteralExpr(messageNode)
-	runtimeStr := types.SliceType{Base: types.PrimitiveChar, Size: -1}
+	runtimeStr := types.SliceType{Base: types.PrimitiveChar}
 	message.Type = runtimeStr
 	panicSig := ir.FunctionSignature{ParamTypes: []types.Type{runtimeStr}, ReturnType: types.PrimitiveVoid}
 	g.addExternForCall("__qk_panic", panicSig, "", true)
@@ -1482,6 +1515,16 @@ func (g *Generator) generateCastExpr(node *parser.CastNode) ir.Operand {
 			return g.finishCertainCheckedCast(node, ir.ValueOperand(dst, targetType))
 		}
 	}
+	if sourceArray, ok := types.Underlying(node.Operand.GetType()).(types.ArrayType); ok {
+		if targetSlice, ok := types.Underlying(targetType).(types.SliceType); ok && sourceArray.Base.Equals(targetSlice.Base) {
+			return g.finishCertainCheckedCast(node, g.generateArrayBorrow(node.Operand, targetType, sourceArray))
+		}
+	}
+	if sourceSlice, ok := types.Underlying(node.Operand.GetType()).(types.SliceType); ok {
+		if targetArray, ok := types.Underlying(targetType).(types.ArrayType); ok && sourceSlice.Base.Equals(targetArray.Base) {
+			return g.generateSliceToArrayCast(node, targetType, sourceSlice, targetArray)
+		}
+	}
 
 	from := g.GenerateExpr(node.Operand)
 	if from.Type.Equals(targetType) {
@@ -1493,7 +1536,7 @@ func (g *Generator) generateCastExpr(node *parser.CastNode) ir.Operand {
 	}
 	if fromSlice, ok := types.Underlying(from.Type).(types.SliceType); ok {
 		if toSlice, ok := types.Underlying(targetType).(types.SliceType); ok && fromSlice.Base.Equals(toSlice.Base) {
-			// Fixed-size and dynamic slices have the same runtime representation.
+			// Mutable and immutable slices have the same runtime representation.
 			from.Type = targetType
 			return g.finishCertainCheckedCast(node, from)
 		}
@@ -1506,6 +1549,91 @@ func (g *Generator) generateCastExpr(node *parser.CastNode) ir.Operand {
 		return g.packCheckedCast(value, ir.BoolConstOperand(true), node.GetType().(types.MultipleReturnType))
 	}
 	return value
+}
+
+func (g *Generator) generateArrayBorrow(operand parser.ExpressionNode, targetType types.Type, arrayType types.ArrayType) ir.Operand {
+	arrayPtr := g.generateAddressOfExpr(operand)
+	dataID := g.currentFunction.NewValueOfType(types.PointerType{Base: arrayType.Base})
+	g.Emit(ir.ElementAddress{
+		Dest: dataID, Base: arrayPtr, Index: ir.IntConstOperand("0", types.PrimitiveUsz), Element: arrayType.Base,
+	})
+	data := ir.ValueOperand(dataID, types.PointerType{Base: arrayType.Base})
+
+	resultSlot := g.currentFunction.NewSlot(targetType, "array.view")
+	g.Emit(ir.Alloca{Slot: resultSlot})
+	resultPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: targetType, Mutable: true})
+	g.Emit(ir.AddressOf{Dest: resultPtrID, Slot: resultSlot})
+	resultPtr := ir.ValueOperand(resultPtrID, types.PointerType{Base: targetType, Mutable: true})
+	dataFieldID := g.currentFunction.NewValueOfType(types.PointerType{Base: types.PointerType{Base: arrayType.Base}, Mutable: true})
+	g.Emit(ir.FieldAddress{Dest: dataFieldID, Base: resultPtr, Field: "0"})
+	g.Emit(ir.StorePtr{Ptr: ir.ValueOperand(dataFieldID, types.PointerType{Base: types.PointerType{Base: arrayType.Base}, Mutable: true}), Value: data})
+	lengthFieldID := g.currentFunction.NewValueOfType(types.PointerType{Base: types.PrimitiveUsz, Mutable: true})
+	g.Emit(ir.FieldAddress{Dest: lengthFieldID, Base: resultPtr, Field: "1"})
+	g.Emit(ir.StorePtr{
+		Ptr:   ir.ValueOperand(lengthFieldID, types.PointerType{Base: types.PrimitiveUsz, Mutable: true}),
+		Value: ir.IntConstOperand(strconv.Itoa(arrayType.Length), types.PrimitiveUsz),
+	})
+	resultID := g.currentFunction.NewValueOfType(targetType)
+	g.Emit(ir.Load{Dest: resultID, Slot: resultSlot})
+	return ir.ValueOperand(resultID, targetType)
+}
+
+func (g *Generator) generateSliceToArrayCast(node *parser.CastNode, targetType types.Type, sourceSlice types.SliceType, targetArray types.ArrayType) ir.Operand {
+	source := g.GenerateExpr(node.Operand)
+	dataID := g.currentFunction.NewValueOfType(types.PointerType{Base: sourceSlice.Base})
+	g.Emit(ir.ExtractValue{Dest: dataID, Aggregate: source, Index: 0})
+	data := ir.ValueOperand(dataID, types.PointerType{Base: sourceSlice.Base})
+	lengthID := g.currentFunction.NewValueOfType(types.PrimitiveUsz)
+	g.Emit(ir.ExtractValue{Dest: lengthID, Aggregate: source, Index: 1})
+	length := ir.ValueOperand(lengthID, types.PrimitiveUsz)
+	matchesID := g.currentFunction.NewValueOfType(types.PrimitiveBool)
+	g.Emit(ir.CmpEq{Dest: matchesID, Left: length, Right: ir.IntConstOperand(strconv.Itoa(targetArray.Length), types.PrimitiveUsz)})
+	matches := ir.ValueOperand(matchesID, types.PrimitiveBool)
+
+	arraySlot := g.currentFunction.NewSlot(targetType, "slice.array")
+	g.Emit(ir.Alloca{Slot: arraySlot})
+	if node.Checked {
+		g.Emit(ir.Store{Slot: arraySlot, Value: ir.ZeroConstOperand(targetType)})
+	}
+	success := g.currentFunction.NewBlock("slice.array.success")
+	failure := g.currentFunction.NewBlock("slice.array.failure")
+	merge := g.currentFunction.NewBlock("slice.array.end")
+	g.Emit(ir.Branch{Cond: matches, Then: success.ID, Else: failure.ID})
+
+	g.currentBlock = failure
+	if node.Checked {
+		g.Emit(ir.Jump{Target: merge.ID})
+	} else {
+		g.emitRuntimePanic("slice-to-array cast length mismatch")
+	}
+
+	g.currentBlock = success
+	arrayPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: targetType, Mutable: true})
+	g.Emit(ir.AddressOf{Dest: arrayPtrID, Slot: arraySlot})
+	arrayPtr := ir.ValueOperand(arrayPtrID, types.PointerType{Base: targetType, Mutable: true})
+	for i := 0; i < targetArray.Length; i++ {
+		index := ir.IntConstOperand(strconv.Itoa(i), types.PrimitiveUsz)
+		sourcePtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: sourceSlice.Base})
+		g.Emit(ir.ElementAddress{Dest: sourcePtrID, Base: data, Index: index, Element: sourceSlice.Base})
+		valueID := g.currentFunction.NewValueOfType(sourceSlice.Base)
+		g.Emit(ir.LoadPtr{Dest: valueID, Ptr: ir.ValueOperand(sourcePtrID, types.PointerType{Base: sourceSlice.Base})})
+		targetPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: targetArray.Base, Mutable: true})
+		g.Emit(ir.ElementAddress{Dest: targetPtrID, Base: arrayPtr, Index: index, Element: targetArray.Base})
+		g.Emit(ir.StorePtr{
+			Ptr:   ir.ValueOperand(targetPtrID, types.PointerType{Base: targetArray.Base, Mutable: true}),
+			Value: ir.ValueOperand(valueID, sourceSlice.Base),
+		})
+	}
+	g.Emit(ir.Jump{Target: merge.ID})
+
+	g.currentBlock = merge
+	arrayID := g.currentFunction.NewValueOfType(targetType)
+	g.Emit(ir.Load{Dest: arrayID, Slot: arraySlot})
+	array := ir.ValueOperand(arrayID, targetType)
+	if node.Checked {
+		return g.packCheckedCast(array, matches, node.GetType().(types.MultipleReturnType))
+	}
+	return array
 }
 
 func (g *Generator) generateFailedStaticAssertion(node *parser.CastNode, targetType types.Type) ir.Operand {
@@ -1522,9 +1650,9 @@ func (g *Generator) generateFailedStaticAssertion(node *parser.CastNode, targetT
 		expected = node.StaticTraitView.String()
 	}
 	messageText := "type assertion failed: " + traitRuntimeName(node.Operand.GetType()) + " is not " + expected
-	messageNode := &parser.StringLiteralNode{Value: messageText, Type: types.SliceType{Base: types.PrimitiveChar, Size: len(messageText)}, Loc: node.Loc}
+	messageNode := &parser.StringLiteralNode{Value: messageText, Type: types.SliceType{Base: types.PrimitiveChar}, Loc: node.Loc}
 	message := g.generateStringLiteralExpr(messageNode)
-	runtimeStr := types.SliceType{Base: types.PrimitiveChar, Size: -1}
+	runtimeStr := types.SliceType{Base: types.PrimitiveChar}
 	message.Type = runtimeStr
 	panicSig := ir.FunctionSignature{ParamTypes: []types.Type{runtimeStr}, ReturnType: types.PrimitiveVoid}
 	g.addExternForCall("__qk_panic", panicSig, "", true)
@@ -1767,9 +1895,9 @@ func (g *Generator) generateTraitRecast(node *parser.CastNode) ir.Operand {
 		g.Emit(ir.Jump{Target: end.ID})
 	} else {
 		messageText := "trait cast failed: value does not implement " + target.Trait.String()
-		messageNode := &parser.StringLiteralNode{Value: messageText, Type: types.SliceType{Base: types.PrimitiveChar, Size: len(messageText)}, Loc: node.Loc}
+		messageNode := &parser.StringLiteralNode{Value: messageText, Type: types.SliceType{Base: types.PrimitiveChar}, Loc: node.Loc}
 		message := g.generateStringLiteralExpr(messageNode)
-		runtimeStr := types.SliceType{Base: types.PrimitiveChar, Size: -1}
+		runtimeStr := types.SliceType{Base: types.PrimitiveChar}
 		message.Type = runtimeStr
 		panicSig := ir.FunctionSignature{ParamTypes: []types.Type{runtimeStr}, ReturnType: types.PrimitiveVoid}
 		g.addExternForCall("__qk_panic", panicSig, "", true)
@@ -1823,9 +1951,9 @@ func (g *Generator) generateTraitUnwrap(node *parser.CastNode) ir.Operand {
 		g.Emit(ir.Jump{Target: end.ID})
 	} else {
 		messageText := "trait unwrap failed: expected " + traitRuntimeName(node.ConcreteType)
-		messageNode := &parser.StringLiteralNode{Value: messageText, Type: types.SliceType{Base: types.PrimitiveChar, Size: len(messageText)}, Loc: node.Loc}
+		messageNode := &parser.StringLiteralNode{Value: messageText, Type: types.SliceType{Base: types.PrimitiveChar}, Loc: node.Loc}
 		message := g.generateStringLiteralExpr(messageNode)
-		runtimeStr := types.SliceType{Base: types.PrimitiveChar, Size: -1}
+		runtimeStr := types.SliceType{Base: types.PrimitiveChar}
 		message.Type = runtimeStr
 		panicSig := ir.FunctionSignature{ParamTypes: []types.Type{runtimeStr}, ReturnType: types.PrimitiveVoid}
 		g.addExternForCall("__qk_panic", panicSig, "", true)
@@ -2130,20 +2258,27 @@ func (g *Generator) bindMatchPattern(pattern *parser.MatchPatternNode, subjectSl
 }
 
 func (g *Generator) generateSliceLiteralExpr(node *parser.SliceLiteralNode) ir.Operand {
-	sliceType, ok := types.Underlying(node.GetType()).(types.SliceType)
-	if !ok {
-		panic("slice literal must have slice type")
+	switch literalType := types.Underlying(node.GetType()).(type) {
+	case types.ArrayType:
+		return g.generateArrayLiteral(node, literalType)
+	case types.SliceType:
+		return g.generateViewLiteral(node, literalType)
+	default:
+		panic("sequence literal must have array or slice type")
 	}
+}
 
-	tmpSlot := g.currentFunction.NewSlot(sliceType, "")
+func (g *Generator) generateViewLiteral(node *parser.SliceLiteralNode, sliceType types.SliceType) ir.Operand {
+	targetType := node.GetType()
+	tmpSlot := g.currentFunction.NewSlot(targetType, "")
 	g.Emit(ir.Alloca{Slot: tmpSlot})
 	if node.RepeatValue != nil {
-		return g.generateRepeatedSliceLiteral(node, sliceType, tmpSlot)
+		return g.generateRepeatedSliceLiteral(node, targetType, sliceType, tmpSlot)
 	}
 
-	slicePtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: sliceType})
+	slicePtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: targetType})
 	g.Emit(ir.AddressOf{Dest: slicePtrID, Slot: tmpSlot})
-	slicePtr := ir.ValueOperand(slicePtrID, types.PointerType{Base: sliceType})
+	slicePtr := ir.ValueOperand(slicePtrID, types.PointerType{Base: targetType})
 
 	var elemPtr ir.Operand
 	if len(node.Elements) == 0 {
@@ -2186,12 +2321,41 @@ func (g *Generator) generateSliceLiteralExpr(node *parser.SliceLiteralNode) ir.O
 	g.Emit(ir.FieldAddress{Dest: lenPtrID, Base: slicePtr, Field: "1"})
 	g.Emit(ir.StorePtr{Ptr: ir.ValueOperand(lenPtrID, types.PointerType{Base: types.PrimitiveUsz}), Value: ir.IntConstOperand(fmt.Sprintf("%d", len(node.Elements)), types.PrimitiveUsz)})
 
-	loaded := g.currentFunction.NewValueOfType(sliceType)
+	loaded := g.currentFunction.NewValueOfType(targetType)
 	g.Emit(ir.Load{Dest: loaded, Slot: tmpSlot})
-	return ir.ValueOperand(loaded, sliceType)
+	return ir.ValueOperand(loaded, targetType)
 }
 
-func (g *Generator) generateRepeatedSliceLiteral(node *parser.SliceLiteralNode, sliceType types.SliceType, tmpSlot ir.SlotID) ir.Operand {
+func (g *Generator) generateArrayLiteral(node *parser.SliceLiteralNode, arrayType types.ArrayType) ir.Operand {
+	arraySlot := g.currentFunction.NewSlot(node.GetType(), "")
+	g.Emit(ir.Alloca{Slot: arraySlot})
+	arrayPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: node.GetType(), Mutable: true})
+	g.Emit(ir.AddressOf{Dest: arrayPtrID, Slot: arraySlot})
+	arrayPtr := ir.ValueOperand(arrayPtrID, types.PointerType{Base: node.GetType(), Mutable: true})
+
+	storeElement := func(index ir.Operand, value ir.Operand) {
+		elementPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: arrayType.Base, Mutable: true})
+		g.Emit(ir.ElementAddress{Dest: elementPtrID, Base: arrayPtr, Index: index, Element: arrayType.Base})
+		g.Emit(ir.StorePtr{Ptr: ir.ValueOperand(elementPtrID, types.PointerType{Base: arrayType.Base, Mutable: true}), Value: value})
+	}
+
+	if node.RepeatValue == nil {
+		for i, element := range node.Elements {
+			storeElement(ir.IntConstOperand(strconv.Itoa(i), types.PrimitiveUsz), g.GenerateExpr(element))
+		}
+	} else if _, noInit := node.RepeatValue.(*parser.NoInitializerNode); !noInit {
+		value := g.GenerateExpr(node.RepeatValue)
+		for i := 0; i < arrayType.Length; i++ {
+			storeElement(ir.IntConstOperand(strconv.Itoa(i), types.PrimitiveUsz), value)
+		}
+	}
+
+	loaded := g.currentFunction.NewValueOfType(node.GetType())
+	g.Emit(ir.Load{Dest: loaded, Slot: arraySlot})
+	return ir.ValueOperand(loaded, node.GetType())
+}
+
+func (g *Generator) generateRepeatedSliceLiteral(node *parser.SliceLiteralNode, targetType types.Type, sliceType types.SliceType, tmpSlot ir.SlotID) ir.Operand {
 	count := g.GenerateExpr(node.RepeatAmount)
 
 	bufferID := g.currentFunction.NewValueOfType(types.PointerType{Base: sliceType.Base})
@@ -2228,9 +2392,9 @@ func (g *Generator) generateRepeatedSliceLiteral(node *parser.SliceLiteralNode, 
 
 		g.currentBlock = endBlock
 	}
-	slicePtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: sliceType})
+	slicePtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: targetType})
 	g.Emit(ir.AddressOf{Dest: slicePtrID, Slot: tmpSlot})
-	slicePtr := ir.ValueOperand(slicePtrID, types.PointerType{Base: sliceType})
+	slicePtr := ir.ValueOperand(slicePtrID, types.PointerType{Base: targetType})
 	basePtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: types.PointerType{Base: sliceType.Base}})
 	g.Emit(ir.FieldAddress{Dest: basePtrID, Base: slicePtr, Field: "0"})
 	g.Emit(ir.StorePtr{Ptr: ir.ValueOperand(basePtrID, types.PointerType{Base: types.PointerType{Base: sliceType.Base}}), Value: buffer})
@@ -2238,9 +2402,9 @@ func (g *Generator) generateRepeatedSliceLiteral(node *parser.SliceLiteralNode, 
 	g.Emit(ir.FieldAddress{Dest: lenPtrID, Base: slicePtr, Field: "1"})
 	g.Emit(ir.StorePtr{Ptr: ir.ValueOperand(lenPtrID, types.PointerType{Base: types.PrimitiveUsz}), Value: count})
 
-	loaded := g.currentFunction.NewValueOfType(sliceType)
+	loaded := g.currentFunction.NewValueOfType(targetType)
 	g.Emit(ir.Load{Dest: loaded, Slot: tmpSlot})
-	return ir.ValueOperand(loaded, sliceType)
+	return ir.ValueOperand(loaded, targetType)
 }
 
 func (g *Generator) generateStructLiteralIntoSlot(slot ir.SlotID, node *parser.StructLiteralNode) {
@@ -3017,6 +3181,9 @@ func (g *Generator) generateUnaryExpr(node *parser.UnaryOpNode) ir.Operand {
 		operand := g.GenerateExpr(node.Operand)
 		g.Emit(ir.LoadPtr{Dest: dst, Ptr: operand})
 	case parser.UnaryOpSliceLen:
+		if array, ok := types.Underlying(node.Operand.GetType()).(types.ArrayType); ok {
+			return ir.IntConstOperand(strconv.Itoa(array.Length), node.GetType())
+		}
 		operand := g.generateAddressOfExpr(node.Operand)
 		lenPtr := g.currentFunction.NewValueOfType(types.PointerType{Base: node.GetType()})
 		g.Emit(ir.FieldAddress{Dest: lenPtr, Base: operand, Field: "1"})

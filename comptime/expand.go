@@ -88,14 +88,19 @@ func (e *expander) expand() ([]tokeniser.Token, error) {
 				return nil, e.compilerError()
 			}
 		}
-		if tok.Type == tokeniser.TokenIdentifier && e.isSliceExtentReference() {
-			if value, ok := e.target.bindings[tok.Value]; ok && value.kind == valueInteger {
+		if tok.Type == tokeniser.TokenIdentifier && e.isExtentReference() {
+			name, end := tok.Value, e.pos+1
+			for end+1 < len(e.tokens) && e.tokens[end].Type == tokeniser.TokenDot && e.tokens[end+1].Type == tokeniser.TokenIdentifier {
+				name += "." + e.tokens[end+1].Value
+				end += 2
+			}
+			if value, ok := e.target.bindings[name]; ok && value.kind == valueInteger {
 				literal, err := literalToken(value, tok.Loc)
 				if err != nil {
 					return nil, err
 				}
 				result = append(result, literal)
-				e.pos++
+				e.pos = end
 				continue
 			}
 		}
@@ -105,19 +110,83 @@ func (e *expander) expand() ([]tokeniser.Token, error) {
 	return result, nil
 }
 
-func (e *expander) isSliceExtentReference() bool {
-	previous := e.pos - 1
-	for previous >= 0 && e.tokens[previous].Type == tokeniser.TokenNewline {
-		previous--
+func (e *expander) isExtentReference() bool {
+	if e.pos > 0 && e.tokens[e.pos-1].Type == tokeniser.TokenDot {
+		return false
 	}
-	next := e.pos + 1
+	open := -1
+	depth := 0
+	for pos := e.pos - 1; pos >= 0; pos-- {
+		switch e.tokens[pos].Type {
+		case tokeniser.TokenCloseSquare:
+			depth++
+		case tokeniser.TokenOpenSquare:
+			if depth == 0 {
+				open = pos
+				pos = -1
+			} else {
+				depth--
+			}
+		}
+	}
+	if open < 0 {
+		return false
+	}
+	close := -1
+	depth = 0
+	for pos := open + 1; pos < len(e.tokens); pos++ {
+		switch e.tokens[pos].Type {
+		case tokeniser.TokenOpenSquare:
+			depth++
+		case tokeniser.TokenCloseSquare:
+			if depth == 0 {
+				close = pos
+				pos = len(e.tokens)
+			} else {
+				depth--
+			}
+		}
+	}
+	if close < 0 || e.pos >= close {
+		return false
+	}
+
+	// The expression after a top-level semicolon is a repeated literal's
+	// extent, regardless of whether it is followed by another type.
+	depth = 0
+	for pos := open + 1; pos < e.pos; pos++ {
+		switch e.tokens[pos].Type {
+		case tokeniser.TokenOpenParen, tokeniser.TokenOpenSquare:
+			depth++
+		case tokeniser.TokenCloseParen, tokeniser.TokenCloseSquare:
+			depth--
+		case tokeniser.TokenSemicolon:
+			if depth == 0 {
+				return true
+			}
+		}
+	}
+
+	next := close + 1
 	for next < len(e.tokens) && e.tokens[next].Type == tokeniser.TokenNewline {
 		next++
 	}
-	if previous < 0 || next >= len(e.tokens) || e.tokens[next].Type != tokeniser.TokenCloseSquare {
-		return false
+	return next < len(e.tokens) && tokenStartsType(e.tokens[next])
+}
+
+func tokenStartsType(tok tokeniser.Token) bool {
+	switch tok.Type {
+	case tokeniser.TokenIdentifier, tokeniser.TokenAsterisk, tokeniser.TokenOpenSquare, tokeniser.TokenOpenParen:
+		return true
+	case tokeniser.TokenKeyword:
+		switch tok.Value {
+		case string(tokeniser.KeywordReprof), string(tokeniser.KeywordDyn), string(tokeniser.KeywordMut),
+			string(tokeniser.KeywordStruct), string(tokeniser.KeywordEnum), string(tokeniser.KeywordUnion),
+			string(tokeniser.KeywordOpaque), string(tokeniser.KeywordTrait):
+			return true
+		}
 	}
-	return e.tokens[previous].Type == tokeniser.TokenComma || e.tokens[previous].Type == tokeniser.TokenSemicolon
+	return false
 }
 
 func cloneValues(values map[string]Value) map[string]Value {

@@ -144,6 +144,9 @@ func (v *Validator) validateNode(node parser.Node) {
 			if usesCABI && types.HasTaggedUnion(param) {
 				v.errorf(n.Args[i].Type, "tagged unions cannot cross the c ABI; expose an explicitly tagged union through reprof(...) instead")
 			}
+			if _, array := types.Underlying(param).(types.ArrayType); usesCABI && array {
+				v.errorf(n.Args[i].Type, "arrays cannot be direct c ABI parameters; pass a pointer or wrap the array in a struct")
+			}
 			if !types.IsComplete(param) {
 				v.errorf(n.Args[i].Type, "function parameter cannot have incomplete type %v", param)
 			}
@@ -169,6 +172,8 @@ func (v *Validator) validateNode(node parser.Node) {
 			v.errorf(n, "trait pointers cannot cross the c ABI")
 		} else if usesCABI && ret != nil && types.HasTaggedUnion(ret) {
 			v.errorf(n, "tagged unions cannot cross the c ABI; expose an explicitly tagged union through reprof(...) instead")
+		} else if _, array := types.Underlying(ret).(types.ArrayType); usesCABI && ret != nil && array {
+			v.errorf(n, "arrays cannot be returned directly through the c ABI; return a struct containing the array")
 		}
 		if ret := n.Symbol.Signature.ReturnType; ret != nil && !ret.Equals(types.PrimitiveVoid) {
 			if _, multiple := ret.(types.MultipleReturnType); !multiple && hasVoidValue(ret) {
@@ -286,7 +291,7 @@ func (v *Validator) validateNode(node parser.Node) {
 			v.errorf(n, "type %q contains an incomplete type by value", n.Name)
 		} else {
 			switch underlying.(type) {
-			case types.StructType, types.UnionType, types.SliceType:
+			case types.StructType, types.UnionType, types.SliceType, types.ArrayType:
 				if hasVoidValue(underlying) {
 					v.errorf(n, "type %q contains void by value", n.Name)
 				}
@@ -600,6 +605,8 @@ func (v *Validator) validateMutableAccessPath(expr parser.ExpressionNode, requir
 				}
 				return false
 			}
+		case types.ArrayType:
+			return true
 		case types.PointerType:
 			return v.validateMutablePointerBoundary(e, subject, reference)
 		case types.ErrorType:
@@ -1010,17 +1017,22 @@ func (v *Validator) validateRangeFor(n *parser.RangeForNode) {
 
 func (v *Validator) validateForEach(n *parser.ForEachNode) {
 	v.validateExpr(n.Iterable)
-	slice, ok := types.Underlying(n.Iterable.GetType()).(types.SliceType)
-	if !ok {
-		v.errorf(n, "for loop iterable must be a slice")
+	var element types.Type
+	switch iterable := types.Underlying(n.Iterable.GetType()).(type) {
+	case types.SliceType:
+		element = iterable.Base
+	case types.ArrayType:
+		element = iterable.Base
+	default:
+		v.errorf(n, "for loop iterable must be an array or slice")
 		return
 	}
-	if types.HasUntyped(slice.Base) {
-		v.errorf(n, "cannot infer for loop element type from untyped slice")
+	if types.HasUntyped(element) {
+		v.errorf(n, "cannot infer for loop element type from untyped array or slice")
 		return
 	}
 	if n.Symbol != nil {
-		n.Symbol.Type = slice.Base
+		n.Symbol.Type = element
 	}
 	v.validateNode(n.Body)
 	v.warnIfUnused(n.Symbol, n.NameLoc, shared.WarningUnusedVariable, "variable")
@@ -1184,7 +1196,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		if n.Checked {
 			targetType = n.CheckedType
 		}
-		if literal, ok := n.Operand.(*parser.SliceLiteralNode); ok && len(literal.Elements) == 0 && literal.RepeatValue == nil {
+		if literal, ok := n.Operand.(*parser.SliceLiteralNode); ok {
 			v.validateSliceLiteralWithExpected(literal, targetType)
 			break
 		}
@@ -1299,6 +1311,15 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			n.AssertionMatches = n.Operand.GetType().Equals(targetType)
 			break
 		}
+		if sourceArray, ok := types.Underlying(n.Operand.GetType()).(types.ArrayType); ok {
+			if targetSlice, ok := types.Underlying(targetType).(types.SliceType); ok && sourceArray.Base.Equals(targetSlice.Base) {
+				reference := &parser.UnaryOpNode{Operand: n.Operand, Loc: n.Operand.GetLoc()}
+				if !v.validateReferenceTarget(reference, n.Operand, targetSlice.Mutable) {
+					break
+				}
+				return
+			}
+		}
 		if !types.CanExplicitCast(n.Operand.GetType(), targetType) {
 			v.errorf(n, "cannot cast %v to %v", n.Operand.GetType(), targetType)
 		}
@@ -1346,10 +1367,10 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 
 		case parser.UnaryOpSliceLen:
 			switch types.Underlying(operandType).(type) {
-			case types.SliceType:
+			case types.SliceType, types.ArrayType:
 				// OK
 			default:
-				v.errorf(n, "slice length operator requires a slice operand")
+				v.errorf(n, "length operator requires an array or slice operand")
 			}
 
 		default:
@@ -1522,17 +1543,12 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 
 		switch subjectType := types.Underlying(n.Subject.GetType()).(type) {
 		case types.SliceType:
-			if t, ok := types.Underlying(n.Subject.GetType()).(types.SliceType); ok {
-				if t.Size != -1 {
-					if idxLit, ok := n.Index.(*parser.IntegerLiteralNode); ok {
-						idx, _ := strconv.Atoi(idxLit.Value)
-						if idx < 0 || idx >= t.Size {
-							v.errorf(n, "index %d out of bounds for slice of size %d", idx, t.Size)
-						}
-					}
+		case types.ArrayType:
+			if idxLit, ok := n.Index.(*parser.IntegerLiteralNode); ok {
+				idx, _ := strconv.Atoi(idxLit.Value)
+				if idx < 0 || idx >= subjectType.Length {
+					v.errorf(n, "index %d out of bounds for array of length %d", idx, subjectType.Length)
 				}
-			} else {
-				panic("unreachable")
 			}
 
 		case types.PointerType:
@@ -1540,7 +1556,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 				v.errorf(n, "cannot index pointer to incomplete type %v", subjectType.Base)
 			}
 		default:
-			v.errorf(n, "cannot index into non-slice type")
+			v.errorf(n, "cannot index into non-array-or-slice type")
 		}
 
 	case *parser.SliceExprNode:
@@ -1563,10 +1579,11 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		}
 
 		subjectType := types.Underlying(n.Subject.GetType())
-		sliceType, isSlice := subjectType.(types.SliceType)
+		_, isSlice := subjectType.(types.SliceType)
+		arrayType, isArray := subjectType.(types.ArrayType)
 		pointerType, isPointer := subjectType.(types.PointerType)
-		if !isSlice && !isPointer {
-			v.errorf(n, "cannot slice non-slice or non-pointer type")
+		if !isSlice && !isArray && !isPointer {
+			v.errorf(n, "cannot slice non-array, non-slice, or non-pointer type")
 			break
 		}
 		if isPointer {
@@ -1577,6 +1594,11 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 				v.errorf(n, "cannot slice pointer to incomplete type %v", pointerType.Base)
 			}
 		}
+		if isArray {
+			result, _ := types.Underlying(n.GetType()).(types.SliceType)
+			reference := &parser.UnaryOpNode{Operand: n.Subject, Loc: n.Subject.GetLoc()}
+			v.validateReferenceTarget(reference, n.Subject, result.Mutable)
+		}
 
 		start, startKnown := staticIntegerValue(n.Start)
 		if n.Start == nil {
@@ -1584,8 +1606,8 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			startKnown = true
 		}
 		end, endKnown := staticIntegerValue(n.End)
-		if n.End == nil && isSlice && sliceType.Size >= 0 {
-			end = big.NewInt(int64(sliceType.Size))
+		if n.End == nil && isArray {
+			end = big.NewInt(int64(arrayType.Length))
 			endKnown = true
 		}
 
@@ -1598,13 +1620,13 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		if startKnown && endKnown && start.Cmp(end) > 0 {
 			v.errorf(n, "slice start %s exceeds end %s", start, end)
 		}
-		if isSlice && sliceType.Size >= 0 {
-			size := big.NewInt(int64(sliceType.Size))
+		if isArray {
+			size := big.NewInt(int64(arrayType.Length))
 			if startKnown && start.Cmp(size) > 0 {
-				v.errorf(n, "slice start %s out of bounds for slice of size %d", start, sliceType.Size)
+				v.errorf(n, "slice start %s out of bounds for array of length %d", start, arrayType.Length)
 			}
 			if endKnown && end.Cmp(size) > 0 {
-				v.errorf(n, "slice end %s out of bounds for slice of size %d", end, sliceType.Size)
+				v.errorf(n, "slice end %s out of bounds for array of length %d", end, arrayType.Length)
 			}
 		}
 
@@ -1678,20 +1700,15 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		v.validateMatch(n, nil)
 
 	case *parser.SliceLiteralNode:
+		v.errorf(n, "cannot infer whether sequence literal is an array or slice; add a type annotation")
 		if n.RepeatValue != nil {
-			size := -1
-			if amount, ok := n.RepeatAmount.(*parser.IntegerLiteralNode); ok {
-				if parsed, err := strconv.Atoi(amount.Value); err == nil {
-					size = parsed
-				}
-			}
 			if _, noInit := n.RepeatValue.(*parser.NoInitializerNode); noInit {
-				v.errorf(n, "an uninitialized repeated slice requires an expected slice type")
+				v.errorf(n, "an uninitialized repeated literal requires an expected array type")
 			} else {
 				v.validateValueExpr(n.RepeatValue)
 			}
 			n.RepeatAmount = v.validateExprWithExpected(n.RepeatAmount, types.PrimitiveUsz)
-			n.SetType(types.SliceType{Base: n.RepeatValue.GetType(), Size: size, Mutable: true})
+			n.SetType(types.ErrorType{})
 			break
 		}
 		var common types.Type = nil
@@ -1716,11 +1733,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			}
 		}
 
-		n.Type = types.SliceType{
-			Base:    common,
-			Size:    len(n.Elements),
-			Mutable: true,
-		}
+		n.Type = types.ErrorType{}
 
 		for i, el := range n.Elements {
 			if !el.GetType().Equals(common) {
@@ -1948,6 +1961,8 @@ func (v *Validator) validateReferenceTarget(node *parser.UnaryOpNode, target par
 		switch subjectType := types.Underlying(target.Subject.GetType()).(type) {
 		case types.SliceType:
 			return v.validateReferenceTarget(node, target.Subject, mutable)
+		case types.ArrayType:
+			return v.validateReferenceTarget(node, target.Subject, mutable)
 		case types.PointerType:
 			if subjectType.Base.Equals(types.PrimitiveVoid) {
 				v.errorf(node, "cannot take reference of index into void pointer")
@@ -1995,6 +2010,8 @@ func hasVoidValue(t types.Type) bool {
 	case types.PrimitiveType:
 		return t == types.PrimitiveVoid
 	case types.SliceType:
+		return hasVoidValue(t.Base)
+	case types.ArrayType:
 		return hasVoidValue(t.Base)
 	case types.StructType:
 		for _, field := range t.Fields {
@@ -2175,6 +2192,15 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 	v.validateExpr(node)
 
 	got := node.GetType()
+	if sourceArray, ok := types.Underlying(got).(types.ArrayType); ok {
+		if targetSlice, ok := types.Underlying(expected).(types.SliceType); ok && sourceArray.Base.Equals(targetSlice.Base) {
+			reference := &parser.UnaryOpNode{Operand: node, Loc: node.GetLoc()}
+			if v.validateReferenceTarget(reference, node, targetSlice.Mutable) {
+				return &parser.CastNode{Operand: node, Loc: node.GetLoc(), Type: expected}
+			}
+			return node
+		}
+	}
 	if cast, ok := v.traitConversion(node, expected); ok {
 		return cast
 	}
@@ -2281,45 +2307,50 @@ func isArithmeticOperator(op parser.BinaryOpKind) bool {
 }
 
 func (v *Validator) validateSliceLiteralWithExpected(n *parser.SliceLiteralNode, expected types.Type) {
-	sliceType, ok := types.Underlying(expected).(types.SliceType)
-	if !ok {
+	underlying := types.Underlying(expected)
+	var elementType types.Type
+	expectedLength := -1
+	switch target := underlying.(type) {
+	case types.SliceType:
+		elementType = target.Base
+	case types.ArrayType:
+		elementType = target.Base
+		expectedLength = target.Length
+	default:
 		v.validateExpr(n)
-		got := n.GetType()
-		if !got.CanCoerceTo(expected) {
-			v.errorf(n, "cannot assign %v to %v", got, expected)
-			return
-		}
-		if !got.Equals(expected) {
-			n.SetType(expected)
-		}
 		return
 	}
 	if n.RepeatValue != nil {
 		size := -1
-		if amount, ok := n.RepeatAmount.(*parser.IntegerLiteralNode); ok {
-			if parsed, err := strconv.Atoi(amount.Value); err == nil {
-				size = parsed
-			}
+		if amount, ok := staticIntegerValue(n.RepeatAmount); ok && amount.IsInt64() {
+			size = int(amount.Int64())
 		}
 		if noInit, ok := n.RepeatValue.(*parser.NoInitializerNode); ok {
-			noInit.SetType(sliceType.Base)
+			if expectedLength < 0 {
+				v.errorf(n, "uninitialized repeated literal requires an array type")
+			}
+			noInit.SetType(elementType)
 		} else {
-			n.RepeatValue = v.validateExprWithExpected(n.RepeatValue, sliceType.Base)
+			n.RepeatValue = v.validateExprWithExpected(n.RepeatValue, elementType)
 		}
 		n.RepeatAmount = v.validateExprWithExpected(n.RepeatAmount, types.PrimitiveUsz)
-		if sliceType.Size != -1 && size != -1 && size != sliceType.Size {
-			v.errorf(n, "cannot assign repeated slice of size %d to [%v, %d]", size, sliceType.Base, sliceType.Size)
+		if expectedLength >= 0 {
+			if size < 0 {
+				v.errorf(n, "array repetition count must be a compile-time integer")
+			} else if size != expectedLength {
+				v.errorf(n, "cannot assign repeated literal of length %d to %v", size, expected)
+			}
 		}
 		n.SetType(expected)
 		return
 	}
 
-	if sliceType.Size != -1 && len(n.Elements) != sliceType.Size {
-		v.errorf(n, "cannot assign [%v, %d] to [%v, %d]", sliceType.Base, len(n.Elements), sliceType.Base, sliceType.Size)
+	if expectedLength >= 0 && len(n.Elements) != expectedLength {
+		v.errorf(n, "sequence literal has length %d, expected %v", len(n.Elements), expected)
 	}
 
 	for i, element := range n.Elements {
-		n.Elements[i] = v.validateExprWithExpected(element, sliceType.Base)
+		n.Elements[i] = v.validateExprWithExpected(element, elementType)
 	}
 
 	n.SetType(expected)
@@ -2328,7 +2359,13 @@ func (v *Validator) validateSliceLiteralWithExpected(n *parser.SliceLiteralNode,
 func staticIntegerValue(expr parser.ExpressionNode) (*big.Int, bool) {
 	switch n := expr.(type) {
 	case *parser.IntegerLiteralNode:
-		value, ok := new(big.Int).SetString(n.Value, 10)
+		base := 10
+		if strings.HasPrefix(n.Value, "0x") || strings.HasPrefix(n.Value, "0X") ||
+			strings.HasPrefix(n.Value, "0b") || strings.HasPrefix(n.Value, "0B") ||
+			strings.HasPrefix(n.Value, "0o") || strings.HasPrefix(n.Value, "0O") {
+			base = 0
+		}
+		value, ok := new(big.Int).SetString(n.Value, base)
 		return value, ok
 	case *parser.UnaryOpNode:
 		if n.Op != parser.UnaryOpNegate {
@@ -2341,6 +2378,46 @@ func staticIntegerValue(expr parser.ExpressionNode) (*big.Int, bool) {
 		return new(big.Int).Neg(value), true
 	case *parser.CastNode:
 		return staticIntegerValue(n.Operand)
+	case *parser.BinaryOpNode:
+		left, leftOK := staticIntegerValue(n.Operand1)
+		right, rightOK := staticIntegerValue(n.Operand2)
+		if !leftOK || !rightOK {
+			return nil, false
+		}
+		result := new(big.Int)
+		switch n.Op {
+		case parser.BinaryOpAdd:
+			return result.Add(left, right), true
+		case parser.BinaryOpSubtract:
+			return result.Sub(left, right), true
+		case parser.BinaryOpMultiply:
+			return result.Mul(left, right), true
+		case parser.BinaryOpDivide:
+			if right.Sign() == 0 {
+				return nil, false
+			}
+			return result.Quo(left, right), true
+		case parser.BinaryOpModulo:
+			if right.Sign() == 0 {
+				return nil, false
+			}
+			return result.Rem(left, right), true
+		case parser.BinaryOpBitwiseAnd:
+			return result.And(left, right), true
+		case parser.BinaryOpBitwiseOr:
+			return result.Or(left, right), true
+		case parser.BinaryOpBitwiseXor:
+			return result.Xor(left, right), true
+		case parser.BinaryOpShiftLeft, parser.BinaryOpShiftRight:
+			if !right.IsUint64() {
+				return nil, false
+			}
+			if n.Op == parser.BinaryOpShiftLeft {
+				return result.Lsh(left, uint(right.Uint64())), true
+			}
+			return result.Rsh(left, uint(right.Uint64())), true
+		}
+		return nil, false
 	default:
 		return nil, false
 	}

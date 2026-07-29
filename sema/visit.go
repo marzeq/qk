@@ -425,8 +425,11 @@ func (a *Analyser) visitForEach(n *parser.ForEachNode) {
 
 	a.visitExpression(n.Iterable)
 	var elementType types.Type = types.ErrorType{}
-	if slice, ok := types.Underlying(n.Iterable.GetType()).(types.SliceType); ok {
-		elementType = slice.Base
+	switch iterable := types.Underlying(n.Iterable.GetType()).(type) {
+	case types.SliceType:
+		elementType = iterable.Base
+	case types.ArrayType:
+		elementType = iterable.Base
 	}
 
 	sym := &symbols.Symbol{
