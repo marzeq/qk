@@ -142,7 +142,6 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 	var ownerType types.Type
 	ownerModule := a.currentMod
 	var ownerParameters []types.TypeParameter
-	implicitGenericOwner := false
 	if info, ok := a.aliases[n.MethodOwner]; ok {
 		if len(n.MethodOwnerGenericParameters) != 0 {
 			a.errorf(n, "non-generic method owner %q does not accept type parameters", n.MethodOwner)
@@ -171,25 +170,19 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 			a.errorf(n, "public method %q requires public owner type %q", n.Name, n.MethodOwner)
 			return
 		}
-		if len(n.MethodOwnerGenericParameters) != 0 && len(n.MethodOwnerGenericParameters) != len(info.parameters) {
+		if len(n.MethodOwnerGenericParameters) != len(info.parameters) {
 			a.errorf(n, "generic method owner %q must declare its %d type parameters before '.'", n.MethodOwner, len(info.parameters))
 			return
 		}
+		ownerParameters = make([]types.TypeParameter, len(info.parameters))
 		for i, parameter := range n.MethodOwnerGenericParameters {
-			if parameter.Name != info.parameters[i].Name || parameter.Constraint != nil {
-				a.errorf(parameter, "method owner must use the general type parameter %q, not a specific type argument", info.parameters[i].Name)
+			if parameter.Constraint != nil {
+				a.errorf(parameter, "method owner type parameter %q cannot specify a constraint", parameter.Name)
 				return
 			}
+			ownerParameters[i] = info.parameters[i]
+			ownerParameters[i].Name = parameter.Name
 		}
-		ownerParameters = append([]types.TypeParameter(nil), info.parameters...)
-		if len(n.MethodOwnerGenericParameters) == 0 {
-			implicitGenericOwner = true
-			n.MethodOwnerGenericParameters = make([]parser.GenericParameterNode, len(ownerParameters))
-			for i, parameter := range ownerParameters {
-				n.MethodOwnerGenericParameters[i] = parser.GenericParameterNode{Name: parameter.Name, Loc: n.GetLoc()}
-			}
-		}
-		bindImplicitMethodReceiverTypeArguments(n, ownerParameters)
 		arguments := make([]types.Type, len(ownerParameters))
 		for i, parameter := range ownerParameters {
 			arguments[i] = parameter
@@ -235,9 +228,6 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 		}
 	}
 	methodParameterNodes := n.GenericParameters
-	if implicitGenericOwner && hasOwnerParameterPrefix(methodParameterNodes, ownerParameters) {
-		methodParameterNodes = methodParameterNodes[len(ownerParameters):]
-	}
 	for _, parameter := range methodParameterNodes {
 		if _, exists := a.typeParameterBindings[parameter.Name]; exists {
 			a.errorf(parameter, "generic method type parameter %q conflicts with an owner type parameter", parameter.Name)
@@ -305,36 +295,6 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 			node: n, root: a.currentRoot, module: a.currentMod,
 			specializations: make(map[string]*parser.FunctionDefNode),
 		}
-	}
-}
-
-func hasOwnerParameterPrefix(nodes []parser.GenericParameterNode, parameters []types.TypeParameter) bool {
-	if len(parameters) == 0 || len(nodes) < len(parameters) {
-		return false
-	}
-	for i, parameter := range parameters {
-		if nodes[i].Name != parameter.Name || nodes[i].Constraint != nil {
-			return false
-		}
-	}
-	return true
-}
-
-func bindImplicitMethodReceiverTypeArguments(n *parser.FunctionDefNode, parameters []types.TypeParameter) {
-	if n.Receiver == parser.MethodReceiverNone || len(n.Args) == 0 || len(parameters) == 0 {
-		return
-	}
-	var receiver parser.TypeNode = n.Args[0].Type
-	if pointer, ok := receiver.(*parser.PointerTypeNode); ok {
-		receiver = pointer.BaseType
-	}
-	named, ok := receiver.(*parser.NamedTypeNode)
-	if !ok || len(named.TypeArguments) != 0 {
-		return
-	}
-	named.TypeArguments = make([]parser.TypeNode, len(parameters))
-	for i, parameter := range parameters {
-		named.TypeArguments[i] = &parser.NamedTypeNode{Name: parameter.Name, Loc: named.Loc}
 	}
 }
 

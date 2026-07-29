@@ -661,6 +661,23 @@ the template, including when the use occurs in another module. Generic nominal
 types have a distinct, stable identity for each argument list; generic
 transparent aliases preserve the identity of their substituted target.
 
+Methods on a generic owner must repeat exactly the owner's number of type
+parameters before the dot. These parameters may be renamed for the method, but
+they are local binder names rather than concrete type arguments. They cannot
+declare constraints because they inherit the owner's constraints:
+
+```qk
+let Pair<T, U> = type struct { left: T, right: U }
+let Pair<T, U>.left(self): T = self.left
+let Pair<X, Y>.replace_right(self, value: Y): Pair<X, Y> =
+    Pair<X, Y>.{ left = self.left, right = value }
+```
+
+`let Pair.left(...)` is invalid because the owner parameters are missing, as is
+`let Pair<X: Trait, Y>.left(...)` because a method cannot replace owner
+constraints. Method-scoped parameters remain after the method name, as in
+`let Pair<T, U>.convert<V>(...)`.
+
 Generic value bindings must use `comptime`; ordinary runtime value bindings
 cannot declare type parameters. Their initializer must be a constant
 integer/layout expression and is emitted as a native constant. Generic bindings
@@ -1945,11 +1962,38 @@ sizes. Allocation and resize return the pointer and an explicit success flag.
 A zero-element allocation succeeds with `nil`, while a count-to-byte-size
 overflow fails without calling the allocator.
 
-`std.alloc.GrowingArena` is the hosted implementation. It grows geometrically,
-can resize its most recent allocation in place, and otherwise allocates and
-copies replacement storage. Individual `free` calls do not reclaim arena
-storage; `free_all` releases every chunk. The trait remains defined for
-`-nolibc` semantic use, but `GrowingArena` requires libc.
+Byte-oriented allocators implement the separate, dynamically usable
+`RawAllocator` trait. Its allocation and resize operations return
+`(*mut void, bool)`, so a successful zero-byte operation (`nil, true`) is
+distinct from invalid alignment or allocation failure (`nil, false`). Resize
+uses the supplied alignment for both the old and new allocation.
+
+Hosted builds provide `std.alloc.LibcAllocator`, an alignment-aware
+`RawAllocator` wrapper over libc allocation. It stores the original `malloc`
+pointer before each aligned result, uses `free` for reclamation, and implements
+resize by allocating, copying, and freeing.
+
+`std.alloc.Arena` accepts an optional `RawAllocator` backing allocator and uses
+a shared `LibcAllocator` by default in hosted builds. In `-nolibc` builds a
+backing allocator is required. Regular chunks grow geometrically, while an
+oversized allocation receives its own right-sized chunk without increasing
+later regular chunk sizes. All size, alignment, cursor, padding, and
+chunk-allocation arithmetic is checked. The configured maximum total capacity
+and maximum alignment can reject excessive requests.
+
+Individual `free` calls do not reclaim arena storage. `reset` invalidates all
+allocations but retains chunks for reuse, `mark` and `rewind` provide scoped
+bulk reclamation, and `deinit` returns all chunks to the backing allocator.
+`free_all` is an alias for `deinit`. Marks carry arena identity and generation;
+`rewind` returns `false` for a stale or foreign mark. `reset` and `deinit`
+restore the initial geometric growth size, and oversized historical workloads
+therefore do not determine later regular chunk sizes.
+
+The arena exposes `total_capacity`, `total_used`, `peak_used`, `chunk_count`,
+and `allocation_count` statistics. It also provides `new_zeroed`,
+`allocate_zeroed`, `duplicate`, and `duplicate_bytes` helpers; ordinary
+allocation remains uninitialized. The arena is single-threaded, and bulk
+reclamation does not run destructors.
 
 Because `Allocator` has generic methods, it is used through concrete values,
 static trait views, or `A: std.alloc.Allocator` constraints rather than

@@ -33,10 +33,22 @@ import std.alloc
 // important: due to us not being able to guarantee that self contains a null terminator,
 // this method is forced to allocate a new buffer and copy the contents of self into it, appending a null terminator at the end
 pub let str.to_cstr(self, allocator: mut dyn std.alloc.RawAllocator = nil): *mut char {
-  let buf = if allocator != nil {
-    allocator.allocate_bytes(len(self) + 1, alignof(char)).(*mut char)
+  if len(self) == ~0.(usz) {
+    return nil
+  }
+
+  let mut buf: *mut char = nil
+  if allocator != nil {
+    let allocated, success = allocator.allocate_bytes(
+      len(self) + 1,
+      alignof(char),
+    )
+    if not success {
+      return nil
+    }
+    buf = allocated.(*mut char)
   } else {
-    std.libc.malloc(len(self) + 1).(*mut char)
+    buf = std.libc.malloc(len(self) + 1).(*mut char)
   }
   if buf == nil {
     return nil
