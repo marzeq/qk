@@ -478,6 +478,9 @@ func (g *Generator) generateDefaultWrappers(fn *parser.FunctionDefNode, targetNa
 			g.Emit(ir.Alloca{Slot: slot})
 			incoming := wrapper.NewValueOfType(arg.Symbol.Type)
 			g.Emit(ir.Store{Slot: slot, Value: ir.ValueOperand(incoming, arg.Symbol.Type)})
+		}
+		for i := 0; i < arity; i++ {
+			arg := fn.Args[i]
 			args = append(args, g.generateIdentifierExpr(&parser.IdentifierNode{Symbol: arg.Symbol, Type: arg.Symbol.Type}))
 		}
 		for i := arity; i < total; i++ {
