@@ -1417,10 +1417,7 @@ func (p *Parser) parseIf(expression bool) (*IfNode, error) {
 		p.Inc()
 	}
 
-	wasDisambiguatingTrailingBlock := p.disambiguateTrailingBlock
-	p.disambiguateTrailingBlock = true
 	condition, err := p.ParseExpression()
-	p.disambiguateTrailingBlock = wasDisambiguatingTrailingBlock
 	if err != nil {
 		return nil, err
 	}
@@ -1462,10 +1459,7 @@ func (p *Parser) parseIf(expression bool) (*IfNode, error) {
 				p.Inc()
 			}
 
-			wasDisambiguatingTrailingBlock := p.disambiguateTrailingBlock
-			p.disambiguateTrailingBlock = true
 			elseifCondition, err := p.ParseExpression()
-			p.disambiguateTrailingBlock = wasDisambiguatingTrailingBlock
 			if err != nil {
 				return nil, err
 			}
@@ -1571,8 +1565,6 @@ func (p *Parser) ParseForLoop() (Node, error) {
 	var err error
 
 	exprsOrStmts := []Node{}
-	wasDisambiguatingTrailingBlock := p.disambiguateTrailingBlock
-	p.disambiguateTrailingBlock = true
 
 	for !p.Match(tokeniser.TokenOpenCurly) {
 		ogPos := p.pos
@@ -1600,8 +1592,6 @@ func (p *Parser) ParseForLoop() (Node, error) {
 			p.Inc()
 		}
 	}
-	p.disambiguateTrailingBlock = wasDisambiguatingTrailingBlock
-
 	for p.Match(tokeniser.TokenNewline) {
 		p.Inc()
 	}
@@ -1627,10 +1617,7 @@ func (p *Parser) parseRangeOrForEach(beginLoc shared.Location) (Node, error) {
 		return nil, shared.NewError(p.PrevLoc(), "expected 'in' in for loop")
 	}
 
-	wasDisambiguatingTrailingBlock := p.disambiguateTrailingBlock
-	p.disambiguateTrailingBlock = true
 	iterable, err := p.ParseExpression()
-	p.disambiguateTrailingBlock = wasDisambiguatingTrailingBlock
 	if err != nil {
 		return nil, err
 	}
@@ -1642,13 +1629,7 @@ func (p *Parser) parseRangeOrForEach(beginLoc shared.Location) (Node, error) {
 			p.Inc()
 		}
 
-		// Suppress struct-literal parsing for the range bound as well: the
-		// following loop body starts with '{', which would otherwise be consumed
-		// as a struct literal after an identifier bound.
-		wasDisambiguatingTrailingBlock := p.disambiguateTrailingBlock
-		p.disambiguateTrailingBlock = true
 		end, err := p.ParseExpression()
-		p.disambiguateTrailingBlock = wasDisambiguatingTrailingBlock
 		if err != nil {
 			return nil, err
 		}

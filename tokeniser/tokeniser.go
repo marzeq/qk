@@ -147,8 +147,17 @@ func (t *Tokeniser) ReadNumber() (string, int, error) {
 	if digits.Len() == 0 {
 		return "", 0, shared.NewError(t.GetLoc(), "expected digits in base-%d integer literal", base)
 	}
-	if prefixed && t.Peek() == '.' && t.Next() != '.' {
+	if prefixed && t.Peek() == '.' && IsNum(t.Next()) {
 		return "", 0, shared.NewError(t.GetLoc(), "base-%d floating-point literals are not supported", base)
+	}
+	if !prefixed && t.Peek() == '.' && IsNum(t.Next()) {
+		digits.WriteRune(t.Consume())
+		for IsNum(t.Peek()) {
+			digits.WriteRune(t.Consume())
+		}
+		if IsAlpha(t.Peek()) {
+			return "", 0, shared.NewError(t.GetLoc(), "invalid character %q in floating-point literal", t.Peek())
+		}
 	}
 
 	value := digits.String()
@@ -396,19 +405,17 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 		}
 
 		if IsNum(c) {
-			if len(t.tokens) > 0 && t.tokens[len(t.tokens)-1].Type == TokenDot && c == '0' {
-				switch t.Next() {
-				case 'b', 'B', 'o', 'O', 'x', 'X':
-					return nil, shared.NewError(t.GetLoc(), "prefixed integer literal cannot be used as a decimal fraction")
-				}
-			}
 			pos := t.GetLoc()
 			n, base, err := t.ReadNumber()
 			if err != nil {
 				return nil, err
 			}
 
-			t.AddToken(TokenNumber, pos, n)
+			kind := TokenNumber
+			if strings.ContainsRune(n, '.') {
+				kind = TokenFloat
+			}
+			t.AddToken(kind, pos, n)
 			t.tokens[len(t.tokens)-1].NumberBase = base
 			continue
 		}
@@ -530,7 +537,11 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 					return nil, err
 				}
 
-				t.AddToken(TokenNumber, pos, n)
+				kind := TokenNumber
+				if strings.ContainsRune(n, '.') {
+					kind = TokenFloat
+				}
+				t.AddToken(kind, pos, n)
 				t.tokens[len(t.tokens)-1].NumberBase = base
 			} else if t.Next() == '=' {
 				t.AddToken(TokenDecBy, t.GetLoc())

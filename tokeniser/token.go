@@ -20,6 +20,7 @@ const (
 	TokenKeyword
 	TokenIdentifier
 	TokenNumber
+	TokenFloat
 	TokenString
 	TokenCString
 	TokenChar
@@ -131,6 +132,8 @@ func (t Token) String() string {
 		return "ident(" + t.Value + ")"
 	case TokenNumber:
 		return "num(" + t.Value + ")"
+	case TokenFloat:
+		return "float(" + t.Value + ")"
 	case TokenString:
 		return "str(" + t.Value + ")"
 	case TokenChar:

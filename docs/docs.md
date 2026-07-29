@@ -107,12 +107,10 @@ Decimal integers and binary, octal, and hexadecimal integers are supported:
 Base prefixes are case-insensitive. Non-decimal floating-point literals, digit
 separators, exponents, and numeric suffixes are not supported.
 
-Decimal floating-point forms include:
+Decimal floating-point literals require digits on both sides of the point:
 
 ```qk
 1.25
-1.
-.25
 -1.25
 ```
 
@@ -492,7 +490,7 @@ let open(path: str, mode: Mode = .read, retries: u32 = 0) { /* ... */ }
 Defaults can precede a shared type annotation:
 
 ```qk
-let offset(x = 0, y = 0: i32): Point = Point { x = x, y = y }
+let offset(x = 0, y = 0: i32): Point = Point.{ x = x, y = y }
 ```
 
 A parameter without a default cannot follow one with a default. Default expressions
@@ -602,7 +600,7 @@ Concrete type arguments use angle brackets:
 
 ```qk
 let number = identity<i32>(10)
-let pair = Pair<i32>{left = number, right = number}
+let pair = Pair<i32>.{left = number, right = number}
 let size = layout_size<Pair<i32>>
 ```
 
@@ -699,7 +697,7 @@ subject to mutability rules.
 Omitting `self` declares a static method:
 
 ```qk
-let Point.origin(): Point = Point { x = 0.0, y = 0.0 }
+let Point.origin(): Point = Point.{ x = 0.0, y = 0.0 }
 let origin = Point.origin()
 ```
 
@@ -968,23 +966,24 @@ into it.
 
 ### 13.1 Struct literals
 
-A named struct value lists fields with `=`:
+A named struct value uses `.{` after its type and lists fields with `=`:
 
 ```qk
-let point = Point {
+let point = Point.{
     x = 1.0
     y = 2.0
 }
 ```
 
-Commas or newlines separate fields. Imported types can be qualified. Context can
-supply the type, allowing an anonymous-looking literal:
+The dot keeps the literal distinct from a block that follows an expression in
+`if`, `match`, or `for`. Commas or newlines separate fields. Imported types can
+be qualified. Context can supply the type, allowing an anonymous-looking literal:
 
 ```qk
-let point: Point = { x = 1.0, y = 2.0 }
+let point: Point = .{ x = 1.0, y = 2.0 }
 ```
 
-Without an expected named type, `{ field = value }` creates an anonymous structural
+Without an expected named type, `.{ field = value }` creates an anonymous structural
 value. Named literals reject unknown and duplicate fields and require every
 ordinary struct field. A union literal initializes exactly one field.
 
@@ -993,15 +992,15 @@ behaves like an omitted C named initializer: the aggregate is initially zero and
 that field receives no explicit store.
 
 ```qk
-let point = Point { x = 10, y = --- } // y is zero
+let point = Point.{ x = 10, y = --- } // y is zero
 ```
 
 A final standalone `---` disables the initial zeroing and permits all remaining
 fields to stay uninitialized:
 
 ```qk
-let point = Point { x = 10, --- } // y is uninitialized
-let raw = Point { --- }           // every field is uninitialized
+let point = Point.{ x = 10, --- } // y is uninitialized
+let raw = Point.{ --- }           // every field is uninitialized
 ```
 
 The standalone marker must be the final entry. As with an uninitialized local
@@ -1219,7 +1218,7 @@ trailing comma; a newline does not separate them.
 A union literal initializes exactly one field:
 
 ```qk
-let value: Value = { integer = 42 }
+let value: Value = .{ integer = 42 }
 ```
 
 An unnamed union can be embedded directly in a struct:
@@ -1452,8 +1451,8 @@ decimal values are rejected. A flags literal combines named masks; an empty
 literal has value zero:
 
 ```qk
-let enabled = Features { .logging, .metrics }
-let disabled = Features {}
+let enabled = Features.{ .logging, .metrics }
+let disabled = Features.{}
 ```
 
 Flags retain the usual `&`, `|`, `^`, `~`, shift, and compound-assignment
@@ -1461,7 +1460,7 @@ operations. Operands must use the same nominal flags type, except that shift
 counts are integers. A member accessed through a value is a boolean test that
 all bits in that member's mask are set. Assigning a boolean through the same
 syntax sets or clears those bits. Zero-valued members cannot be used through
-the boolean field syntax; compare the complete flags value with `Type {}`
+the boolean field syntax; compare the complete flags value with `Type.{}`
 instead:
 
 ```qk
@@ -2219,7 +2218,7 @@ pub let Point = type struct {
 }
 
 pub let Point.translated(self, dx = 0.0, dy = 0.0: f64): Point {
-    return Point { x = self.x + dx, y = self.y + dy }
+    return Point.{ x = self.x + dx, y = self.y + dy }
 }
 
 pub let translate_all(mut points: [Point], dx, dy: f64) {
@@ -2244,7 +2243,7 @@ pub let Value = type struct {
     },
 }
 
-pub let integer_value(value: i64): Value = Value {
+pub let integer_value(value: i64): Value = Value.{
     kind = .integer
     integer = value
 }

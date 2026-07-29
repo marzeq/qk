@@ -369,7 +369,7 @@ func (p *Parser) ParsePostfix() (ExpressionNode, error) {
 			default:
 				return nil, shared.NewError(expr.GetLoc(), "type arguments require a named binding")
 			}
-		case p.Match(tokeniser.TokenOpenCurly) && (!p.disambiguateTrailingBlock || p.trailingBraceStartsStructLiteral()):
+		case p.Match(tokeniser.TokenDot) && p.Next().Type == tokeniser.TokenOpenCurly:
 			qualified, ok := expr.(*IdentifierNode)
 			if !ok {
 				qualified, ok = dottedIdentifier(expr)
@@ -377,6 +377,7 @@ func (p *Parser) ParsePostfix() (ExpressionNode, error) {
 			if !ok {
 				return expr, nil
 			}
+			p.Inc()
 			return p.ParseStructLiteral(qualified)
 		case p.Match(tokeniser.TokenOpenParen):
 			call, err := p.ParseCall(expr)
@@ -578,7 +579,7 @@ func (p *Parser) tryParseTypeArguments() ([]TypeNode, bool, error) {
 		p.Inc()
 	}
 	switch p.Peek().Type {
-	case tokeniser.TokenIdentifier, tokeniser.TokenNumber, tokeniser.TokenString,
+	case tokeniser.TokenIdentifier, tokeniser.TokenNumber, tokeniser.TokenFloat, tokeniser.TokenString,
 		tokeniser.TokenCString, tokeniser.TokenChar:
 		p.PopPos()
 		return nil, false, nil
@@ -715,6 +716,10 @@ func (p *Parser) ParseMulDiv() (ExpressionNode, error) {
 
 func (p *Parser) ParseTerm() (ExpressionNode, error) {
 	beginLoc := p.CurrLoc()
+	if p.Match(tokeniser.TokenDot) && p.Next().Type == tokeniser.TokenOpenCurly {
+		p.Inc()
+		return p.ParseStructLiteral(nil)
+	}
 	if p.Match(tokeniser.TokenDot) && p.Next().Type == tokeniser.TokenIdentifier {
 		p.Inc()
 		variant := p.Consume()
@@ -733,16 +738,6 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 	}
 
 	if p.Match(tokeniser.TokenOpenCurly) {
-		if p.braceStartsStructLiteral() {
-			start := p.pos
-			posStack := append([]int(nil), p.posStack...)
-			literal, err := p.ParseStructLiteral(nil)
-			if err == nil {
-				return literal, nil
-			}
-			p.pos = start
-			p.posStack = posStack
-		}
 		expr, err := p.ParseBlockExpression()
 		if err != nil {
 			return nil, err
@@ -819,11 +814,6 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 			return p.ParseFunctionCall(ident)
 		}
 
-		if p.Match(tokeniser.TokenOpenCurly) &&
-			(!p.disambiguateTrailingBlock || p.trailingBraceStartsStructLiteral()) {
-			return p.ParseStructLiteral(ident)
-		}
-
 		return ident, nil
 	}
 
@@ -886,41 +876,16 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 
 	if p.Match(tokeniser.TokenNumber) {
 		nLit := p.Consume()
-		if !p.Match(tokeniser.TokenDot) {
-			return &IntegerLiteralNode{
-				Value: nLit.Value,
-				Loc:   p.SpanFrom(beginLoc),
-			}, nil
-		}
-		p.Inc()
-		if !p.Match(tokeniser.TokenNumber) {
-			if p.Match(tokeniser.TokenOpenParen) {
-				p.Dec()
-				return &IntegerLiteralNode{
-					Value: nLit.Value,
-					Loc:   p.SpanFrom(beginLoc),
-				}, nil
-			}
-			return &FloatLiteralNode{
-				Value: nLit.Value + ".0",
-				Loc:   p.SpanFrom(beginLoc),
-			}, nil
-		}
-		n2Lit := p.Consume()
-		return &FloatLiteralNode{
-			Value: nLit.Value + "." + n2Lit.Value,
+		return &IntegerLiteralNode{
+			Value: nLit.Value,
 			Loc:   p.SpanFrom(beginLoc),
 		}, nil
 	}
 
-	if p.Match(tokeniser.TokenDot) {
-		p.Inc()
-		if !p.Match(tokeniser.TokenNumber) {
-			return nil, shared.NewError(p.PrevLoc(), "expected number after decimal point")
-		}
-		n2Lit := p.Consume()
+	if p.Match(tokeniser.TokenFloat) {
+		nLit := p.Consume()
 		return &FloatLiteralNode{
-			Value: "0." + n2Lit.Value,
+			Value: nLit.Value,
 			Loc:   p.SpanFrom(beginLoc),
 		}, nil
 	}
@@ -1560,10 +1525,7 @@ func (p *Parser) ParseMatch(expression bool) (*MatchNode, error) {
 	for p.Match(tokeniser.TokenNewline) {
 		p.Inc()
 	}
-	oldDisambiguation := p.disambiguateTrailingBlock
-	p.disambiguateTrailingBlock = true
 	subject, err := p.ParseExpression()
-	p.disambiguateTrailingBlock = oldDisambiguation
 	if err != nil {
 		return nil, err
 	}

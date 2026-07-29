@@ -80,7 +80,7 @@ let checked_size<T>(count: usz): (usz, bool) {
 pub let GrowingArena.init(
   initial_chunk_size: usz = ArenaDefaultChunkSize,
 ): GrowingArena =
-  GrowingArena{
+  .{
     current=nil,
     next_chunk_size=max_usz(initial_chunk_size, 1),
     last_ptr=nil,
