@@ -708,6 +708,35 @@ func inferGenericArguments(
 	patterns, actuals []types.Type,
 	typedVariadic, variadicExpansion bool,
 ) ([]types.Type, error) {
+	return inferGenericArgumentsForCall(parameters, patterns, actuals, nil, nil, typedVariadic, variadicExpansion, false)
+}
+
+func inferGenericArgumentsPartial(
+	parameters []types.TypeParameter,
+	patterns, actuals []types.Type,
+	typedVariadic, variadicExpansion bool,
+) ([]types.Type, error) {
+	return inferGenericArgumentsForCall(parameters, patterns, actuals, nil, nil, typedVariadic, variadicExpansion, true)
+}
+
+func inferGenericArgumentsWithResult(
+	parameters []types.TypeParameter,
+	patterns, actuals []types.Type,
+	resultPattern, expectedResult types.Type,
+	typedVariadic, variadicExpansion bool,
+) ([]types.Type, error) {
+	return inferGenericArgumentsForCall(
+		parameters, patterns, actuals, resultPattern, expectedResult,
+		typedVariadic, variadicExpansion, false,
+	)
+}
+
+func inferGenericArgumentsForCall(
+	parameters []types.TypeParameter,
+	patterns, actuals []types.Type,
+	resultPattern, expectedResult types.Type,
+	typedVariadic, variadicExpansion, allowIncomplete bool,
+) ([]types.Type, error) {
 	inferred := make(map[string]types.Type)
 	for i, actual := range actuals {
 		if len(patterns) == 0 {
@@ -730,18 +759,80 @@ func inferGenericArguments(
 			return nil, err
 		}
 	}
+	if resultPattern != nil && expectedResult != nil {
+		inferMissingGenericType(resultPattern, expectedResult, inferred)
+	}
 	arguments := make([]types.Type, len(parameters))
 	for i, parameter := range parameters {
 		argument, ok := inferred[parameter.Key()]
 		if !ok {
+			if allowIncomplete {
+				arguments[i] = parameter
+				continue
+			}
 			return nil, fmt.Errorf("cannot infer type argument %s", parameter.Name)
 		}
 		if types.HasUntyped(argument) {
+			if allowIncomplete {
+				arguments[i] = parameter
+				continue
+			}
 			return nil, fmt.Errorf("untyped numeric value cannot infer type argument %s", parameter.Name)
 		}
 		arguments[i] = argument
 	}
 	return arguments, nil
+}
+
+func inferMissingGenericType(pattern, actual types.Type, inferred map[string]types.Type) {
+	if parameter, ok := pattern.(types.TypeParameter); ok {
+		if previous, exists := inferred[parameter.Key()]; !exists || types.HasUntyped(previous) {
+			if !types.HasUntyped(actual) {
+				inferred[parameter.Key()] = actual
+			}
+		}
+		return
+	}
+	switch pattern := pattern.(type) {
+	case types.PointerType:
+		if actual, ok := actual.(types.PointerType); ok {
+			inferMissingGenericType(pattern.Base, actual.Base, inferred)
+		}
+	case types.SliceType:
+		if actual, ok := actual.(types.SliceType); ok {
+			inferMissingGenericType(pattern.Base, actual.Base, inferred)
+		}
+	case types.ArrayType:
+		if actual, ok := actual.(types.ArrayType); ok && pattern.Length == actual.Length {
+			inferMissingGenericType(pattern.Base, actual.Base, inferred)
+		}
+	case types.DefinedType:
+		actual, ok := actual.(types.DefinedType)
+		if !ok || pattern.Module != actual.Module || pattern.GenericName == "" || pattern.GenericName != actual.GenericName ||
+			len(pattern.TypeArguments) != len(actual.TypeArguments) {
+			return
+		}
+		for i := range pattern.TypeArguments {
+			inferMissingGenericType(pattern.TypeArguments[i], actual.TypeArguments[i], inferred)
+		}
+	case types.FunctionType:
+		actual, ok := actual.(types.FunctionType)
+		if !ok || len(pattern.Parameters) != len(actual.Parameters) {
+			return
+		}
+		for i := range pattern.Parameters {
+			inferMissingGenericType(pattern.Parameters[i], actual.Parameters[i], inferred)
+		}
+		inferMissingGenericType(pattern.ReturnType, actual.ReturnType, inferred)
+	case types.MultipleReturnType:
+		actual, ok := actual.(types.MultipleReturnType)
+		if !ok || len(pattern.Types) != len(actual.Types) {
+			return
+		}
+		for i := range pattern.Types {
+			inferMissingGenericType(pattern.Types[i], actual.Types[i], inferred)
+		}
+	}
 }
 
 func inferGenericType(pattern, actual types.Type, inferred map[string]types.Type) error {

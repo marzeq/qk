@@ -606,8 +606,12 @@ let size = layout_size<Pair<i32>>
 
 Function and method calls infer type arguments structurally from concrete value
 arguments when possible, so `identity(number)` is equivalent to
-`identity<i32>(number)`. Untyped numeric literals do not select a type argument;
-cast them or provide the type argument explicitly.
+`identity<i32>(number)`. Parameters left uninferred by the arguments may then be
+inferred from an expected result type supplied by a declaration, assignment,
+return, or enclosing call. Argument inference takes precedence, so an expected
+result never overrides a type argument already selected by an argument. Untyped
+numeric literals do not select a type argument; cast them or provide the type
+argument explicitly.
 
 String and C-string literals have the canonical builtin `str` and `cstr` types,
 respectively. A string literal's runtime slice length still comes from its

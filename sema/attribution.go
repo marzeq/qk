@@ -467,7 +467,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 			if n.Name != nil && len(n.Name.ResolvedTypeArgs) != 0 {
 				arguments = n.Name.ResolvedTypeArgs
 			} else {
-				arguments, err = inferGenericArguments(
+				arguments, err = inferGenericArgumentsPartial(
 					template.GenericParameters, template.Signature.Parameters, expressionTypes(n.Args),
 					template.Signature.TypedVariadic, n.VariadicExpansion,
 				)

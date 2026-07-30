@@ -1078,6 +1078,9 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		n.SetType(types.ErrorType{})
 
 	case *parser.FunctionCallNode:
+		if !v.completeGenericCall(n, nil) {
+			return
+		}
 		if n.TaggedUnionType != nil {
 			info, _ := types.TaggedUnion(n.TaggedUnionType)
 			if n.TaggedUnionVariant < 0 || n.TaggedUnionVariant >= len(info.Variants) {
@@ -2057,6 +2060,9 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 	}
 
 	if call, ok := node.(*parser.FunctionCallNode); ok {
+		if !v.completeGenericCall(call, expected) {
+			return call
+		}
 		if literal, shorthand := call.Callee.(*parser.EnumLiteralNode); shorthand {
 			if info, tagged := types.TaggedUnion(expected); tagged {
 				variant, index, exists := info.Variant(literal.Variant)
@@ -2261,6 +2267,78 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 	}
 
 	return node
+}
+
+func (v *Validator) completeGenericCall(call *parser.FunctionCallNode, expected types.Type) bool {
+	if call.Symbol == nil || call.Symbol.TemplateSymbol == nil {
+		return true
+	}
+	template := call.Symbol.TemplateSymbol
+	unresolved := false
+	for i, argument := range call.Symbol.TypeArguments {
+		if i < len(template.GenericParameters) && argument.Equals(template.GenericParameters[i]) {
+			unresolved = true
+			break
+		}
+	}
+	if !unresolved {
+		return true
+	}
+
+	var arguments []types.Type
+	var err error
+	if expected == nil {
+		arguments, err = inferGenericArguments(
+			template.GenericParameters, template.Signature.Parameters, expressionTypes(call.Args),
+			template.Signature.TypedVariadic, call.VariadicExpansion,
+		)
+	} else {
+		arguments, err = inferGenericArgumentsWithResult(
+			template.GenericParameters, template.Signature.Parameters, expressionTypes(call.Args),
+			template.Signature.ReturnType, expected,
+			template.Signature.TypedVariadic, call.VariadicExpansion,
+		)
+	}
+	if err != nil {
+		v.errorf(call, "%v", err)
+		call.SetType(types.ErrorType{})
+		return false
+	}
+	for i, argument := range arguments {
+		if i < len(template.GenericParameters) && argument.Equals(template.GenericParameters[i]) {
+			v.errorf(call, "cannot infer type argument %s", template.GenericParameters[i].Name)
+			call.SetType(types.ErrorType{})
+			return false
+		}
+	}
+
+	beforeErrors := len(v.analyser.errors)
+	if hasTypeParameters(arguments) {
+		if v.analyser.checkGenericArguments(call, template.GenericParameters, arguments) {
+			call.Symbol = dependentGenericFunctionSymbol(template, arguments)
+		}
+	} else if specialization := v.analyser.specializeGenericFunction(template, arguments, call); specialization != nil {
+		call.Symbol = specialization.Symbol
+	}
+	if len(v.analyser.errors) > beforeErrors {
+		v.errors = append(v.errors, v.analyser.errors[beforeErrors:]...)
+		v.analyser.errors = v.analyser.errors[:beforeErrors]
+		call.SetType(types.ErrorType{})
+		return false
+	}
+	if call.Symbol == nil {
+		call.SetType(types.ErrorType{})
+		return false
+	}
+	if call.Name != nil {
+		call.Name.Symbol = call.Symbol
+	}
+	if call.Symbol.Signature.ReturnType != nil {
+		call.SetType(call.Symbol.Signature.ReturnType)
+	} else {
+		call.SetType(types.PrimitiveVoid)
+	}
+	return true
 }
 
 func comptimeIdentifier(node parser.ExpressionNode) *parser.IdentifierNode {
