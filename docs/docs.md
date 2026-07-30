@@ -648,13 +648,16 @@ method surface into semantic instantiation, including structurally selected
 private witnesses. A `T` parameter exposes value receivers, `*T` additionally
 exposes immutable pointer receivers, and `*mut T` exposes mutable pointer
 receivers.
-Typed assertions on values originating from a type parameter
-retain assertion semantics after specialization: `value.(Type)` succeeds only
-when the substituted type is exactly `Type`. A two-target assertion produces
-the zero value and `false` for a statically known mismatch; a single-target
-assertion emits a trapping panic path. Converting to `dyn Trait` still performs
-the ordinary explicit trait conversion, after which runtime trait unwrap rules
-apply. A `dyn Trait` value does not itself satisfy a `T: Trait` constraint.
+Explicit casts on values originating from a type parameter are classified after
+specialization. When the substituted source and target types permit an ordinary
+explicit cast, `value.(Type)` performs the same conversion as an equivalent
+non-generic expression. Otherwise it retains assertion semantics: the operation
+succeeds only when the substituted type is exactly `Type`. A two-target
+assertion produces the zero value and `false` for a statically known mismatch; a
+single-target assertion emits a trapping panic path. Converting to `dyn Trait`
+still performs the ordinary explicit trait conversion, after which runtime trait
+unwrap rules apply. A `dyn Trait` value does not itself satisfy a `T: Trait`
+constraint.
 
 Each concrete specialization is owned and emitted by the module that defines
 the template, including when the use occurs in another module. Generic nominal

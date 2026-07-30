@@ -22,7 +22,6 @@ syn region qkCharacter start=+'+ skip=+\\\\\|\\'+ end=+'+ contains=qkEscape,qkIn
 syn match qkNumber "\<0[bB][01]\+\>"
 syn match qkNumber "\<0[oO][0-7]\+\>"
 syn match qkNumber "\<0[xX][0-9a-fA-F]\+\>"
-syn match qkFloat "\<\d\+\.\d*\>\|\(^\|\W\)\zs\.\d\+\>"
 syn match qkNumber "\<\d\+\>"
 syn keyword qkBoolean true false
 syn keyword qkConstant nil

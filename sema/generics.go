@@ -393,7 +393,16 @@ func (a *Analyser) instantiateSemanticNode(node parser.Node) {
 		if cast.Checked {
 			target = cast.CheckedType
 		}
-		cast.AssertionMatches = cast.Operand.GetType().Equals(target)
+		source := cast.Operand.GetType()
+		if specializedExplicitCast(cast.Operand, source, target) {
+			// A cast involving symbolic types may have been conservatively
+			// attributed as an assertion. Once both sides are concrete, use the
+			// same cast semantics as the equivalent non-generic expression.
+			cast.GenericAssertion = false
+			cast.AssertionMatches = false
+		} else {
+			cast.AssertionMatches = source.Equals(target)
+		}
 	}
 	if cast.StaticTraitView == nil {
 		return
@@ -423,6 +432,37 @@ func (a *Analyser) instantiateSemanticNode(node parser.Node) {
 	cast.ConcreteType = concrete
 	cast.AssertionMatches = conforms
 	cast.TraitMethods = methods
+}
+
+func specializedExplicitCast(operand parser.ExpressionNode, source, target types.Type) bool {
+	if !types.CanExplicitCast(source, target) {
+		return false
+	}
+
+	// Array-to-slice casts borrow their operand. Type compatibility alone is
+	// insufficient: the equivalent concrete cast must also have a suitable
+	// place from which to borrow.
+	if _, ok := types.Underlying(source).(types.ArrayType); ok {
+		if slice, ok := types.Underlying(target).(types.SliceType); ok {
+			if slice.Mutable {
+				return mutableArrayPlace(operand)
+			}
+			switch node := operand.(type) {
+			case *parser.IdentifierNode:
+				return node.Symbol != nil && node.Symbol.Kind == symbols.SymbolKindVariable
+			case *parser.UnaryOpNode:
+				if node.Op != parser.UnaryOpDereference {
+					return false
+				}
+				pointer, ok := types.Underlying(node.Operand.GetType()).(types.PointerType)
+				return ok && !pointer.Base.Equals(types.PrimitiveVoid)
+			default:
+				return false
+			}
+		}
+	}
+
+	return true
 }
 
 func (a *Analyser) substituteSymbol(
