@@ -4,7 +4,7 @@ import "fmt"
 
 func ModuleDependencyOrder(mods map[string]*ModuleInfo, primaryModule string) ([]string, error) {
 	if _, ok := mods[primaryModule]; !ok {
-		return nil, fmt.Errorf("primary module %q not found", primaryModule)
+		return nil, fmt.Errorf("primary package %q not found", primaryModule)
 	}
 
 	visited := map[string]VisitedStatusKind{}
@@ -20,12 +20,12 @@ func ModuleDependencyOrder(mods map[string]*ModuleInfo, primaryModule string) ([
 
 		info, ok := mods[name]
 		if !ok {
-			return fmt.Errorf("module imports unknown module %q", name)
+			return fmt.Errorf("package imports unknown package %q", name)
 		}
 		visited[name] = VisitedStatusVisiting
 		for _, dependency := range info.Imports {
 			if _, ok := mods[dependency]; !ok {
-				return fmt.Errorf("module %q imports unknown module %q", name, dependency)
+				return fmt.Errorf("package %q imports unknown package %q", name, dependency)
 			}
 			if err := visit(dependency); err != nil {
 				return err
@@ -50,7 +50,7 @@ func BuildDependencyGraph(mods map[string]*ModuleInfo) (map[string][]string, err
 
 		for _, dep := range info.Imports {
 			if _, ok := mods[dep]; !ok {
-				return nil, fmt.Errorf("module %q imports unknown module %q", name, dep)
+				return nil, fmt.Errorf("package %q imports unknown package %q", name, dep)
 			}
 		}
 	}

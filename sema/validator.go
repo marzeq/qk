@@ -69,15 +69,11 @@ func (v *Validator) ValidateGenericTemplates(root *parser.RootNode) {
 }
 
 func (v *Validator) selectModule(root *parser.RootNode) {
-	for _, node := range root.Body {
-		if module, ok := node.(*parser.ModuleNode); ok {
-			v.analyser.currentMod = module.Name
-			if mod := v.analyser.modules[module.Name]; mod != nil {
-				v.analyser.current = mod.Scope
-				v.analyser.currentTrustedStandardLibrary = mod.TrustedStandardLibrary
-			}
-			break
-		}
+	path := v.analyser.modulePaths[root]
+	v.analyser.currentMod = path
+	if mod := v.analyser.modules[path]; mod != nil {
+		v.analyser.current = mod.Scope
+		v.analyser.currentTrustedStandardLibrary = mod.TrustedStandardLibrary
 	}
 }
 

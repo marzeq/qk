@@ -16,11 +16,11 @@ let main() {
 }
 ```
 
-Compile every QK source file below a directory with:
+Build the package in the current directory with:
 
 ```sh
-qkc .
-./main
+qkc build .
+./project-directory
 ```
 
 The language has no garbage collector or ownership runtime. Memory allocation,
@@ -38,7 +38,7 @@ go build ./cmd/qkc
 During development, the equivalent direct invocation is:
 
 ```sh
-go run ./cmd/qkc .
+go run ./cmd/qkc build .
 ```
 
 See the repository README for current build prerequisites. Linux, macOS, and
@@ -160,24 +160,29 @@ statement:
 module graphics
 ```
 
-All files declaring the same module contribute to one module scope. Module names
-are dot-separated identifier paths and do not need to match directory names:
+All immediate `.qk` files in one directory contribute to one package scope and
+must declare the same canonical module name. For packages below the invocation
+directory, dotted module components must match the relative directory path:
 
 ```qk
+// graphics/formats/png/image.qk
 module graphics.formats.png
 ```
 
-The dotted path is a canonical module name, not a visibility relationship.
-Parent, child, and sibling modules do not receive implicit access to one another.
+The directory selected by `qkc build` or `qkc run` is the primary package. The
+special name `main` may be used in any selected directory, permitting command
+packages such as:
 
-The compiler starts from a root module and processes that module and its transitive
-imports. The default root module is `main`; select another with `-m`:
-
-```sh
-qkc -m graphics .
+```qk
+// src/main.qk
+module main
 ```
 
-The root module is a build concept. It is not necessarily a module named `main`.
+`main` is reserved for command packages. A command package can live in any
+directory, but cannot be imported. Package identity comes from its canonical
+directory path, so separate directories may both declare `module main`. A
+non-command primary package below the invocation directory must declare that
+canonical relative path.
 
 ### 4.2 Imports
 
@@ -206,15 +211,15 @@ Access imported names by chaining `.` through the canonical module path, or
 through an explicit alias:
 
 ```qk
-let angle: f64 = math.atan2(y, x)
+let image = graphics.formats.png.decode(input)
 let file: *c.FILE
 ```
 
-For example, `import std.optional` makes `std.optional.foo` available. Importing
-a child does not import its parent as a module; intermediate path components are
-namespaces used to reach the imported module. Explicit aliases replace the full
-path locally. Imports with overlapping prefixes may coexist, while aliases and
-top-level names must remain unique.
+For example, `import std.libc` makes `std.libc.printf` available. Importing a
+child does not import its parent as a package; intermediate path components are
+namespaces used to reach the imported package. Explicit aliases replace the
+full path locally. Imports with overlapping prefixes may coexist, while aliases
+and top-level names must remain unique.
 
 Imports establish dependency order and make a module name or alias visible. They
 do not textually include a file. Unknown modules, unknown qualified symbols, and
@@ -239,18 +244,25 @@ another without an import. A name may be defined only once in a scope.
 
 ### 4.4 Source discovery
 
-The compiler recursively discovers `.qk` files in the base directory supplied on
-the command line and the platform's QK data directories. On Unix-like hosts these
-are:
+The compiler reads only immediate `.qk` files in the selected package directory.
+It scans their headers, converts each dotted import path to a directory path, and
+repeats for reachable dependencies. For example, `import graphics.formats.png`
+loads `graphics/formats/png/*.qk` beneath a package search root. It does not walk
+unrelated directories.
+
+The command's working directory is the project search root when the selected
+package is beneath it. Thus `qkc run ./games/flappy` resolves
+`import vendor.raylib` as `./vendor/raylib/*.qk`, not beneath
+`./games/flappy`. Additional roots on Unix-like hosts are:
 
 - `~/.local/share/qk`
 - `/usr/local/lib/qk`
 - `/usr/lib/qk`
 
 On Windows they are `%AppData%\qk` and, when available, `%ProgramData%\qk`.
-
-Use repeated `-E path` options to exclude files or directory trees. Only modules
-reachable from the selected root module contribute to the output.
+The first root containing a requested package directory wins. A single `.qk`
+file may be selected explicitly; in that form, other files in its directory are
+not part of the synthetic primary package.
 
 ## 5. Top-level structure
 
@@ -568,7 +580,7 @@ type.
 
 ### 7.6 Program entry point
 
-Executable output requires `main` in the selected root module:
+Executable output requires `main` in the selected primary package:
 
 ```qk
 let main() {
@@ -2102,27 +2114,28 @@ part of panic termination. Failed trait assertions use the same message prefix.
 
 ## 27. Builds and output
 
-`qkc` discovers source files, selects the root module and its transitive imports,
-checks the complete program, and produces the requested executable, shared
-library, relocatable object, or assembly output. Unreferenced definitions are not
-guaranteed to remain in native output.
+`qkc` selects a primary package directory, loads its transitive imports by
+canonical directory path, checks the resulting program, and produces the
+requested executable, shared library, relocatable object, or assembly output.
+Unreferenced definitions are not guaranteed to remain in native output.
 
 ## 28. Compiler command line
 
 The general invocation is:
 
 ```text
-qkc [options] <baseDir>
+qkc <build|run> [options] [package]
 ```
 
-Exactly one base directory is required. Options may appear before or after it.
+The package defaults to the current directory and may be either a directory or
+one `.qk` file. `build` produces output; `run` requires a package named `main`,
+builds and launches it, forwards arguments following the package argument, and
+removes the generated executable afterward.
 
-### 28.1 Inputs and root module
+### 28.1 Inputs and primary package
 
 | Option | Meaning |
 | --- | --- |
-| `-m module` | Select the root module; default `main`. |
-| `-E path` | Exclude a source file or directory tree; repeatable. |
 | `-stdlib path` | Trust and use a replacement standard-library source tree. |
 | `-nostdlib` | Disable standard-library loading. |
 | `-no-emit` | Check the program without writing a final file. |
@@ -2147,12 +2160,12 @@ In a `-nolibc` build the module remains available, but its C declarations are no
 `-stdlib` selects a trusted replacement standard-library source tree:
 
 ```text
-go run ./cmd/qkc . -stdlib /path/to/qk-stdlib
+go run ./cmd/qkc build -stdlib /path/to/qk-stdlib .
 ```
 
-Every file in that tree must declare `module std`. The path is trusted to define
-reserved modules and methods on builtin types, so do not use a tree controlled by
-an untrusted project.
+Every file in that tree must declare `module std` or a `std.*` submodule. The
+path is trusted to define reserved packages and methods on builtin types, so do
+not use a tree controlled by an untrusted project.
 
 ### 28.3 Output selection
 
@@ -2160,7 +2173,6 @@ an untrusted project.
 | --- | --- |
 | `-o file` | Set the output path. |
 | `-t type` | Select `exe`, `obj`, or `so`. |
-| `-run` | Run an executable after a successful build. |
 
 Accepted output-type aliases are:
 
@@ -2169,13 +2181,14 @@ Accepted output-type aliases are:
 - Shared library: `so`, `shared`, `sharedlib`, `.so`, `.dll`, `.dylib`.
 
 When `-t` is omitted, `-o` determines the type from its extension. With neither,
-the output is an executable named after the root module, with an `.exe` suffix on
-Windows targets. Default shared-library names use the target convention:
-`module.dll`, `libmodule.dylib`, or `libmodule.so`.
+a `main` package produces an executable and another package produces a
+relocatable object. Default output names come from the selected directory or
+source filename, with target-appropriate suffixes. Default shared-library names
+use the target convention: `package.dll`, `libpackage.dylib`, or
+`libpackage.so`.
 
-Relocatable object output is unavailable for Windows targets. `-run` is valid
-only for executables. It forwards the program's exit code and removes the
-generated executable after the run.
+Relocatable object output is unavailable for Windows targets. The `run` command
+is valid only for executables and forwards the program's exit code.
 
 ### 28.4 Optimization and diagnostics
 
@@ -2261,13 +2274,12 @@ let main() {
 ```
 
 ```sh
-qkc .
-./main
+qkc run .
 ```
 
 ### 30.2 Multiple modules
 
-`math_helpers.qk`:
+`helpers/helpers.qk`:
 
 ```qk
 module helpers
@@ -2286,8 +2298,8 @@ let main() {
 }
 ```
 
-Both files may live anywhere below the selected source directory. The import, not
-the path, establishes the dependency.
+`main.qk` lives directly in the selected package directory. The `helpers` import
+maps directly to the `helpers/` subdirectory.
 
 ### 30.3 Aggregates, methods, and iteration
 
@@ -2382,7 +2394,7 @@ let library_version(): u32 @export("arithmetic_version") = 1
 ```
 
 ```sh
-qkc . -m arithmetic -t so -o libarithmetic.so
+qkc build -t so -o libarithmetic.so .
 ```
 
 Both exported functions use the target C ABI by default.
@@ -2398,7 +2410,7 @@ pub let version(): cstr = zlibVersion()
 ```
 
 The importing executable or library automatically receives the module's `-lz`
-requirement when `compression` is reachable from its root module.
+requirement when `compression` is reachable from its primary package.
 
 ### 30.9 Object output and cross-compilation
 

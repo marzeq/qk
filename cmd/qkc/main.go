@@ -25,18 +25,13 @@ func main() {
 	check(err)
 	cleanupModuleObjectCache(args.verbose)
 
-	searchRoot := args.baseDir
-	if args.file != "" {
-		searchRoot = filepath.Dir(args.file)
-	}
-	searchPaths := buildSearchPaths(searchRoot)
+	searchPaths := buildSearchPaths(args.packageRoot)
 	comptimeConfig := comptime.Config{TargetTriple: args.target, NoLibc: args.noLibc, NoStdlib: args.noStdlib}
 	embeddedStdlibSources, err := stdlib.ReadSources()
 	check(err)
 	selectedStdlibSources := embeddedStdlibSources
-	var stdlibFiles []string
 	if args.stdlibPath != "" {
-		stdlibFiles, err = collectSourceFiles([]string{args.stdlibPath}, nil)
+		stdlibFiles, err := collectSourceFiles([]string{args.stdlibPath}, nil)
 		check(err)
 		if len(stdlibFiles) == 0 {
 			fatal("no standard-library source files found in %s", args.stdlibPath)
@@ -48,76 +43,71 @@ func main() {
 			selectedStdlibSources[file] = string(data)
 		}
 	}
-	excludes := append([]string(nil), args.excludeDirs...)
-	if args.stdlibPath != "" {
-		excludes = append(excludes, args.stdlibPath)
-	}
-	files, err := collectSourceFiles(searchPaths, excludes)
+	stdlibPackagePaths, availablePackages, err := virtualSourcePackagePaths(selectedStdlibSources)
 	check(err)
-
-	if len(files) == 0 {
-		fatal("no source files found")
+	if args.noStdlib {
+		availablePackages = map[string]bool{}
 	}
-	compileTimeSources := map[string]string{}
-	for _, file := range files {
-		data, err := os.ReadFile(file)
-		check(err)
-		compileTimeSources[file] = string(data)
-	}
+	discovered, compileTimeSources, sourcePackagePaths, err := discoverSourcePackages(
+		args.mainModule, args.baseDir, args.file, searchPaths, availablePackages,
+	)
+	check(err)
 	if !args.noStdlib {
 		maps.Copy(compileTimeSources, selectedStdlibSources)
+		maps.Copy(sourcePackagePaths, stdlibPackagePaths)
 	}
-	comptimeConfig.ModuleBindings, err = comptime.ResolveModuleBindings(compileTimeSources, comptimeConfig)
+	comptimeConfig.ModuleBindings, err = comptime.ResolvePackageBindings(compileTimeSources, sourcePackagePaths, comptimeConfig)
 	check(err)
 
 	var partials []*loader.PartialModuleInfo
-	if args.file != "" {
-		ast, err := parseFile(args.file, comptimeConfig)
-		check(err)
-		info, err := loader.CollectModuleInfo(ast, false)
-		check(err)
-		if args.mainModuleSet && args.mainModule != info.Name {
-			fatal("primary module specified with -m (%s) does not match module declared by -file (%s)", args.mainModule, info.Name)
-		}
-		args.mainModule = info.Name
-		partials = append(partials, info)
+	discoveredByPath := make(map[string]*sourcePackage, len(discovered))
+	for _, pkg := range discovered {
+		discoveredByPath[pkg.Path] = pkg
 	}
-
-	for _, file := range files {
-		if samePath(file, args.file) {
+	pending := []*sourcePackage{discovered[0]}
+	parsedPackages := map[string]bool{}
+	for len(pending) != 0 {
+		pkg := pending[0]
+		pending = pending[1:]
+		if parsedPackages[pkg.Path] {
 			continue
 		}
-		ast, err := parseFile(file, comptimeConfig)
-		check(err)
-
-		info, err := loader.CollectModuleInfo(ast, false)
-		check(err)
-		if args.file != "" && info.Name == args.mainModule {
-			continue
+		parsedPackages[pkg.Path] = true
+		for _, file := range pkg.Files {
+			config := comptimeConfig
+			config.PackagePath = pkg.Path
+			ast, err := parseSource(file, compileTimeSources[file], config)
+			check(err)
+			info, err := loader.CollectModuleInfo(ast, false)
+			check(err)
+			info.Path = pkg.Path
+			partials = append(partials, info)
+			for _, imported := range info.Imports {
+				if dependency := discoveredByPath[imported]; dependency != nil {
+					pending = append(pending, dependency)
+				}
+			}
 		}
-
-		partials = append(partials, info)
 	}
 	if !args.noStdlib {
-		if args.stdlibPath != "" {
-			for _, file := range stdlibFiles {
-				ast, err := parseFile(file, comptimeConfig)
-				check(err)
-				info, err := loader.CollectModuleInfo(ast, true)
-				check(err)
-				partials = append(partials, info)
-			}
-		} else {
-			stdlibPartials, err := stdlib.ParseTrustedSources(selectedStdlibSources, comptimeConfig)
-			check(err)
-			partials = append(partials, stdlibPartials...)
-		}
+		stdlibPartials, err := stdlib.ParseTrustedSources(selectedStdlibSources, comptimeConfig)
+		check(err)
+		partials = append(partials, stdlibPartials...)
 	}
 
 	if args.verbose && args.debug {
 		fmt.Println("parsed and collected modules")
 	}
+	if args.run && discovered[0].Name != "main" {
+		fatal("cannot run package %q: package must declare module main", discovered[0].Name)
+	}
+	if !args.run && args.outputType == OutputUnspecified && discovered[0].Name != "main" {
+		args.outputType = OutputObject
+	}
 	check(finaliseOutputArgs(args))
+	if args.outputType == OutputExecutable && discovered[0].Name != "main" {
+		fatal("cannot build executable from package %q: package must declare module main", discovered[0].Name)
+	}
 
 	modules, err := loader.BuildModules(partials)
 	check(err)
@@ -133,6 +123,18 @@ func main() {
 
 	order, errs := loader.ComputeModuleOrder(modules, args.mainModule)
 	checkErrs(errs)
+	for _, path := range order {
+		module := modules[path]
+		if path == args.mainModule || module.TrustedStandardLibrary {
+			continue
+		}
+		if module.Name == "main" {
+			fatal("package %q declares module main; command packages cannot be imported", path)
+		}
+		if module.Name != path {
+			fatal("package %q must declare module %q, found %q", path, path, module.Name)
+		}
+	}
 
 	var warnings []error
 	errs, warnings = loader.RunSemanticPipeline(modules, analyser, order, args.verbose, args.debug)
@@ -204,7 +206,7 @@ func main() {
 	}
 
 	if _, ok := modules[args.mainModule]; !ok {
-		fatal("main module (%s) not found", args.mainModule)
+		fatal("primary package not found")
 	}
 
 	foundMain := false
@@ -234,7 +236,7 @@ func main() {
 		}
 	}
 	if !foundMain && args.outputType == OutputExecutable {
-		fatal("main function not found in primary module \"%s\"", args.mainModule)
+		fatal("main function not found in primary package")
 	}
 
 	if args.noEmit {
@@ -354,7 +356,7 @@ func main() {
 		output, err := filepath.Abs(args.output)
 		check(err)
 
-		cmd := exec.Command(output)
+		cmd := exec.Command(output, args.programArgs...)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		cmd.Stdin = os.Stdin

@@ -19,6 +19,12 @@ type moduleBindingDeclaration struct {
 // ResolveModuleBindings resolves file-scope compile-time declarations in
 // their canonical module namespaces before individual files are expanded.
 func ResolveModuleBindings(sources map[string]string, config Config) (map[string]Value, error) {
+	return ResolvePackageBindings(sources, nil, config)
+}
+
+// ResolvePackageBindings resolves module-level compile-time bindings under
+// canonical package paths rather than local module declarations.
+func ResolvePackageBindings(sources map[string]string, packagePaths map[string]string, config Config) (map[string]Value, error) {
 	origins := make([]string, 0, len(sources))
 	for origin := range sources {
 		origins = append(origins, origin)
@@ -30,7 +36,10 @@ func ResolveModuleBindings(sources map[string]string, config Config) (map[string
 		if err != nil {
 			return nil, err
 		}
-		module := tokenModule(tokens)
+		module := packagePaths[origin]
+		if module == "" {
+			module = tokenModule(tokens)
+		}
 		for _, declaration := range topLevelCompileTimeDeclarations(tokens, module) {
 			key := module + "." + declaration.name
 			if previous, exists := declarations[key]; exists {

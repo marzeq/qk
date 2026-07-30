@@ -23,6 +23,7 @@ type Analyser struct {
 	typeParameterBindings         map[string]types.Type
 	resolvingTraitMethodTypes     bool
 	currentRoot                   *parser.RootNode
+	modulePaths                   map[*parser.RootNode]string
 	functionDefinitions           map[*symbols.Symbol]*functionDefinitionInfo
 	genericFunctions              map[*symbols.Symbol]*genericFunctionInfo
 	genericValues                 map[*symbols.Symbol]*genericValueInfo
@@ -40,6 +41,7 @@ func NewAnalyser() *Analyser {
 		methods:             make(map[string]map[string]*symbols.Symbol),
 		concreteTypes:       make(map[string]types.Type),
 		importsByModule:     make(map[string]map[string]bool),
+		modulePaths:         make(map[*parser.RootNode]string),
 		functionDefinitions: make(map[*symbols.Symbol]*functionDefinitionInfo),
 		genericFunctions:    make(map[*symbols.Symbol]*genericFunctionInfo),
 		genericValues:       make(map[*symbols.Symbol]*genericValueInfo),
@@ -63,31 +65,32 @@ func (a *Analyser) errorf(node parser.Node, format string, args ...any) {
 	a.errors = append(a.errors, shared.NewError(node.GetLoc(), format, args...))
 }
 
-func (a *Analyser) AnalyseModule(root *parser.RootNode, name string, trustedStandardLibrary bool) {
+func (a *Analyser) AnalyseModule(root *parser.RootNode, path string, trustedStandardLibrary bool) {
+	a.modulePaths[root] = path
 	// Aliases are module-local; method tables remain available so later modules
 	// can resolve methods exported by their imports.
-	if a.aliasesByModule[name] == nil {
-		a.aliasesByModule[name] = make(map[string]*aliasInfo)
+	if a.aliasesByModule[path] == nil {
+		a.aliasesByModule[path] = make(map[string]*aliasInfo)
 	}
-	a.aliases = a.aliasesByModule[name]
-	mod := a.modules[name]
+	a.aliases = a.aliasesByModule[path]
+	mod := a.modules[path]
 	if mod == nil {
 		mod = &symbols.Module{
-			Name:                   name,
+			Name:                   path,
 			Scope:                  symbols.NewScope(a.universe),
 			TrustedStandardLibrary: trustedStandardLibrary,
 		}
-		a.modules[name] = mod
+		a.modules[path] = mod
 	}
 
 	a.current = mod.Scope
-	a.currentMod = name
+	a.currentMod = path
 	a.currentTrustedStandardLibrary = trustedStandardLibrary
-	a.currentImports = a.importsByModule[name]
+	a.currentImports = a.importsByModule[path]
 	a.currentRoot = root
 	if a.currentImports == nil {
 		a.currentImports = make(map[string]bool)
-		a.importsByModule[name] = a.currentImports
+		a.importsByModule[path] = a.currentImports
 	}
 
 	a.collectTopLevel(root)

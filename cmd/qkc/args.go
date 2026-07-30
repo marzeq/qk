@@ -51,38 +51,40 @@ func parseWarningMode(value string) (WarningMode, error) {
 }
 
 type Args struct {
-	baseDir       string
-	file          string
-	excludeDirs   []string
-	output        string
-	mainModule    string
-	mainModuleSet bool
-	optLevel      OptimisationLevel
-	verbose       bool
-	debug         bool
-	warningMode   WarningMode
-	warningModes  map[string]WarningMode
-	dumpIR        bool
-	dumpLLVM      bool
-	dumpAsm       bool
-	keepBuildDir  bool
-	static        bool
-	noLibc        bool
-	noStdlib      bool
-	stdlibPath    string
-	noEmit        bool
-	target        string
-	sysroot       string
-	cpu           string
-	features      string
-	targetABI     string
-	relocation    string
-	codeModel     string
-	outputType    OutputType
-	linkArgs      []string
-	libs          []string
-	libraryPaths  []string
-	run           bool
+	baseDir      string
+	packageRoot  string
+	file         string
+	packageArg   string
+	programArgs  []string
+	output       string
+	mainModule   string
+	outputName   string
+	optLevel     OptimisationLevel
+	verbose      bool
+	debug        bool
+	warningMode  WarningMode
+	warningModes map[string]WarningMode
+	dumpIR       bool
+	dumpLLVM     bool
+	dumpAsm      bool
+	keepBuildDir bool
+	static       bool
+	noLibc       bool
+	noStdlib     bool
+	stdlibPath   string
+	noEmit       bool
+	target       string
+	sysroot      string
+	cpu          string
+	features     string
+	targetABI    string
+	relocation   string
+	codeModel    string
+	outputType   OutputType
+	linkArgs     []string
+	libs         []string
+	libraryPaths []string
+	run          bool
 }
 
 func parseOptLevel(level string) (OptimisationLevel, error) {
@@ -132,7 +134,6 @@ func newArgumentParser(input []string) *argumentParser {
 		args: &Args{
 			optLevel:     OptLevel2,
 			outputType:   OutputUnspecified,
-			mainModule:   "main",
 			warningMode:  WarningModeShow,
 			warningModes: make(map[string]WarningMode),
 		},
@@ -173,7 +174,29 @@ func (p *argumentParser) parseSplitArgs(option string, target *[]string) error {
 }
 
 func (p *argumentParser) parse() (*Args, error) {
+	if len(p.input) == 0 {
+		return nil, fmt.Errorf("expected build or run command")
+	}
+	switch p.input[0] {
+	case "build":
+	case "run":
+		p.args.run = true
+	case "-h", "--help":
+		printUsage()
+		os.Exit(0)
+	case "-v", "--version":
+		printVersion()
+		os.Exit(0)
+	default:
+		return nil, fmt.Errorf("unknown command %q: expected build or run", p.input[0])
+	}
+	p.index = 1
 	for p.index < len(p.input) {
+		if p.args.run && p.args.packageArg != "" {
+			p.args.programArgs = append(p.args.programArgs, p.input[p.index:]...)
+			p.index = len(p.input)
+			break
+		}
 		if err := p.parseCurrent(); err != nil {
 			return nil, err
 		}
@@ -189,26 +212,12 @@ func (p *argumentParser) parseCurrent() error {
 	tok := p.current()
 
 	switch {
-	case tok == "-E":
-		value, err := p.nextValue(tok)
-		if err != nil {
-			return err
-		}
-		p.args.excludeDirs = append(p.args.excludeDirs, value)
-
 	case tok == "-o":
 		value, err := p.nextValue(tok)
 		if err != nil {
 			return err
 		}
 		p.args.output = value
-
-	case tok == "-file":
-		value, err := p.nextValue(tok)
-		if err != nil {
-			return err
-		}
-		p.args.file = value
 
 	case tok == "-t":
 		value, err := p.nextValue(tok)
@@ -220,18 +229,6 @@ func (p *argumentParser) parseCurrent() error {
 			return err
 		}
 		p.args.outputType = outputType
-
-	case tok == "-run":
-		p.args.run = true
-		p.index++
-
-	case tok == "-m":
-		value, err := p.nextValue(tok)
-		if err != nil {
-			return err
-		}
-		p.args.mainModule = value
-		p.args.mainModuleSet = true
 
 	case strings.HasPrefix(tok, "-O"):
 		value, err := p.gluedOrNextValue("-O")
@@ -401,18 +398,14 @@ func (p *argumentParser) parseCurrent() error {
 		printUsage()
 		os.Exit(0)
 
-	case tok == "-v" || tok == "--version":
-		printVersion()
-		os.Exit(0)
-
 	default:
 		if strings.HasPrefix(tok, "-") {
 			return fmt.Errorf("unknown argument: %s", tok)
 		}
-		if p.args.baseDir != "" {
-			return fmt.Errorf("multiple base directories specified")
+		if p.args.packageArg != "" {
+			return fmt.Errorf("multiple package arguments specified")
 		}
-		p.args.baseDir = tok
+		p.args.packageArg = tok
 		p.index++
 	}
 
@@ -424,13 +417,10 @@ func parseArgs() (*Args, error) {
 }
 
 func printUsage() {
-	fmt.Printf("Usage: %s [options] (<baseDir> | -file <file>)\n", os.Args[0])
+	fmt.Printf("Usage: %s <build|run> [options] [package]\n", os.Args[0])
+	fmt.Println("The package defaults to the current directory and may be a directory or one .qk file.")
 	fmt.Println("Options:")
-	fmt.Println("  -file <file>       Compile one file as the inferred primary module")
-	fmt.Println("  -E <dir>           Exclude directory or file from source file search (can specify multiple times)")
 	fmt.Println("  -o <file>          Output file name")
-	fmt.Println("  -run               Automatically run output executable")
-	fmt.Println("  -m <module>        Root module name (default: main)")
 	fmt.Println("  -t <type>          Output type (exe, obj, so)")
 	fmt.Println("  -O <level>         Optimisation level (0, 1, 2, 3, s, z, fast, g)")
 	fmt.Println("  -warn <show|off|error>  Warning mode (default: show)")
@@ -458,48 +448,37 @@ func printVersion() {
 }
 
 func finaliseArgs(args *Args) error {
-	if args.baseDir == "" && args.file == "" {
-		return fmt.Errorf("no base directory or file specified")
+	if args.packageArg == "" {
+		args.packageArg = "."
 	}
-	if args.baseDir != "" && args.file != "" {
-		return fmt.Errorf("base directory and -file cannot be used together")
+	info, err := os.Stat(args.packageArg)
+	if err != nil {
+		return fmt.Errorf("package path does not exist: %s", args.packageArg)
 	}
-
-	if args.file != "" {
-		info, err := os.Stat(args.file)
-		if err != nil || !info.Mode().IsRegular() {
-			return fmt.Errorf("source file does not exist or is not a regular file: %s", args.file)
-		}
-		if !strings.EqualFold(filepath.Ext(args.file), ".qk") {
-			return fmt.Errorf("source file must have a .qk extension: %s", args.file)
-		}
-		abs, err := filepath.Abs(args.file)
-		if err != nil {
-			return fmt.Errorf("failed to get absolute path of source file: %v", err)
+	abs, err := filepath.Abs(args.packageArg)
+	if err != nil {
+		return fmt.Errorf("failed to get absolute package path: %v", err)
+	}
+	if info.IsDir() {
+		args.baseDir = abs
+		args.outputName = filepath.Base(abs)
+	} else {
+		if !info.Mode().IsRegular() || !strings.EqualFold(filepath.Ext(abs), ".qk") {
+			return fmt.Errorf("package argument must be a directory or .qk source file: %s", args.packageArg)
 		}
 		args.file = abs
-	} else {
-		info, err := os.Stat(args.baseDir)
-		if err != nil || !info.IsDir() {
-			return fmt.Errorf("base directory does not exist or is not a directory: %s", args.baseDir)
-		}
-		abs, err := filepath.Abs(args.baseDir)
-		if err != nil {
-			return fmt.Errorf("failed to get absolute path of base directory: %v", err)
-		}
-		args.baseDir = abs
+		args.baseDir = filepath.Dir(abs)
+		args.outputName = strings.TrimSuffix(filepath.Base(abs), filepath.Ext(abs))
 	}
-
-	for i, e := range args.excludeDirs {
-		if _, err := os.Stat(e); os.IsNotExist(err) {
-			return fmt.Errorf("exclude path does not exist: %s", e)
-		}
-		abs, err := filepath.Abs(e)
-		if err != nil {
-			return fmt.Errorf("failed to get absolute path of exclude directory: %v", err)
-		}
-		args.excludeDirs[i] = abs
+	workingDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get working directory: %v", err)
 	}
+	args.packageRoot = workingDir
+	if !pathWithin(args.baseDir, workingDir) {
+		args.packageRoot = args.baseDir
+	}
+	args.mainModule = packagePathFromDirectory(args.packageRoot, args.baseDir)
 
 	if args.sysroot != "" {
 		if _, err := os.Stat(args.sysroot); os.IsNotExist(err) {
@@ -533,14 +512,14 @@ func finaliseOutputArgs(args *Args) error {
 	if args.output == "" {
 		switch args.outputType {
 		case OutputUnspecified:
-			args.output = defaultExecutableName(args.mainModule, args.target)
+			args.output = defaultExecutableName(args.outputName, args.target)
 			args.outputType = OutputExecutable
 		case OutputExecutable:
-			args.output = defaultExecutableName(args.mainModule, args.target)
+			args.output = defaultExecutableName(args.outputName, args.target)
 		case OutputObject:
-			args.output = defaultObjectName(args.mainModule, args.target)
+			args.output = defaultObjectName(args.outputName, args.target)
 		case OutputSharedLib:
-			args.output = defaultSharedLibraryName(args.mainModule, args.target)
+			args.output = defaultSharedLibraryName(args.outputName, args.target)
 		}
 	} else {
 		switch args.outputType {

@@ -10,6 +10,7 @@ import (
 )
 
 type PartialModuleInfo struct {
+	Path                   string
 	Name                   string
 	Imports                []string
 	Root                   *parser.RootNode
@@ -76,6 +77,7 @@ func CollectModuleInfo(root *parser.RootNode, trustedStandardLibrary bool) (*Par
 }
 
 type ModuleInfo struct {
+	Path                   string
 	Name                   string
 	Imports                []string
 	Root                   *parser.RootNode
@@ -87,15 +89,23 @@ func BuildModules(partials []*PartialModuleInfo) (map[string]*ModuleInfo, error)
 	modules := map[string]*ModuleInfo{}
 
 	for _, p := range partials {
-		if existing, ok := modules[p.Name]; ok {
+		path := p.Path
+		if path == "" {
+			path = p.Name
+		}
+		if existing, ok := modules[path]; ok {
+			if existing.Name != p.Name {
+				return nil, fmt.Errorf("package %q contains both module %q and module %q", path, existing.Name, p.Name)
+			}
 			if existing.TrustedStandardLibrary != p.TrustedStandardLibrary {
-				return nil, fmt.Errorf("cannot mix trusted and untrusted sources in module %q", p.Name)
+				return nil, fmt.Errorf("cannot mix trusted and untrusted sources in package %q", path)
 			}
 			mergeModuleRoot(existing.Root, p.Root)
 			existing.Imports = mergeImports(existing.Imports, p.Imports)
 			existing.Links = append(existing.Links, p.Links...)
 		} else {
-			modules[p.Name] = &ModuleInfo{
+			modules[path] = &ModuleInfo{
+				Path:                   path,
 				Name:                   p.Name,
 				Imports:                unique(p.Imports),
 				Root:                   cloneModuleRoot(p.Root),

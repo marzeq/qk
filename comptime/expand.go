@@ -23,6 +23,7 @@ type Config struct {
 	TargetTriple   string
 	NoLibc         bool
 	NoStdlib       bool
+	PackagePath    string
 	ModuleBindings map[string]Value
 }
 
@@ -33,12 +34,29 @@ func Expand(tokens []tokeniser.Token, config Config) ([]tokeniser.Token, error) 
 	target.noLibc = config.NoLibc
 	target.noStdlib = config.NoStdlib
 	target.bindings = cloneValues(config.ModuleBindings)
-	currentModule := tokenModule(tokens)
+	currentModule := config.PackagePath
+	if currentModule == "" {
+		currentModule = tokenModule(tokens)
+	}
 	if currentModule != "" {
 		for name, value := range config.ModuleBindings {
 			prefix := currentModule + "."
 			if strings.HasPrefix(name, prefix) && !strings.Contains(strings.TrimPrefix(name, prefix), ".") {
 				target.bindings[strings.TrimPrefix(name, prefix)] = value
+			}
+		}
+	}
+	if header, err := parser.ScanSourceHeader(tokens); err == nil {
+		for i, imported := range header.Imports {
+			if i >= len(header.Aliases) || header.Aliases[i] == "" {
+				continue
+			}
+			alias := header.Aliases[i]
+			prefix := imported + "."
+			for name, value := range config.ModuleBindings {
+				if strings.HasPrefix(name, prefix) && !strings.Contains(strings.TrimPrefix(name, prefix), ".") {
+					target.bindings[alias+"."+strings.TrimPrefix(name, prefix)] = value
+				}
 			}
 		}
 	}

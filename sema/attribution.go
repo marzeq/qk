@@ -72,15 +72,11 @@ func (a *Attributor) AttributeGenericTemplates(root *parser.RootNode) {
 }
 
 func (a *Attributor) selectModule(root *parser.RootNode) {
-	for _, node := range root.Body {
-		if module, ok := node.(*parser.ModuleNode); ok {
-			a.analyser.currentMod = module.Name
-			if mod := a.analyser.modules[module.Name]; mod != nil {
-				a.analyser.current = mod.Scope
-				a.analyser.currentTrustedStandardLibrary = mod.TrustedStandardLibrary
-			}
-			break
-		}
+	path := a.analyser.modulePaths[root]
+	a.analyser.currentMod = path
+	if mod := a.analyser.modules[path]; mod != nil {
+		a.analyser.current = mod.Scope
+		a.analyser.currentTrustedStandardLibrary = mod.TrustedStandardLibrary
 	}
 }
 

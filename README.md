@@ -98,58 +98,56 @@ qkc -h
 #### Compiling current directory
 
 ```bash
-qkc .
-./main
+qkc build .
+./qk
 ```
 
-On Windows, the default executable is `main.exe`.
+The default executable is named after the selected directory (`qk.exe` on
+Windows for this repository).
 
-The compiler will discover all `.qk` files belonging to the root module, build the dependency graph from there, and produce an executable named after the root module in the current directory.
+The selected directory is the primary package. QK reads its immediate `.qk`
+files, then resolves imports from the invocation directory without recursively
+walking the source tree. For example, `qkc run ./games/flappy` resolves
+`vendor.raylib` at `./vendor/raylib`. A package declaring `module main` builds
+as an executable; other packages build as relocatable objects by default.
 
-By default, the root module is `main`.
-
-Files belong to the `main` module if they either specify `module main` at the top of the file, or if they don't specify any module at all (in which case they are considered to belong to the `main` module by default).
-
-**Important:**
-
-"`main` module" and "root module" are not the same thing. The former is a module literally named `main`, while the latter is the module from which the compiler builds the dependency graph.
-
-If you use `-m foo` and have files with no `module` declaration, those files will still belong to the `main` module, and so the compiler will look for a `foo` module as the root module instead, which will be empty.
+Run a command package directly with `qkc run .`. Arguments following the
+package path are forwarded to the generated program.
 
 #### Specifying an output file
 
 ```bash
-qkc -o my_program .
+qkc build -o my_program .
 ```
 
 #### Building a shared library from `foo` module
 
 ```bash
-qkc -o libfoo.so -m foo foo/
+qkc build -o libfoo.so foo/
 ```
 
 Or by specifying the output type explicitly and using the default output name (in this case `libbaz.so`):
 
 ```bash
-qkc -t so -m baz baz/
+qkc build -t so baz/
 ```
 
 #### Building an object file into a static library
 
 ```bash
-qkc -o foo.o .
+qkc build -o foo.o .
 ar rcs libfoo.a foo.o
 ```
 
 #### Cross compiling for arm64 Linux with optimizations
 
 ```bash
-qkc -target aarch64-unknown-linux-gnu -sysroot $(aarch64-linux-gnu-gcc -print-sysroot) -O3 .
+qkc build -target aarch64-unknown-linux-gnu -sysroot $(aarch64-linux-gnu-gcc -print-sysroot) -O3 .
 ```
 
 Notes
 
-- The same module discovery rules apply when producing executables and libraries/object files. 
+- The same import-directed package loading rules apply to executables, libraries, and object files.
 - Cross-linking requires the target runtime objects (crt*.o) and libraries (libgcc, libc) to be available in the
   specified sysroot or installed toolchain; otherwise linking will fail.
 
