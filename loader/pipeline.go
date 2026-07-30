@@ -101,6 +101,7 @@ func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, o
 
 func GenerateIRModules(mods map[string]*ModuleInfo, mainModule string, order []string, verbose bool, debug bool) (map[string]*ir.Module, []error) {
 	out := make(map[string]*ir.Module, len(order))
+	narrowRuntimeTraitCastCandidates(mods, order)
 
 	for _, name := range order {
 		info := mods[name]
