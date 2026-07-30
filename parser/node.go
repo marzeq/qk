@@ -566,6 +566,7 @@ type CastNode struct {
 	Checked          bool
 	CheckedType      types.Type
 	GenericAssertion bool
+	StaticAssertion  bool
 	AssertionMatches bool
 	StaticTraitView  *types.StaticTraitView
 }

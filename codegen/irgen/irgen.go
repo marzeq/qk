@@ -1504,7 +1504,7 @@ func (g *Generator) generateCastExpr(node *parser.CastNode) ir.Operand {
 	if node.GenericAssertion {
 		assertionMatches = node.Operand.GetType().Equals(targetType)
 	}
-	if (node.GenericAssertion || node.StaticTraitView != nil) && !assertionMatches {
+	if (node.GenericAssertion || node.StaticAssertion || node.StaticTraitView != nil) && !assertionMatches {
 		return g.generateFailedStaticAssertion(node, targetType)
 	}
 
@@ -1658,7 +1658,7 @@ func (g *Generator) generateFailedStaticAssertion(node *parser.CastNode, targetT
 	g.addExternForCall("__qk_panic", panicSig, "", true)
 	g.Emit(ir.Call{Name: "__qk_panic", Args: []ir.Operand{message}, Signature: panicSig})
 	g.Emit(ir.Unreachable{})
-	g.currentBlock = g.currentFunction.NewBlock("generic.assert.unreachable")
+	g.currentBlock = g.currentFunction.NewBlock("assert.unreachable")
 	return zero
 }
 

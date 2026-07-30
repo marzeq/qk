@@ -1928,6 +1928,11 @@ let printable, ok = value.&.(dyn Printable)
 let widened, ok = number.(i64)
 ```
 
+When the source and target types make an assertion statically impossible, the
+two-target form instead produces the target type's zero value and constant
+`false`. The corresponding single-target form remains a compile-time error when
+the types do not permit an ordinary explicit cast.
+
 Checked assertions and recasts are available only as the right-hand side of a
 two-target declaration or assignment. Single-target casts retain their existing
 trapping behavior.

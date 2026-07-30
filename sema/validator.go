@@ -1294,7 +1294,13 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 				n.ConcreteType = targetPointer.Base
 				probe := types.PointerType{Base: targetPointer.Base, Mutable: sourceTrait.Mutable}
 				if _, conforms := v.analyser.structuralConformance(probe, sourceTrait, n); !conforms {
-					v.errorf(n, "type %v does not conform to %v", targetPointer.Base, sourceTrait.Trait)
+					if n.Checked {
+						n.TraitUnwrap = false
+						n.StaticAssertion = true
+						n.AssertionMatches = false
+					} else {
+						v.errorf(n, "type %v does not conform to %v", targetPointer.Base, sourceTrait.Trait)
+					}
 				}
 				break
 			}
@@ -1306,7 +1312,13 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			n.ConcreteType = targetType
 			probe := types.PointerType{Base: targetType, Mutable: sourceTrait.Mutable}
 			if _, conforms := v.analyser.structuralConformance(probe, sourceTrait, n); !conforms {
-				v.errorf(n, "type %v does not conform to %v", targetType, sourceTrait.Trait)
+				if n.Checked {
+					n.TraitUnwrap = false
+					n.StaticAssertion = true
+					n.AssertionMatches = false
+				} else {
+					v.errorf(n, "type %v does not conform to %v", targetType, sourceTrait.Trait)
+				}
 			}
 			break
 		}
@@ -1324,6 +1336,11 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			}
 		}
 		if !types.CanExplicitCast(n.Operand.GetType(), targetType) {
+			if n.Checked {
+				n.StaticAssertion = true
+				n.AssertionMatches = false
+				break
+			}
 			v.errorf(n, "cannot cast %v to %v", n.Operand.GetType(), targetType)
 		}
 
