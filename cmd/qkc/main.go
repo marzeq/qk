@@ -25,7 +25,7 @@ func main() {
 	check(err)
 	cleanupModuleObjectCache(args.verbose)
 
-	searchPaths := buildSearchPaths(args.packageRoot)
+	searchPaths := buildSearchPaths(args.packageRoot, args.packagePaths)
 	comptimeConfig := comptime.Config{TargetTriple: args.target, NoLibc: args.noLibc, NoStdlib: args.noStdlib}
 	embeddedStdlibSources, err := stdlib.ReadSources()
 	check(err)

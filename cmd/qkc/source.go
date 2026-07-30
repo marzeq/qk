@@ -282,8 +282,9 @@ func pathKey(path string) string {
 	return path
 }
 
-func buildSearchPaths(baseDir string) []string {
+func buildSearchPaths(baseDir string, additional []string) []string {
 	paths := []string{baseDir}
+	paths = append(paths, additional...)
 	if runtime.GOOS == "windows" {
 		if dataDir, err := os.UserConfigDir(); err == nil {
 			paths = append(paths, filepath.Join(dataDir, "qk"))

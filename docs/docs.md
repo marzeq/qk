@@ -264,6 +264,10 @@ The first root containing a requested package directory wins. A single `.qk`
 file may be selected explicitly; in that form, other files in its directory are
 not part of the synthetic primary package.
 
+Repeat `-I directory` to add package search roots after the project root and
+before the platform user/system roots. Each import is resolved beneath each
+root in command-line order; the added directories are not scanned recursively.
+
 ## 5. Top-level structure
 
 Apart from the initial module declaration, top-level forms are imports, functions,
@@ -2136,6 +2140,7 @@ removes the generated executable afterward.
 
 | Option | Meaning |
 | --- | --- |
+| `-I path` | Add a package search root; repeatable. |
 | `-stdlib path` | Trust and use a replacement standard-library source tree. |
 | `-nostdlib` | Disable standard-library loading. |
 | `-no-emit` | Check the program without writing a final file. |

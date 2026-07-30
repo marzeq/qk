@@ -114,6 +114,12 @@ as an executable; other packages build as relocatable objects by default.
 Run a command package directly with `qkc run .`. Arguments following the
 package path are forwarded to the generated program.
 
+Use repeatable `-I` options before the package argument to add package roots:
+
+```bash
+qkc run -I ../qk-packages ./games/flappy
+```
+
 #### Specifying an output file
 
 ```bash

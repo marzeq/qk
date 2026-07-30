@@ -53,6 +53,7 @@ func parseWarningMode(value string) (WarningMode, error) {
 type Args struct {
 	baseDir      string
 	packageRoot  string
+	packagePaths []string
 	file         string
 	packageArg   string
 	programArgs  []string
@@ -380,6 +381,13 @@ func (p *argumentParser) parseCurrent() error {
 			return err
 		}
 
+	case strings.HasPrefix(tok, "-I"):
+		value, err := p.gluedOrNextValue("-I")
+		if err != nil {
+			return err
+		}
+		p.args.packagePaths = append(p.args.packagePaths, value)
+
 	case strings.HasPrefix(tok, "-l"):
 		value, err := p.gluedOrNextValue("-l")
 		if err != nil {
@@ -430,6 +438,7 @@ func printUsage() {
 	fmt.Println("  -nolibc            Do not link against the C standard library")
 	fmt.Println("  -nostdlib          Do not load the embedded QK standard library")
 	fmt.Println("  -stdlib <dir>      Trust and use an external QK standard-library source tree")
+	fmt.Println("  -I <dir>           Add a package search root (can be repeated)")
 	fmt.Println("  -l <lib>           Link with library <lib> (can specify multiple times)")
 	fmt.Println("  -target <triple>   Target triple for code generation")
 	fmt.Println("  -sysroot <path>    Sysroot path for target")
@@ -479,6 +488,17 @@ func finaliseArgs(args *Args) error {
 		args.packageRoot = args.baseDir
 	}
 	args.mainModule = packagePathFromDirectory(args.packageRoot, args.baseDir)
+	for i, path := range args.packagePaths {
+		info, err := os.Stat(path)
+		if err != nil || !info.IsDir() {
+			return fmt.Errorf("package search root is not a directory: %s", path)
+		}
+		abs, err := filepath.Abs(path)
+		if err != nil {
+			return fmt.Errorf("failed to get absolute package search root: %v", err)
+		}
+		args.packagePaths[i] = abs
+	}
 
 	if args.sysroot != "" {
 		if _, err := os.Stat(args.sysroot); os.IsNotExist(err) {
