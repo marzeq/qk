@@ -1,7 +1,9 @@
 module std.alloc
 
-// Allocators use one alignment for both the old and new allocation when
-// resizing. A zero-byte allocation or resize succeeds with a nil pointer.
+// Alignment is a nonzero power of two. Successful allocations satisfy the
+// requested alignment; free and resize receive the original alignment. An
+// implementation may otherwise ignore align when its natural alignment is
+// already sufficient. A zero-byte allocation or resize succeeds with nil.
 pub let Allocator = type trait {
   let allocate_bytes(
     *mut self,
@@ -21,4 +23,95 @@ pub let Allocator = type trait {
     new_size: usz,
     align: usz,
   ): (*mut void, bool)
+}
+
+let checked_size<T>(count: usz): (usz, bool) {
+  let element_size = @sizeof(T)
+
+  if element_size != 0 and count > (~0.(usz)) / element_size {
+    return 0, false
+  }
+
+  return element_size * count, true
+}
+
+pub let create<T>(
+  allocator: mut dyn Allocator,
+): (*mut T, bool) {
+  if allocator == nil {
+    return nil, false
+  }
+
+  let result, allocated = allocator.allocate_bytes(@sizeof(T), @alignof(T))
+  return result.(*mut T), allocated
+}
+
+pub let destroy<T>(
+  allocator: mut dyn Allocator,
+  ptr: *mut T,
+): void {
+  if allocator != nil {
+    allocator.free_bytes(ptr, @sizeof(T), @alignof(T))
+  }
+}
+
+pub let allocate<T>(
+  allocator: mut dyn Allocator,
+  count: usz,
+): ([]mut T, bool) {
+  if allocator == nil {
+    return [], false
+  }
+
+  let size, valid = checked_size<T>(count)
+  if not valid {
+    return [], false
+  }
+
+  let result, allocated = allocator.allocate_bytes(size, @alignof(T))
+  if not allocated {
+    return [], false
+  }
+  return result.(*mut T)[0:count], true
+}
+
+pub let free<T>(
+  allocator: mut dyn Allocator,
+  memory: []mut T,
+): void {
+  if allocator == nil {
+    return
+  }
+
+  let size, valid = checked_size<T>(@len(memory))
+  if valid {
+    allocator.free_bytes(memory.(*mut T), size, @alignof(T))
+  }
+}
+
+pub let resize<T>(
+  allocator: mut dyn Allocator,
+  memory: []mut T,
+  new_count: usz,
+): ([]mut T, bool) {
+  if allocator == nil {
+    return [], false
+  }
+
+  let old_size, valid_old_size = checked_size<T>(@len(memory))
+  let new_size, valid_new_size = checked_size<T>(new_count)
+  if not valid_old_size or not valid_new_size {
+    return [], false
+  }
+
+  let result, resized = allocator.resize_bytes(
+    memory.(*mut T),
+    old_size,
+    new_size,
+    @alignof(T),
+  )
+  if not resized {
+    return [], false
+  }
+  return result.(*mut T)[0:new_count], true
 }

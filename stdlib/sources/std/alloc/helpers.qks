@@ -36,14 +36,4 @@ let checked_align_forward(
   return padded & ~padding, true
 }
 
-let checked_size<T>(count: usz): (usz, bool) {
-  let element_size = @sizeof(T)
-
-  if element_size != 0 and count > (~0.(usz)) / element_size {
-    return 0, false
-  }
-
-  return element_size * count, true
-}
-
 }

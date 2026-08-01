@@ -2035,6 +2035,27 @@ both the old and new allocation. Standard-library operations that allocate
 memory take an explicit `mut dyn std.alloc.Allocator`; there is no implicit
 global allocator.
 
+Ordinary typed code does not pass byte sizes or alignments directly. The
+module-level helpers derive them from `T` while retaining dynamic allocator
+dispatch:
+
+```qk
+let value, value_allocated = std.alloc.create<MyType>(allocator)
+std.alloc.destroy(allocator, value)
+
+let items, items_allocated = std.alloc.allocate<MyType>(allocator, count)
+let resized, ok = std.alloc.resize(allocator, items, new_count)
+std.alloc.free(allocator, resized)
+```
+
+A nil allocator or count-to-byte-size overflow fails without invoking an
+allocator. The raw methods remain available for genuinely byte-oriented
+operations and allocator implementations.
+
+`create` and `destroy` operate on one typed pointer. `allocate` returns a
+mutable slice whose length records the element count, allowing `free` and
+`resize` to recover the original byte size without another count argument.
+
 For example, `str.to_cstr(allocator)` allocates its NUL-terminated copy through
 the supplied allocator and returns `nil` if the allocator is nil or allocation
 fails. The caller owns the returned `@len(string) + 1` bytes and must release
@@ -2044,8 +2065,7 @@ Hosted builds provide `std.alloc.LibcAllocator`, an alignment-aware
 `Allocator` implementation. It stores the original `malloc` pointer before
 each aligned result, uses `free` for reclamation, and implements resize by
 allocating, copying, and freeing. Concrete `LibcAllocator` and `Arena` values
-also provide generic element-count convenience methods such as `new<T>`,
-`allocate<T>`, and `resize<T>`.
+also provide equivalent generic element-count convenience methods.
 
 `std.alloc.Arena` is available only in hosted builds and allocates its chunks
 directly with libc `malloc` and `free`; it does not accept a configurable
