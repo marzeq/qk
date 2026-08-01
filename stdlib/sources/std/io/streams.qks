@@ -25,9 +25,10 @@ pub let FileReader = type struct {
 
 pub let FileWriter.open(
   path: str,
-  allocator: mut dyn std.alloc.Allocator,
   append: bool = false,
 ): FileWriter {
+  let mut lc = std.alloc.LibcAllocator.init()
+  let allocator = lc.&mut.(mut dyn std.alloc.Allocator)
   let c_path = path.to_cstr(allocator)
   if c_path == nil { return .{ file=nil } }
 
