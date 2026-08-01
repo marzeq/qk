@@ -1428,10 +1428,10 @@ func (g *Generator) generateSliceExpr(node *parser.SliceExprNode) ir.Operand {
 func (g *Generator) emitRuntimePanic(messageText string) {
 	messageNode := &parser.StringLiteralNode{
 		Value: messageText,
-		Type:  types.SliceType{Base: types.PrimitiveChar},
+		Type:  types.SliceType{Base: types.PrimitiveU8},
 	}
 	message := g.generateStringLiteralExpr(messageNode)
-	runtimeStr := types.SliceType{Base: types.PrimitiveChar}
+	runtimeStr := types.SliceType{Base: types.PrimitiveU8}
 	message.Type = runtimeStr
 	panicSig := ir.FunctionSignature{ParamTypes: []types.Type{runtimeStr}, ReturnType: types.PrimitiveVoid}
 	g.addExternForCall("__qk_panic", panicSig, "", true)
@@ -1448,17 +1448,17 @@ func (g *Generator) generateStringLiteralExpr(node *parser.StringLiteralNode) ir
 	tmpSlot := g.currentFunction.NewSlot(sliceType, "")
 	g.Emit(ir.Alloca{Slot: tmpSlot})
 
-	stringPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: types.PrimitiveChar})
+	stringPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: types.PrimitiveU8})
 	g.Emit(ir.StringConst{Dest: stringPtrID, Value: node.Value})
-	stringPtr := ir.ValueOperand(stringPtrID, types.PointerType{Base: types.PrimitiveChar})
+	stringPtr := ir.ValueOperand(stringPtrID, types.PointerType{Base: types.PrimitiveU8})
 
 	slicePtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: sliceType})
 	g.Emit(ir.AddressOf{Dest: slicePtrID, Slot: tmpSlot})
 	slicePtr := ir.ValueOperand(slicePtrID, types.PointerType{Base: sliceType})
 
-	basePtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: types.PrimitiveChar})
+	basePtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: types.PrimitiveU8})
 	g.Emit(ir.FieldAddress{Dest: basePtrID, Base: slicePtr, Field: "0"})
-	g.Emit(ir.StorePtr{Ptr: ir.ValueOperand(basePtrID, types.PointerType{Base: types.PrimitiveChar}), Value: stringPtr})
+	g.Emit(ir.StorePtr{Ptr: ir.ValueOperand(basePtrID, types.PointerType{Base: types.PrimitiveU8}), Value: stringPtr})
 
 	lenPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: types.PrimitiveUsz})
 	g.Emit(ir.FieldAddress{Dest: lenPtrID, Base: slicePtr, Field: "1"})
@@ -1650,9 +1650,9 @@ func (g *Generator) generateFailedStaticAssertion(node *parser.CastNode, targetT
 		expected = node.StaticTraitView.String()
 	}
 	messageText := "type assertion failed: " + traitRuntimeName(node.Operand.GetType()) + " is not " + expected
-	messageNode := &parser.StringLiteralNode{Value: messageText, Type: types.SliceType{Base: types.PrimitiveChar}, Loc: node.Loc}
+	messageNode := &parser.StringLiteralNode{Value: messageText, Type: types.SliceType{Base: types.PrimitiveU8}, Loc: node.Loc}
 	message := g.generateStringLiteralExpr(messageNode)
-	runtimeStr := types.SliceType{Base: types.PrimitiveChar}
+	runtimeStr := types.SliceType{Base: types.PrimitiveU8}
 	message.Type = runtimeStr
 	panicSig := ir.FunctionSignature{ParamTypes: []types.Type{runtimeStr}, ReturnType: types.PrimitiveVoid}
 	g.addExternForCall("__qk_panic", panicSig, "", true)
@@ -1895,9 +1895,9 @@ func (g *Generator) generateTraitRecast(node *parser.CastNode) ir.Operand {
 		g.Emit(ir.Jump{Target: end.ID})
 	} else {
 		messageText := "trait cast failed: value does not implement " + target.Trait.String()
-		messageNode := &parser.StringLiteralNode{Value: messageText, Type: types.SliceType{Base: types.PrimitiveChar}, Loc: node.Loc}
+		messageNode := &parser.StringLiteralNode{Value: messageText, Type: types.SliceType{Base: types.PrimitiveU8}, Loc: node.Loc}
 		message := g.generateStringLiteralExpr(messageNode)
-		runtimeStr := types.SliceType{Base: types.PrimitiveChar}
+		runtimeStr := types.SliceType{Base: types.PrimitiveU8}
 		message.Type = runtimeStr
 		panicSig := ir.FunctionSignature{ParamTypes: []types.Type{runtimeStr}, ReturnType: types.PrimitiveVoid}
 		g.addExternForCall("__qk_panic", panicSig, "", true)
@@ -1951,9 +1951,9 @@ func (g *Generator) generateTraitUnwrap(node *parser.CastNode) ir.Operand {
 		g.Emit(ir.Jump{Target: end.ID})
 	} else {
 		messageText := "trait unwrap failed: expected " + traitRuntimeName(node.ConcreteType)
-		messageNode := &parser.StringLiteralNode{Value: messageText, Type: types.SliceType{Base: types.PrimitiveChar}, Loc: node.Loc}
+		messageNode := &parser.StringLiteralNode{Value: messageText, Type: types.SliceType{Base: types.PrimitiveU8}, Loc: node.Loc}
 		message := g.generateStringLiteralExpr(messageNode)
-		runtimeStr := types.SliceType{Base: types.PrimitiveChar}
+		runtimeStr := types.SliceType{Base: types.PrimitiveU8}
 		message.Type = runtimeStr
 		panicSig := ir.FunctionSignature{ParamTypes: []types.Type{runtimeStr}, ReturnType: types.PrimitiveVoid}
 		g.addExternForCall("__qk_panic", panicSig, "", true)

@@ -382,8 +382,6 @@ func (e *Emitter) TypeEmit(ty types.Type) string {
 			return "float"
 		case types.PrimitiveF64:
 			return "double"
-		case types.PrimitiveChar:
-			return "i8"
 		case types.PrimitiveI8:
 			return "i8"
 		case types.PrimitiveI16:
@@ -1296,16 +1294,6 @@ func (e *Emitter) CastEmit(out *strings.Builder, c ir.Cast) {
 
 	if fromOK && types.IsInteger(fromPrim) && types.IsPointer(toRep) {
 		fmt.Fprintf(out, "%s = inttoptr %s %s to %s", e.ValueIDEmit(c.Dest), e.TypeEmit(from), e.OperandEmit(c.From), e.TypeEmit(to))
-		return
-	}
-
-	if fromPrim.Equals(types.PrimitiveChar) && types.IsInteger(toPrim) {
-		fmt.Fprintf(out, "%s = zext %s %s to %s", e.ValueIDEmit(c.Dest), e.TypeEmit(from), e.OperandEmit(c.From), e.TypeEmit(to))
-		return
-	}
-
-	if types.IsInteger(fromPrim) && toPrim.Equals(types.PrimitiveChar) {
-		fmt.Fprintf(out, "%s = trunc %s %s to %s", e.ValueIDEmit(c.Dest), e.TypeEmit(from), e.OperandEmit(c.From), e.TypeEmit(to))
 		return
 	}
 

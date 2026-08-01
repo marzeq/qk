@@ -43,22 +43,22 @@ pub let print(
   for format_index < @len(format) {
     let character = format[format_index]
     if character == '}' and format_index + 1 < @len(format) and format[format_index + 1] == '}' {
-      '}'.format(output)
+      write_byte(output, '}')
       format_index += 2
       continue
     }
     if character != '{' {
-      character.format(output)
+      write_byte(output, character)
       format_index += 1
       continue
     }
     if format_index + 1 >= @len(format) {
-      '{'.format(output)
+      write_byte(output, '{')
       format_index += 1
       continue
     }
     if format[format_index + 1] == '{' {
-      '{'.format(output)
+      write_byte(output, '{')
       format_index += 2
       continue
     }
@@ -84,7 +84,7 @@ pub let print(
       continue
     }
 
-    '{'.format(output)
+    write_byte(output, '{')
     format_index += 1
   }
 }
@@ -96,5 +96,5 @@ pub let println(
 ): void {
   let output = writer_or_default(writer)
   print(format, arguments, output)
-  '\n'.format(output)
+  write_byte(output, '\n')
 }

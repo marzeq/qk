@@ -29,19 +29,19 @@ import std.alloc
 
 // important: due to us not being able to guarantee that self contains a null terminator,
 // this method is forced to allocate a new buffer and copy the contents of self into it, appending a null terminator at the end
-pub let str.to_cstr(self, allocator: mut dyn std.alloc.Allocator): *mut char {
+pub let str.to_cstr(self, allocator: mut dyn std.alloc.Allocator): *mut u8 {
   if allocator == nil or @len(self) == ~0.(usz) {
     return nil
   }
 
   let allocated, success = allocator.allocate_bytes(
     @len(self) + 1,
-    @alignof(char),
+    @alignof(u8),
   )
   if not success {
     return nil
   }
-  let buf = allocated.(*mut char)
+  let buf = allocated.(*mut u8)
   if buf == nil {
     return nil
   }

@@ -144,7 +144,7 @@ func (e *Emitter) typeSizeAlign(ty types.Type) (int, int) {
 		switch t {
 		case types.PrimitiveVoid:
 			return 0, 1
-		case types.PrimitiveI8, types.PrimitiveU8, types.PrimitiveChar, types.PrimitiveBool:
+		case types.PrimitiveI8, types.PrimitiveU8, types.PrimitiveBool:
 			return 1, 1
 		case types.PrimitiveI16, types.PrimitiveU16:
 			return 2, 2

@@ -1110,24 +1110,23 @@ matching `N`, while a repeated slice literal may use a runtime `usz` count.
 | Signed integers | `i8`, `i16`, `i32`, `i64`, `isz` |
 | Unsigned integers | `u8`, `u16`, `u32`, `u64`, `usz` |
 | Floating point | `f32`, `f64` |
-| Other | `bool`, `char`, `void` |
+| Other | `bool`, `void` |
 
 `isz` and `usz` are pointer-sized signed and unsigned integers. They are 32 bits
 on 32-bit targets and 64 bits on 64-bit targets.
 
-`char` is a distinct byte-sized character type, not an alias of `u8`. `bool` is a
-distinct logical type. `void` denotes no returned value or an untyped pointee; it
-cannot be stored by value.
+Character literals have type `u8`. `bool` is a distinct logical type. `void`
+denotes no returned value or an untyped pointee; it cannot be stored by value.
 
 The predefined aliases are:
 
 ```qk
-str  // nominal []char
-cstr // *char
+str  // nominal []u8
+cstr // *u8
 ```
 
 `str` is length-delimited and does not imply a NUL terminator. `cstr` points to a
-NUL-terminated character sequence.
+NUL-terminated byte sequence.
 
 ## 15. Numeric types and conversion
 
@@ -1150,7 +1149,7 @@ untyped floating literal promotes to `f64`; an untyped integer adopts the other
 numeric operand's type.
 
 Use postfix casts for narrowing, signedness changes, float/integer conversion,
-integer/`bool`, integer/`char`, or integer/pointer conversion:
+integer/`bool` or integer/pointer conversion:
 
 ```qk
 let narrow = wide.(u16)
@@ -1229,10 +1228,10 @@ QK-ABI functions pass and return arrays by value. Arrays may appear inline in
 C-compatible structs, but a direct C-ABI array parameter or result is rejected
 because C adjusts array parameters to pointers and cannot return arrays by value.
 
-Slices can convert to compatible element pointers. Character slices are an
-exception: `str` is not implicitly a `cstr`, because it is length-delimited and
-need not be NUL-terminated. Crossing that boundary requires an explicit operation
-or cast and a valid terminator supplied by the program.
+Slices can convert to compatible element pointers. The nominal `str` type does
+not implicitly convert to `cstr`, because it is length-delimited and need not be
+NUL-terminated. Crossing that boundary requires an explicit operation or cast
+and a valid terminator supplied by the program.
 
 Indexing accepts an integer. The compiler diagnoses a literal index outside a
 known fixed size. General runtime indexing is not bounds checked; an invalid index
@@ -1987,7 +1986,7 @@ corresponding existing operator:
 | `std.Div` | `div(Self): Self` | All integers and floats |
 | `std.Rem` | `rem(Self): Self` | All integers and floats |
 | `std.Neg` | `neg(): Self` | Signed integers and floats |
-| `std.PartialEq` | `eq(Self): bool` | Integers, floats, `bool`, `char`, `str`, and `cstr` |
+| `std.PartialEq` | `eq(Self): bool` | Integers, floats, `bool`, `str`, and `cstr` |
 | `std.PartialOrd` | `lt`, `le`, `gt`, and `ge` | All integers and floats |
 | `std.BitAnd` | `bit_and(Self): Self` | All integers |
 | `std.BitOr` | `bit_or(Self): Self` | All integers |
@@ -2111,11 +2110,11 @@ The `std.io` module defines mutable byte-oriented writer and reader traits:
 
 ```qk
 pub let Writer = type trait {
-    let write(*mut self, bytes: []char): usz
+    let write(*mut self, bytes: []u8): usz
 }
 
 pub let Reader = type trait {
-    let read(*mut self, buffer: []mut char): usz
+    let read(*mut self, buffer: []mut u8): usz
 }
 ```
 
@@ -2143,9 +2142,9 @@ pub let Format = type trait {
 ```
 
 All value-bearing builtin types implement it: signed and unsigned integers,
-pointer-sized integers, `f32`, `f64`, `char`, `bool`, `str`, and `cstr`. Numeric
-output uses the corresponding C formatting, booleans are `true` or `false`, and
-`str` output respects its explicit length rather than requiring NUL termination.
+pointer-sized integers, `f32`, `f64`, `bool`, `str`, and `cstr`. Numeric output
+uses the corresponding C formatting, booleans are `true` or `false`, and `str`
+output respects its explicit length rather than requiring NUL termination.
 `void` has no values and therefore cannot implement a value-receiver trait.
 
 Methods are available through the implicit standard-library dependency. Naming
@@ -2160,9 +2159,9 @@ shown.format(std.io.stdout)
 ```
 
 The I/O traits, `write_all`, formatting functions, and builtin `Format`
-implementations for `char`, `bool`, `str`, and `cstr` remain available in
-`-nolibc` builds. File and process-stream implementations and numeric builtin
-`Format` methods require libc.
+implementations for `bool`, `str`, and `cstr` remain available in `-nolibc`
+builds. File and process-stream implementations and numeric builtin `Format`
+methods require libc.
 
 The standard library also provides typed, type-safe formatting through
 `std.io.print`:

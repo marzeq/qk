@@ -200,11 +200,11 @@ type DefinedType struct {
 }
 
 // StrType returns the nominal builtin string type. Its representation is a
-// dynamic character slice, but it is intentionally distinct from []char.
+// dynamic byte slice, but it is intentionally distinct from []u8.
 func StrType() DefinedType {
 	return DefinedType{
 		Name:       "str",
-		Underlying: SliceType{Base: PrimitiveChar},
+		Underlying: SliceType{Base: PrimitiveU8},
 	}
 }
 
@@ -507,8 +507,6 @@ const (
 
 	PrimitiveVoid PrimitiveType = "void"
 
-	PrimitiveChar PrimitiveType = "char"
-
 	PrimitiveBool PrimitiveType = "bool"
 )
 
@@ -625,11 +623,6 @@ func (p PrimitiveType) CanCastTo(other Type) bool {
 	}
 
 	if IsNumeric(p) && IsNumeric(otherPrimitive) {
-		return true
-	}
-
-	if (p == PrimitiveChar && IsInteger(otherPrimitive)) ||
-		(otherPrimitive == PrimitiveChar && IsInteger(p)) {
 		return true
 	}
 
@@ -1090,11 +1083,6 @@ func (a SliceType) CanCoerceTo(other Type) bool {
 		return true
 	}
 	if otherPointer, ok := other.(PointerType); ok {
-		// Character slices are length-delimited strings, not NUL-terminated C
-		// strings. Crossing that boundary must be explicit.
-		if a.Base.Equals(PrimitiveChar) && otherPointer.Base.Equals(PrimitiveChar) {
-			return false
-		}
 		if otherPointer.Mutable && !a.Mutable {
 			return false
 		}

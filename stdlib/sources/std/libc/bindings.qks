@@ -51,8 +51,8 @@ pub let clock_t = type
 
 pub let printf(fmt: cstr, ...): i32 @foreign
 pub let fprintf(stream: *FILE, fmt: cstr, ...): i32 @foreign
-pub let sprintf(buffer: *mut char, fmt: cstr, ...): i32 @foreign
-pub let snprintf(buffer: *mut char, n: usz, fmt: cstr, ...): i32 @foreign
+pub let sprintf(buffer: *mut u8, fmt: cstr, ...): i32 @foreign
+pub let snprintf(buffer: *mut u8, n: usz, fmt: cstr, ...): i32 @foreign
 
 pub let scanf(fmt: cstr, ...): i32 @foreign
 pub let fscanf(stream: *FILE, fmt: cstr, ...): i32 @foreign
@@ -95,7 +95,7 @@ pub let feof(stream: *FILE): i32 @foreign
 pub let ferror(stream: *FILE): i32 @foreign
 pub let clearerr(stream: *FILE): void @foreign
 
-pub let fgets(s: *mut char, n: i32, stream: *FILE): *mut char @foreign
+pub let fgets(s: *mut u8, n: i32, stream: *FILE): *mut u8 @foreign
 pub let fgetc(stream: *FILE): i32 @foreign
 pub let fputs(s: cstr, stream: *FILE): i32 @foreign
 pub let fputc(ch: i32, stream: *FILE): i32 @foreign
@@ -143,29 +143,29 @@ pub let strlen(s: cstr): usz @foreign
 pub let strcmp(a: cstr, b: cstr): i32 @foreign
 pub let strncmp(a: cstr, b: cstr, n: usz): i32 @foreign
 
-pub let strcpy(dest: *mut char, src: cstr): *mut char @foreign
+pub let strcpy(dest: *mut u8, src: cstr): *mut u8 @foreign
 
-pub let strncpy(dest: *mut char, src: cstr, n: usz): *mut char @foreign
+pub let strncpy(dest: *mut u8, src: cstr, n: usz): *mut u8 @foreign
 
-pub let strcat(dest: *mut char, src: cstr): *mut char @foreign
+pub let strcat(dest: *mut u8, src: cstr): *mut u8 @foreign
 
 pub let strncat(
-  dest: *mut char,
+  dest: *mut u8,
   src: cstr,
   n: usz,
-): *mut char @foreign
+): *mut u8 @foreign
 
-pub let strchr(s: cstr, ch: i32): *char @foreign
-pub let strrchr(s: cstr, ch: i32): *char @foreign
-pub let strstr(haystack: cstr, needle: cstr): *char @foreign
+pub let strchr(s: cstr, ch: i32): *u8 @foreign
+pub let strrchr(s: cstr, ch: i32): *u8 @foreign
+pub let strstr(haystack: cstr, needle: cstr): *u8 @foreign
 
-pub let strtok(str: *mut char, delim: cstr): *mut char @foreign
+pub let strtok(str: *mut u8, delim: cstr): *mut u8 @foreign
 
 when OS == .Windows {
-  pub let strdup(str: cstr): *mut char @foreign(symbol "_strdup")
+  pub let strdup(str: cstr): *mut u8 @foreign(symbol "_strdup")
   pub let strcasecmp(a: cstr, b: cstr): i32 @foreign(symbol "_stricmp")
 } else {
-  pub let strdup(str: cstr): *mut char @foreign
+  pub let strdup(str: cstr): *mut u8 @foreign
   pub let strcasecmp(a: cstr, b: cstr): i32 @foreign
 }
 
@@ -177,9 +177,9 @@ pub let atoi(str: cstr): i32 @foreign
 pub let atol(str: cstr): long @foreign
 pub let atof(str: cstr): f64 @foreign
 
-pub let strtol(str: cstr, end: *mut *mut char, base: i32): long @foreign
+pub let strtol(str: cstr, end: *mut *mut u8, base: i32): long @foreign
 
-pub let strtoul(str: cstr, end: *mut *mut char, base: i32): ulong @foreign
+pub let strtoul(str: cstr, end: *mut *mut u8, base: i32): ulong @foreign
 
 // -----------------------------------------------------------------------------
 // random / time
@@ -204,7 +204,7 @@ pub let exit(code: i32): void @foreign @noreturn
 pub let abort(): void @foreign @noreturn
 
 pub let system(command: cstr): i32 @foreign
-pub let getenv(name: cstr): *char @foreign
+pub let getenv(name: cstr): *u8 @foreign
 
 // -----------------------------------------------------------------------------
 // standard streams
@@ -253,7 +253,7 @@ when OS == .Linux
   pub let wait_status_t = type i32
 
   // Environment inherited by exec-family calls.
-  pub let environ: *mut *mut char @foreign
+  pub let environ: *mut *mut u8 @foreign
 
   // ---------------------------------------------------------------------------
   // Process creation and termination
@@ -277,18 +277,18 @@ when OS == .Linux
   // envp must be terminated by a null pointer.
   pub let execve(
     path: cstr,
-    argv: **char,
-    envp: **char,
+    argv: **u8,
+    envp: **u8,
   ): i32 @foreign
 
   pub let execv(
     path: cstr,
-    argv: **char,
+    argv: **u8,
   ): i32 @foreign
 
   pub let execvp(
     file: cstr,
-    argv: **char,
+    argv: **u8,
   ): i32 @foreign
 
   // Variadic exec forms. The argument list must end with a null pointer.
@@ -510,9 +510,9 @@ when OS == .Linux
   pub let fchdir(fd: fd_t): i32 @foreign
 
   pub let getcwd(
-    buffer: *mut char,
+    buffer: *mut u8,
     size: usz,
-  ): *mut char @foreign
+  ): *mut u8 @foreign
 
   pub let setenv(
     name: cstr,
@@ -553,8 +553,8 @@ when OS == .Linux {
   // GNU extension: PATH lookup with an explicit environment.
   pub let execvpe(
     file: cstr,
-    argv: **char,
-    envp: **char,
+    argv: **u8,
+    envp: **u8,
   ): i32 @foreign
 
   // Linux versions allowing atomic close-on-exec configuration.

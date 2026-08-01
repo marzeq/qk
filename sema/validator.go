@@ -853,8 +853,8 @@ func (v *Validator) validateMatchPattern(pattern *parser.MatchPatternNode, subje
 		}
 		pattern.Literal = v.validateExprWithExpected(pattern.Literal, subjectType)
 	case parser.MatchPatternRange:
-		if !types.IsInteger(subjectType) && !subjectType.Equals(types.PrimitiveChar) {
-			v.errorf(pattern, "range pattern requires an integer or char subject")
+		if !types.IsInteger(subjectType) {
+			v.errorf(pattern, "range pattern requires an integer subject")
 			return
 		}
 		pattern.Start = v.validateExprWithExpected(pattern.Start, subjectType)
@@ -923,7 +923,7 @@ func (v *Validator) matchPatternCoverageKey(pattern *parser.MatchPatternNode) st
 	case *parser.IntegerLiteralNode:
 		return "integer:" + literal.Value
 	case *parser.CharLiteralNode:
-		return fmt.Sprintf("char:%d", literal.Value)
+		return fmt.Sprintf("integer:%d", literal.Value)
 	}
 	return ""
 }

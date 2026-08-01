@@ -653,12 +653,12 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 				return nil, err
 			}
 			if t.Consume() != '\'' {
-				return nil, shared.NewError(loc, "Expected ' to end char literal")
+				return nil, shared.NewError(loc, "expected ' to end character literal")
 			}
 			t.AddToken(TokenChar, loc, ch)
 			continue
 		}
 
-		return nil, shared.NewError(t.GetLoc(), "unexpected char: %c", c)
+		return nil, shared.NewError(t.GetLoc(), "unexpected character: %c", c)
 	}
 }

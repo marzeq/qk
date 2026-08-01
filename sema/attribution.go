@@ -320,7 +320,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		n.SetType(a.analyser.universe.Symbols["cstr"].TypeInfo)
 
 	case *parser.CharLiteralNode:
-		n.SetType(types.PrimitiveChar)
+		n.SetType(types.PrimitiveU8)
 
 	case *parser.NilLiteralNode:
 		n.SetType(types.PointerType{
@@ -1404,10 +1404,10 @@ func (a *Attributor) attributeStaticTraitMethodCall(
 }
 
 func methodOwnerIdentity(t types.Type) (module, name string, pointer bool, ok bool) {
-	if slice, isSlice := types.Underlying(t).(types.SliceType); isSlice && slice.Base.Equals(types.PrimitiveChar) {
+	if slice, isSlice := types.Underlying(t).(types.SliceType); isSlice && slice.Base.Equals(types.PrimitiveU8) {
 		return "builtin", "str", false, true
 	}
-	if ptr, isPointer := types.Underlying(t).(types.PointerType); isPointer && !ptr.Mutable && ptr.Base.Equals(types.PrimitiveChar) {
+	if ptr, isPointer := types.Underlying(t).(types.PointerType); isPointer && !ptr.Mutable && ptr.Base.Equals(types.PrimitiveU8) {
 		return "builtin", "cstr", false, true
 	}
 	if ptr, isPointer := types.Underlying(t).(types.PointerType); isPointer {

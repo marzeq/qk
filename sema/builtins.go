@@ -27,14 +27,12 @@ func (a *Analyser) predefineBuiltins() {
 
 	a.universe.Define(symbols.NewType(string(types.PrimitiveVoid), types.PrimitiveVoid))
 
-	a.universe.Define(symbols.NewType(string(types.PrimitiveChar), types.PrimitiveChar))
-
 	a.universe.Define(symbols.NewType(string(types.PrimitiveBool), types.PrimitiveBool))
 
 	a.universe.Define(symbols.NewType("str", types.StrType()))
 
 	a.universe.Define(symbols.NewType("cstr", types.PointerType{
-		Base: types.PrimitiveChar,
+		Base: types.PrimitiveU8,
 	}))
 	panicSymbol := symbols.NewFunction("panic", &symbols.FunctionSignature{
 		Parameters:         []types.Type{types.StrType()},

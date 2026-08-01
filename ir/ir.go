@@ -69,7 +69,7 @@ func StructConstOperand(ty types.Type, fields []Operand) Operand {
 
 func CStringConstOperand(value string) Operand {
 	return Operand{
-		Kind: OperandCStringConst, Type: types.PointerType{Base: types.PrimitiveChar}, StringValue: value,
+		Kind: OperandCStringConst, Type: types.PointerType{Base: types.PrimitiveU8}, StringValue: value,
 	}
 }
 
