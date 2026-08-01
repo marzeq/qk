@@ -321,9 +321,9 @@ whether the platform C library is linked.
 Trusted standard-library sources can declare boolean capabilities:
 
 ```qk
-module std
+module std.io
 
-let HasPrint = comptime not NoLibc
+let HasPrint = comptime true
 let HasFormatting = comptime HasPrint
 ```
 
@@ -333,8 +333,8 @@ conditions:
 
 ```qk
 when HasPrint {
-    import std
-    std.println("available")
+    import std.io
+    std.io.println("available")
 }
 ```
 
@@ -1401,7 +1401,7 @@ written `@reprof(T)`:
 let raw: @reprof(Option<str>) = @repr(option)
 
 if raw.tag == .Some {
-    std.println("{}", raw.payload.Some._0)
+    std.io.println("{}", [raw.payload.Some._0])
 }
 ```
 
@@ -1866,7 +1866,7 @@ An explicit cast to a bare trait creates a static trait view without changing
 the concrete representation:
 
 ```qk
-let shown, ok = value.(Display)
+let shown, ok = value.(Format)
 ```
 
 Conformance is decided statically. The checked form returns the original value
@@ -2061,58 +2061,88 @@ Because `Allocator` has generic methods, it is used through concrete values,
 static trait views, or `A: std.alloc.Allocator` constraints rather than
 `dyn std.alloc.Allocator`.
 
-### 26.4 Display
+### 26.4 I/O and formatting
 
-The standard library defines `std.Display` with one value-receiver method:
+The `std.io` module defines mutable byte-oriented writer and reader traits:
 
 ```qk
-pub let Display = type trait {
-    let display(self): void
+pub let Writer = type trait {
+    let write(*mut self, bytes: []char): usz
+}
+
+pub let Reader = type trait {
+    let read(*mut self, buffer: []mut char): usz
+}
+```
+
+Both methods return the number of bytes transferred. A zero result means that no
+further progress was made; for readers it also represents end of file. The
+`write_all(writer, bytes)` helper repeats partial writes and returns the total
+number written.
+
+`std.io.FileWriter` and `std.io.FileReader` adapt C `FILE` streams. Their `open`
+methods accept a `str` path and return a wrapper whose `is_open()` method reports
+whether opening succeeded. The temporary NUL-terminated path passed to libc is
+freed before `open` returns. `from_file` wraps an existing `*std.libc.FILE`, and
+`close` closes a stream. File writers additionally provide `flush`. The mutable
+globals `std.io.stdout`, `std.io.stderr`, and `std.io.stdin` wrap the process
+streams.
+
+The module also defines `std.io.Format`, whose value-receiver method receives
+the destination writer:
+
+```qk
+pub let Format = type trait {
+    let format(self, writer: mut dyn Writer): void
 }
 ```
 
 All value-bearing builtin types implement it: signed and unsigned integers,
-pointer-sized integers, `f32`, `f64`, `char`, `bool`, `str`, and `cstr`.
-`display()` writes the value to standard output without a trailing newline.
-Numeric output uses the corresponding C formatting, booleans are `true` or
-`false`, characters are written directly, and `str` output respects its explicit
-length rather than requiring NUL termination. `void` has no values and therefore
-cannot implement a value-receiver trait.
+pointer-sized integers, `f32`, `f64`, `char`, `bool`, `str`, and `cstr`. Numeric
+output uses the corresponding C formatting, booleans are `true` or `false`, and
+`str` output respects its explicit length rather than requiring NUL termination.
+`void` has no values and therefore cannot implement a value-receiver trait.
 
 Methods are available through the implicit standard-library dependency. Naming
 the trait itself requires its module qualification:
 
 ```qk
 let count: i32 = 42
-count.display()
+count.format(std.io.stderr)
 
-let shown = count.(*std.Display)
-shown.display()
+let shown = count.(dyn std.io.Format)
+shown.format(std.io.stdout)
 ```
 
-Builtin `Display` methods are unavailable when `NoLibc` is true.
+The I/O traits, `write_all`, formatting functions, and builtin `Format`
+implementations for `char`, `bool`, `str`, and `cstr` remain available in
+`-nolibc` builds. File and process-stream implementations and numeric builtin
+`Format` methods require libc.
 
 The standard library also provides typed, type-safe formatting through
-`std.print`:
+`std.io.print`:
 
 ```qk
-std.print("hello {} {1}", foo, bar)
+std.io.print("hello {} {1}", [foo, bar])
+std.io.println("failure: {}", [code], std.io.stderr)
 ```
 
-Its signature is `print(format: str, arguments: ...dyn Any): void`. Each field
-advances the automatic argument position once. `{}` selects the current automatic
-argument, while a zero-based indexed field such as `{1}` overrides the selection
-for that field without changing how the automatic position advances. Thus
-`{1} {}` selects argument 1 twice. Indexed fields allow arguments to be reordered
-or reused. If the selected argument's runtime concrete
-type implements `std.Display`, `print` dynamically calls its `display()` method;
+Its signature is `print(format: str, arguments: []dyn Any = [], writer: mut dyn
+Writer = nil): void`; `nil` selects `std.io.stdout` when libc is available and
+traps when no default stream exists. Each field advances the automatic argument
+position once. `{}` selects the current automatic argument,
+while a zero-based indexed field such as `{1}` overrides the selection for that
+field without changing how the automatic position advances. Thus `{1} {}`
+selects argument 1 twice. Indexed fields allow arguments to be reordered or
+reused. If the selected argument's runtime concrete type implements
+`std.io.Format`, `print` dynamically calls its `format(writer)` method;
 otherwise it writes `<?>`. A missing or out-of-range argument also writes `<?>`,
 and extra arguments are ignored. `{{` and `}}` emit literal braces; malformed
-fields are emitted literally. Formatting itself adds no newline. `std.println`
+fields are emitted literally. Formatting itself adds no newline. `std.io.println`
 has the same formatting behavior and appends one newline.
 
 Arguments rely on implicit concrete-to-trait borrowing. Both addressable and
-computed values are accepted. A private `display` method can satisfy the trait:
+computed values are accepted. A private `format` method can satisfy the trait:
 visibility still prevents another module from naming the method directly, but
 does not prevent invocation through the trait. Converting an existing trait
 pointer to a different trait pointer traps if the concrete type does not conform;
@@ -2245,9 +2275,10 @@ exit status 0 normally.
 
 Freestanding executable startup is currently rejected for other targets rather
 than producing a binary that depends on a platform CRT. Library and
-object `-nolibc` workflows retain their existing linker behavior. Code reached by
-a freestanding executable must not call libc-backed facilities such as
-`std.print`, `std.println`, or builtin `Display` methods.
+object `-nolibc` workflows retain their existing linker behavior. Freestanding
+code may use `std.io.print` and `std.io.println` with an explicit custom writer,
+but it cannot use the process-stream wrappers or libc-backed numeric `Format`
+methods.
 
 ### 28.6 Informational options
 

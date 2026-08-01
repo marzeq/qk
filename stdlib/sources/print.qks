@@ -1,51 +1,69 @@
-module std
+module std.io
 
-pub let HasPrint = comptime not NoLibc
+pub let HasPrint = comptime true
 
-when HasPrint {
-let display_print_argument(index: usz, arguments: []dyn Any): void {
+let writer_or_default(writer: mut dyn Writer): mut dyn Writer {
+  when HasIO {
+    if writer == nil { return stdout.&mut.(mut dyn Writer) }
+  }
+  if writer == nil {
+    panic("called std.io print without a writer in an environment without a default writer")
+  }
+  return writer
+}
+
+let format_print_argument(
+  writer: mut dyn Writer,
+  index: usz,
+  arguments: []dyn Any,
+): void {
   if index >= @len(arguments) {
-    "<?>".display()
+    "<?>".format(writer)
     return
   }
 
   let argument = arguments[index]
-  let display, ok = argument.(dyn Display)
+  let formatted, ok = argument.(dyn Format)
   if ok {
-    display.display()
+    formatted.format(writer)
   } else {
-    "<?>".display()
+    "<?>".format(writer)
   }
 }
 
-pub let print(format: str, arguments: ...dyn Any): void {
+pub let print(
+  format: str,
+  arguments: []dyn Any = [],
+  writer: mut dyn Writer = nil,
+): void {
+  let output = writer_or_default(writer)
   let mut format_index: usz = 0
   let mut argument_index: usz = 0
 
   for format_index < @len(format) {
     let character = format[format_index]
     if character == '}' and format_index + 1 < @len(format) and format[format_index + 1] == '}' {
-      '}'.display()
+      '}'.format(output)
       format_index += 2
       continue
     }
     if character != '{' {
-      character.display()
+      character.format(output)
       format_index += 1
       continue
     }
     if format_index + 1 >= @len(format) {
-      '{'.display()
+      '{'.format(output)
       format_index += 1
       continue
     }
     if format[format_index + 1] == '{' {
-      '{'.display()
+      '{'.format(output)
       format_index += 2
       continue
     }
     if format[format_index + 1] == '}' {
-      display_print_argument(argument_index, arguments)
+      format_print_argument(output, argument_index, arguments)
       argument_index += 1
       format_index += 2
       continue
@@ -60,19 +78,23 @@ pub let print(format: str, arguments: ...dyn Any): void {
       cursor += 1
     }
     if has_digit and cursor < @len(format) and format[cursor] == '}' {
-      display_print_argument(selected, arguments)
+      format_print_argument(output, selected, arguments)
       argument_index += 1
       format_index = cursor + 1
       continue
     }
 
-    '{'.display()
+    '{'.format(output)
     format_index += 1
   }
 }
 
-pub let println(format: str, arguments: ...dyn Any): void {
-  print(format, arguments...)
-  '\n'.display()
-}
+pub let println(
+  format: str,
+  arguments: []dyn Any = [],
+  writer: mut dyn Writer = nil,
+): void {
+  let output = writer_or_default(writer)
+  print(format, arguments, output)
+  '\n'.format(output)
 }
