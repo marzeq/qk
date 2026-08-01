@@ -180,6 +180,7 @@ func (a *Analyser) visitMultiDeclaration(n *parser.MultiDeclarationNode) {
 		}
 		seen[name] = true
 		sym := symbols.NewVariable(name, nil)
+		sym.Mutable = n.Mutable
 		n.Symbols[i] = sym
 		a.current.Symbols[name] = sym
 	}

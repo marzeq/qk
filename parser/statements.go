@@ -916,10 +916,10 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 			p.PushPos()
 			p.Inc() // consume `let`
 
+			mutable := false
 			if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordMut) {
-				p.PopPos()
-				node, err := p.ParseDeclaration()
-				return node, true, err
+				p.Inc()
+				mutable = true
 			}
 
 			if !p.Expect(tokeniser.TokenIdentifier) {
@@ -937,11 +937,19 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 			case p.Match(tokeniser.TokenOpenParen):
 				// let fn(...) = ...
 				p.PopPos()
+				if mutable {
+					node, err := p.ParseDeclaration()
+					return node, true, err
+				}
 				node, err := p.ParseFunctionDefinition()
 				return node, true, err
 
 			case p.Match(tokeniser.TokenDot):
 				p.PopPos()
+				if mutable {
+					node, err := p.ParseDeclaration()
+					return node, true, err
+				}
 				node, err := p.ParseFunctionDefinition()
 				return node, true, err
 
@@ -1270,6 +1278,11 @@ func (p *Parser) consumeGenericClose() bool {
 func (p *Parser) parseMultiDeclaration() (*MultiDeclarationNode, error) {
 	loc := p.CurrLoc()
 	p.Inc() // let
+	mutable := false
+	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordMut) {
+		p.Inc()
+		mutable = true
+	}
 	names := []string{}
 	nameLocs := []shared.Location{}
 	for {
@@ -1287,6 +1300,9 @@ func (p *Parser) parseMultiDeclaration() (*MultiDeclarationNode, error) {
 	if !p.Expect(tokeniser.TokenEquals) {
 		return nil, shared.NewError(p.PrevLoc(), "expected '=' after declaration names")
 	}
+	for p.Match(tokeniser.TokenNewline) {
+		p.Inc()
+	}
 	value, err := p.ParseExpression()
 	if err != nil {
 		return nil, err
@@ -1294,7 +1310,13 @@ func (p *Parser) parseMultiDeclaration() (*MultiDeclarationNode, error) {
 	if !isMultiResultSource(value) {
 		return nil, shared.NewError(value.GetLoc(), "multiple declaration requires a function call or checked cast")
 	}
-	return &MultiDeclarationNode{Names: names, NameLocs: nameLocs, Value: value, Loc: p.SpanFrom(loc)}, nil
+	return &MultiDeclarationNode{
+		Names:    names,
+		NameLocs: nameLocs,
+		Mutable:  mutable,
+		Value:    value,
+		Loc:      p.SpanFrom(loc),
+	}, nil
 }
 
 func isMultiResultSource(value ExpressionNode) bool {

@@ -851,6 +851,7 @@ type DeclarationNode struct {
 type MultiDeclarationNode struct {
 	Names    []string
 	NameLocs []shared.Location
+	Mutable  bool
 	Value    ExpressionNode
 	Loc      shared.Location
 	Symbols  []*symbols.Symbol

@@ -487,6 +487,18 @@ let one(): i32 = 1
 Numeric return branches use the normal numeric promotion rules. A foreign function
 must always state its return type, including `void`.
 
+Functions may return multiple values with a parenthesized result list. A call's
+results are unpacked into a matching declaration target list:
+
+```qk
+let mut buffer, allocated =
+    std.alloc.allocate<i32>(allocator, 4)
+```
+
+The initializer may begin on the following line after `=`. Adding `mut` makes
+every non-discard binding in the target list assignable. Without `mut`, every
+binding is immutable. `_` discards the corresponding result.
+
 ### 7.2 Parameters
 
 Each parameter has a name and type. Adjacent names can share a trailing type:
