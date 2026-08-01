@@ -1,0 +1,106 @@
+module std.io
+
+pub let Format = type trait {
+  let format(self, writer: mut dyn Writer): void
+}
+
+when HasIO {
+  let write_formatted_i8(writer: mut dyn Writer, format: cstr, value: i8): void {
+    let mut buffer: [32]char = ---
+    let length = std.libc.snprintf(buffer[:].(*mut char), @len(buffer), format, value)
+    if length > 0 { write_all(writer, buffer[0:length.(usz)]) }
+  }
+
+  let write_formatted_i16(writer: mut dyn Writer, format: cstr, value: i16): void {
+    let mut buffer: [32]char = ---
+    let length = std.libc.snprintf(buffer[:].(*mut char), @len(buffer), format, value)
+    if length > 0 { write_all(writer, buffer[0:length.(usz)]) }
+  }
+
+  let write_formatted_i32(writer: mut dyn Writer, format: cstr, value: i32): void {
+    let mut buffer: [32]char = ---
+    let length = std.libc.snprintf(buffer[:].(*mut char), @len(buffer), format, value)
+    if length > 0 { write_all(writer, buffer[0:length.(usz)]) }
+  }
+
+  let write_formatted_i64(writer: mut dyn Writer, format: cstr, value: i64): void {
+    let mut buffer: [32]char = ---
+    let length = std.libc.snprintf(buffer[:].(*mut char), @len(buffer), format, value)
+    if length > 0 { write_all(writer, buffer[0:length.(usz)]) }
+  }
+
+  let write_formatted_isz(writer: mut dyn Writer, format: cstr, value: isz): void {
+    let mut buffer: [32]char = ---
+    let length = std.libc.snprintf(buffer[:].(*mut char), @len(buffer), format, value)
+    if length > 0 { write_all(writer, buffer[0:length.(usz)]) }
+  }
+
+  let write_formatted_u8(writer: mut dyn Writer, format: cstr, value: u8): void {
+    let mut buffer: [32]char = ---
+    let length = std.libc.snprintf(buffer[:].(*mut char), @len(buffer), format, value)
+    if length > 0 { write_all(writer, buffer[0:length.(usz)]) }
+  }
+
+  let write_formatted_u16(writer: mut dyn Writer, format: cstr, value: u16): void {
+    let mut buffer: [32]char = ---
+    let length = std.libc.snprintf(buffer[:].(*mut char), @len(buffer), format, value)
+    if length > 0 { write_all(writer, buffer[0:length.(usz)]) }
+  }
+
+  let write_formatted_u32(writer: mut dyn Writer, format: cstr, value: u32): void {
+    let mut buffer: [32]char = ---
+    let length = std.libc.snprintf(buffer[:].(*mut char), @len(buffer), format, value)
+    if length > 0 { write_all(writer, buffer[0:length.(usz)]) }
+  }
+
+  let write_formatted_u64(writer: mut dyn Writer, format: cstr, value: u64): void {
+    let mut buffer: [32]char = ---
+    let length = std.libc.snprintf(buffer[:].(*mut char), @len(buffer), format, value)
+    if length > 0 { write_all(writer, buffer[0:length.(usz)]) }
+  }
+
+  let write_formatted_usz(writer: mut dyn Writer, format: cstr, value: usz): void {
+    let mut buffer: [32]char = ---
+    let length = std.libc.snprintf(buffer[:].(*mut char), @len(buffer), format, value)
+    if length > 0 { write_all(writer, buffer[0:length.(usz)]) }
+  }
+
+  let write_formatted_f64(writer: mut dyn Writer, value: f64): void {
+    let mut buffer: [64]char = ---
+    let length = std.libc.snprintf(buffer[:].(*mut char), @len(buffer), c"%g", value)
+    if length > 0 { write_all(writer, buffer[0:length.(usz)]) }
+  }
+
+  let i8.format(self, writer: mut dyn Writer): void { write_formatted_i8(writer, c"%hhd", self) }
+  let i16.format(self, writer: mut dyn Writer): void { write_formatted_i16(writer, c"%hd", self) }
+  let i32.format(self, writer: mut dyn Writer): void { write_formatted_i32(writer, c"%d", self) }
+  let i64.format(self, writer: mut dyn Writer): void { write_formatted_i64(writer, c"%lld", self) }
+  let isz.format(self, writer: mut dyn Writer): void { write_formatted_isz(writer, c"%zd", self) }
+
+  let u8.format(self, writer: mut dyn Writer): void { write_formatted_u8(writer, c"%hhu", self) }
+  let u16.format(self, writer: mut dyn Writer): void { write_formatted_u16(writer, c"%hu", self) }
+  let u32.format(self, writer: mut dyn Writer): void { write_formatted_u32(writer, c"%u", self) }
+  let u64.format(self, writer: mut dyn Writer): void { write_formatted_u64(writer, c"%llu", self) }
+  let usz.format(self, writer: mut dyn Writer): void { write_formatted_usz(writer, c"%zu", self) }
+
+  let f32.format(self, writer: mut dyn Writer): void { write_formatted_f64(writer, self.(f64)) }
+  let f64.format(self, writer: mut dyn Writer): void { write_formatted_f64(writer, self) }
+}
+
+let char.format(self, writer: mut dyn Writer): void {
+  let character: [1]char = [self]
+  write_all(writer, character[:])
+}
+
+let bool.format(self, writer: mut dyn Writer): void {
+  if self { write_all(writer, "true".([]char)) }
+  else { write_all(writer, "false".([]char)) }
+}
+
+let str.format(self, writer: mut dyn Writer): void { write_all(writer, self.([]char)) }
+
+let cstr.format(self, writer: mut dyn Writer): void {
+  let mut length: usz = 0
+  for self[length] != '\0' { length += 1 }
+  write_all(writer, self[0:length])
+}

@@ -1,0 +1,37 @@
+module std.alloc
+
+pub let Allocator = type trait {
+  let new<T>(*mut self): (*mut T, bool)
+  let allocate<T>(*mut self, count: usz): (*mut T, bool)
+  let free<T>(*mut self, ptr: *mut T, count: usz): void
+  let resize<T>(
+    *mut self,
+    ptr: *mut T,
+    old_count: usz,
+    new_count: usz,
+  ): (*mut T, bool)
+  let free_all(*mut self): void
+}
+
+// Raw allocators use one alignment for both the old and new allocation when
+// resizing. A zero-byte allocation or resize succeeds with a nil pointer.
+pub let RawAllocator = type trait {
+  let allocate_bytes(
+    *mut self,
+    size: usz,
+    align: usz,
+  ): (*mut void, bool)
+  let free_bytes(
+    *mut self,
+    ptr: *mut void,
+    size: usz,
+    align: usz,
+  ): void
+  let resize_bytes(
+    *mut self,
+    ptr: *mut void,
+    old_size: usz,
+    new_size: usz,
+    align: usz,
+  ): (*mut void, bool)
+}

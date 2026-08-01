@@ -1,44 +1,8 @@
 module std.alloc
 
-pub let Allocator = type trait {
-  let new<T>(*mut self): (*mut T, bool)
-  let allocate<T>(*mut self, count: usz): (*mut T, bool)
-  let free<T>(*mut self, ptr: *mut T, count: usz): void
-  let resize<T>(
-    *mut self,
-    ptr: *mut T,
-    old_count: usz,
-    new_count: usz,
-  ): (*mut T, bool)
-  let free_all(*mut self): void
-}
-
-// Raw allocators use one alignment for both the old and new allocation when
-// resizing. A zero-byte allocation or resize succeeds with a nil pointer.
-pub let RawAllocator = type trait {
-  let allocate_bytes(
-    *mut self,
-    size: usz,
-    align: usz,
-  ): (*mut void, bool)
-  let free_bytes(
-    *mut self,
-    ptr: *mut void,
-    size: usz,
-    align: usz,
-  ): void
-  let resize_bytes(
-    *mut self,
-    ptr: *mut void,
-    old_size: usz,
-    new_size: usz,
-    align: usz,
-  ): (*mut void, bool)
-}
-
 when not NoLibc {
+
 import std.libc
-}
 
 let ArenaDefaultChunkSize: usz = comptime 64 * 1024
 
@@ -51,9 +15,6 @@ let ArenaChunk = type struct {
 
   capacity: usz,
   used: usz,
-
-  // The backing allocation includes the header, alignment padding, and data.
-  allocation_size: usz,
 }
 
 pub let ArenaMark = type struct {
@@ -67,8 +28,6 @@ pub let ArenaMark = type struct {
 // free_all() invalidate affected allocations. The arena does not run
 // destructors.
 pub let Arena = type struct {
-  backing: mut dyn RawAllocator,
-
   first: *mut ArenaChunk,
   current: *mut ArenaChunk,
 
@@ -94,40 +53,6 @@ pub let Arena = type struct {
   generation: usz,
 }
 
-let is_power_of_two(value: usz): bool =
-  value != 0 and (value & (value - 1)) == 0
-
-let max_usz(a: usz, b: usz): usz =
-  if a > b { a } else { b }
-
-let min_usz(a: usz, b: usz): usz =
-  if a < b { a } else { b }
-
-let checked_add(a: usz, b: usz): (usz, bool) {
-  if a > (~0.(usz)) - b {
-    return 0, false
-  }
-
-  return a + b, true
-}
-
-let checked_align_forward(
-  value: usz,
-  align: usz,
-): (usz, bool) {
-  if not is_power_of_two(align) {
-    return 0, false
-  }
-
-  let padding = align - 1
-  let padded, valid = checked_add(value, padding)
-  if not valid {
-    return 0, false
-  }
-
-  return padded & ~padding, true
-}
-
 let saturating_double(value: usz): usz =
   if value <= (~0.(usz)) / 2 {
     value * 2
@@ -137,16 +62,6 @@ let saturating_double(value: usz): usz =
 
 let saturating_increment(value: usz): usz =
   if value != ~0.(usz) { value + 1 } else { value }
-
-let checked_size<T>(count: usz): (usz, bool) {
-  let element_size = @sizeof(T)
-
-  if element_size != 0 and count > (~0.(usz)) / element_size {
-    return 0, false
-  }
-
-  return element_size * count, true
-}
 
 let copy_bytes(
   destination: *mut void,
@@ -171,181 +86,14 @@ let zero_bytes(destination: *mut void, size: usz): void {
   }
 }
 
-when not NoLibc {
-
-let LibcAllocationHeader = type struct {
-  allocation: *mut void,
-}
-
-// LibcAllocator adapts malloc/free to RawAllocator and supports arbitrary
-// power-of-two alignment by retaining the original allocation in a header
-// immediately before the aligned result.
-pub let LibcAllocator = type struct {
-  // Give the stateless allocator stable addressable storage.
-  state: u8,
-}
-
-pub let LibcAllocator.init(): LibcAllocator =
-  .{ state=0 }
-
-pub let LibcAllocator.allocate_bytes(
-  *mut self,
-  size: usz,
-  align: usz,
-): (*mut void, bool) {
-  if size == 0 {
-    return nil, true
-  }
-
-  if not is_power_of_two(align) {
-    return nil, false
-  }
-
-  let data_align = max_usz(align, @alignof(LibcAllocationHeader))
-  let with_padding, valid_padding = checked_add(
-    @sizeof(LibcAllocationHeader),
-    data_align - 1,
-  )
-  if not valid_padding {
-    return nil, false
-  }
-
-  let allocation_size, valid_size = checked_add(with_padding, size)
-  if not valid_size {
-    return nil, false
-  }
-
-  let allocation = std.libc.malloc(allocation_size)
-  if allocation == nil {
-    return nil, false
-  }
-
-  let unaligned_data, valid_data = checked_add(
-    allocation.(usz),
-    @sizeof(LibcAllocationHeader),
-  )
-  let data_address, valid_alignment = checked_align_forward(
-    unaligned_data,
-    data_align,
-  )
-  if not valid_data or not valid_alignment {
-    std.libc.free(allocation)
-    return nil, false
-  }
-
-  let mut header =
-    (data_address - @sizeof(LibcAllocationHeader)).(*mut LibcAllocationHeader)
-  header.allocation = allocation
-  return data_address.(*mut void), true
-}
-
-pub let LibcAllocator.free_bytes(
-  *mut self,
-  ptr: *mut void,
-  size: usz,
-  align: usz,
-): void {
-  if ptr == nil {
-    return
-  }
-
-  let header =
-    (ptr.(usz) - @sizeof(LibcAllocationHeader)).(*LibcAllocationHeader)
-  std.libc.free(header.allocation)
-}
-
-pub let LibcAllocator.resize_bytes(
-  *mut self,
-  ptr: *mut void,
-  old_size: usz,
-  new_size: usz,
-  align: usz,
-): (*mut void, bool) {
-  if ptr == nil {
-    return self.allocate_bytes(new_size, align)
-  }
-
-  if new_size == 0 {
-    self.free_bytes(ptr, old_size, align)
-    return nil, true
-  }
-
-  let replacement, allocated = self.allocate_bytes(new_size, align)
-  if not allocated {
-    return nil, false
-  }
-
-  std.libc.memcpy(replacement, ptr, min_usz(old_size, new_size))
-  self.free_bytes(ptr, old_size, align)
-  return replacement, true
-}
-
-let mut ArenaDefaultBacking: LibcAllocator = .{ state=0 }
-
-let arena_backing_or_default(
-  backing: mut dyn RawAllocator,
-): mut dyn RawAllocator =
-  if backing != nil {
-    backing
-  } else {
-    ArenaDefaultBacking.&mut.(mut dyn RawAllocator)
-  }
-
-} else {
-
-let UnavailableAllocator = type struct {
-  state: u8,
-}
-
-let UnavailableAllocator.allocate_bytes(
-  *mut self,
-  size: usz,
-  align: usz,
-): (*mut void, bool) {
-  return nil, size == 0
-}
-
-let UnavailableAllocator.free_bytes(
-  *mut self,
-  ptr: *mut void,
-  size: usz,
-  align: usz,
-): void {
-}
-
-let UnavailableAllocator.resize_bytes(
-  *mut self,
-  ptr: *mut void,
-  old_size: usz,
-  new_size: usz,
-  align: usz,
-): (*mut void, bool) {
-  return nil, new_size == 0
-}
-
-let mut ArenaUnavailableBacking: UnavailableAllocator = .{ state=0 }
-
-let arena_backing_or_default(
-  backing: mut dyn RawAllocator,
-): mut dyn RawAllocator =
-  if backing != nil {
-    backing
-  } else {
-    ArenaUnavailableBacking.&mut.(mut dyn RawAllocator)
-  }
-
-}
-
 pub let Arena.init(
   initial_chunk_size: usz = ArenaDefaultChunkSize,
   maximum_total_size: usz = ~0.(usz),
   maximum_alignment: usz = ~0.(usz),
-  backing: mut dyn RawAllocator = nil,
 ): Arena {
   let chunk_size = max_usz(initial_chunk_size, 1)
 
   return .{
-    backing=arena_backing_or_default(backing),
     first=nil,
     current=nil,
     initial_chunk_size=chunk_size,
@@ -411,11 +159,8 @@ let Arena.allocate_chunk(
     return nil
   }
 
-  let raw, allocated = self.backing.allocate_bytes(
-    allocation_size,
-    @alignof(ArenaChunk),
-  )
-  if not allocated or raw == nil {
+  let raw = std.libc.malloc(allocation_size)
+  if raw == nil {
     return nil
   }
 
@@ -425,7 +170,7 @@ let Arena.allocate_chunk(
     data_align,
   )
   if not valid_data or not valid_alignment {
-    self.backing.free_bytes(raw, allocation_size, @alignof(ArenaChunk))
+    std.libc.free(raw)
     return nil
   }
 
@@ -435,7 +180,6 @@ let Arena.allocate_chunk(
   chunk.data = data_address.(*mut u8)
   chunk.capacity = minimum_capacity
   chunk.used = 0
-  chunk.allocation_size = allocation_size
 
   if previous != nil {
     previous.next = chunk
@@ -459,8 +203,7 @@ let Arena.grow(
     return nil
   }
 
-  // After reset, walk retained chunks before asking the backing allocator for
-  // more memory.
+  // After reset, walk retained chunks before asking libc for more memory.
   let mut previous = self.current
   let mut reusable = if previous != nil { previous.next } else { self.first }
   for reusable != nil {
@@ -835,15 +578,10 @@ pub let Arena.rewind(*mut self, mark: ArenaMark): bool {
   }
   for chunk != nil {
     let next = chunk.next
-    let allocation_size = chunk.allocation_size
     self.total_used -= chunk.used
     self.total_capacity -= chunk.capacity
     self.chunk_count -= 1
-    self.backing.free_bytes(
-      chunk,
-      allocation_size,
-      @alignof(ArenaChunk),
-    )
+    std.libc.free(chunk)
     chunk = next
   }
 
@@ -865,11 +603,7 @@ pub let Arena.deinit(*mut self): void {
   let mut chunk = self.first
   for chunk != nil {
     let next = chunk.next
-    self.backing.free_bytes(
-      chunk,
-      chunk.allocation_size,
-      @alignof(ArenaChunk),
-    )
+    std.libc.free(chunk)
     chunk = next
   }
 
@@ -886,4 +620,6 @@ pub let Arena.deinit(*mut self): void {
 
 pub let Arena.free_all(*mut self): void {
   self.deinit()
+}
+
 }

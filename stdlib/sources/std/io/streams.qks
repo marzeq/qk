@@ -1,0 +1,91 @@
+module std.io
+
+pub let HasIO = comptime not NoLibc
+
+pub let Writer = type trait {
+  let write(*mut self, bytes: []char): usz
+}
+
+pub let Reader = type trait {
+  let read(*mut self, buffer: []mut char): usz
+}
+
+when HasIO {
+import std
+import std.libc
+
+pub let FileWriter = type struct {
+  file: *std.libc.FILE,
+}
+
+pub let FileReader = type struct {
+  file: *std.libc.FILE,
+}
+
+pub let FileWriter.open(path: str, append: bool = false): FileWriter {
+  let c_path = path.to_cstr()
+  if c_path == nil { return .{ file=nil } }
+
+  let file = std.libc.fopen(c_path, if append { c"ab" } else { c"wb" })
+  std.libc.free(c_path)
+  return .{ file=file }
+}
+
+pub let FileWriter.from_file(file: *std.libc.FILE): FileWriter = .{ file=file }
+
+pub let FileWriter.is_open(*self): bool = self.file != nil
+
+pub let FileWriter.write(*mut self, bytes: []char): usz {
+  if self.file == nil or @len(bytes) == 0 { return 0 }
+  return std.libc.fwrite(bytes.(*char), 1, @len(bytes), self.file)
+}
+
+pub let FileWriter.flush(*mut self): bool =
+  self.file != nil and std.libc.fflush(self.file) == 0
+
+pub let FileWriter.close(*mut self): bool {
+  if self.file == nil { return true }
+  let file = self.file
+  self.file = nil
+  return std.libc.fclose(file) == 0
+}
+
+pub let FileReader.open(path: str): FileReader {
+  let c_path = path.to_cstr()
+  if c_path == nil { return .{ file=nil } }
+
+  let file = std.libc.fopen(c_path, c"rb")
+  std.libc.free(c_path)
+  return .{ file=file }
+}
+
+pub let FileReader.from_file(file: *std.libc.FILE): FileReader = .{ file=file }
+
+pub let FileReader.is_open(*self): bool = self.file != nil
+
+pub let FileReader.read(*mut self, buffer: []mut char): usz {
+  if self.file == nil or @len(buffer) == 0 { return 0 }
+  return std.libc.fread(buffer.(*mut char), 1, @len(buffer), self.file)
+}
+
+pub let FileReader.close(*mut self): bool {
+  if self.file == nil { return true }
+  let file = self.file
+  self.file = nil
+  return std.libc.fclose(file) == 0
+}
+
+pub let mut stdout: FileWriter = .{ file=std.libc.stdout }
+pub let mut stderr: FileWriter = .{ file=std.libc.stderr }
+pub let mut stdin: FileReader = .{ file=std.libc.stdin }
+}
+
+pub let write_all(writer: mut dyn Writer, bytes: []char): usz {
+  let mut written: usz = 0
+  for written < @len(bytes) {
+    let count = writer.write(bytes[written:])
+    if count == 0 { break }
+    written += count
+  }
+  return written
+}

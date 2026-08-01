@@ -2031,21 +2031,23 @@ distinct from invalid alignment or allocation failure (`nil, false`). Resize
 uses the supplied alignment for both the old and new allocation.
 
 Hosted builds provide `std.alloc.LibcAllocator`, an alignment-aware
-`RawAllocator` wrapper over libc allocation. It stores the original `malloc`
-pointer before each aligned result, uses `free` for reclamation, and implements
-resize by allocating, copying, and freeing.
+implementation of both `Allocator` and `RawAllocator`. It stores the original
+`malloc` pointer before each aligned result, uses `free` for reclamation, and
+implements resize by allocating, copying, and freeing. It does not track live
+allocations, so its `free_all` operation is a no-op and callers must release
+individual allocations with `free`.
 
-`std.alloc.Arena` accepts an optional `RawAllocator` backing allocator and uses
-a shared `LibcAllocator` by default in hosted builds. In `-nolibc` builds a
-backing allocator is required. Regular chunks grow geometrically, while an
-oversized allocation receives its own right-sized chunk without increasing
-later regular chunk sizes. All size, alignment, cursor, padding, and
-chunk-allocation arithmetic is checked. The configured maximum total capacity
-and maximum alignment can reject excessive requests.
+`std.alloc.Arena` is available only in hosted builds and allocates its chunks
+directly with libc `malloc` and `free`; it does not accept a configurable
+backing allocator. Regular chunks grow geometrically, while an oversized
+allocation receives its own right-sized chunk without increasing later regular
+chunk sizes. All size, alignment, cursor, padding, and chunk-allocation
+arithmetic is checked. The configured maximum total capacity and maximum
+alignment can reject excessive requests.
 
 Individual `free` calls do not reclaim arena storage. `reset` invalidates all
 allocations but retains chunks for reuse, `mark` and `rewind` provide scoped
-bulk reclamation, and `deinit` returns all chunks to the backing allocator.
+bulk reclamation, and `deinit` frees every chunk through libc.
 `free_all` is an alias for `deinit`. Marks carry arena identity and generation;
 `rewind` returns `false` for a stale or foreign mark. `reset` and `deinit`
 restore the initial geometric growth size, and oversized historical workloads

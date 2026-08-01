@@ -7,7 +7,7 @@ pub let PHI: f64 = 1.57079632679489661923
 
 pub let sin(x: f64): f64 @foreign(symbol "sin")
 pub let cos(x: f64): f64 @foreign(symbol "cos")
-pub let tan(x: f64): f64 @foreign(symbol "tan") 
+pub let tan(x: f64): f64 @foreign(symbol "tan")
 pub let asin(x: f64): f64 @foreign(symbol "asin")
 pub let acos(x: f64): f64 @foreign(symbol "acos")
 pub let atan(x: f64): f64 @foreign(symbol "atan")

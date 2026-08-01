@@ -1,0 +1,49 @@
+module std.alloc
+
+when not NoLibc {
+
+let is_power_of_two(value: usz): bool =
+  value != 0 and (value & (value - 1)) == 0
+
+let max_usz(a: usz, b: usz): usz =
+  if a > b { a } else { b }
+
+let min_usz(a: usz, b: usz): usz =
+  if a < b { a } else { b }
+
+let checked_add(a: usz, b: usz): (usz, bool) {
+  if a > (~0.(usz)) - b {
+    return 0, false
+  }
+
+  return a + b, true
+}
+
+let checked_align_forward(
+  value: usz,
+  align: usz,
+): (usz, bool) {
+  if not is_power_of_two(align) {
+    return 0, false
+  }
+
+  let padding = align - 1
+  let padded, valid = checked_add(value, padding)
+  if not valid {
+    return 0, false
+  }
+
+  return padded & ~padding, true
+}
+
+let checked_size<T>(count: usz): (usz, bool) {
+  let element_size = @sizeof(T)
+
+  if element_size != 0 and count > (~0.(usz)) / element_size {
+    return 0, false
+  }
+
+  return element_size * count, true
+}
+
+}

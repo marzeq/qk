@@ -1,0 +1,165 @@
+module std.alloc
+
+when not NoLibc {
+
+import std.libc
+
+let LibcAllocationHeader = type struct {
+  allocation: *mut void,
+}
+
+// LibcAllocator adapts malloc/free to Allocator and RawAllocator. It supports
+// arbitrary power-of-two alignment by retaining the original allocation in a
+// header immediately before the aligned result.
+pub let LibcAllocator = type struct {
+  state: u8,
+}
+
+pub let LibcAllocator.init(): LibcAllocator =
+  .{ state=0 }
+
+pub let LibcAllocator.allocate_bytes(
+  *mut self,
+  size: usz,
+  align: usz,
+): (*mut void, bool) {
+  if size == 0 {
+    return nil, true
+  }
+
+  if not is_power_of_two(align) {
+    return nil, false
+  }
+
+  let data_align = max_usz(align, @alignof(LibcAllocationHeader))
+  let with_padding, valid_padding = checked_add(
+    @sizeof(LibcAllocationHeader),
+    data_align - 1,
+  )
+  if not valid_padding {
+    return nil, false
+  }
+
+  let allocation_size, valid_size = checked_add(with_padding, size)
+  if not valid_size {
+    return nil, false
+  }
+
+  let allocation = std.libc.malloc(allocation_size)
+  if allocation == nil {
+    return nil, false
+  }
+
+  let unaligned_data, valid_data = checked_add(
+    allocation.(usz),
+    @sizeof(LibcAllocationHeader),
+  )
+  let data_address, valid_alignment = checked_align_forward(
+    unaligned_data,
+    data_align,
+  )
+  if not valid_data or not valid_alignment {
+    std.libc.free(allocation)
+    return nil, false
+  }
+
+  let mut header =
+    (data_address - @sizeof(LibcAllocationHeader)).(*mut LibcAllocationHeader)
+  header.allocation = allocation
+  return data_address.(*mut void), true
+}
+
+pub let LibcAllocator.free_bytes(
+  *mut self,
+  ptr: *mut void,
+  size: usz,
+  align: usz,
+): void {
+  if ptr == nil {
+    return
+  }
+
+  let header =
+    (ptr.(usz) - @sizeof(LibcAllocationHeader)).(*LibcAllocationHeader)
+  std.libc.free(header.allocation)
+}
+
+pub let LibcAllocator.resize_bytes(
+  *mut self,
+  ptr: *mut void,
+  old_size: usz,
+  new_size: usz,
+  align: usz,
+): (*mut void, bool) {
+  if ptr == nil {
+    return self.allocate_bytes(new_size, align)
+  }
+
+  if new_size == 0 {
+    self.free_bytes(ptr, old_size, align)
+    return nil, true
+  }
+
+  let replacement, allocated = self.allocate_bytes(new_size, align)
+  if not allocated {
+    return nil, false
+  }
+
+  std.libc.memcpy(replacement, ptr, min_usz(old_size, new_size))
+  self.free_bytes(ptr, old_size, align)
+  return replacement, true
+}
+
+pub let LibcAllocator.new<T>(*mut self): (*mut T, bool) =
+  self.allocate<T>(1)
+
+pub let LibcAllocator.allocate<T>(
+  *mut self,
+  count: usz,
+): (*mut T, bool) {
+  let size, valid = checked_size<T>(count)
+  if not valid {
+    return nil, false
+  }
+
+  let result, allocated = self.allocate_bytes(size, @alignof(T))
+  return result.(*mut T), allocated
+}
+
+pub let LibcAllocator.free<T>(
+  *mut self,
+  ptr: *mut T,
+  count: usz,
+): void {
+  let size, valid = checked_size<T>(count)
+  if valid {
+    self.free_bytes(ptr, size, @alignof(T))
+  }
+}
+
+pub let LibcAllocator.resize<T>(
+  *mut self,
+  ptr: *mut T,
+  old_count: usz,
+  new_count: usz,
+): (*mut T, bool) {
+  let old_size, valid_old_size = checked_size<T>(old_count)
+  let new_size, valid_new_size = checked_size<T>(new_count)
+  if not valid_old_size or not valid_new_size {
+    return nil, false
+  }
+
+  let result, resized = self.resize_bytes(
+    ptr,
+    old_size,
+    new_size,
+    @alignof(T),
+  )
+  return result.(*mut T), resized
+}
+
+// LibcAllocator does not track its allocations, so individual allocations
+// must be released with free().
+pub let LibcAllocator.free_all(*mut self): void {}
+
+}
