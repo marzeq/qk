@@ -4,7 +4,7 @@ pub let HasPrint = comptime not NoLibc
 
 when HasPrint {
 let display_print_argument(index: usz, arguments: []dyn Any): void {
-  if index >= len(arguments) {
+  if index >= @len(arguments) {
     "<?>".display()
     return
   }
@@ -22,9 +22,9 @@ pub let print(format: str, arguments: ...dyn Any): void {
   let mut format_index: usz = 0
   let mut argument_index: usz = 0
 
-  for format_index < len(format) {
+  for format_index < @len(format) {
     let character = format[format_index]
-    if character == '}' and format_index + 1 < len(format) and format[format_index + 1] == '}' {
+    if character == '}' and format_index + 1 < @len(format) and format[format_index + 1] == '}' {
       '}'.display()
       format_index += 2
       continue
@@ -34,7 +34,7 @@ pub let print(format: str, arguments: ...dyn Any): void {
       format_index += 1
       continue
     }
-    if format_index + 1 >= len(format) {
+    if format_index + 1 >= @len(format) {
       '{'.display()
       format_index += 1
       continue
@@ -54,12 +54,12 @@ pub let print(format: str, arguments: ...dyn Any): void {
     let mut cursor = format_index + 1
     let mut selected: usz = 0
     let mut has_digit = false
-    for cursor < len(format) and format[cursor].(usz) >= '0'.(usz) and format[cursor].(usz) <= '9'.(usz) {
+    for cursor < @len(format) and format[cursor].(usz) >= '0'.(usz) and format[cursor].(usz) <= '9'.(usz) {
       has_digit = true
       selected = selected * 10 + (format[cursor].(usz) - '0'.(usz))
       cursor += 1
     }
-    if has_digit and cursor < len(format) and format[cursor] == '}' {
+    if has_digit and cursor < @len(format) and format[cursor] == '}' {
       display_print_argument(selected, arguments)
       argument_index += 1
       format_index = cursor + 1

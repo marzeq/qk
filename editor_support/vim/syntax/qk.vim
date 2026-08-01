@@ -34,10 +34,9 @@ syn keyword qkRepeat for in
 syn keyword qkStatement break continue return defer
 syn keyword qkOperator and or not as
 syn keyword qkOperator is implements
-syn keyword qkBuiltin sizeof alignof offsetof len repr reprof compiler_error
-
 " Function and module attributes.
 syn match qkAttribute "@[A-Za-z_][A-Za-z0-9_]*"
+syn match qkBuiltin "@\%(sizeof\|alignof\|offsetof\|len\|repr\|reprof\|compiler_error\)\ze\s*("
 
 hi def link qkTodo Todo
 hi def link qkLineComment Comment

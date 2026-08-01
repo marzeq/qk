@@ -164,11 +164,11 @@ pub let cstr.eq(self, other: cstr): bool {
 }
 
 pub let str.eq(self, other: str): bool {
-  if len(self) != len(other) {
+  if @len(self) != @len(other) {
     return false
   }
   let mut index: usz = 0
-  for index < len(self) {
+  for index < @len(self) {
     if self[index] != other[index] {
       return false
     }

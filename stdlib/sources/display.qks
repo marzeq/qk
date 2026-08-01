@@ -32,7 +32,7 @@ when HasDisplayPrimitives {
   }
 
   let str.display(self): void {
-    std.libc.printf(c"%.*s", len(self).(i32), self.(cstr))
+    std.libc.printf(c"%.*s", @len(self).(i32), self.(cstr))
   }
 
   let cstr.display(self): void { std.libc.printf(c"%s", self) }

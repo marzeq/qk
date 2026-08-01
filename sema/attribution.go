@@ -941,13 +941,13 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		operand := n.Operand.GetType()
 		if pointer, ok := types.Underlying(operand).(types.PointerType); ok {
 			if pointer.Mutable {
-				a.errorf(n, "repr does not permit mutable tagged union pointers")
+				a.errorf(n, "@repr does not permit mutable tagged union pointers")
 				n.SetType(types.ErrorType{})
 				break
 			}
 			repr, tagged := types.TaggedUnionRepr(pointer.Base)
 			if !tagged {
-				a.errorf(n, "repr requires an explicitly tagged union value or immutable pointer, got %v", operand)
+				a.errorf(n, "@repr requires an explicitly tagged union value or immutable pointer, got %v", operand)
 				n.SetType(types.ErrorType{})
 				break
 			}
@@ -956,7 +956,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		}
 		repr, tagged := types.TaggedUnionRepr(operand)
 		if !tagged {
-			a.errorf(n, "repr requires an explicitly tagged union value or immutable pointer, got %v", operand)
+			a.errorf(n, "@repr requires an explicitly tagged union value or immutable pointer, got %v", operand)
 			n.SetType(types.ErrorType{})
 			break
 		}

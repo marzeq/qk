@@ -59,13 +59,16 @@ ASCII digits. Identifiers are case-sensitive.
 The reserved words are:
 
 ```text
-alias alignof and as break continue defer else enum false for
-if import in len let match module mut nil not offsetof opaque or pub
-repr reprof return sizeof struct trait true type union
+alias and as break continue defer dyn else enum false for if import
+in let match module mut nil not opaque or pub return struct trait
+true type union when
 ```
 
 Primitive type names such as `i32` and `void` are predefined identifiers. They
 are not lexical keywords.
+
+Compiler builtins use `@name(...)` syntax. The current builtins are `@sizeof`,
+`@alignof`, `@offsetof`, `@len`, `@repr`, `@reprof`, and `@compiler_error`.
 
 ### 3.2 Whitespace and statement boundaries
 
@@ -609,7 +612,7 @@ let Pair<T> = type struct {
     right: T,
 }
 
-let layout_size<T>: usz = comptime sizeof(T) + 3
+let layout_size<T>: usz = comptime @sizeof(T) + 3
 ```
 
 Concrete type arguments use angle brackets:
@@ -880,7 +883,7 @@ The three-part form separates initializer, condition, and post statement with
 semicolons:
 
 ```qk
-for let mut i: usz = 0; i < len(items); i += 1 {
+for let mut i: usz = 0; i < @len(items); i += 1 {
     use(items[i])
 }
 ```
@@ -969,21 +972,21 @@ types.
 
 ### 12.5 Compile-time layout operations
 
-`sizeof` accepts a type or expression and produces its size as `usz`:
+`@sizeof` accepts a type or expression and produces its size as `usz`:
 
 ```qk
-sizeof(Header)
-sizeof(value)
+@sizeof(Header)
+@sizeof(value)
 ```
 
-`alignof` similarly produces alignment as `usz`. Expression operands of `sizeof`
-and `alignof` are not evaluated. Both require complete object types; `void` and
+`@alignof` similarly produces alignment as `usz`. Expression operands of `@sizeof`
+and `@alignof` are not evaluated. Both require complete object types; `void` and
 function types have no object alignment.
 
-`offsetof(Type, field)` produces a field offset as `usz` for structs and unions,
+`@offsetof(Type, field)` produces a field offset as `usz` for structs and unions,
 including promoted fields of anonymous unions.
 
-`len(value)` returns an array or slice length as `usz`. Array length is a
+`@len(value)` returns an array or slice length as `usz`. Array length is a
 compile-time constant.
 
 ### 12.6 Block expressions
@@ -1300,7 +1303,7 @@ let Token = type struct {
 ```
 
 Embedded-union fields are promoted for access, literals, method-name collision
-checks, and `offsetof`:
+checks, and `@offsetof`:
 
 ```qk
 let integer = token.integer
@@ -1338,7 +1341,7 @@ let Option<T> = type union(@auto) {
 
 The inferred members receive ordinary implicit enum values in declaration
 order, starting at zero. The generated enum is compiler-private: an `@auto`
-union exposes neither `.tag` nor the `repr`/`reprof` escape hatch. Constructors,
+union exposes neither `.tag` nor the `@repr`/`@reprof` escape hatch. Constructors,
 contextual `.Variant` construction, and exhaustive `match` work identically to
 explicitly tagged unions. Use `union(TagEnum)` when code needs custom tag values,
 a separately usable tag type, raw representation access, or a C-ABI-compatible
@@ -1386,11 +1389,11 @@ the enum tag followed by a payload union. Each non-empty payload is a struct;
 empty variants occupy only the tag. Padding and aggregate ABI classification
 therefore follow the same target rules as ordinary QK structs and unions.
 
-Use `repr(value)` to explicitly obtain that ordinary structure. Its type is
-written `reprof(T)`:
+Use `@repr(value)` to explicitly obtain that ordinary structure. Its type is
+written `@reprof(T)`:
 
 ```qk
-let raw: reprof(Option<str>) = repr(option)
+let raw: @reprof(Option<str>) = @repr(option)
 
 if raw.tag == .Some {
     std.println("{}", raw.payload.Some._0)
@@ -1418,22 +1421,22 @@ semantics, so it cannot be matched with variant patterns.
 An immutable pointer can be viewed without copying:
 
 ```qk
-let view: *reprof(Option<str>) = repr(option.&)
+let view: *@reprof(Option<str>) = @repr(option.&)
 ```
 
 Mutable pointers are rejected because changing the tag independently from the
-active payload could violate the tagged union's invariant. `repr` and `reprof`
+active payload could violate the tagged union's invariant. `@repr` and `@reprof`
 accept only explicitly tagged `union(TagEnum)` unions; `union(@auto)` keeps its
 tag and representation private.
 
 Nominal tagged unions cannot occur anywhere in a C-ABI `@foreign` or `@export`
 parameter or result type, including behind pointers or nested inside another
-aggregate. The explicit `reprof(T)` structure may cross the C ABI, provided its
+aggregate. The explicit `@reprof(T)` structure may cross the C ABI, provided its
 own fields are otherwise C-ABI-compatible:
 
 ```qk
-let consume(value: reprof(Option<i32>)): void @foreign
-let produce(): reprof(Option<i32>) @export = repr(Option<i32>.None)
+let consume(value: @reprof(Option<i32>)): void @foreign
+let produce(): @reprof(Option<i32>) @export = @repr(Option<i32>.None)
 ```
 
 Use `abi "qk"` when a QK function intentionally needs to expose the nominal
@@ -1580,7 +1583,7 @@ let fopen(path: cstr, mode: cstr): *FILE @foreign
 Opaque types must be nominal; a transparent opaque alias is invalid. They can be
 named, referenced, and passed behind pointers, but cannot be stored, passed, or
 returned by value. They also cannot appear by value inside structs, unions, or
-slices, participate in pointer arithmetic, or be used with `sizeof`/`alignof`.
+slices, participate in pointer arithmetic, or be used with `@sizeof`/`@alignof`.
 
 ## 22. Function types and callable values
 
@@ -2321,7 +2324,7 @@ pub let Point.translated(self, dx = 0.0, dy = 0.0: f64): Point {
 }
 
 pub let translate_all(points: []mut Point, dx, dy: f64) {
-    for i in 0..len(points) {
+    for i in 0..@len(points) {
         points[i] = points[i].translated(dx, dy)
     }
 }

@@ -139,7 +139,7 @@ let saturating_increment(value: usz): usz =
   if value != ~0.(usz) { value + 1 } else { value }
 
 let checked_size<T>(count: usz): (usz, bool) {
-  let element_size = sizeof(T)
+  let element_size = @sizeof(T)
 
   if element_size != 0 and count > (~0.(usz)) / element_size {
     return 0, false
@@ -201,9 +201,9 @@ pub let LibcAllocator.allocate_bytes(
     return nil, false
   }
 
-  let data_align = max_usz(align, alignof(LibcAllocationHeader))
+  let data_align = max_usz(align, @alignof(LibcAllocationHeader))
   let with_padding, valid_padding = checked_add(
-    sizeof(LibcAllocationHeader),
+    @sizeof(LibcAllocationHeader),
     data_align - 1,
   )
   if not valid_padding {
@@ -222,7 +222,7 @@ pub let LibcAllocator.allocate_bytes(
 
   let unaligned_data, valid_data = checked_add(
     allocation.(usz),
-    sizeof(LibcAllocationHeader),
+    @sizeof(LibcAllocationHeader),
   )
   let data_address, valid_alignment = checked_align_forward(
     unaligned_data,
@@ -234,7 +234,7 @@ pub let LibcAllocator.allocate_bytes(
   }
 
   let mut header =
-    (data_address - sizeof(LibcAllocationHeader)).(*mut LibcAllocationHeader)
+    (data_address - @sizeof(LibcAllocationHeader)).(*mut LibcAllocationHeader)
   header.allocation = allocation
   return data_address.(*mut void), true
 }
@@ -250,7 +250,7 @@ pub let LibcAllocator.free_bytes(
   }
 
   let header =
-    (ptr.(usz) - sizeof(LibcAllocationHeader)).(*LibcAllocationHeader)
+    (ptr.(usz) - @sizeof(LibcAllocationHeader)).(*LibcAllocationHeader)
   std.libc.free(header.allocation)
 }
 
@@ -392,8 +392,8 @@ let Arena.allocate_chunk(
     return nil
   }
 
-  let header_size = sizeof(ArenaChunk)
-  let data_align = max_usz(requested_align, alignof(ArenaChunk))
+  let header_size = @sizeof(ArenaChunk)
+  let data_align = max_usz(requested_align, @alignof(ArenaChunk))
 
   let with_padding, valid_padding = checked_add(
     header_size,
@@ -413,7 +413,7 @@ let Arena.allocate_chunk(
 
   let raw, allocated = self.backing.allocate_bytes(
     allocation_size,
-    alignof(ArenaChunk),
+    @alignof(ArenaChunk),
   )
   if not allocated or raw == nil {
     return nil
@@ -425,7 +425,7 @@ let Arena.allocate_chunk(
     data_align,
   )
   if not valid_data or not valid_alignment {
-    self.backing.free_bytes(raw, allocation_size, alignof(ArenaChunk))
+    self.backing.free_bytes(raw, allocation_size, @alignof(ArenaChunk))
     return nil
   }
 
@@ -683,7 +683,7 @@ pub let Arena.allocate<T>(
     return nil, false
   }
 
-  let result, allocated = self.allocate_bytes(size, alignof(T))
+  let result, allocated = self.allocate_bytes(size, @alignof(T))
   return result.(*mut T), allocated
 }
 
@@ -696,7 +696,7 @@ pub let Arena.allocate_zeroed<T>(
     return nil, false
   }
 
-  let result, allocated = self.allocate_bytes(size, alignof(T))
+  let result, allocated = self.allocate_bytes(size, @alignof(T))
   if not allocated {
     return nil, false
   }
@@ -723,7 +723,7 @@ pub let Arena.duplicate<T>(
   let result, allocated = self.duplicate_bytes(
     source,
     size,
-    alignof(T),
+    @alignof(T),
   )
   return result.(*mut T), allocated
 }
@@ -759,7 +759,7 @@ pub let Arena.free<T>(
     return
   }
 
-  self.free_bytes(ptr, size, alignof(T))
+  self.free_bytes(ptr, size, @alignof(T))
 }
 
 pub let Arena.resize<T>(
@@ -778,7 +778,7 @@ pub let Arena.resize<T>(
     ptr,
     old_size,
     new_size,
-    alignof(T),
+    @alignof(T),
   )
   return result.(*mut T), resized
 }
@@ -842,7 +842,7 @@ pub let Arena.rewind(*mut self, mark: ArenaMark): bool {
     self.backing.free_bytes(
       chunk,
       allocation_size,
-      alignof(ArenaChunk),
+      @alignof(ArenaChunk),
     )
     chunk = next
   }
@@ -868,7 +868,7 @@ pub let Arena.deinit(*mut self): void {
     self.backing.free_bytes(
       chunk,
       chunk.allocation_size,
-      alignof(ArenaChunk),
+      @alignof(ArenaChunk),
     )
     chunk = next
   }

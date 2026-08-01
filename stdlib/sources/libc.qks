@@ -13,7 +13,7 @@ pub let long = type
   else when PointerBits == 32 { i32 }
   else when PointerBits == 64 { i64 }
   else {
-    compiler_error("Unsupported pointer width")
+    @compiler_error("Unsupported pointer width")
   }
 
 pub let ulong = type
@@ -21,7 +21,7 @@ pub let ulong = type
   else when PointerBits == 32 { u32 }
   else when PointerBits == 64 { u64 }
   else {
-    compiler_error("Unsupported pointer width")
+    @compiler_error("Unsupported pointer width")
   }
 
 pub let time_t = type
@@ -34,7 +34,7 @@ pub let time_t = type
     else when OS == .Linux and PointerBits == 64 { i64 }
     else when OS == .Linux and PointerBits == 32 { i32 }
     else {
-    compiler_error("Unsupported time_t ABI")
+    @compiler_error("Unsupported time_t ABI")
   }
 
 pub let clock_t = type
@@ -230,7 +230,7 @@ when OS == .Linux
   pub let stderr = _acrt_iob_func(2)
 
 } else {
-  compiler_error("Unsupported OS")
+  @compiler_error("Unsupported OS")
 }
 
 // -----------------------------------------------------------------------------

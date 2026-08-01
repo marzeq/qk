@@ -41,7 +41,7 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 		operand := a.resolveTypeNodeAt(t.Operand, indirect)
 		repr, ok := types.TaggedUnionRepr(operand)
 		if !ok {
-			a.errorf(t, "reprof requires an explicitly tagged union type, got %v", operand)
+			a.errorf(t, "@reprof requires an explicitly tagged union type, got %v", operand)
 			return types.ErrorType{}
 		}
 		return repr

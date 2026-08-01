@@ -75,6 +75,10 @@ func (e *expander) expand() ([]tokeniser.Token, error) {
 			e.target.bindings = e.scopes[len(e.scopes)-1]
 			e.scopes = e.scopes[:len(e.scopes)-1]
 		}
+		if tok.Type == tokeniser.TokenAt && e.pos+1 < len(e.tokens) &&
+			e.tokens[e.pos+1].Type == tokeniser.TokenIdentifier && e.tokens[e.pos+1].Value == "compiler_error" {
+			return nil, e.compilerError()
+		}
 		if tok.Type == tokeniser.TokenKeyword {
 			switch tok.Value {
 			case string(tokeniser.KeywordLet):
@@ -102,8 +106,6 @@ func (e *expander) expand() ([]tokeniser.Token, error) {
 				}
 				result = append(result, selected...)
 				continue
-			case string(tokeniser.KeywordCompilerError):
-				return nil, e.compilerError()
 			}
 		}
 		if tok.Type == tokeniser.TokenIdentifier && e.isExtentReference() {
@@ -194,11 +196,11 @@ func (e *expander) isExtentReference() bool {
 
 func tokenStartsType(tok tokeniser.Token) bool {
 	switch tok.Type {
-	case tokeniser.TokenIdentifier, tokeniser.TokenAsterisk, tokeniser.TokenOpenSquare, tokeniser.TokenOpenParen:
+	case tokeniser.TokenIdentifier, tokeniser.TokenAsterisk, tokeniser.TokenOpenSquare, tokeniser.TokenOpenParen, tokeniser.TokenAt:
 		return true
 	case tokeniser.TokenKeyword:
 		switch tok.Value {
-		case string(tokeniser.KeywordReprof), string(tokeniser.KeywordDyn), string(tokeniser.KeywordMut),
+		case string(tokeniser.KeywordDyn), string(tokeniser.KeywordMut),
 			string(tokeniser.KeywordStruct), string(tokeniser.KeywordEnum), string(tokeniser.KeywordUnion),
 			string(tokeniser.KeywordOpaque), string(tokeniser.KeywordTrait):
 			return true
@@ -305,16 +307,17 @@ func whenContinuesPrevious(tokens []tokeniser.Token) bool {
 
 func (e *expander) compilerError() error {
 	directive := e.tokens[e.pos]
-	e.pos++
+	directive.Loc = directive.Loc.WithEnd(e.tokens[e.pos+1].Loc)
+	e.pos += 2
 	if e.pos >= len(e.tokens) || e.tokens[e.pos].Type != tokeniser.TokenOpenParen {
-		return shared.NewError(directive.Loc, "expected '(' after 'compiler_error'")
+		return shared.NewError(directive.Loc, "expected '(' after '@compiler_error'")
 	}
 	e.pos++
 	for e.pos < len(e.tokens) && e.tokens[e.pos].Type == tokeniser.TokenNewline {
 		e.pos++
 	}
 	if e.pos >= len(e.tokens) || e.tokens[e.pos].Type != tokeniser.TokenString {
-		return shared.NewError(directive.Loc, "expected a string message in 'compiler_error'")
+		return shared.NewError(directive.Loc, "expected a string message in '@compiler_error'")
 	}
 	message := e.tokens[e.pos].Value
 	e.pos++
@@ -322,7 +325,7 @@ func (e *expander) compilerError() error {
 		e.pos++
 	}
 	if e.pos >= len(e.tokens) || e.tokens[e.pos].Type != tokeniser.TokenCloseParen {
-		return shared.NewError(directive.Loc, "expected ')' after 'compiler_error' message")
+		return shared.NewError(directive.Loc, "expected ')' after '@compiler_error' message")
 	}
 	return shared.NewError(directive.Loc, "%s", message)
 }

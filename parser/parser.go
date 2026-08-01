@@ -122,6 +122,18 @@ func (p *Parser) Match(ttypes ...tokeniser.TokenKind) bool {
 	return slices.Contains(ttypes, ptype)
 }
 
+func (p *Parser) MatchBuiltin(name string) bool {
+	return p.Match(tokeniser.TokenAt) && p.Next().Type == tokeniser.TokenIdentifier && p.Next().Value == name
+}
+
+func (p *Parser) ConsumeBuiltin(name string) bool {
+	if !p.MatchBuiltin(name) {
+		return false
+	}
+	p.Inc().Inc()
+	return true
+}
+
 func (p *Parser) DumpCurrent() {
 	fmt.Printf("Current token: %v\n", p.Peek())
 }

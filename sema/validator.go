@@ -138,7 +138,7 @@ func (v *Validator) validateNode(node parser.Node) {
 				v.errorf(n.Args[i].Type, "trait pointers cannot cross the c ABI")
 			}
 			if usesCABI && types.HasTaggedUnion(param) {
-				v.errorf(n.Args[i].Type, "tagged unions cannot cross the c ABI; expose an explicitly tagged union through reprof(...) instead")
+				v.errorf(n.Args[i].Type, "tagged unions cannot cross the c ABI; expose an explicitly tagged union through @reprof(...) instead")
 			}
 			if _, array := types.Underlying(param).(types.ArrayType); usesCABI && array {
 				v.errorf(n.Args[i].Type, "arrays cannot be direct c ABI parameters; pass a pointer or wrap the array in a struct")
@@ -167,7 +167,7 @@ func (v *Validator) validateNode(node parser.Node) {
 		} else if usesCABI && ret != nil && types.HasTraitPointer(ret) {
 			v.errorf(n, "trait pointers cannot cross the c ABI")
 		} else if usesCABI && ret != nil && types.HasTaggedUnion(ret) {
-			v.errorf(n, "tagged unions cannot cross the c ABI; expose an explicitly tagged union through reprof(...) instead")
+			v.errorf(n, "tagged unions cannot cross the c ABI; expose an explicitly tagged union through @reprof(...) instead")
 		} else if _, array := types.Underlying(ret).(types.ArrayType); usesCABI && ret != nil && array {
 			v.errorf(n, "arrays cannot be returned directly through the c ABI; return a struct containing the array")
 		}
@@ -232,7 +232,7 @@ func (v *Validator) validateNode(node parser.Node) {
 			v.errorf(n, "cannot declare a value of incomplete type %v", n.Symbol.Type)
 		}
 		if n.Attributes.Get(attributes.AttributeTypeForeign) != nil && types.HasTaggedUnion(n.Symbol.Type) {
-			v.errorf(n, "tagged unions cannot cross a foreign boundary; expose an explicitly tagged union through reprof(...) instead")
+			v.errorf(n, "tagged unions cannot cross a foreign boundary; expose an explicitly tagged union through @reprof(...) instead")
 		}
 		if v.currentFunction != nil {
 			v.warnIfUnused(n.Symbol, n.NameLoc, shared.WarningUnusedVariable, "variable")
@@ -1798,30 +1798,30 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 
 	case *parser.SizeOfNode:
 		if types.Underlying(n.OperandType).Equals(types.PrimitiveVoid) {
-			v.errorf(n, "sizeof requires an object type, got void")
+			v.errorf(n, "@sizeof requires an object type, got void")
 		} else if !types.IsComplete(n.OperandType) {
-			v.errorf(n, "sizeof requires a complete type, got %v", n.OperandType)
+			v.errorf(n, "@sizeof requires a complete type, got %v", n.OperandType)
 		}
 
 	case *parser.SizeOfExprNode:
 		v.validateExpr(n.Operand)
 		if types.Underlying(n.OperandType).Equals(types.PrimitiveVoid) {
-			v.errorf(n, "sizeof requires an object expression, got void")
+			v.errorf(n, "@sizeof requires an object expression, got void")
 		} else if !types.IsComplete(n.OperandType) {
-			v.errorf(n, "sizeof requires a complete type, got %v", n.OperandType)
+			v.errorf(n, "@sizeof requires a complete type, got %v", n.OperandType)
 		}
 
 	case *parser.AlignOfNode:
 		if !types.IsComplete(n.OperandType) {
-			v.errorf(n, "alignof requires a complete type, got %v", n.OperandType)
+			v.errorf(n, "@alignof requires a complete type, got %v", n.OperandType)
 			break
 		}
 		switch operand := types.Underlying(n.OperandType).(type) {
 		case types.FunctionType:
-			v.errorf(n, "alignof requires an object type, got %v", n.OperandType)
+			v.errorf(n, "@alignof requires an object type, got %v", n.OperandType)
 		case types.PrimitiveType:
 			if operand == types.PrimitiveVoid {
-				v.errorf(n, "alignof requires an object type, got void")
+				v.errorf(n, "@alignof requires an object type, got void")
 			}
 		}
 
