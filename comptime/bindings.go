@@ -51,6 +51,7 @@ func ResolvePackageBindings(sources map[string]string, packagePaths map[string]s
 	values := make(map[string]Value, len(declarations))
 	target := targetFromTriple(config.TargetTriple)
 	target.noLibc, target.noStdlib = config.NoLibc, config.NoStdlib
+	target.releaseMode = config.ReleaseMode
 	state := map[string]uint8{}
 	var resolve func(string, shared.Location) (Value, error)
 	resolve = func(key string, loc shared.Location) (Value, error) {

@@ -72,6 +72,7 @@ type Args struct {
 	static       bool
 	noLibc       bool
 	noStdlib     bool
+	release      bool
 	stdlibPath   string
 	noEmit       bool
 	target       string
@@ -310,6 +311,10 @@ func (p *argumentParser) parseCurrent() error {
 		p.args.noStdlib = true
 		p.index++
 
+	case tok == "-release":
+		p.args.release = true
+		p.index++
+
 	case tok == "-stdlib":
 		value, err := p.nextValue(tok)
 		if err != nil {
@@ -437,6 +442,7 @@ func printUsage() {
 	fmt.Println("  -static            Link with static libraries")
 	fmt.Println("  -nolibc            Do not link against the C standard library")
 	fmt.Println("  -nostdlib          Do not load the embedded QK standard library")
+	fmt.Println("  -release           Select .Release for the compile-time ReleaseMode value")
 	fmt.Println("  -stdlib <dir>      Trust and use an external QK standard-library source tree")
 	fmt.Println("  -I <dir>           Add a package search root (can be repeated)")
 	fmt.Println("  -l <lib>           Link with library <lib> (can specify multiple times)")

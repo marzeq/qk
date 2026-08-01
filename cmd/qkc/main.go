@@ -26,7 +26,16 @@ func main() {
 	cleanupModuleObjectCache(args.verbose)
 
 	searchPaths := buildSearchPaths(args.packageRoot, args.packagePaths)
-	comptimeConfig := comptime.Config{TargetTriple: args.target, NoLibc: args.noLibc, NoStdlib: args.noStdlib}
+	releaseMode := comptime.ReleaseModeDebug
+	if args.release {
+		releaseMode = comptime.ReleaseModeRelease
+	}
+	comptimeConfig := comptime.Config{
+		TargetTriple: args.target,
+		NoLibc:       args.noLibc,
+		NoStdlib:     args.noStdlib,
+		ReleaseMode:  releaseMode,
+	}
 	embeddedStdlibSources, err := stdlib.ReadSources()
 	check(err)
 	selectedStdlibSources := embeddedStdlibSources

@@ -23,9 +23,17 @@ type Config struct {
 	TargetTriple   string
 	NoLibc         bool
 	NoStdlib       bool
+	ReleaseMode    ReleaseMode
 	PackagePath    string
 	ModuleBindings map[string]Value
 }
+
+type ReleaseMode uint8
+
+const (
+	ReleaseModeDebug ReleaseMode = iota
+	ReleaseModeRelease
+)
 
 // Expand evaluates compile-time declarations and selects compile-time branches,
 // returning the token stream that should continue through the compiler pipeline.
@@ -33,6 +41,7 @@ func Expand(tokens []tokeniser.Token, config Config) ([]tokeniser.Token, error) 
 	target := targetFromTriple(config.TargetTriple)
 	target.noLibc = config.NoLibc
 	target.noStdlib = config.NoStdlib
+	target.releaseMode = config.ReleaseMode
 	target.bindings = cloneValues(config.ModuleBindings)
 	currentModule := config.PackagePath
 	if currentModule == "" {
@@ -507,6 +516,7 @@ type targetValues struct {
 	pointerBits int64
 	noLibc      bool
 	noStdlib    bool
+	releaseMode ReleaseMode
 	bindings    map[string]Value
 }
 
@@ -530,6 +540,12 @@ func evaluate(node parser.ExpressionNode, target targetValues, resolveBinding fu
 			return Value{kind: valueEnum, domain: "Arch", name: target.arch}, nil
 		case "Environment":
 			return Value{kind: valueEnum, domain: "Environment", name: target.environment}, nil
+		case "ReleaseMode":
+			name := "Debug"
+			if target.releaseMode == ReleaseModeRelease {
+				name = "Release"
+			}
+			return Value{kind: valueEnum, domain: "ReleaseMode", name: name}, nil
 		case "PointerBits":
 			return Value{kind: valueInteger, integer: big.NewInt(target.pointerBits)}, nil
 		case "NoLibc":
@@ -699,6 +715,7 @@ func validVariant(domain, variant string) bool {
 		"OS":          {"Windows", "Linux", "MacOS", "FreeBSD", "OpenBSD", "NetBSD", "DragonFly", "WASI"},
 		"Arch":        {"X86", "X86_64", "ARM32", "AArch64", "Wasm32", "Wasm64"},
 		"Environment": {"GNU", "MSVC", "Musl", "Unknown"},
+		"ReleaseMode": {"Release", "Debug"},
 	}
 	return slices.Contains(values[domain], variant)
 }

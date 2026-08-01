@@ -296,17 +296,22 @@ when NoLibc {
 }
 ```
 
-| Value | True when |
+| Value | Meaning |
 | --- | --- |
-| `NoLibc` | The compiler was invoked with `-nolibc`. |
-| `NoStdlib` | The compiler was invoked with `-nostdlib`. |
+| `NoLibc` | `true` when the compiler was invoked with `-nolibc`. |
+| `NoStdlib` | `true` when the compiler was invoked with `-nostdlib`. |
+| `ReleaseMode` | `.Release` when the compiler was invoked with `-release`; `.Debug` otherwise. |
 
-These booleans can be combined with `OS`, `Arch`, `Environment`, and
-`PointerBits`:
+These configuration values can be combined with `OS`, `Arch`, `Environment`,
+and `PointerBits`:
 
 ```qk
 when NoLibc and OS == .Linux and Arch == .X86_64 {
     // Linux x86-64 freestanding code.
+}
+
+when ReleaseMode == .Release {
+    // Release-only source.
 }
 ```
 
