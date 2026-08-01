@@ -8,9 +8,9 @@ let LibcAllocationHeader = type struct {
   allocation: *mut void,
 }
 
-// LibcAllocator adapts malloc/free to Allocator and RawAllocator. It supports
-// arbitrary power-of-two alignment by retaining the original allocation in a
-// header immediately before the aligned result.
+// LibcAllocator adapts malloc/free to Allocator. It supports arbitrary
+// power-of-two alignment by retaining the original allocation in a header
+// immediately before the aligned result.
 pub let LibcAllocator = type struct {
   state: u8,
 }
@@ -157,9 +157,5 @@ pub let LibcAllocator.resize<T>(
   )
   return result.(*mut T), resized
 }
-
-// LibcAllocator does not track its allocations, so individual allocations
-// must be released with free().
-pub let LibcAllocator.free_all(*mut self): void {}
 
 }

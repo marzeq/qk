@@ -12,6 +12,7 @@ pub let Reader = type trait {
 
 when HasIO {
 import std
+import std.alloc
 import std.libc
 
 pub let FileWriter = type struct {
@@ -22,12 +23,16 @@ pub let FileReader = type struct {
   file: *std.libc.FILE,
 }
 
-pub let FileWriter.open(path: str, append: bool = false): FileWriter {
-  let c_path = path.to_cstr()
+pub let FileWriter.open(
+  path: str,
+  allocator: mut dyn std.alloc.Allocator,
+  append: bool = false,
+): FileWriter {
+  let c_path = path.to_cstr(allocator)
   if c_path == nil { return .{ file=nil } }
 
   let file = std.libc.fopen(c_path, if append { c"ab" } else { c"wb" })
-  std.libc.free(c_path)
+  allocator.free_bytes(c_path, @len(path) + 1, @alignof(char))
   return .{ file=file }
 }
 
@@ -50,12 +55,15 @@ pub let FileWriter.close(*mut self): bool {
   return std.libc.fclose(file) == 0
 }
 
-pub let FileReader.open(path: str): FileReader {
-  let c_path = path.to_cstr()
+pub let FileReader.open(
+  path: str,
+  allocator: mut dyn std.alloc.Allocator,
+): FileReader {
+  let c_path = path.to_cstr(allocator)
   if c_path == nil { return .{ file=nil } }
 
   let file = std.libc.fopen(c_path, c"rb")
-  std.libc.free(c_path)
+  allocator.free_bytes(c_path, @len(path) + 1, @alignof(char))
   return .{ file=file }
 }
 

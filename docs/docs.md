@@ -2002,40 +2002,50 @@ method arguments are eagerly evaluated and cannot preserve short-circuiting.
 
 ### 26.3 Allocation
 
-The `std.alloc` module defines a static-only generic `Allocator` trait:
+The `std.alloc` module defines one dynamically usable, byte-oriented
+`Allocator` trait:
 
 ```qk
 pub let Allocator = type trait {
-    let new<T>(*mut self): (*mut T, bool)
-    let allocate<T>(*mut self, count: usz): (*mut T, bool)
-    let free<T>(*mut self, ptr: *mut T, count: usz): void
-    let resize<T>(
+    let allocate_bytes(
         *mut self,
-        ptr: *mut T,
-        old_count: usz,
-        new_count: usz,
-    ): (*mut T, bool)
-    let free_all(*mut self): void
+        size: usz,
+        align: usz,
+    ): (*mut void, bool)
+    let free_bytes(
+        *mut self,
+        ptr: *mut void,
+        size: usz,
+        align: usz,
+    ): void
+    let resize_bytes(
+        *mut self,
+        ptr: *mut void,
+        old_size: usz,
+        new_size: usz,
+        align: usz,
+    ): (*mut void, bool)
 }
 ```
 
-Sizes and alignments come from `T`; callers pass element counts rather than byte
-sizes. Allocation and resize return the pointer and an explicit success flag.
-A zero-element allocation succeeds with `nil`, while a count-to-byte-size
-overflow fails without calling the allocator.
+Allocation and resize return the pointer and an explicit success flag, so a
+successful zero-byte operation (`nil, true`) is distinct from invalid alignment
+or allocation failure (`nil, false`). Resize uses the supplied alignment for
+both the old and new allocation. Standard-library operations that allocate
+memory take an explicit `mut dyn std.alloc.Allocator`; there is no implicit
+global allocator.
 
-Byte-oriented allocators implement the separate, dynamically usable
-`RawAllocator` trait. Its allocation and resize operations return
-`(*mut void, bool)`, so a successful zero-byte operation (`nil, true`) is
-distinct from invalid alignment or allocation failure (`nil, false`). Resize
-uses the supplied alignment for both the old and new allocation.
+For example, `str.to_cstr(allocator)` allocates its NUL-terminated copy through
+the supplied allocator and returns `nil` if the allocator is nil or allocation
+fails. The caller owns the returned `@len(string) + 1` bytes and must release
+them with the same allocator.
 
 Hosted builds provide `std.alloc.LibcAllocator`, an alignment-aware
-implementation of both `Allocator` and `RawAllocator`. It stores the original
-`malloc` pointer before each aligned result, uses `free` for reclamation, and
-implements resize by allocating, copying, and freeing. It does not track live
-allocations, so its `free_all` operation is a no-op and callers must release
-individual allocations with `free`.
+`Allocator` implementation. It stores the original `malloc` pointer before
+each aligned result, uses `free` for reclamation, and implements resize by
+allocating, copying, and freeing. Concrete `LibcAllocator` and `Arena` values
+also provide generic element-count convenience methods such as `new<T>`,
+`allocate<T>`, and `resize<T>`.
 
 `std.alloc.Arena` is available only in hosted builds and allocates its chunks
 directly with libc `malloc` and `free`; it does not accept a configurable
@@ -2059,9 +2069,9 @@ and `allocation_count` statistics. It also provides `new_zeroed`,
 allocation remains uninitialized. The arena is single-threaded, and bulk
 reclamation does not run destructors.
 
-Because `Allocator` has generic methods, it is used through concrete values,
-static trait views, or `A: std.alloc.Allocator` constraints rather than
-`dyn std.alloc.Allocator`.
+Because `Allocator` contains no generic methods, APIs may accept it through
+`mut dyn std.alloc.Allocator` while remaining independent of the concrete
+allocation strategy.
 
 ### 26.4 I/O and formatting
 
@@ -2083,12 +2093,13 @@ further progress was made; for readers it also represents end of file. The
 number written.
 
 `std.io.FileWriter` and `std.io.FileReader` adapt C `FILE` streams. Their `open`
-methods accept a `str` path and return a wrapper whose `is_open()` method reports
-whether opening succeeded. The temporary NUL-terminated path passed to libc is
-freed before `open` returns. `from_file` wraps an existing `*std.libc.FILE`, and
-`close` closes a stream. File writers additionally provide `flush`. The mutable
-globals `std.io.stdout`, `std.io.stderr`, and `std.io.stdin` wrap the process
-streams.
+methods accept a `str` path and an explicit `mut dyn std.alloc.Allocator`, then
+return a wrapper whose `is_open()` method reports whether opening succeeded.
+The temporary NUL-terminated path passed to libc is allocated and freed through
+that allocator before `open` returns. `from_file` wraps an existing
+`*std.libc.FILE`, and `close` closes a stream. File writers additionally provide
+`flush`. The mutable globals `std.io.stdout`, `std.io.stderr`, and
+`std.io.stdin` wrap the process streams.
 
 The module also defines `std.io.Format`, whose value-receiver method receives
 the destination writer:
