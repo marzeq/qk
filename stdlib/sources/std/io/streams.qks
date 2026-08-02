@@ -58,8 +58,9 @@ pub let FileWriter.close(*mut self): bool {
 
 pub let FileReader.open(
   path: str,
-  allocator: mut dyn std.alloc.Allocator,
 ): FileReader {
+  let mut lc = std.alloc.LibcAllocator.init()
+  let allocator = lc.(mut dyn std.alloc.Allocator)
   let c_path = path.to_cstr(allocator)
   if c_path == nil { return .{ file=nil } }
 
