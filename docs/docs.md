@@ -48,7 +48,7 @@ QK strongly encourages the use of immutable variables, but mutable variables can
 let mut x: i32 = 5
 ```
 
-# Ressignments
+## Ressignments
 
 Mutable variables can be reassigned with the `=` operator:
 
@@ -56,7 +56,7 @@ Mutable variables can be reassigned with the `=` operator:
 x = 10
 ```
 
-# Unitialised variables
+## Unitialised variables
 
 If you wish to declare a variable without initialising it, you can use the special `---` syntax:
 
@@ -126,4 +126,112 @@ QK follows the C/C++-style comment tradition:
 */
 ```
 
-**TODO: FINISH DOCS.**
+# Modules
+
+QK's module system is inspired by Go's module system - that is, the semantic names of modules follow the directory structure of the project. For example, a files belonging to the `foo.bar` module would live in the `foo/bar` directory. The module name is declared at the top of the file:
+
+```qk
+module foo.bar
+```
+
+Just like Go, there is a special `main` module that is the entry point of the program. The `main` module must contain a `main()` function, which is the first function to be executed when the program starts. A project can have multiple main modules, and the convention is to put them in a `cmd` directory. For example, a project with two main modules would have the following structure:
+
+```
+cmd/
+  foo/
+    main.qk
+  bar/
+    main.qk
+```
+
+The semantic name to directory structure mapping is done from the current working directory where the compiler is invoked.
+
+A directory cannot have multiple files declaring different modules.
+
+## `import` statement
+
+Packages can be imported with the following `import` statement:
+
+```qk
+import std.io // available under `std.io`
+import foo.bar.baz baz // available under `baz`
+
+import (
+  std.alloc
+  std.math
+) // multiple imports can be grouped together
+```
+
+## Symbol visibility
+
+All symbols by default are not visible outside of the module they are declared in. To make a symbol visible outside of the module, it must be prefixed with the `pub` keyword:
+
+```qk
+pub let x: i32 = 42 // visible outside of the module
+
+pub let foo() {
+  // ...
+} // also visible outside of the module
+```
+
+# Control flow
+
+## `for` statement
+
+QK inherits Go's `for` statement, which can be used like:
+
+```qk
+for {
+  // infinite loop, equivalent to while (true) in C
+}
+
+for condition {
+  // loop while condition is true, equivalent to while (condition) in C
+}
+
+for let mut i: i32 = 0; i < 10; i++ {
+  // loop with an initialisation, condition and post statement, equivalent to for (int i = 0; i < 10; i++) in C
+}
+```
+
+QK also supports range and iteration over supported built-in types, such as arrays, slices and strings:
+
+```qk
+for x in 0..10 {
+  // loop from 0 to 9, inclusive
+}
+
+for x in 0..=10 {
+  // loop from 0 to 10, inclusive
+}
+
+for elem in sl {
+  // loop over each element in slice sl
+}
+
+for elem in arr {
+  // loop over each element in array arr
+}
+
+for ch in s {
+  // loop over each character in string s
+}
+```
+
+### `break` and `continue`
+
+Just like in any other C-like language, `break` and `continue` can be used to control the flow of loops:
+
+```qk
+for let mut i: i32 = 0; i < 10; i++ {
+  if i == 5 {
+    break // exit the loop when i is 5
+  }
+  if i % 2 == 0 {
+    continue // skip the rest of the loop when i is even
+  }
+  std.io.println("{}", i)
+}
+```
+
+**TODO: finish docs.**
