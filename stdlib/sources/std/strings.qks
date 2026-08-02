@@ -27,6 +27,32 @@ pub let cstr.to_str(self): str =
 
 import std.alloc
 
+pub let str.read(*mut self, buffer: []mut u8): usz {
+  let count = if @len(buffer) < @len(self.*) { @len(buffer) } else { @len(self.*) }
+
+  let mut index: usz = 0
+  for index < count {
+    buffer[index] = self.*[index]
+    index += 1
+  }
+  self.* = self.*[count:]
+  return count
+}
+
+pub let cstr.read(*mut self, buffer: []mut u8): usz {
+  if self.* == nil {
+    return 0
+  }
+
+  let mut count: usz = 0
+  for count < @len(buffer) and self.*[count] != '\0' {
+    buffer[count] = self.*[count]
+    count += 1
+  }
+  self.* = self.* + count.(isz)
+  return count
+}
+
 // important: due to us not being able to guarantee that self contains a null terminator,
 // this method is forced to allocate a new buffer and copy the contents of self into it, appending a null terminator at the end
 pub let str.to_cstr(self, allocator: mut dyn std.alloc.Allocator): *mut u8 {

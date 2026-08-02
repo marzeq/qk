@@ -20,8 +20,8 @@ let format_print_argument(
 }
 
 pub let wprint(
-  format: str,
   writer: mut dyn Writer,
+  format: str,
   arguments: ...dyn Any
 ): void {
   let mut format_index: usz = 0
@@ -77,11 +77,11 @@ pub let wprint(
 }
 
 pub let wprintln(
-  format: str,
   writer: mut dyn Writer,
+  format: str,
   arguments: ...dyn Any
 ): void {
-  wprint(format, writer, arguments...)
+  wprint(writer, format, arguments...)
   write_byte(writer, '\n')
 }
 
@@ -91,14 +91,14 @@ pub let print(
   format: str,
   arguments: ...dyn Any
 ): void {
-  wprint(format, stdout.&mut.(mut dyn Writer), arguments...)
+  wprint(stdout.&mut.(mut dyn Writer), format, arguments...)
 }
 
 pub let println(
   format: str,
   arguments: ...dyn Any
 ): void {
-  wprintln(format, stdout.&mut.(mut dyn Writer), arguments...)
+  wprintln(stdout.&mut.(mut dyn Writer), format, arguments...)
 }
 
 pub let fprint(
@@ -106,7 +106,7 @@ pub let fprint(
   file: *mut FileWriter,
   arguments: ...dyn Any
 ): void {
-  wprint(format, file.(mut dyn Writer), arguments...)
+  wprint(file.(mut dyn Writer), format, arguments...)
 }
 
 pub let fprintln(
@@ -114,21 +114,21 @@ pub let fprintln(
   file: *mut FileWriter,
   arguments: ...dyn Any
 ): void {
-  wprintln(format, file.(mut dyn Writer), arguments...)
+  wprintln(file.(mut dyn Writer), format, arguments...)
 }
 
 pub let eprint(
   format: str,
   arguments: ...dyn Any
 ): void {
-  wprint(format, stderr.&mut.(mut dyn Writer), arguments...)
+  wprint(stderr.&mut.(mut dyn Writer), format, arguments...)
 }
 
 pub let eprintln(
   format: str,
   arguments: ...dyn Any
 ): void {
-  wprintln(format, stderr.&mut.(mut dyn Writer), arguments...)
+  wprintln(stderr.&mut.(mut dyn Writer), format, arguments...)
 }
 
 }

@@ -1,0 +1,112 @@
+module std.strings
+
+import std.alloc
+import std.io
+
+pub let StringBuilder = type struct {
+  allocator: mut dyn std.alloc.Allocator,
+  ptr: *mut u8,
+  count: usz,
+  capacity: usz,
+  read_offset: usz,
+}
+
+pub let StringBuilder.init(
+  allocator: mut dyn std.alloc.Allocator,
+): StringBuilder = .{
+  allocator=allocator,
+  ptr=nil,
+  count=0,
+  capacity=0,
+  read_offset=0,
+}
+
+pub let StringBuilder.as_str(self): str {
+  let bytes: []u8 = self.ptr[0:self.count]
+  return bytes.(str)
+}
+
+pub let StringBuilder.ensure_capacity(
+  *mut self,
+  minimum_capacity: usz,
+): bool {
+  if minimum_capacity <= self.capacity {
+    return true
+  }
+
+  let mut new_capacity: usz = if self.capacity == 0 { 8 } else { self.capacity }
+  for new_capacity < minimum_capacity {
+    if new_capacity > (~0.(usz)) / 2 {
+      new_capacity = minimum_capacity
+    } else {
+      new_capacity *= 2
+    }
+  }
+
+  let resized, success = std.alloc.resize<u8>(
+    self.allocator,
+    self.ptr[0:self.capacity],
+    new_capacity,
+  )
+  if not success {
+    return false
+  }
+
+  self.ptr = resized.(*mut u8)
+  self.capacity = new_capacity
+  return true
+}
+
+pub let StringBuilder.write(*mut self, bytes: []u8): usz {
+  if @len(bytes) == 0 {
+    return 0
+  }
+  if @len(bytes) > (~0.(usz)) - self.count {
+    return 0
+  }
+  if not self.ensure_capacity(self.count + @len(bytes)) {
+    return 0
+  }
+
+  let mut index: usz = 0
+  for index < @len(bytes) {
+    self.ptr[self.count + index] = bytes[index]
+    index += 1
+  }
+  self.count += @len(bytes)
+  return @len(bytes)
+}
+
+pub let StringBuilder.read(*mut self, buffer: []mut u8): usz {
+  let remaining = self.count - self.read_offset
+  let count = if @len(buffer) < remaining { @len(buffer) } else { remaining }
+
+  let mut index: usz = 0
+  for index < count {
+    buffer[index] = self.ptr[self.read_offset + index]
+    index += 1
+  }
+  self.read_offset += count
+  return count
+}
+
+pub let StringBuilder.format(self, writer: mut dyn std.io.Writer): void {
+  std.io.write_all(writer, self.as_str().([]u8))
+}
+
+pub let StringBuilder.reset_reader(*mut self): void {
+  self.read_offset = 0
+}
+
+pub let StringBuilder.clear(*mut self): void {
+  self.count = 0
+  self.read_offset = 0
+}
+
+pub let StringBuilder.deinit(*mut self): void {
+  std.alloc.free<u8>(self.allocator, self.ptr[0:self.capacity])
+  self.ptr = nil
+  self.count = 0
+  self.capacity = 0
+  self.read_offset = 0
+}

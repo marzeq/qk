@@ -77,6 +77,17 @@ pub let FileReader.read(*mut self, buffer: []mut u8): usz {
   return std.libc.fread(buffer.(*mut u8), 1, @len(buffer), self.file)
 }
 
+pub let FileReader.format(self, writer: mut dyn Writer): void {
+  let mut reader = self
+  let mut buffer: [4096]u8 = ---
+
+  for true {
+    let count = reader.read(buffer[:])
+    if count == 0 { break }
+    if write_all(writer, buffer[0:count]) != count { break }
+  }
+}
+
 pub let FileReader.close(*mut self): bool {
   if self.file == nil { return true }
   let file = self.file
