@@ -1097,9 +1097,6 @@ func (g *Generator) generateRangeFor(node *parser.RangeForNode) {
 }
 
 func (g *Generator) generateForEach(node *parser.ForEachNode) {
-	if node.Symbol == nil {
-		panic("for-each loop symbol is nil")
-	}
 	iterableType := types.Underlying(node.Iterable.GetType())
 	switch iterableType.(type) {
 	case types.SliceType, types.ArrayType:
@@ -1128,9 +1125,18 @@ func (g *Generator) generateForEach(node *parser.ForEachNode) {
 	} else {
 		g.Emit(ir.Store{Slot: indexSlot, Value: ir.IntConstOperand("0", types.PrimitiveUsz)})
 	}
-	elementSlot := g.currentFunction.NewSlot(node.Symbol.Type, node.Name)
-	g.currentEnv.Variables[node.Symbol] = elementSlot
-	g.Emit(ir.Alloca{Slot: elementSlot})
+	var elementSlot ir.SlotID
+	if node.Symbol != nil {
+		elementSlot = g.currentFunction.NewSlot(node.Symbol.Type, node.Name)
+		g.currentEnv.Variables[node.Symbol] = elementSlot
+		g.Emit(ir.Alloca{Slot: elementSlot})
+	}
+	var visibleIndexSlot ir.SlotID
+	if node.IndexSymbol != nil {
+		visibleIndexSlot = g.currentFunction.NewSlot(types.PrimitiveUsz, node.IndexName)
+		g.currentEnv.Variables[node.IndexSymbol] = visibleIndexSlot
+		g.Emit(ir.Alloca{Slot: visibleIndexSlot})
+	}
 
 	conditionBlock := g.currentFunction.NewBlock("for.each.condition")
 	bodyBlock := g.currentFunction.NewBlock("for.each.body")
@@ -1162,7 +1168,12 @@ func (g *Generator) generateForEach(node *parser.ForEachNode) {
 		g.Emit(ir.Sub{Dest: previousIndex, Left: index, Right: ir.IntConstOperand("1", types.PrimitiveUsz)})
 		elementIndex = ir.ValueOperand(previousIndex, types.PrimitiveUsz)
 	}
-	g.storeForEachElement(iterableSlot, iterableType, elementIndex, elementSlot)
+	if node.Symbol != nil {
+		g.storeForEachElement(iterableSlot, iterableType, elementIndex, elementSlot)
+	}
+	if node.IndexSymbol != nil {
+		g.Emit(ir.Store{Slot: visibleIndexSlot, Value: elementIndex})
+	}
 	popLoop := g.pushLoopTargets(endBlock.ID, postBlock.ID)
 	g.generateBlock(node.Body)
 	popLoop()

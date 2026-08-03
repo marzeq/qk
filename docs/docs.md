@@ -217,6 +217,18 @@ for ch in s {
   // loop over each character in string s
 }
 
+for elem, index in sl {
+  // index has type usz and is the position of elem in sl
+}
+
+for _, index in s {
+  // discard each byte and use only its index
+}
+
+for elem, _ in sl {
+  // explicitly discard the index
+}
+
 for elem in sl @reversed {
   // loop over the slice from its last element to its first
 }
@@ -232,7 +244,9 @@ for x in 0..=10 @reversed {
 
 The postfix `@reversed` iteration attribute is supported on ranges, arrays,
 slices and strings. The iterable expression and range bounds are still
-evaluated exactly once.
+evaluated exactly once. Array, slice and string iteration may bind an optional
+second `usz` index after the element binding. Either binding may be `_`; under
+`@reversed`, the index remains the element's position in the original sequence.
 
 ### `break` and `continue`
 

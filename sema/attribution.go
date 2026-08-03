@@ -247,6 +247,9 @@ func (a *Attributor) attributeNode(node parser.Node) {
 				n.Symbol.Type = iterable.Base
 			}
 		}
+		if n.IndexSymbol != nil {
+			n.IndexSymbol.Type = types.PrimitiveUsz
+		}
 		a.attributeNode(n.Body)
 
 	case *parser.ControlKeywordNode:

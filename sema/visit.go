@@ -433,13 +433,26 @@ func (a *Analyser) visitForEach(n *parser.ForEachNode) {
 		elementType = iterable.Base
 	}
 
-	sym := &symbols.Symbol{
-		Name: n.Name,
-		Kind: symbols.SymbolKindVariable,
-		Type: elementType,
+	if n.Name != "_" {
+		sym := &symbols.Symbol{
+			Name: n.Name,
+			Kind: symbols.SymbolKindVariable,
+			Type: elementType,
+		}
+		if a.defineSymbol(sym, n) {
+			n.Symbol = sym
+		}
 	}
-	if a.defineSymbol(sym, n) {
-		n.Symbol = sym
+
+	if n.IndexName != "" && n.IndexName != "_" {
+		indexSym := &symbols.Symbol{
+			Name: n.IndexName,
+			Kind: symbols.SymbolKindVariable,
+			Type: types.PrimitiveUsz,
+		}
+		if a.defineSymbol(indexSym, n) {
+			n.IndexSymbol = indexSym
+		}
 	}
 
 	a.visitBlock(n.Body)

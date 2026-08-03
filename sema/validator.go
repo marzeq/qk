@@ -1032,8 +1032,14 @@ func (v *Validator) validateForEach(n *parser.ForEachNode) {
 	if n.Symbol != nil {
 		n.Symbol.Type = element
 	}
+	if n.IndexSymbol != nil {
+		n.IndexSymbol.Type = types.PrimitiveUsz
+	}
 	v.validateNode(n.Body)
 	v.warnIfUnused(n.Symbol, n.NameLoc, shared.WarningUnusedVariable, "variable")
+	if n.IndexName != "" {
+		v.warnIfUnused(n.IndexSymbol, n.IndexNameLoc, shared.WarningUnusedVariable, "variable")
+	}
 }
 
 func (v *Validator) validateReturn(n *parser.ControlKeywordNode) {

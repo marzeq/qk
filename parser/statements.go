@@ -1621,9 +1621,7 @@ func (p *Parser) ParseForLoop() (Node, error) {
 		p.Inc()
 	}
 
-	if p.Match(tokeniser.TokenIdentifier) &&
-		p.Next().Type == tokeniser.TokenKeyword &&
-		p.Next().Value == string(tokeniser.KeywordIn) {
+	if p.matchesRangeOrForEachHeader() {
 		return p.parseRangeOrForEach(beginLoc)
 	}
 
@@ -1678,6 +1676,14 @@ func (p *Parser) parseRangeOrForEach(beginLoc shared.Location) (Node, error) {
 	if !ok {
 		return nil, shared.NewError(p.PrevLoc(), "expected loop variable name")
 	}
+	var indexName *tokeniser.Token
+	if p.Match(tokeniser.TokenComma) {
+		p.Inc()
+		indexName, ok = p.ExpectGet(tokeniser.TokenIdentifier)
+		if !ok {
+			return nil, shared.NewError(p.PrevLoc(), "expected index variable name after ','")
+		}
+	}
 	if kw, ok := p.ExpectGet(tokeniser.TokenKeyword); !ok || kw.Value != string(tokeniser.KeywordIn) {
 		return nil, shared.NewError(p.PrevLoc(), "expected 'in' in for loop")
 	}
@@ -1697,6 +1703,9 @@ func (p *Parser) parseRangeOrForEach(beginLoc shared.Location) (Node, error) {
 		end, err := p.ParseExpression()
 		if err != nil {
 			return nil, err
+		}
+		if indexName != nil {
+			return nil, shared.NewError(indexName.Loc, "range iteration accepts exactly one variable")
 		}
 		reversed, err := p.parseIterationAttributes()
 		if err != nil {
@@ -1726,14 +1735,37 @@ func (p *Parser) parseRangeOrForEach(beginLoc shared.Location) (Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &ForEachNode{
+	node := &ForEachNode{
 		Name:     name.Value,
 		NameLoc:  name.Loc,
 		Iterable: iterable,
 		Reversed: reversed,
 		Body:     body,
 		Loc:      p.SpanFrom(beginLoc),
-	}, nil
+	}
+	if indexName != nil {
+		node.IndexName = indexName.Value
+		node.IndexNameLoc = indexName.Loc
+	}
+	return node, nil
+}
+
+func (p *Parser) matchesRangeOrForEachHeader() bool {
+	pos := p.pos
+	if pos >= len(p.tokens) || p.tokens[pos].Type != tokeniser.TokenIdentifier {
+		return false
+	}
+	pos++
+	if pos < len(p.tokens) && p.tokens[pos].Type == tokeniser.TokenComma {
+		pos++
+		if pos >= len(p.tokens) || p.tokens[pos].Type != tokeniser.TokenIdentifier {
+			return false
+		}
+		pos++
+	}
+	return pos < len(p.tokens) &&
+		p.tokens[pos].Type == tokeniser.TokenKeyword &&
+		p.tokens[pos].Value == string(tokeniser.KeywordIn)
 }
 
 func (p *Parser) parseIterationAttributes() (bool, error) {

@@ -814,13 +814,16 @@ type RangeForNode struct {
 func (n RangeForNode) GetLoc() shared.Location { return n.Loc }
 
 type ForEachNode struct {
-	Name     string
-	NameLoc  shared.Location
-	Iterable ExpressionNode
-	Reversed bool
-	Body     *BlockNode
-	Loc      shared.Location
-	Symbol   *symbols.Symbol
+	Name         string
+	NameLoc      shared.Location
+	IndexName    string
+	IndexNameLoc shared.Location
+	Iterable     ExpressionNode
+	Reversed     bool
+	Body         *BlockNode
+	Loc          shared.Location
+	Symbol       *symbols.Symbol
+	IndexSymbol  *symbols.Symbol
 }
 
 func (n ForEachNode) GetLoc() shared.Location { return n.Loc }
