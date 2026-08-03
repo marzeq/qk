@@ -1,6 +1,6 @@
 module std.io
 
-pub let HasIO = comptime not NoLibc
+pub let HasIO = comptime !NoLibc
 
 pub let Writer = type trait {
   let write(*mut self, bytes: []u8): usz
@@ -42,12 +42,12 @@ pub let FileWriter.from_file(file: *std.libc.FILE): FileWriter = .{ file=file }
 pub let FileWriter.is_open(*self): bool = self.file != nil
 
 pub let FileWriter.write(*mut self, bytes: []u8): usz {
-  if self.file == nil or @len(bytes) == 0 { return 0 }
+  if self.file == nil || @len(bytes) == 0 { return 0 }
   return std.libc.fwrite(bytes.(*u8), 1, @len(bytes), self.file)
 }
 
 pub let FileWriter.flush(*mut self): bool =
-  self.file != nil and std.libc.fflush(self.file) == 0
+  self.file != nil && std.libc.fflush(self.file) == 0
 
 pub let FileWriter.close(*mut self): bool {
   if self.file == nil { return true }
@@ -74,7 +74,7 @@ pub let FileReader.from_file(file: *std.libc.FILE): FileReader = .{ file=file }
 pub let FileReader.is_open(*self): bool = self.file != nil
 
 pub let FileReader.read(*mut self, buffer: []mut u8): usz {
-  if self.file == nil or @len(buffer) == 0 { return 0 }
+  if self.file == nil || @len(buffer) == 0 { return 0 }
   return std.libc.fread(buffer.(*mut u8), 1, @len(buffer), self.file)
 }
 

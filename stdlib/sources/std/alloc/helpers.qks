@@ -1,9 +1,9 @@
 module std.alloc
 
-when not NoLibc {
+when !NoLibc {
 
 let is_power_of_two(value: usz): bool =
-  value != 0 and (value & (value - 1)) == 0
+  value != 0 && (value & (value - 1)) == 0
 
 let max_usz(a: usz, b: usz): usz =
   if a > b { a } else { b }
@@ -23,13 +23,13 @@ let checked_align_forward(
   value: usz,
   align: usz,
 ): (usz, bool) {
-  if not is_power_of_two(align) {
+  if !is_power_of_two(align) {
     return 0, false
   }
 
   let padding = align - 1
   let padded, valid = checked_add(value, padding)
-  if not valid {
+  if !valid {
     return 0, false
   }
 

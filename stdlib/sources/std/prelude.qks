@@ -1,7 +1,7 @@
 module std
 
-let HasStdlib = comptime not NoStdlib
-let HasLibc = comptime not NoLibc
+let HasStdlib = comptime !NoStdlib
+let HasLibc = comptime !NoLibc
 
 pub let mut Args: []str = ---
 
@@ -153,7 +153,7 @@ pub let bool.eq(self, other: bool): bool = self == other
 
 pub let cstr.eq(self, other: cstr): bool {
   let mut index: usz = 0
-  for self[index] != '\0' and other[index] != '\0' {
+  for self[index] != '\0' && other[index] != '\0' {
     if self[index] != other[index] {
       return false
     }

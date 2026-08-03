@@ -176,7 +176,7 @@ func (p *Parser) ParseLogicalOr() (ExpressionNode, error) {
 		return nil, err
 	}
 
-	for p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordOr) {
+	for p.Match(tokeniser.TokenLogicalOr) {
 		p.Inc()
 
 		for p.Match(tokeniser.TokenNewline) {
@@ -200,19 +200,19 @@ func (p *Parser) ParseLogicalOr() (ExpressionNode, error) {
 
 func (p *Parser) ParseLogicalAnd() (ExpressionNode, error) {
 	beginLoc := p.CurrLoc()
-	left, err := p.ParseLogicalNot()
+	left, err := p.ParseBitwiseOr()
 	if err != nil {
 		return nil, err
 	}
 
-	for p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordAnd) {
+	for p.Match(tokeniser.TokenLogicalAnd) {
 		p.Inc()
 
 		for p.Match(tokeniser.TokenNewline) {
 			p.Inc()
 		}
 
-		right, err := p.ParseLogicalNot()
+		right, err := p.ParseBitwiseOr()
 		if err != nil {
 			return nil, err
 		}
@@ -225,30 +225,6 @@ func (p *Parser) ParseLogicalAnd() (ExpressionNode, error) {
 	}
 
 	return left, nil
-}
-
-func (p *Parser) ParseLogicalNot() (ExpressionNode, error) {
-	beginLoc := p.CurrLoc()
-	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordNot) {
-		p.Inc()
-
-		for p.Match(tokeniser.TokenNewline) {
-			p.Inc()
-		}
-
-		expr, err := p.ParseLogicalNot()
-		if err != nil {
-			return nil, err
-		}
-
-		return &UnaryOpNode{
-			Op:      UnaryOpLogicalNot,
-			Operand: expr,
-			Loc:     p.SpanFrom(beginLoc),
-		}, nil
-	}
-
-	return p.ParseBitwiseOr()
 }
 
 func (p *Parser) ParseBitwiseOr() (ExpressionNode, error) {
@@ -302,11 +278,13 @@ func (p *Parser) ParseUnary() (ExpressionNode, error) {
 		return nil, shared.NewError(beginLoc, "use ... -= 1 instead")
 	}
 
-	if p.Match(tokeniser.TokenMinus, tokeniser.TokenTilde) {
+	if p.Match(tokeniser.TokenExclam, tokeniser.TokenMinus, tokeniser.TokenTilde) {
 		op := p.Consume()
 
 		var val UnaryOpKind
 		switch op.Type {
+		case tokeniser.TokenExclam:
+			val = UnaryOpLogicalNot
 		case tokeniser.TokenMinus:
 			val = UnaryOpNegate
 		case tokeniser.TokenTilde:

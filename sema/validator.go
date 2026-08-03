@@ -1354,7 +1354,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 
 		case parser.UnaryOpLogicalNot:
 			if !operandType.Equals(types.PrimitiveBool) {
-				v.errorf(n, "operator not requires bool")
+				v.errorf(n, "operator ! requires bool")
 			}
 
 		case parser.UnaryOpNegate:

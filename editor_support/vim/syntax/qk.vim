@@ -32,7 +32,7 @@ syn keyword qkTypeKeyword type alias struct union enum opaque trait dyn flags
 syn keyword qkConditional if else when match
 syn keyword qkRepeat for in
 syn keyword qkStatement break continue return defer
-syn keyword qkOperator and or not as
+syn keyword qkOperator as
 syn keyword qkOperator is implements
 " Function and module attributes.
 syn match qkAttribute "@[A-Za-z_][A-Za-z0-9_]*"

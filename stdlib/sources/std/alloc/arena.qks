@@ -1,6 +1,6 @@
 module std.alloc
 
-when not NoLibc {
+when !NoLibc {
 
 import std.libc
 
@@ -147,7 +147,7 @@ let Arena.allocate_chunk(
     header_size,
     data_align - 1,
   )
-  if not valid_padding {
+  if !valid_padding {
     return nil
   }
 
@@ -155,7 +155,7 @@ let Arena.allocate_chunk(
     with_padding,
     minimum_capacity,
   )
-  if not valid_size {
+  if !valid_size {
     return nil
   }
 
@@ -169,7 +169,7 @@ let Arena.allocate_chunk(
     unaligned_data,
     data_align,
   )
-  if not valid_data or not valid_alignment {
+  if !valid_data || !valid_alignment {
     std.libc.free(raw)
     return nil
   }
@@ -199,7 +199,7 @@ let Arena.grow(
   align: usz,
 ): *mut ArenaChunk {
   let required_capacity, valid = checked_add(size, align - 1)
-  if not valid {
+  if !valid {
     return nil
   }
 
@@ -226,7 +226,7 @@ let Arena.grow(
   }
 
   // Oversized allocations do not perturb the regular geometric sequence.
-  if not oversized {
+  if !oversized {
     self.next_chunk_size = saturating_double(regular_capacity)
   }
 
@@ -264,7 +264,7 @@ pub let Arena.allocate_bytes(
     return nil, true
   }
 
-  if not is_power_of_two(align) or align > self.maximum_alignment {
+  if !is_power_of_two(align) || align > self.maximum_alignment {
     return nil, false
   }
 
@@ -278,13 +278,13 @@ pub let Arena.allocate_bytes(
       align,
     )
 
-    if valid_cursor and valid_alignment and
+    if valid_cursor && valid_alignment &&
        aligned_address >= data_address {
       let offset = aligned_address - data_address
-      if offset <= chunk.capacity and size <= chunk.capacity - offset {
+      if offset <= chunk.capacity && size <= chunk.capacity - offset {
         let previous_used = chunk.used
         let new_used, valid_used = checked_add(offset, size)
-        if not valid_used {
+        if !valid_used {
           return nil, false
         }
 
@@ -313,17 +313,17 @@ pub let Arena.allocate_bytes(
     data_address,
     align,
   )
-  if not valid_alignment or aligned_address < data_address {
+  if !valid_alignment || aligned_address < data_address {
     return nil, false
   }
 
   let offset = aligned_address - data_address
-  if offset > chunk.capacity or size > chunk.capacity - offset {
+  if offset > chunk.capacity || size > chunk.capacity - offset {
     return nil, false
   }
 
   let new_used, valid_used = checked_add(offset, size)
-  if not valid_used {
+  if !valid_used {
     return nil, false
   }
 
@@ -366,16 +366,16 @@ pub let Arena.resize_bytes(
     return nil, true
   }
 
-  if not is_power_of_two(align) or align > self.maximum_alignment {
+  if !is_power_of_two(align) || align > self.maximum_alignment {
     return nil, false
   }
 
   // The newest allocation in the active chunk can be resized in place. The
   // supplied old size is part of the raw allocator contract and is checked
   // whenever the arena can know it.
-  if ptr == self.last_ptr and
-     self.last_chunk == self.current and
-     align == self.last_align and
+  if ptr == self.last_ptr &&
+     self.last_chunk == self.current &&
+     align == self.last_align &&
      self.current != nil {
     if old_size != self.last_size {
       return nil, false
@@ -388,8 +388,8 @@ pub let Arena.resize_bytes(
     )
     let new_end, valid_new_end = checked_add(self.last_offset, new_size)
 
-    if valid_old_end and valid_new_end and
-       chunk.used == old_end and new_end <= chunk.capacity {
+    if valid_old_end && valid_new_end &&
+       chunk.used == old_end && new_end <= chunk.capacity {
       if new_end >= old_end {
         self.total_used += new_end - old_end
         if self.total_used > self.peak_used {
@@ -406,7 +406,7 @@ pub let Arena.resize_bytes(
   }
 
   let replacement, allocated = self.allocate_bytes(new_size, align)
-  if not allocated {
+  if !allocated {
     return nil, false
   }
 
@@ -422,7 +422,7 @@ pub let Arena.allocate<T>(
   count: usz,
 ): (*mut T, bool) {
   let size, valid = checked_size<T>(count)
-  if not valid {
+  if !valid {
     return nil, false
   }
 
@@ -435,12 +435,12 @@ pub let Arena.allocate_zeroed<T>(
   count: usz,
 ): (*mut T, bool) {
   let size, valid = checked_size<T>(count)
-  if not valid {
+  if !valid {
     return nil, false
   }
 
   let result, allocated = self.allocate_bytes(size, @alignof(T))
-  if not allocated {
+  if !allocated {
     return nil, false
   }
 
@@ -459,7 +459,7 @@ pub let Arena.duplicate<T>(
   count: usz,
 ): (*mut T, bool) {
   let size, valid = checked_size<T>(count)
-  if not valid {
+  if !valid {
     return nil, false
   }
 
@@ -477,12 +477,12 @@ pub let Arena.duplicate_bytes(
   size: usz,
   align: usz,
 ): (*mut void, bool) {
-  if size != 0 and source == nil {
+  if size != 0 && source == nil {
     return nil, false
   }
 
   let result, allocated = self.allocate_bytes(size, align)
-  if not allocated {
+  if !allocated {
     return nil, false
   }
 
@@ -498,7 +498,7 @@ pub let Arena.free<T>(
   count: usz,
 ): void {
   let size, valid = checked_size<T>(count)
-  if not valid {
+  if !valid {
     return
   }
 
@@ -513,7 +513,7 @@ pub let Arena.resize<T>(
 ): (*mut T, bool) {
   let old_size, valid_old_size = checked_size<T>(old_count)
   let new_size, valid_new_size = checked_size<T>(new_count)
-  if not valid_old_size or not valid_new_size {
+  if !valid_old_size || !valid_new_size {
     return nil, false
   }
 
@@ -550,7 +550,7 @@ pub let Arena.mark(*mut self): ArenaMark =
   }
 
 pub let Arena.rewind(*mut self, mark: ArenaMark): bool {
-  if mark.arena != self or mark.generation != self.generation {
+  if mark.arena != self || mark.generation != self.generation {
     return false
   }
 
@@ -558,16 +558,16 @@ pub let Arena.rewind(*mut self, mark: ArenaMark): bool {
   // empty-arena mark and rewinds all subsequently allocated chunks.
   let mut found = mark.chunk == nil
   let mut candidate = self.first
-  for candidate != nil and candidate != self.current and not found {
+  for candidate != nil && candidate != self.current && !found {
     found = candidate == mark.chunk
     candidate = candidate.next
   }
   if candidate == mark.chunk {
     found = true
   }
-  if not found or
-     (mark.chunk != nil and
-      (mark.used > mark.chunk.capacity or mark.used > mark.chunk.used)) {
+  if !found ||
+     (mark.chunk != nil &&
+      (mark.used > mark.chunk.capacity || mark.used > mark.chunk.used)) {
     return false
   }
 

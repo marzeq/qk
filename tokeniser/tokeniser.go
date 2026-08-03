@@ -315,7 +315,8 @@ func tokenWidth(kind TokenKind) int {
 	case TokenEqualsEquals, TokenNotEquals, TokenLessEquals, TokenGreaterEquals,
 		TokenShiftLeft, TokenShiftRight, TokenIncBy, TokenDecBy, TokenMulBy,
 		TokenDivBy, TokenModBy, TokenBitwiseAndBy, TokenBitwiseOrBy,
-		TokenBitwiseXorBy, TokenIncrement, TokenDecrement, Token2Dots, TokenArrow, TokenFatArrow:
+		TokenBitwiseXorBy, TokenIncrement, TokenDecrement, TokenLogicalAnd,
+		TokenLogicalOr, Token2Dots, TokenArrow, TokenFatArrow:
 		return 2
 	default:
 		return 1
@@ -346,9 +347,6 @@ var keywords = map[string]struct{}{
 	string(KeywordImport):   {},
 	string(KeywordModule):   {},
 	string(KeywordPub):      {},
-	string(KeywordAnd):      {},
-	string(KeywordOr):       {},
-	string(KeywordNot):      {},
 	string(KeywordTrue):     {},
 	string(KeywordFalse):    {},
 	string(KeywordNil):      {},
@@ -585,6 +583,9 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 			if t.Next() == '=' {
 				t.AddToken(TokenBitwiseAndBy, t.GetLoc())
 				t.Inc().Inc()
+			} else if t.Next() == '&' {
+				t.AddToken(TokenLogicalAnd, t.GetLoc())
+				t.Inc().Inc()
 			} else {
 				t.AddToken(TokenAmpersand, t.GetLoc())
 				t.Inc()
@@ -593,6 +594,9 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 		case '|':
 			if t.Next() == '=' {
 				t.AddToken(TokenBitwiseOrBy, t.GetLoc())
+				t.Inc().Inc()
+			} else if t.Next() == '|' {
+				t.AddToken(TokenLogicalOr, t.GetLoc())
 				t.Inc().Inc()
 			} else {
 				t.AddToken(TokenPipe, t.GetLoc())

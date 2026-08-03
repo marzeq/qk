@@ -1,6 +1,6 @@
 module std.alloc
 
-when not NoLibc {
+when !NoLibc {
 
 import std.libc
 
@@ -27,7 +27,7 @@ pub let LibcAllocator.allocate_bytes(
     return nil, true
   }
 
-  if not is_power_of_two(align) {
+  if !is_power_of_two(align) {
     return nil, false
   }
 
@@ -36,12 +36,12 @@ pub let LibcAllocator.allocate_bytes(
     @sizeof(LibcAllocationHeader),
     data_align - 1,
   )
-  if not valid_padding {
+  if !valid_padding {
     return nil, false
   }
 
   let allocation_size, valid_size = checked_add(with_padding, size)
-  if not valid_size {
+  if !valid_size {
     return nil, false
   }
 
@@ -58,7 +58,7 @@ pub let LibcAllocator.allocate_bytes(
     unaligned_data,
     data_align,
   )
-  if not valid_data or not valid_alignment {
+  if !valid_data || !valid_alignment {
     std.libc.free(allocation)
     return nil, false
   }
@@ -101,7 +101,7 @@ pub let LibcAllocator.resize_bytes(
   }
 
   let replacement, allocated = self.allocate_bytes(new_size, align)
-  if not allocated {
+  if !allocated {
     return nil, false
   }
 
@@ -118,7 +118,7 @@ pub let LibcAllocator.allocate<T>(
   count: usz,
 ): (*mut T, bool) {
   let size, valid = checked_size<T>(count)
-  if not valid {
+  if !valid {
     return nil, false
   }
 
@@ -145,7 +145,7 @@ pub let LibcAllocator.resize<T>(
 ): (*mut T, bool) {
   let old_size, valid_old_size = checked_size<T>(old_count)
   let new_size, valid_new_size = checked_size<T>(new_count)
-  if not valid_old_size or not valid_new_size {
+  if !valid_old_size || !valid_new_size {
     return nil, false
   }
 

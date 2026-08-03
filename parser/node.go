@@ -423,7 +423,7 @@ const (
 func (u UnaryOpKind) String() string {
 	switch u {
 	case UnaryOpLogicalNot:
-		return "not"
+		return "!"
 	case UnaryOpNegate:
 		return "-"
 	case UnaryOpReference:
@@ -499,9 +499,9 @@ const (
 func (b BinaryOpKind) String() string {
 	switch b {
 	case BinaryOpLogicalOr:
-		return "or"
+		return "||"
 	case BinaryOpLogicalAnd:
-		return "and"
+		return "&&"
 	case BinaryOpEqual:
 		return "=="
 	case BinaryOpNotEqual:

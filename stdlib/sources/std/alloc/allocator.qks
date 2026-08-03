@@ -28,7 +28,7 @@ pub let Allocator = type trait {
 let checked_size<T>(count: usz): (usz, bool) {
   let element_size = @sizeof(T)
 
-  if element_size != 0 and count > (~0.(usz)) / element_size {
+  if element_size != 0 && count > (~0.(usz)) / element_size {
     return 0, false
   }
 
@@ -64,12 +64,12 @@ pub let allocate<T>(
   }
 
   let size, valid = checked_size<T>(count)
-  if not valid {
+  if !valid {
     return [], false
   }
 
   let result, allocated = allocator.allocate_bytes(size, @alignof(T))
-  if not allocated {
+  if !allocated {
     return [], false
   }
   return result.(*mut T)[0:count], true
@@ -100,7 +100,7 @@ pub let resize<T>(
 
   let old_size, valid_old_size = checked_size<T>(@len(memory))
   let new_size, valid_new_size = checked_size<T>(new_count)
-  if not valid_old_size or not valid_new_size {
+  if !valid_old_size || !valid_new_size {
     return [], false
   }
 
@@ -110,7 +110,7 @@ pub let resize<T>(
     new_size,
     @alignof(T),
   )
-  if not resized {
+  if !resized {
     return [], false
   }
   return result.(*mut T)[0:new_count], true

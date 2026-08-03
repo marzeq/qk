@@ -1074,11 +1074,11 @@ func (p *Parser) tokenContinuesExpression() bool {
 		tokeniser.TokenLess, tokeniser.TokenLessEquals,
 		tokeniser.TokenGreater, tokeniser.TokenGreaterEquals,
 		tokeniser.TokenEqualsEquals, tokeniser.TokenNotEquals,
-		tokeniser.TokenAmpersand, tokeniser.TokenPipe, tokeniser.TokenCaret) {
+		tokeniser.TokenAmpersand, tokeniser.TokenLogicalAnd,
+		tokeniser.TokenPipe, tokeniser.TokenLogicalOr, tokeniser.TokenCaret) {
 		return true
 	}
-	return p.Match(tokeniser.TokenKeyword) &&
-		(p.Peek().Value == string(tokeniser.KeywordAnd) || p.Peek().Value == string(tokeniser.KeywordOr))
+	return false
 }
 
 func (p *Parser) skipGenericParameterLookahead() error {

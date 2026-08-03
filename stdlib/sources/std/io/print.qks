@@ -29,7 +29,7 @@ pub let wprint(
 
   for format_index < @len(format) {
     let character = format[format_index]
-    if character == '}' and format_index + 1 < @len(format) and format[format_index + 1] == '}' {
+    if character == '}' && format_index + 1 < @len(format) && format[format_index + 1] == '}' {
       write_byte(writer, '}')
       format_index += 2
       continue
@@ -59,12 +59,12 @@ pub let wprint(
     let mut cursor = format_index + 1
     let mut selected: usz = 0
     let mut has_digit = false
-    for cursor < @len(format) and format[cursor].(usz) >= '0'.(usz) and format[cursor].(usz) <= '9'.(usz) {
+    for cursor < @len(format) && format[cursor].(usz) >= '0'.(usz) && format[cursor].(usz) <= '9'.(usz) {
       has_digit = true
       selected = selected * 10 + (format[cursor].(usz) - '0'.(usz))
       cursor += 1
     }
-    if has_digit and cursor < @len(format) and format[cursor] == '}' {
+    if has_digit && cursor < @len(format) && format[cursor] == '}' {
       format_print_argument(writer, selected, arguments)
       argument_index += 1
       format_index = cursor + 1

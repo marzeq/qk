@@ -1,6 +1,6 @@
 module std.libc
 
-when not NoLibc {
+when !NoLibc {
 
 pub let FILE = type opaque
 
@@ -26,23 +26,23 @@ pub let ulong = type
 
 pub let time_t = type
   when OS == .Windows
-    or OS == .MacOS
-    or OS == .FreeBSD
-    or OS == .OpenBSD
-    or OS == .NetBSD
-    or OS == .DragonFly { i64 }
-    else when OS == .Linux and PointerBits == 64 { i64 }
-    else when OS == .Linux and PointerBits == 32 { i32 }
+    || OS == .MacOS
+    || OS == .FreeBSD
+    || OS == .OpenBSD
+    || OS == .NetBSD
+    || OS == .DragonFly { i64 }
+    else when OS == .Linux && PointerBits == 64 { i64 }
+    else when OS == .Linux && PointerBits == 32 { i32 }
     else {
     @compiler_error("Unsupported time_t ABI")
   }
 
 pub let clock_t = type
   when OS == .Windows
-    or OS == .FreeBSD
-    or OS == .OpenBSD
-    or OS == .NetBSD
-    or OS == .DragonFly { i32 }
+    || OS == .FreeBSD
+    || OS == .OpenBSD
+    || OS == .NetBSD
+    || OS == .DragonFly { i32 }
     else { long }
 
 // -----------------------------------------------------------------------------
@@ -211,11 +211,11 @@ pub let getenv(name: cstr): *u8 @foreign
 // -----------------------------------------------------------------------------
 
 when OS == .Linux
-  or OS == .MacOS
-  or OS == .FreeBSD
-  or OS == .OpenBSD
-  or OS == .NetBSD
-  or OS == .DragonFly {
+  || OS == .MacOS
+  || OS == .FreeBSD
+  || OS == .OpenBSD
+  || OS == .NetBSD
+  || OS == .DragonFly {
 
   pub let stdin: *FILE @foreign
   pub let stdout: *FILE @foreign
@@ -238,11 +238,11 @@ when OS == .Linux
 // -----------------------------------------------------------------------------
 
 when OS == .Linux
-  or OS == .MacOS
-  or OS == .FreeBSD
-  or OS == .OpenBSD
-  or OS == .NetBSD
-  or OS == .DragonFly {
+  || OS == .MacOS
+  || OS == .FreeBSD
+  || OS == .OpenBSD
+  || OS == .NetBSD
+  || OS == .DragonFly {
 
   // On the supported Unix ABIs, pid_t is a signed 32-bit integer.
   pub let pid_t = type i32
@@ -325,10 +325,10 @@ when OS == .Linux
   pub let WaitContinued: i32 =
     when OS == .Linux { 8 }
     else when OS == .MacOS
-      or OS == .FreeBSD
-      or OS == .OpenBSD
-      or OS == .NetBSD
-      or OS == .DragonFly { 16 }
+      || OS == .FreeBSD
+      || OS == .OpenBSD
+      || OS == .NetBSD
+      || OS == .DragonFly { 16 }
     else { 0 }
 
   // Equivalent to the standard WIFEXITED(status) macro.
@@ -345,7 +345,7 @@ when OS == .Linux
   // Equivalent to WIFSIGNALED(status).
   pub let wait_signalled(status: wait_status_t): bool {
     let signal = status & 0x7f
-    return signal != 0.(wait_status_t) and signal != (0x7f).(wait_status_t)
+    return signal != 0.(wait_status_t) && signal != (0x7f).(wait_status_t)
   }
 
   // Equivalent to WTERMSIG(status).
@@ -445,37 +445,37 @@ when OS == .Linux
   pub let SignalChild: signal_t =
     when OS == .Linux { 17 }
     else when OS == .MacOS
-      or OS == .FreeBSD
-      or OS == .OpenBSD
-      or OS == .NetBSD
-      or OS == .DragonFly { 20 }
+      || OS == .FreeBSD
+      || OS == .OpenBSD
+      || OS == .NetBSD
+      || OS == .DragonFly { 20 }
     else { 0 }
 
   pub let SignalContinue: signal_t =
     when OS == .Linux { 18 }
     else when OS == .MacOS
-      or OS == .FreeBSD
-      or OS == .OpenBSD
-      or OS == .NetBSD
-      or OS == .DragonFly { 19 }
+      || OS == .FreeBSD
+      || OS == .OpenBSD
+      || OS == .NetBSD
+      || OS == .DragonFly { 19 }
     else { 0 }
 
   pub let SignalStop: signal_t =
     when OS == .Linux { 19 }
     else when OS == .MacOS
-      or OS == .FreeBSD
-      or OS == .OpenBSD
-      or OS == .NetBSD
-      or OS == .DragonFly { 17 }
+      || OS == .FreeBSD
+      || OS == .OpenBSD
+      || OS == .NetBSD
+      || OS == .DragonFly { 17 }
     else { 0 }
 
   pub let SignalTerminalStop: signal_t =
     when OS == .Linux { 20 }
     else when OS == .MacOS
-      or OS == .FreeBSD
-      or OS == .OpenBSD
-      or OS == .NetBSD
-      or OS == .DragonFly { 18 }
+      || OS == .FreeBSD
+      || OS == .OpenBSD
+      || OS == .NetBSD
+      || OS == .DragonFly { 18 }
     else { 0 }
 
   // ---------------------------------------------------------------------------

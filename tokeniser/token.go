@@ -49,7 +49,9 @@ const (
 	TokenSlash
 	TokenPercent
 	TokenAmpersand
+	TokenLogicalAnd
 	TokenPipe
+	TokenLogicalOr
 	TokenCaret
 	TokenTilde
 	TokenShiftLeft
@@ -104,9 +106,6 @@ const (
 	KeywordImport   KeywordKind = "import"
 	KeywordModule   KeywordKind = "module"
 	KeywordPub      KeywordKind = "pub"
-	KeywordAnd      KeywordKind = "and"
-	KeywordOr       KeywordKind = "or"
-	KeywordNot      KeywordKind = "not"
 	KeywordTrue     KeywordKind = "true"
 	KeywordFalse    KeywordKind = "false"
 	KeywordNil      KeywordKind = "nil"
@@ -175,8 +174,12 @@ func (t Token) String() string {
 		return "%"
 	case TokenAmpersand:
 		return "&"
+	case TokenLogicalAnd:
+		return "&&"
 	case TokenPipe:
 		return "|"
+	case TokenLogicalOr:
+		return "||"
 	case TokenCaret:
 		return "^"
 	case TokenTilde:

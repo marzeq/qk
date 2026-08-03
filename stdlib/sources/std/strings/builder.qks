@@ -48,7 +48,7 @@ pub let StringBuilder.ensure_capacity(
     self.ptr[0:self.capacity],
     new_capacity,
   )
-  if not success {
+  if !success {
     return false
   }
 
@@ -64,7 +64,7 @@ pub let StringBuilder.write(*mut self, bytes: []u8): usz {
   if @len(bytes) > (~0.(usz)) - self.count {
     return 0
   }
-  if not self.ensure_capacity(self.count + @len(bytes)) {
+  if !self.ensure_capacity(self.count + @len(bytes)) {
     return 0
   }
 

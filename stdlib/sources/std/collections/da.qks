@@ -67,7 +67,7 @@ pub let DynamicArray<T>.ensure_capacity(
     memory,
     new_capacity,
   )
-  if not success {
+  if !success {
     return false
   }
 
@@ -88,7 +88,7 @@ pub let DynamicArray<T>.reserve(*mut self, additional: usz): bool {
 // Append one element, returning false without changing the array if its
 // backing allocation cannot be grown.
 pub let DynamicArray<T>.append(*mut self, value: T): bool {
-  if not DynamicArray<T>.reserve(self, 1) {
+  if !DynamicArray<T>.reserve(self, 1) {
     return false
   }
 
@@ -106,7 +106,7 @@ pub let DynamicArray<T>.insert(
   if index > self.count {
     panic("dynamic array insert index out of bounds")
   }
-  if not DynamicArray<T>.reserve(self, 1) {
+  if !DynamicArray<T>.reserve(self, 1) {
     return false
   }
 
