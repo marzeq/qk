@@ -11,6 +11,113 @@ pub let StringBuilder = type struct {
   read_offset: usz,
 }
 
+pub let SplitIterator = type struct {
+  remaining: str,
+  separator: str,
+  finished: bool,
+}
+
+pub let split(value: str, separator: str): SplitIterator = .{
+  remaining=value,
+  separator=separator,
+  finished=false,
+}
+
+pub let SplitIterator.next(*mut self): (str, bool) {
+  if self.finished { return "", false }
+  if @len(self.separator) == 0 {
+    if @len(self.remaining) == 0 {
+      self.finished = true
+      return "", false
+    }
+    let result = self.remaining[0:1]
+    self.remaining = self.remaining[1:]
+    return result, true
+  }
+
+  let index, found = self.remaining.find(self.separator)
+  if !found {
+    self.finished = true
+    return self.remaining, true
+  }
+
+  let result = self.remaining[0:index]
+  self.remaining = self.remaining[index + @len(self.separator):]
+  return result, true
+}
+
+let digit_value(value: u8): (u8, bool) {
+  if value >= '0' && value <= '9' { return value - '0', true }
+  if value >= 'a' && value <= 'z' { return value - 'a' + 10, true }
+  if value >= 'A' && value <= 'Z' { return value - 'A' + 10, true }
+  return 0, false
+}
+
+pub let parse_u64(value: str, base: u8 = 10): (u64, bool) {
+  if @len(value) == 0 || base < 2 || base > 36 { return 0, false }
+
+  let radix = base.(u64)
+  let mut result: u64 = 0
+  let mut index: usz = 0
+  for index < @len(value) {
+    let digit, valid = digit_value(value[index])
+    if !valid || digit >= base { return 0, false }
+    if result > ((~0.(u64)) - digit.(u64)) / radix { return 0, false }
+    result = result * radix + digit.(u64)
+    index += 1
+  }
+  return result, true
+}
+
+pub let parse_i64(value: str, base: u8 = 10): (i64, bool) {
+  if @len(value) == 0 { return 0, false }
+  let negative = value[0] == '-'
+  let start: usz = if negative || value[0] == '+' { 1 } else { 0 }
+  if start == @len(value) { return 0, false }
+
+  let magnitude, valid = parse_u64(value[start:], base)
+  if !valid { return 0, false }
+  let positive_limit = 9223372036854775807.(u64)
+  if negative {
+    if magnitude > positive_limit + 1 { return 0, false }
+    if magnitude == positive_limit + 1 { return (~9223372036854775807.(i64)), true }
+    return -magnitude.(i64), true
+  }
+  if magnitude > positive_limit { return 0, false }
+  return magnitude.(i64), true
+}
+
+pub let replace(
+  allocator: mut dyn std.alloc.Allocator,
+  value: str,
+  needle: str,
+  replacement: str,
+): (StringBuilder, bool) {
+  let mut result = StringBuilder.init(allocator)
+  if @len(needle) == 0 {
+    return result, result.write(value.([]u8)) == @len(value)
+  }
+
+  let mut remaining = value
+  for true {
+    let index, found = remaining.find(needle)
+    if !found {
+      if result.write(remaining.([]u8)) != @len(remaining) {
+        result.deinit()
+        return StringBuilder.init(allocator), false
+      }
+      return result, true
+    }
+
+    if result.write(remaining[0:index].([]u8)) != index || result.write(replacement.([]u8)) != @len(replacement) {
+      result.deinit()
+      return StringBuilder.init(allocator), false
+    }
+    remaining = remaining[index + @len(needle):]
+  }
+  return result, true
+}
+
 pub let StringBuilder.init(
   allocator: mut dyn std.alloc.Allocator,
 ): StringBuilder = .{

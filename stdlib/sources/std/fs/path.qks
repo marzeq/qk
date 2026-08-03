@@ -1,0 +1,84 @@
+module std.fs
+
+import std
+import std.alloc
+import std.strings
+
+when OS == .Windows {
+  pub let Separator: u8 = '\\'
+} else {
+  pub let Separator: u8 = '/'
+}
+
+let is_separator(value: u8): bool {
+  if value == '/' { return true }
+  when OS == .Windows { return value == '\\' }
+  else { return false }
+}
+
+pub let is_absolute(path: str): bool {
+  if @len(path) == 0 { return false }
+  when OS == .Windows {
+    if is_separator(path[0]) { return true }
+    return @len(path) >= 3 && path[1] == ':' && is_separator(path[2])
+  } else {
+    return path[0] == '/'
+  }
+}
+
+pub let basename(path: str): str {
+  let mut end = @len(path)
+  for end > 1 && is_separator(path[end - 1]) { end -= 1 }
+  let mut start = end
+  for start > 0 && !is_separator(path[start - 1]) { start -= 1 }
+  return path[start:end]
+}
+
+pub let dirname(path: str): str {
+  let mut end = @len(path)
+  for end > 1 && is_separator(path[end - 1]) { end -= 1 }
+  for end > 0 && !is_separator(path[end - 1]) { end -= 1 }
+  for end > 1 && is_separator(path[end - 1]) { end -= 1 }
+  if end == 0 { return "." }
+  return path[0:end]
+}
+
+pub let extension(path: str): str {
+  let name = basename(path)
+  let mut index = @len(name)
+  for index > 0 {
+    index -= 1
+    if name[index] == '.' {
+      if index == 0 { return "" }
+      return name[index:]
+    }
+  }
+  return ""
+}
+
+pub let join(
+  allocator: mut dyn std.alloc.Allocator,
+  left: str,
+  right: str,
+): (std.strings.StringBuilder, bool) {
+  let mut result = std.strings.StringBuilder.init(allocator)
+  if is_absolute(right) {
+    return result, result.write(right.([]u8)) == @len(right)
+  }
+  if result.write(left.([]u8)) != @len(left) {
+    result.deinit()
+    return std.strings.StringBuilder.init(allocator), false
+  }
+  if @len(left) > 0 && !is_separator(left[@len(left) - 1]) {
+    let separator: [1]u8 = [Separator]
+    if result.write(separator[:]) != 1 {
+      result.deinit()
+      return std.strings.StringBuilder.init(allocator), false
+    }
+  }
+  if result.write(right.([]u8)) != @len(right) {
+    result.deinit()
+    return std.strings.StringBuilder.init(allocator), false
+  }
+  return result, true
+}

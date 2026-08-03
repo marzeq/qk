@@ -11,9 +11,23 @@ when !NoLibc {
 
   pub let Error.none(): Error = .{ code=0 }
 
+  pub let Error.out_of_memory(): Error = .{ code=-1 }
+
+  pub let Error.invalid_handle(): Error = .{ code=-2 }
+
+  pub let Error.no_progress(): Error = .{ code=-3 }
+
+  pub let Error.is_none(self): bool = self.code == 0
+
+  pub let Error.is_error(self): bool = self.code != 0
+
   // The returned view points to platform-owned storage and should be consumed
   // before requesting another error message.
   pub let Error.message(self): str {
+    if self.code == 0 { return "no error" }
+    if self.code == -1 { return "out of memory" }
+    if self.code == -2 { return "invalid handle" }
+    if self.code == -3 { return "operation made no progress" }
     let message = std.libc.strerror(self.code)
     let mut length: usz = 0
     for message[length] != '\0' { length += 1 }

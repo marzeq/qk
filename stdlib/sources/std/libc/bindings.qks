@@ -104,6 +104,16 @@ pub let remove(path: cstr): i32 @foreign
 pub let rename(old: cstr, new: cstr): i32 @foreign
 pub let tmpfile(): *FILE @foreign
 
+when OS == .Windows {
+  pub let mkdir(path: cstr): i32 @foreign(symbol "_mkdir")
+  pub let rmdir(path: cstr): i32 @foreign(symbol "_rmdir")
+  pub let chdir(path: cstr): i32 @foreign(symbol "_chdir")
+  pub let getcwd(buffer: *mut u8, size: i32): *mut u8 @foreign(symbol "_getcwd")
+} else {
+  pub let mkdir(path: cstr, mode: u32): i32 @foreign
+  pub let rmdir(path: cstr): i32 @foreign
+}
+
 pub let EOF: i32 = comptime -1
 
 when OS == .Windows {

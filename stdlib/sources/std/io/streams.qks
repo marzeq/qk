@@ -45,7 +45,7 @@ pub let FileWriter.open_checked(
   let mut lc = std.alloc.LibcAllocator.init()
   let allocator = lc.&mut.(mut dyn std.alloc.Allocator)
   let c_path = path.to_cstr(allocator)
-  if c_path == nil { return .{ handle=nil }, std.os.last_error() }
+  if c_path == nil { return .{ handle=nil }, std.os.Error.out_of_memory() }
 
   let file = std.libc.fopen(c_path, if append { c"ab" } else { c"wb" })
   let error = if file == nil { std.os.last_error() } else { std.os.Error.none() }
@@ -56,31 +56,62 @@ pub let FileWriter.open_checked(
 pub let FileWriter.is_open(*self): bool = self.handle != nil
 
 pub let FileWriter.write(*mut self, bytes: []u8): usz {
-  if self.handle == nil || @len(bytes) == 0 { return 0 }
+  let count, _ = self.write_some_checked(bytes)
+  return count
+}
+
+pub let FileWriter.write_some_checked(
+  *mut self,
+  bytes: []u8,
+): (usz, std.os.Error) {
+  if self.handle == nil { return 0, std.os.Error.invalid_handle() }
+  if @len(bytes) == 0 { return 0, std.os.Error.none() }
+
   let file = self.handle.(*std.libc.FILE)
   let count = std.libc.write(std.libc.fileno(file), bytes.(*u8), @len(bytes))
-  if count <= 0 { return 0 }
-  return count.(usz)
+  if count < 0 { return 0, std.os.last_error() }
+  return count.(usz), std.os.Error.none()
 }
 
 pub let FileWriter.write_all(*mut self, bytes: []u8): bool {
-  let mut written: usz = 0
-  for written < @len(bytes) {
-    let count = self.write(bytes[written:])
-    if count == 0 { return false }
-    written += count
-  }
-  return true
+  let written, error = self.write_all_checked(bytes)
+  return written == @len(bytes) && error.is_none()
 }
 
-pub let FileWriter.flush(*mut self): bool =
-  self.handle != nil && std.libc.fflush(self.handle.(*std.libc.FILE)) == 0
+pub let FileWriter.write_all_checked(
+  *mut self,
+  bytes: []u8,
+): (usz, std.os.Error) {
+  let mut written: usz = 0
+  for written < @len(bytes) {
+    let count, error = self.write_some_checked(bytes[written:])
+    if error.is_error() { return written, error }
+    if count == 0 { return written, std.os.Error.no_progress() }
+    written += count
+  }
+  return written, std.os.Error.none()
+}
+
+pub let FileWriter.flush(*mut self): bool = self.flush_checked().is_none()
+
+pub let FileWriter.flush_checked(*mut self): std.os.Error {
+  if self.handle == nil { return std.os.Error.invalid_handle() }
+  if std.libc.fflush(self.handle.(*std.libc.FILE)) != 0 {
+    return std.os.last_error()
+  }
+  return std.os.Error.none()
+}
 
 pub let FileWriter.close(*mut self): bool {
-  if self.handle == nil { return true }
+  return self.close_checked().is_none()
+}
+
+pub let FileWriter.close_checked(*mut self): std.os.Error {
+  if self.handle == nil { return std.os.Error.none() }
   let file = self.handle.(*std.libc.FILE)
   self.handle = nil
-  return std.libc.fclose(file) == 0
+  if std.libc.fclose(file) != 0 { return std.os.last_error() }
+  return std.os.Error.none()
 }
 
 pub let FileReader.open(
@@ -96,7 +127,7 @@ pub let FileReader.open_checked(
   let mut lc = std.alloc.LibcAllocator.init()
   let allocator = lc.(mut dyn std.alloc.Allocator)
   let c_path = path.to_cstr(allocator)
-  if c_path == nil { return .{ handle=nil }, std.os.last_error() }
+  if c_path == nil { return .{ handle=nil }, std.os.Error.out_of_memory() }
 
   let file = std.libc.fopen(c_path, c"rb")
   let error = if file == nil { std.os.last_error() } else { std.os.Error.none() }
@@ -115,17 +146,25 @@ pub let FileReader.read_some(
   *mut self,
   buffer: []mut u8,
 ): (usz, ReadStatus) {
-  if self.handle == nil { return 0, .Error }
-  if @len(buffer) == 0 { return 0, .Data }
+  let count, status, _ = self.read_some_checked(buffer)
+  return count, status
+}
+
+pub let FileReader.read_some_checked(
+  *mut self,
+  buffer: []mut u8,
+): (usz, ReadStatus, std.os.Error) {
+  if self.handle == nil { return 0, .Error, std.os.Error.invalid_handle() }
+  if @len(buffer) == 0 { return 0, .Data, std.os.Error.none() }
 
   let count = std.libc.read(
     std.libc.fileno(self.handle.(*std.libc.FILE)),
     buffer.(*mut u8),
     @len(buffer),
   )
-  if count < 0 { return 0, .Error }
-  if count == 0 { return 0, .End }
-  return count.(usz), .Data
+  if count < 0 { return 0, .Error, std.os.last_error() }
+  if count == 0 { return 0, .End, std.os.Error.none() }
+  return count.(usz), .Data, std.os.Error.none()
 }
 
 pub let FileReader.format(self, writer: mut dyn Writer): void {
@@ -140,10 +179,15 @@ pub let FileReader.format(self, writer: mut dyn Writer): void {
 }
 
 pub let FileReader.close(*mut self): bool {
-  if self.handle == nil { return true }
+  return self.close_checked().is_none()
+}
+
+pub let FileReader.close_checked(*mut self): std.os.Error {
+  if self.handle == nil { return std.os.Error.none() }
   let file = self.handle.(*std.libc.FILE)
   self.handle = nil
-  return std.libc.fclose(file) == 0
+  if std.libc.fclose(file) != 0 { return std.os.last_error() }
+  return std.os.Error.none()
 }
 
 pub let mut stdout: FileWriter = .{ handle=std.libc.stdout.(*void) }
