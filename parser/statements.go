@@ -1698,6 +1698,10 @@ func (p *Parser) parseRangeOrForEach(beginLoc shared.Location) (Node, error) {
 		if err != nil {
 			return nil, err
 		}
+		reversed, err := p.parseIterationAttributes()
+		if err != nil {
+			return nil, err
+		}
 		body, err := p.ParseBlock()
 		if err != nil {
 			return nil, err
@@ -1708,11 +1712,16 @@ func (p *Parser) parseRangeOrForEach(beginLoc shared.Location) (Node, error) {
 			Start:     iterable,
 			End:       end,
 			Inclusive: inclusive,
+			Reversed:  reversed,
 			Body:      body,
 			Loc:       p.SpanFrom(beginLoc),
 		}, nil
 	}
 
+	reversed, err := p.parseIterationAttributes()
+	if err != nil {
+		return nil, err
+	}
 	body, err := p.ParseBlock()
 	if err != nil {
 		return nil, err
@@ -1721,7 +1730,27 @@ func (p *Parser) parseRangeOrForEach(beginLoc shared.Location) (Node, error) {
 		Name:     name.Value,
 		NameLoc:  name.Loc,
 		Iterable: iterable,
+		Reversed: reversed,
 		Body:     body,
 		Loc:      p.SpanFrom(beginLoc),
 	}, nil
+}
+
+func (p *Parser) parseIterationAttributes() (bool, error) {
+	reversed := false
+	for p.Match(tokeniser.TokenAt) {
+		p.Inc()
+		name, err := p.ParseIdent()
+		if err != nil {
+			return false, err
+		}
+		if name.Name != "reversed" {
+			return false, shared.NewError(name.Loc, "unknown iteration attribute @%s", name.Name)
+		}
+		if reversed {
+			return false, shared.NewError(name.Loc, "duplicate iteration attribute @reversed")
+		}
+		reversed = true
+	}
+	return reversed, nil
 }

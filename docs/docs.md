@@ -216,7 +216,23 @@ for elem in arr {
 for ch in s {
   // loop over each character in string s
 }
+
+for elem in sl @reversed {
+  // loop over the slice from its last element to its first
+}
+
+for x in 0..10 @reversed {
+  // loop from 9 down to 0
+}
+
+for x in 0..=10 @reversed {
+  // loop from 10 down to 0
+}
 ```
+
+The postfix `@reversed` iteration attribute is supported on ranges, arrays,
+slices and strings. The iterable expression and range bounds are still
+evaluated exactly once.
 
 ### `break` and `continue`
 

@@ -1024,11 +1024,16 @@ func (g *Generator) generateRangeFor(node *parser.RangeForNode) {
 	iteratorSlot := g.currentFunction.NewSlot(node.Symbol.Type, node.Name)
 	g.currentEnv.Variables[node.Symbol] = iteratorSlot
 	g.Emit(ir.Alloca{Slot: iteratorSlot})
-	g.Emit(ir.Store{Slot: iteratorSlot, Value: g.GenerateExpr(node.Start)})
-
-	endSlot := g.currentFunction.NewSlot(node.Symbol.Type, "for.range.end")
-	g.Emit(ir.Alloca{Slot: endSlot})
-	g.Emit(ir.Store{Slot: endSlot, Value: g.GenerateExpr(node.End)})
+	boundSlot := g.currentFunction.NewSlot(node.Symbol.Type, "for.range.bound")
+	g.Emit(ir.Alloca{Slot: boundSlot})
+	start := g.GenerateExpr(node.Start)
+	if node.Reversed {
+		g.Emit(ir.Store{Slot: boundSlot, Value: start})
+		g.Emit(ir.Store{Slot: iteratorSlot, Value: g.GenerateExpr(node.End)})
+	} else {
+		g.Emit(ir.Store{Slot: iteratorSlot, Value: start})
+		g.Emit(ir.Store{Slot: boundSlot, Value: g.GenerateExpr(node.End)})
+	}
 
 	conditionBlock := g.currentFunction.NewBlock("for.range.condition")
 	bodyBlock := g.currentFunction.NewBlock("for.range.body")
@@ -1038,16 +1043,26 @@ func (g *Generator) generateRangeFor(node *parser.RangeForNode) {
 
 	g.currentBlock = conditionBlock
 	iterator := g.loadSlot(iteratorSlot, node.Symbol.Type)
-	end := g.loadSlot(endSlot, node.Symbol.Type)
+	bound := g.loadSlot(boundSlot, node.Symbol.Type)
 	condition := g.currentFunction.NewValueOfType(types.PrimitiveBool)
-	if node.Inclusive {
-		g.Emit(ir.CmpLe{Dest: condition, Left: iterator, Right: end})
+	if node.Reversed && node.Inclusive {
+		g.Emit(ir.CmpGe{Dest: condition, Left: iterator, Right: bound})
+	} else if node.Reversed {
+		g.Emit(ir.CmpGt{Dest: condition, Left: iterator, Right: bound})
+	} else if node.Inclusive {
+		g.Emit(ir.CmpLe{Dest: condition, Left: iterator, Right: bound})
 	} else {
-		g.Emit(ir.CmpLt{Dest: condition, Left: iterator, Right: end})
+		g.Emit(ir.CmpLt{Dest: condition, Left: iterator, Right: bound})
 	}
 	g.Emit(ir.Branch{Cond: ir.ValueOperand(condition, types.PrimitiveBool), Then: bodyBlock.ID, Else: endBlock.ID})
 
 	g.currentBlock = bodyBlock
+	if node.Reversed && !node.Inclusive {
+		current := g.loadSlot(iteratorSlot, node.Symbol.Type)
+		previous := g.currentFunction.NewValueOfType(node.Symbol.Type)
+		g.Emit(ir.Sub{Dest: previous, Left: current, Right: ir.IntConstOperand("1", node.Symbol.Type)})
+		g.Emit(ir.Store{Slot: iteratorSlot, Value: ir.ValueOperand(previous, node.Symbol.Type)})
+	}
 	popLoop := g.pushLoopTargets(endBlock.ID, postBlock.ID)
 	g.generateBlock(node.Body)
 	popLoop()
@@ -1056,10 +1071,27 @@ func (g *Generator) generateRangeFor(node *parser.RangeForNode) {
 	}
 
 	g.currentBlock = postBlock
+	if node.Reversed && !node.Inclusive {
+		g.Emit(ir.Jump{Target: conditionBlock.ID})
+		g.currentBlock = endBlock
+		return
+	}
 	current := g.loadSlot(iteratorSlot, node.Symbol.Type)
-	next := g.currentFunction.NewValueOfType(node.Symbol.Type)
-	g.Emit(ir.Add{Dest: next, Left: current, Right: ir.IntConstOperand("1", node.Symbol.Type)})
-	g.Emit(ir.Store{Slot: iteratorSlot, Value: ir.ValueOperand(next, node.Symbol.Type)})
+	if node.Reversed {
+		atStart := g.currentFunction.NewValueOfType(types.PrimitiveBool)
+		start := g.loadSlot(boundSlot, node.Symbol.Type)
+		g.Emit(ir.CmpEq{Dest: atStart, Left: current, Right: start})
+		decrementBlock := g.currentFunction.NewBlock("for.range.decrement")
+		g.Emit(ir.Branch{Cond: ir.ValueOperand(atStart, types.PrimitiveBool), Then: endBlock.ID, Else: decrementBlock.ID})
+		g.currentBlock = decrementBlock
+		previous := g.currentFunction.NewValueOfType(node.Symbol.Type)
+		g.Emit(ir.Sub{Dest: previous, Left: current, Right: ir.IntConstOperand("1", node.Symbol.Type)})
+		g.Emit(ir.Store{Slot: iteratorSlot, Value: ir.ValueOperand(previous, node.Symbol.Type)})
+	} else {
+		next := g.currentFunction.NewValueOfType(node.Symbol.Type)
+		g.Emit(ir.Add{Dest: next, Left: current, Right: ir.IntConstOperand("1", node.Symbol.Type)})
+		g.Emit(ir.Store{Slot: iteratorSlot, Value: ir.ValueOperand(next, node.Symbol.Type)})
+	}
 	g.Emit(ir.Jump{Target: conditionBlock.ID})
 	g.currentBlock = endBlock
 }
@@ -1084,7 +1116,18 @@ func (g *Generator) generateForEach(node *parser.ForEachNode) {
 	g.Emit(ir.Store{Slot: iterableSlot, Value: g.GenerateExpr(node.Iterable)})
 	indexSlot := g.currentFunction.NewSlot(types.PrimitiveUsz, "for.each.index")
 	g.Emit(ir.Alloca{Slot: indexSlot})
-	g.Emit(ir.Store{Slot: indexSlot, Value: ir.IntConstOperand("0", types.PrimitiveUsz)})
+	if node.Reversed {
+		var length ir.Operand
+		switch t := iterableType.(type) {
+		case types.SliceType:
+			length = g.sliceLength(iterableSlot, t)
+		case types.ArrayType:
+			length = ir.IntConstOperand(strconv.Itoa(t.Length), types.PrimitiveUsz)
+		}
+		g.Emit(ir.Store{Slot: indexSlot, Value: length})
+	} else {
+		g.Emit(ir.Store{Slot: indexSlot, Value: ir.IntConstOperand("0", types.PrimitiveUsz)})
+	}
 	elementSlot := g.currentFunction.NewSlot(node.Symbol.Type, node.Name)
 	g.currentEnv.Variables[node.Symbol] = elementSlot
 	g.Emit(ir.Alloca{Slot: elementSlot})
@@ -1097,19 +1140,29 @@ func (g *Generator) generateForEach(node *parser.ForEachNode) {
 
 	g.currentBlock = conditionBlock
 	index := g.loadSlot(indexSlot, types.PrimitiveUsz)
-	var length ir.Operand
-	switch t := iterableType.(type) {
-	case types.SliceType:
-		length = g.sliceLength(iterableSlot, t)
-	case types.ArrayType:
-		length = ir.IntConstOperand(strconv.Itoa(t.Length), types.PrimitiveUsz)
-	}
 	condition := g.currentFunction.NewValueOfType(types.PrimitiveBool)
-	g.Emit(ir.CmpLt{Dest: condition, Left: index, Right: length})
+	if node.Reversed {
+		g.Emit(ir.CmpGt{Dest: condition, Left: index, Right: ir.IntConstOperand("0", types.PrimitiveUsz)})
+	} else {
+		var length ir.Operand
+		switch t := iterableType.(type) {
+		case types.SliceType:
+			length = g.sliceLength(iterableSlot, t)
+		case types.ArrayType:
+			length = ir.IntConstOperand(strconv.Itoa(t.Length), types.PrimitiveUsz)
+		}
+		g.Emit(ir.CmpLt{Dest: condition, Left: index, Right: length})
+	}
 	g.Emit(ir.Branch{Cond: ir.ValueOperand(condition, types.PrimitiveBool), Then: bodyBlock.ID, Else: endBlock.ID})
 
 	g.currentBlock = bodyBlock
-	g.storeForEachElement(iterableSlot, iterableType, index, elementSlot)
+	elementIndex := index
+	if node.Reversed {
+		previousIndex := g.currentFunction.NewValueOfType(types.PrimitiveUsz)
+		g.Emit(ir.Sub{Dest: previousIndex, Left: index, Right: ir.IntConstOperand("1", types.PrimitiveUsz)})
+		elementIndex = ir.ValueOperand(previousIndex, types.PrimitiveUsz)
+	}
+	g.storeForEachElement(iterableSlot, iterableType, elementIndex, elementSlot)
 	popLoop := g.pushLoopTargets(endBlock.ID, postBlock.ID)
 	g.generateBlock(node.Body)
 	popLoop()
@@ -1120,7 +1173,11 @@ func (g *Generator) generateForEach(node *parser.ForEachNode) {
 	g.currentBlock = postBlock
 	currentIndex := g.loadSlot(indexSlot, types.PrimitiveUsz)
 	nextIndex := g.currentFunction.NewValueOfType(types.PrimitiveUsz)
-	g.Emit(ir.Add{Dest: nextIndex, Left: currentIndex, Right: ir.IntConstOperand("1", types.PrimitiveUsz)})
+	if node.Reversed {
+		g.Emit(ir.Sub{Dest: nextIndex, Left: currentIndex, Right: ir.IntConstOperand("1", types.PrimitiveUsz)})
+	} else {
+		g.Emit(ir.Add{Dest: nextIndex, Left: currentIndex, Right: ir.IntConstOperand("1", types.PrimitiveUsz)})
+	}
 	g.Emit(ir.Store{Slot: indexSlot, Value: ir.ValueOperand(nextIndex, types.PrimitiveUsz)})
 	g.Emit(ir.Jump{Target: conditionBlock.ID})
 	g.currentBlock = endBlock

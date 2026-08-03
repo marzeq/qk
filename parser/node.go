@@ -805,6 +805,7 @@ type RangeForNode struct {
 	Start     ExpressionNode
 	End       ExpressionNode
 	Inclusive bool
+	Reversed  bool
 	Body      *BlockNode
 	Loc       shared.Location
 	Symbol    *symbols.Symbol
@@ -816,6 +817,7 @@ type ForEachNode struct {
 	Name     string
 	NameLoc  shared.Location
 	Iterable ExpressionNode
+	Reversed bool
 	Body     *BlockNode
 	Loc      shared.Location
 	Symbol   *symbols.Symbol
