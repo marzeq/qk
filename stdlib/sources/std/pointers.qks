@@ -1,0 +1,5 @@
+module std
+
+pub let (*T).is_nil<T>(self): bool = self == nil
+
+pub let (*mut T).as_const<T>(self): *T = self

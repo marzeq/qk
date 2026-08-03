@@ -1227,12 +1227,30 @@ func (a *Attributor) attributeMethodCall(n *parser.FunctionCallNode) bool {
 		return false
 	}
 	module, owner, receiverIsPointer, ok := methodOwnerIdentity(member.Subject.GetType())
-	if !ok {
-		return false
+	var method *symbols.Symbol
+	if ok {
+		method = a.analyser.methods[module+":"+owner][member.Field.Name]
 	}
-	method := a.analyser.methods[module+":"+owner][member.Field.Name]
+	adjustment := structuralReceiverDirect
+	if method != nil && method.MethodOwnerType != nil {
+		_, patternAdjustment, matches := structuralReceiverMatch(method, member.Subject.GetType())
+		if !matches {
+			method = nil
+		} else {
+			adjustment = patternAdjustment
+		}
+	}
 	if method == nil {
-		return false
+		var ambiguous bool
+		method, adjustment, ambiguous = a.analyser.findStructuralMethod(member.Field.Name, member.Subject.GetType())
+		if ambiguous {
+			a.errorf(n, "method %q is ambiguous for receiver type %v", member.Field.Name, member.Subject.GetType())
+			n.SetType(types.ErrorType{})
+			return true
+		}
+		if method == nil {
+			return false
+		}
 	}
 	if method.StaticMethod {
 		return false
@@ -1260,16 +1278,27 @@ func (a *Attributor) attributeMethodCall(n *parser.FunctionCallNode) bool {
 		}
 	}
 	receiver := member.Subject
-	expected := method.Signature.Parameters[0]
-	expectsPointer := method.MethodReceiver != types.TraitReceiverValue
-	if expectsPointer && !receiverIsPointer {
-		op := parser.UnaryOpReference
-		if ptr := types.Underlying(expected).(types.PointerType); ptr.Mutable {
-			op = parser.UnaryOpMutableReference
+	if method.MethodOwnerType != nil {
+		switch adjustment {
+		case structuralReceiverReference:
+			receiver = &parser.UnaryOpNode{Op: parser.UnaryOpReference, Operand: receiver, Loc: receiver.GetLoc()}
+		case structuralReceiverMutableReference:
+			receiver = &parser.UnaryOpNode{Op: parser.UnaryOpMutableReference, Operand: receiver, Loc: receiver.GetLoc()}
+		case structuralReceiverDereference:
+			receiver = &parser.UnaryOpNode{Op: parser.UnaryOpDereference, Operand: receiver, Loc: receiver.GetLoc()}
 		}
-		receiver = &parser.UnaryOpNode{Op: op, Operand: receiver, Loc: receiver.GetLoc()}
-	} else if !expectsPointer && receiverIsPointer {
-		receiver = &parser.UnaryOpNode{Op: parser.UnaryOpDereference, Operand: receiver, Loc: receiver.GetLoc()}
+	} else {
+		expected := method.Signature.Parameters[0]
+		expectsPointer := method.MethodReceiver != types.TraitReceiverValue
+		if expectsPointer && !receiverIsPointer {
+			op := parser.UnaryOpReference
+			if ptr := types.Underlying(expected).(types.PointerType); ptr.Mutable {
+				op = parser.UnaryOpMutableReference
+			}
+			receiver = &parser.UnaryOpNode{Op: op, Operand: receiver, Loc: receiver.GetLoc()}
+		} else if !expectsPointer && receiverIsPointer {
+			receiver = &parser.UnaryOpNode{Op: parser.UnaryOpDereference, Operand: receiver, Loc: receiver.GetLoc()}
+		}
 	}
 	n.Args = append([]parser.ExpressionNode{receiver}, n.Args...)
 	n.Symbol = method
@@ -1278,6 +1307,125 @@ func (a *Attributor) attributeMethodCall(n *parser.FunctionCallNode) bool {
 		n.Name = &parser.IdentifierNode{Name: method.Name, Module: method.DefinitionModule, ResolvedModuleName: method.DefinitionModule, Loc: member.Loc, Symbol: method}
 	}
 	return true
+}
+
+type structuralReceiverAdjustment uint8
+
+const (
+	structuralReceiverDirect structuralReceiverAdjustment = iota
+	structuralReceiverReference
+	structuralReceiverMutableReference
+	structuralReceiverDereference
+)
+
+func (a *Analyser) findStructuralMethod(name string, actual types.Type) (*symbols.Symbol, structuralReceiverAdjustment, bool) {
+	var selected *symbols.Symbol
+	selectedAdjustment := structuralReceiverDirect
+	selectedRank := 100
+	ambiguous := false
+	for _, candidate := range a.structuralMethods[name] {
+		if candidate.StaticMethod || len(candidate.Signature.Parameters) == 0 {
+			continue
+		}
+		rank, adjustment, matches := structuralReceiverMatch(candidate, actual)
+		if !matches || rank > selectedRank {
+			continue
+		}
+		if rank == selectedRank {
+			ambiguous = true
+			continue
+		}
+		selected = candidate
+		selectedAdjustment = adjustment
+		selectedRank = rank
+		ambiguous = false
+	}
+	return selected, selectedAdjustment, ambiguous
+}
+
+func structuralReceiverMatch(method *symbols.Symbol, actual types.Type) (int, structuralReceiverAdjustment, bool) {
+	expected := method.Signature.Parameters[0]
+	if typePatternMatches(expected, actual, false) {
+		return 0, structuralReceiverDirect, true
+	}
+	if typePatternMatches(expected, actual, true) {
+		return 1, structuralReceiverDirect, true
+	}
+	owner := method.MethodOwnerType
+	if method.MethodReceiver != types.TraitReceiverValue {
+		if typePatternMatches(owner, actual, false) {
+			if method.MethodReceiver == types.TraitReceiverMutablePointer {
+				return 2, structuralReceiverMutableReference, true
+			}
+			return 2, structuralReceiverReference, true
+		}
+		if typePatternMatches(owner, actual, true) {
+			if method.MethodReceiver == types.TraitReceiverMutablePointer {
+				return 3, structuralReceiverMutableReference, true
+			}
+			return 3, structuralReceiverReference, true
+		}
+	}
+	if method.MethodReceiver == types.TraitReceiverValue {
+		if pointer, ok := actual.(types.PointerType); ok && typePatternMatches(owner, pointer.Base, false) {
+			return 2, structuralReceiverDereference, true
+		}
+	}
+	return 0, structuralReceiverDirect, false
+}
+
+func typePatternMatches(pattern, actual types.Type, allowCapabilityCoercion bool) bool {
+	if _, ok := pattern.(types.TypeParameter); ok {
+		return true
+	}
+	switch pattern := pattern.(type) {
+	case types.DefinedType:
+		actual, ok := actual.(types.DefinedType)
+		if !ok || pattern.Module != actual.Module || len(pattern.TypeArguments) != len(actual.TypeArguments) {
+			return false
+		}
+		if pattern.GenericName != "" || actual.GenericName != "" {
+			if pattern.GenericName == "" || pattern.GenericName != actual.GenericName {
+				return false
+			}
+		} else if pattern.Name != actual.Name {
+			return false
+		}
+		for i := range pattern.TypeArguments {
+			if !typePatternMatches(pattern.TypeArguments[i], actual.TypeArguments[i], allowCapabilityCoercion) {
+				return false
+			}
+		}
+		return true
+	case types.PointerType:
+		actual, ok := actual.(types.PointerType)
+		if !ok || (pattern.Mutable != actual.Mutable && !(allowCapabilityCoercion && !pattern.Mutable && actual.Mutable)) {
+			return false
+		}
+		return typePatternMatches(pattern.Base, actual.Base, allowCapabilityCoercion)
+	case types.SliceType:
+		actual, ok := actual.(types.SliceType)
+		if !ok || (pattern.Mutable != actual.Mutable && !(allowCapabilityCoercion && !pattern.Mutable && actual.Mutable)) {
+			return false
+		}
+		return typePatternMatches(pattern.Base, actual.Base, allowCapabilityCoercion)
+	case types.ArrayType:
+		actual, ok := actual.(types.ArrayType)
+		return ok && pattern.Length == actual.Length && typePatternMatches(pattern.Base, actual.Base, allowCapabilityCoercion)
+	case types.FunctionType:
+		actual, ok := actual.(types.FunctionType)
+		if !ok || len(pattern.Parameters) != len(actual.Parameters) || pattern.TypedVariadic != actual.TypedVariadic {
+			return false
+		}
+		for i := range pattern.Parameters {
+			if !typePatternMatches(pattern.Parameters[i], actual.Parameters[i], allowCapabilityCoercion) {
+				return false
+			}
+		}
+		return typePatternMatches(pattern.ReturnType, actual.ReturnType, allowCapabilityCoercion)
+	default:
+		return pattern.Equals(actual)
+	}
 }
 
 func (a *Attributor) attributeStaticTraitMethodCall(
@@ -1406,7 +1554,7 @@ func (a *Attributor) attributeStaticTraitMethodCall(
 }
 
 func methodOwnerIdentity(t types.Type) (module, name string, pointer bool, ok bool) {
-	if slice, isSlice := types.Underlying(t).(types.SliceType); isSlice && slice.Base.Equals(types.PrimitiveU8) {
+	if defined, isDefined := t.(types.DefinedType); isDefined && defined.Module == "" && defined.Name == "str" {
 		return "builtin", "str", false, true
 	}
 	if ptr, isPointer := types.Underlying(t).(types.PointerType); isPointer && !ptr.Mutable && ptr.Base.Equals(types.PrimitiveU8) {
@@ -1415,6 +1563,9 @@ func methodOwnerIdentity(t types.Type) (module, name string, pointer bool, ok bo
 	if ptr, isPointer := types.Underlying(t).(types.PointerType); isPointer {
 		t = ptr.Base
 		pointer = true
+	}
+	if defined, isDefined := t.(types.DefinedType); isDefined && defined.Module == "" && defined.Name == "str" {
+		return "builtin", "str", pointer, true
 	}
 	switch t := t.(type) {
 	case types.DefinedType:

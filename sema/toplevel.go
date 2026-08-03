@@ -1,6 +1,7 @@
 package sema
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/marzeq/qk/attributes"
@@ -69,7 +70,7 @@ func (a *Analyser) collectFunctionSignature(n *parser.FunctionDefNode) {
 			a.errorf(n, "generic functions cannot be exported")
 		}
 	}
-	if n.MethodOwner != "" {
+	if n.HasMethodOwner() {
 		a.collectMethodSignature(n)
 		return
 	}
@@ -139,14 +140,17 @@ func (a *Analyser) collectPlainFunctionSignature(n *parser.FunctionDefNode) {
 }
 
 func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
+	if n.MethodOwnerType != nil {
+		a.collectPatternMethodSignature(n)
+		return
+	}
+	if len(n.MethodOwnerGenericParameters) != 0 {
+		a.errorf(n, "generic method owners use the form (Type<T>).%s<T>(...)", n.Name)
+		return
+	}
 	var ownerType types.Type
 	ownerModule := a.currentMod
-	var ownerParameters []types.TypeParameter
 	if info, ok := a.aliases[n.MethodOwner]; ok {
-		if len(n.MethodOwnerGenericParameters) != 0 {
-			a.errorf(n, "non-generic method owner %q does not accept type parameters", n.MethodOwner)
-			return
-		}
 		if info.node.Transparent {
 			a.errorf(n, "cannot attach method to type alias %q", n.MethodOwner)
 			return
@@ -157,41 +161,8 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 		}
 		ownerType = a.resolveAlias(info, n, false)
 	} else if ownerSymbol, ok := a.current.Resolve(n.MethodOwner); ok && ownerSymbol.Kind == symbols.SymbolKindType && ownerSymbol.Template {
-		info := a.genericAliases[ownerSymbol]
-		if info == nil {
-			a.errorf(n, "unsupported generic method owner %q", n.MethodOwner)
-			return
-		}
-		if info.node.Transparent {
-			a.errorf(n, "cannot attach method to type alias %q", n.MethodOwner)
-			return
-		}
-		if n.Pub && !info.node.Pub {
-			a.errorf(n, "public method %q requires public owner type %q", n.Name, n.MethodOwner)
-			return
-		}
-		if len(n.MethodOwnerGenericParameters) != len(info.parameters) {
-			a.errorf(n, "generic method owner %q must declare its %d type parameters before '.'", n.MethodOwner, len(info.parameters))
-			return
-		}
-		ownerParameters = make([]types.TypeParameter, len(info.parameters))
-		for i, parameter := range n.MethodOwnerGenericParameters {
-			if parameter.Constraint != nil {
-				a.errorf(parameter, "method owner type parameter %q cannot specify a constraint", parameter.Name)
-				return
-			}
-			ownerParameters[i] = info.parameters[i]
-			ownerParameters[i].Name = parameter.Name
-		}
-		arguments := make([]types.Type, len(ownerParameters))
-		for i, parameter := range ownerParameters {
-			arguments[i] = parameter
-		}
-		specialization := a.specializeGenericAlias(info, arguments, n, false)
-		if specialization == nil {
-			return
-		}
-		ownerType = specialization.TypeInfo
+		a.errorf(n, "generic method owner %q requires a parenthesized type pattern", n.MethodOwner)
+		return
 	} else if builtin, ok := a.universe.Resolve(n.MethodOwner); ok && builtin.Kind == symbols.SymbolKindType {
 		if len(n.MethodOwnerGenericParameters) != 0 {
 			a.errorf(n, "builtin method owner %q does not accept type parameters", n.MethodOwner)
@@ -221,22 +192,9 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 	}
 
 	previousBindings := a.typeParameterBindings
-	if len(ownerParameters) != 0 {
-		a.typeParameterBindings = make(map[string]types.Type, len(ownerParameters))
-		for _, parameter := range ownerParameters {
-			a.typeParameterBindings[parameter.Name] = parameter
-		}
-	}
 	methodParameterNodes := n.GenericParameters
-	for _, parameter := range methodParameterNodes {
-		if _, exists := a.typeParameterBindings[parameter.Name]; exists {
-			a.errorf(parameter, "generic method type parameter %q conflicts with an owner type parameter", parameter.Name)
-			a.typeParameterBindings = previousBindings
-			return
-		}
-	}
 	methodParameters := a.makeGenericParameters(n.MethodOwner+"."+n.Name, methodParameterNodes)
-	genericParameters := append(ownerParameters, methodParameters...)
+	genericParameters := methodParameters
 	if len(genericParameters) != 0 {
 		if a.typeParameterBindings == nil {
 			a.typeParameterBindings = make(map[string]types.Type, len(genericParameters))
@@ -295,6 +253,213 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 			node: n, root: a.currentRoot, module: a.currentMod,
 			specializations: make(map[string]*parser.FunctionDefNode),
 		}
+	}
+}
+
+func (a *Analyser) collectPatternMethodSignature(n *parser.FunctionDefNode) {
+	genericParameters := a.makeGenericParameters(n.Name, n.GenericParameters)
+	previousBindings := a.typeParameterBindings
+	if len(genericParameters) != 0 {
+		a.typeParameterBindings = make(map[string]types.Type, len(genericParameters))
+		for _, parameter := range genericParameters {
+			a.typeParameterBindings[parameter.Name] = parameter
+		}
+		defer func() { a.typeParameterBindings = previousBindings }()
+	}
+
+	ownerType := a.resolveTypeNode(n.MethodOwnerType)
+	ownerParameters := methodOwnerTypeParameters(ownerType)
+	if len(ownerParameters) > len(genericParameters) {
+		a.errorf(n, "method owner type %v uses undeclared generic parameters", ownerType)
+		return
+	}
+	for i, ownerParameter := range ownerParameters {
+		if !ownerParameter.Equals(genericParameters[i]) {
+			a.errorf(n, "generic parameters used by method owner %v must be declared first and in owner order", ownerType)
+			return
+		}
+	}
+	ownerModule, ownerName, structural, valid := a.classifyPatternMethodOwner(n, ownerType)
+	if !valid {
+		return
+	}
+	if fieldExists(types.Underlying(ownerType), n.Name) {
+		a.errorf(n, "cannot define method %q because owner type %v already has a field with that name", n.Name, ownerType)
+		return
+	}
+
+	paramTypes := make([]types.Type, len(n.Args))
+	requiredParameters := len(n.Args)
+	for i, arg := range n.Args {
+		paramTypes[i] = a.resolveTypeNode(arg.Type)
+		if arg.Default != nil && requiredParameters == len(n.Args) {
+			requiredParameters = i
+		}
+	}
+	if n.TypedVariadic && requiredParameters == len(n.Args) {
+		requiredParameters--
+	}
+	var ret types.Type
+	if n.RetTypeNode != nil {
+		ret = a.resolveTypeNode(n.RetTypeNode)
+	}
+	receiver := types.TraitReceiverValue
+	switch n.Receiver {
+	case parser.MethodReceiverPointer:
+		receiver = types.TraitReceiverPointer
+	case parser.MethodReceiverMutablePointer:
+		receiver = types.TraitReceiverMutablePointer
+	}
+	displayOwner := ownerType.String()
+	sym := &symbols.Symbol{Name: displayOwner + "." + n.Name, Kind: symbols.SymbolKindFunction,
+		Signature: &symbols.FunctionSignature{Parameters: paramTypes, RequiredParameters: requiredParameters, ReturnType: ret, Variadic: n.HasVariadic, TypedVariadic: n.TypedVariadic},
+		Public:    n.Pub, Attributes: n.Attributes, Method: true, StaticMethod: n.Receiver == parser.MethodReceiverNone,
+		MethodReceiver: receiver, MethodOwnerType: ownerType, DefinitionModule: a.currentMod,
+		GenericParameters: genericParameters, Template: len(genericParameters) != 0}
+	if n.TypedVariadic {
+		sym.Signature.VariadicElement = types.Underlying(paramTypes[len(paramTypes)-1]).(types.SliceType).Base
+	}
+
+	if structural {
+		for _, existing := range a.structuralMethods[n.Name] {
+			if structuralOwnerShape(existing.MethodOwnerType) == structuralOwnerShape(ownerType) {
+				a.errorf(n, "method %q is already defined for structural owner %v", n.Name, ownerType)
+				return
+			}
+		}
+		a.structuralMethods[n.Name] = append(a.structuralMethods[n.Name], sym)
+	} else {
+		key := ownerModule + ":" + ownerName
+		if a.methods[key] == nil {
+			a.methods[key] = make(map[string]*symbols.Symbol)
+		}
+		if _, exists := a.methods[key][n.Name]; exists {
+			a.errorf(n, "method %q already defined on type %v", n.Name, ownerType)
+			return
+		}
+		a.methods[key][n.Name] = sym
+	}
+
+	n.Symbol = sym
+	a.functionDefinitions[sym] = &functionDefinitionInfo{node: n, module: a.currentMod}
+	if sym.Template {
+		a.genericFunctions[sym] = &genericFunctionInfo{
+			node: n, root: a.currentRoot, module: a.currentMod,
+			specializations: make(map[string]*parser.FunctionDefNode),
+		}
+	}
+}
+
+func (a *Analyser) classifyPatternMethodOwner(n *parser.FunctionDefNode, ownerType types.Type) (string, string, bool, bool) {
+	switch owner := ownerType.(type) {
+	case types.DefinedType:
+		name := owner.Name
+		if owner.GenericName != "" {
+			name = owner.GenericName
+		}
+		if owner.Module == "" {
+			if !a.currentTrustedStandardLibrary {
+				a.errorf(n, "methods on builtin type %v may only be defined by the trusted standard library", ownerType)
+				return "", "", false, false
+			}
+			return "builtin", name, false, true
+		}
+		if owner.Module != a.currentMod {
+			a.errorf(n, "cannot attach method to type %v owned by another module", ownerType)
+			return "", "", false, false
+		}
+		if n.Pub {
+			if symbol, ok := a.current.Resolve(name); ok && !symbol.Public {
+				a.errorf(n, "public method %q requires public owner type %q", n.Name, name)
+				return "", "", false, false
+			}
+		}
+		return owner.Module, name, false, true
+	case *types.AliasRef:
+		if owner.Module != a.currentMod {
+			a.errorf(n, "cannot attach method to type %v owned by another module", ownerType)
+			return "", "", false, false
+		}
+		return owner.Module, owner.Name, false, true
+	case types.PrimitiveType:
+		if owner == types.PrimitiveVoid {
+			a.errorf(n, "cannot attach method to void")
+			return "", "", false, false
+		}
+		if !a.currentTrustedStandardLibrary {
+			a.errorf(n, "methods on builtin type %v may only be defined by the trusted standard library", ownerType)
+			return "", "", false, false
+		}
+		return "builtin", owner.String(), false, true
+	default:
+		if !a.currentTrustedStandardLibrary {
+			a.errorf(n, "methods on structural builtin type %v may only be defined by the trusted standard library", ownerType)
+			return "", "", true, false
+		}
+		return "builtin", structuralOwnerShape(ownerType), true, true
+	}
+}
+
+func methodOwnerTypeParameters(t types.Type) []types.TypeParameter {
+	result := []types.TypeParameter{}
+	seen := make(map[string]bool)
+	var visit func(types.Type)
+	visit = func(t types.Type) {
+		switch t := t.(type) {
+		case types.TypeParameter:
+			if !seen[t.Key()] {
+				seen[t.Key()] = true
+				result = append(result, t)
+			}
+		case types.DefinedType:
+			for _, argument := range t.TypeArguments {
+				visit(argument)
+			}
+		case types.PointerType:
+			visit(t.Base)
+		case types.SliceType:
+			visit(t.Base)
+		case types.ArrayType:
+			visit(t.Base)
+		case types.FunctionType:
+			for _, parameter := range t.Parameters {
+				visit(parameter)
+			}
+			visit(t.ReturnType)
+		case types.MultipleReturnType:
+			for _, item := range t.Types {
+				visit(item)
+			}
+		}
+	}
+	visit(t)
+	return result
+}
+
+func structuralOwnerShape(t types.Type) string {
+	switch t := t.(type) {
+	case types.TypeParameter:
+		return "T"
+	case types.PointerType:
+		if t.Mutable {
+			return "*mut " + structuralOwnerShape(t.Base)
+		}
+		return "*" + structuralOwnerShape(t.Base)
+	case types.SliceType:
+		if t.Mutable {
+			return "[]mut " + structuralOwnerShape(t.Base)
+		}
+		return "[]" + structuralOwnerShape(t.Base)
+	case types.ArrayType:
+		return "[" + strconv.Itoa(t.Length) + "]" + structuralOwnerShape(t.Base)
+	case types.FunctionType:
+		parameters := make([]string, len(t.Parameters))
+		for i, parameter := range t.Parameters {
+			parameters[i] = structuralOwnerShape(parameter)
+		}
+		return "(" + strings.Join(parameters, ",") + "):" + structuralOwnerShape(t.ReturnType)
+	default:
+		return t.String()
 	}
 }
 

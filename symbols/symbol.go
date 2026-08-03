@@ -38,6 +38,7 @@ type Symbol struct {
 	Method            bool                    // function is attached to a type
 	StaticMethod      bool                    // attached to a type without a receiver
 	MethodReceiver    types.TraitReceiverKind // receiver form declared by an attached method
+	MethodOwnerType   types.Type              // explicit structural owner pattern, when present
 	DefinitionModule  string                  // module that owns the function implementation
 	TraitRequirement  bool
 	RequirementTrait  types.TraitType

@@ -669,6 +669,7 @@ func (n GenericParameterNode) GetLoc() shared.Location { return n.Loc }
 type FunctionDefNode struct {
 	Name                         string
 	MethodOwner                  string
+	MethodOwnerType              TypeNode
 	MethodOwnerGenericParameters []GenericParameterNode
 	Receiver                     MethodReceiverKind
 	GenericParameters            []GenericParameterNode
@@ -695,6 +696,10 @@ const (
 )
 
 func (n FunctionDefNode) GetLoc() shared.Location { return n.Loc }
+
+func (n FunctionDefNode) HasMethodOwner() bool {
+	return n.MethodOwner != "" || n.MethodOwnerType != nil
+}
 
 func (n FunctionDefNode) IsGeneric() bool {
 	return len(n.MethodOwnerGenericParameters) != 0 || len(n.GenericParameters) != 0

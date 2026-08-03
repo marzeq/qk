@@ -356,6 +356,7 @@ func (a *Analyser) specializeGenericFunction(template *symbols.Symbol, arguments
 	}).(*parser.FunctionDefNode)
 	cloned.GenericParameters = nil
 	cloned.MethodOwnerGenericParameters = nil
+	cloned.MethodOwnerType = nil
 	cloned.GenericInstance = true
 	cloned.Name = name
 	cloned.Symbol = instanceSymbol
@@ -475,6 +476,7 @@ func (a *Analyser) substituteSymbol(
 	result.GenericOrigin = a.instantiateType(original.GenericOrigin, substitutions, use)
 	result.Signature = a.instantiateFunctionSignature(original.Signature, substitutions, use)
 	result.TypeInfo = a.instantiateType(original.TypeInfo, substitutions, use)
+	result.MethodOwnerType = a.instantiateType(original.MethodOwnerType, substitutions, use)
 	result.TypeArguments = make([]types.Type, len(original.TypeArguments))
 	for i, argument := range original.TypeArguments {
 		result.TypeArguments[i] = a.instantiateType(argument, substitutions, use)

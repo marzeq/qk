@@ -140,29 +140,57 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 	}
 	p.Inc()
 
-	name, ok := p.ExpectGet(tokeniser.TokenIdentifier)
-	if !ok {
-		return nil, shared.NewError(p.PrevLoc(), "expected function name")
-	}
-	leadingGenericParameters, err := p.parseGenericParameters()
-	if err != nil {
-		return nil, err
-	}
+	var name *tokeniser.Token
+	var err error
 	methodOwner := ""
+	var methodOwnerType TypeNode
 	var methodOwnerGenericParameters []GenericParameterNode
-	genericParameters := leadingGenericParameters
-	if p.Match(tokeniser.TokenDot) {
+	var genericParameters []GenericParameterNode
+	if p.Match(tokeniser.TokenOpenParen) {
 		p.Inc()
-		methodOwner = name.Value
-		methodOwnerGenericParameters = leadingGenericParameters
-		methodName, ok := p.ExpectGet(tokeniser.TokenIdentifier)
+		methodOwnerType, err = p.ParseType()
+		if err != nil {
+			return nil, err
+		}
+		if !p.Expect(tokeniser.TokenCloseParen) {
+			return nil, shared.NewError(p.PrevLoc(), "expected ')' after method owner type")
+		}
+		if !p.Expect(tokeniser.TokenDot) {
+			return nil, shared.NewError(p.PrevLoc(), "expected '.' after method owner type")
+		}
+		var ok bool
+		name, ok = p.ExpectGet(tokeniser.TokenIdentifier)
 		if !ok {
 			return nil, shared.NewError(p.PrevLoc(), "expected method name after '.'")
 		}
-		name = methodName
 		genericParameters, err = p.parseGenericParameters()
 		if err != nil {
 			return nil, err
+		}
+	} else {
+		var ok bool
+		name, ok = p.ExpectGet(tokeniser.TokenIdentifier)
+		if !ok {
+			return nil, shared.NewError(p.PrevLoc(), "expected function name")
+		}
+		leadingGenericParameters, parseErr := p.parseGenericParameters()
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		genericParameters = leadingGenericParameters
+		if p.Match(tokeniser.TokenDot) {
+			p.Inc()
+			methodOwner = name.Value
+			methodOwnerGenericParameters = leadingGenericParameters
+			methodName, ok := p.ExpectGet(tokeniser.TokenIdentifier)
+			if !ok {
+				return nil, shared.NewError(p.PrevLoc(), "expected method name after '.'")
+			}
+			name = methodName
+			genericParameters, err = p.parseGenericParameters()
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -179,7 +207,7 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 	receiver := MethodReceiverNone
 	hasReceiver := p.Match(tokeniser.TokenAsterisk) ||
 		(p.Match(tokeniser.TokenIdentifier) && p.Peek().Value == "self")
-	if methodOwner != "" && hasReceiver {
+	if (methodOwner != "" || methodOwnerType != nil) && hasReceiver {
 		pointer, mutablePointer := false, false
 		if p.Match(tokeniser.TokenAsterisk) {
 			p.Inc()
@@ -194,11 +222,16 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 			return nil, shared.NewError(p.PrevLoc(), "method's first parameter must be self, *self, or *mut self")
 		}
 		receiver = MethodReceiverValue
-		ownerTypeArguments := make([]TypeNode, len(methodOwnerGenericParameters))
-		for i, parameter := range methodOwnerGenericParameters {
-			ownerTypeArguments[i] = &NamedTypeNode{Name: parameter.Name, Loc: parameter.Loc}
+		var selfType TypeNode
+		if methodOwnerType != nil {
+			selfType = methodOwnerType
+		} else {
+			ownerTypeArguments := make([]TypeNode, len(methodOwnerGenericParameters))
+			for i, parameter := range methodOwnerGenericParameters {
+				ownerTypeArguments[i] = &NamedTypeNode{Name: parameter.Name, Loc: parameter.Loc}
+			}
+			selfType = &NamedTypeNode{Name: methodOwner, TypeArguments: ownerTypeArguments, Loc: self.Loc}
 		}
-		var selfType TypeNode = &NamedTypeNode{Name: methodOwner, TypeArguments: ownerTypeArguments, Loc: self.Loc}
 		if pointer {
 			receiver = MethodReceiverPointer
 			selfType = &PointerTypeNode{BaseType: selfType, Mutable: mutablePointer, Loc: self.Loc}
@@ -417,6 +450,7 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 	return &FunctionDefNode{
 		Name:                         name.Value,
 		MethodOwner:                  methodOwner,
+		MethodOwnerType:              methodOwnerType,
 		MethodOwnerGenericParameters: methodOwnerGenericParameters,
 		Receiver:                     receiver,
 		GenericParameters:            genericParameters,
@@ -920,6 +954,15 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 			if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordMut) {
 				p.Inc()
 				mutable = true
+			}
+			if p.Match(tokeniser.TokenOpenParen) {
+				p.PopPos()
+				if mutable {
+					node, err := p.ParseDeclaration()
+					return node, true, err
+				}
+				node, err := p.ParseFunctionDefinition()
+				return node, true, err
 			}
 
 			if !p.Expect(tokeniser.TokenIdentifier) {

@@ -1,0 +1,74 @@
+module std
+
+pub let ([]T).is_empty<T>(self): bool = @len(self) == 0
+
+pub let ([]T).contains<T: PartialEq>(self, value: T): bool {
+  let mut index: usz = 0
+  for index < @len(self) {
+    if self[index] == value { return true }
+    index += 1
+  }
+  return false
+}
+
+pub let ([]T).find<T: PartialEq>(self, value: T): (usz, bool) {
+  let mut index: usz = 0
+  for index < @len(self) {
+    if self[index] == value { return index, true }
+    index += 1
+  }
+  return 0, false
+}
+
+pub let ([]T).starts_with<T: PartialEq>(self, prefix: []T): bool {
+  if @len(prefix) > @len(self) { return false }
+  let mut index: usz = 0
+  for index < @len(prefix) {
+    if self[index] != prefix[index] { return false }
+    index += 1
+  }
+  return true
+}
+
+pub let ([]T).ends_with<T: PartialEq>(self, suffix: []T): bool {
+  if @len(suffix) > @len(self) { return false }
+  let offset = @len(self) - @len(suffix)
+  let mut index: usz = 0
+  for index < @len(suffix) {
+    if self[offset + index] != suffix[index] { return false }
+    index += 1
+  }
+  return true
+}
+
+pub let ([]mut T).as_const<T>(self): []T = self
+
+pub let ([]mut T).fill<T>(self, value: T): void {
+  let mut index: usz = 0
+  for index < @len(self) {
+    self[index] = value
+    index += 1
+  }
+}
+
+pub let ([]mut T).swap<T>(self, left: usz, right: usz): void {
+  if left >= @len(self) || right >= @len(self) {
+    panic("slice swap index out of bounds")
+  }
+  let temporary = self[left]
+  self[left] = self[right]
+  self[right] = temporary
+}
+
+pub let ([]mut T).reverse<T>(self): void {
+  let mut left: usz = 0
+  let mut right = @len(self)
+  for left < right {
+    right -= 1
+    if left >= right { break }
+    let temporary = self[left]
+    self[left] = self[right]
+    self[right] = temporary
+    left += 1
+  }
+}

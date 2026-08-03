@@ -14,6 +14,7 @@ type Analyser struct {
 	aliases                       map[string]*aliasInfo
 	aliasesByModule               map[string]map[string]*aliasInfo
 	methods                       map[string]map[string]*symbols.Symbol
+	structuralMethods             map[string][]*symbols.Symbol
 	concreteTypes                 map[string]types.Type
 	errors                        []error
 	currentMod                    string
@@ -39,6 +40,7 @@ func NewAnalyser() *Analyser {
 		aliases:             make(map[string]*aliasInfo),
 		aliasesByModule:     make(map[string]map[string]*aliasInfo),
 		methods:             make(map[string]map[string]*symbols.Symbol),
+		structuralMethods:   make(map[string][]*symbols.Symbol),
 		concreteTypes:       make(map[string]types.Type),
 		importsByModule:     make(map[string]map[string]bool),
 		modulePaths:         make(map[*parser.RootNode]string),
