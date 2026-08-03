@@ -106,19 +106,71 @@ pub let tmpfile(): *FILE @foreign
 
 pub let EOF: i32 = comptime -1
 
-pub let fileno(stream: *FILE): i32 @foreign
+when OS == .Windows {
+  pub let fileno(stream: *FILE): i32 @foreign(symbol "_fileno")
+} else {
+  pub let fileno(stream: *FILE): i32 @foreign
+}
 
-pub let read(
-  fd: i32,
-  buf: *mut void,
-  count: usz,
-): isz @foreign
+when OS == .Windows {
+  let windows_read(
+    fd: i32,
+    buf: *mut void,
+    count: u32,
+  ): i32 @foreign(symbol "_read")
 
-pub let write(
-  fd: i32,
-  buf: *void,
-  count: usz,
-): isz @foreign
+  let windows_write(
+    fd: i32,
+    buf: *void,
+    count: u32,
+  ): i32 @foreign(symbol "_write")
+
+  pub let read(
+    fd: i32,
+    buf: *mut void,
+    count: usz,
+  ): isz {
+    let limited = if count > 0xffffffff.(usz) { 0xffffffff.(usz) } else { count }
+    return windows_read(fd, buf, limited.(u32)).(isz)
+  }
+
+  pub let write(
+    fd: i32,
+    buf: *void,
+    count: usz,
+  ): isz {
+    let limited = if count > 0xffffffff.(usz) { 0xffffffff.(usz) } else { count }
+    return windows_write(fd, buf, limited.(u32)).(isz)
+  }
+} else {
+  pub let read(
+    fd: i32,
+    buf: *mut void,
+    count: usz,
+  ): isz @foreign
+
+  pub let write(
+    fd: i32,
+    buf: *void,
+    count: usz,
+  ): isz @foreign
+}
+
+when OS == .Windows {
+  pub let errno_location(): *mut i32 @foreign(symbol "_errno")
+} else when OS == .Linux {
+  pub let errno_location(): *mut i32 @foreign(symbol "__errno_location")
+} else when OS == .MacOS
+  || OS == .FreeBSD
+  || OS == .OpenBSD
+  || OS == .NetBSD
+  || OS == .DragonFly {
+  pub let errno_location(): *mut i32 @foreign(symbol "__error")
+} else {
+  @compiler_error("Unsupported errno ABI")
+}
+
+pub let strerror(error: i32): cstr @foreign
 
 // -----------------------------------------------------------------------------
 // memory

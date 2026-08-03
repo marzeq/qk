@@ -1,0 +1,28 @@
+module std.os
+
+pub let mut args: []str = ---
+
+when !NoLibc {
+  import std.libc
+
+  pub let Error = type struct {
+    code: i32,
+  }
+
+  pub let Error.none(): Error = .{ code=0 }
+
+  // The returned view points to platform-owned storage and should be consumed
+  // before requesting another error message.
+  pub let Error.message(self): str {
+    let message = std.libc.strerror(self.code)
+    let mut length: usz = 0
+    for message[length] != '\0' { length += 1 }
+    return message[0:length].(str)
+  }
+
+  pub let last_error(): Error = .{ code=std.libc.errno_location().* }
+
+  pub let exit(code: i32): void @noreturn {
+    std.libc.exit(code)
+  }
+}

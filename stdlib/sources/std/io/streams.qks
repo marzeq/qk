@@ -14,68 +14,118 @@ when HasIO {
 import std
 import std.alloc
 import std.libc
+import std.os
+
+pub let ReadStatus = type enum {
+  Data,
+  End,
+  Error,
+}
 
 pub let FileWriter = type struct {
-  file: *std.libc.FILE,
+  handle: *void,
 }
 
 pub let FileReader = type struct {
-  file: *std.libc.FILE,
+  handle: *void,
 }
 
 pub let FileWriter.open(
   path: str,
   append: bool = false,
 ): FileWriter {
+  let file, _ = FileWriter.open_checked(path, append)
+  return file
+}
+
+pub let FileWriter.open_checked(
+  path: str,
+  append: bool = false,
+): (FileWriter, std.os.Error) {
   let mut lc = std.alloc.LibcAllocator.init()
   let allocator = lc.&mut.(mut dyn std.alloc.Allocator)
   let c_path = path.to_cstr(allocator)
-  if c_path == nil { return .{ file=nil } }
+  if c_path == nil { return .{ handle=nil }, std.os.last_error() }
 
   let file = std.libc.fopen(c_path, if append { c"ab" } else { c"wb" })
+  let error = if file == nil { std.os.last_error() } else { std.os.Error.none() }
   allocator.free_bytes(c_path, @len(path) + 1, @alignof(u8))
-  return .{ file=file }
+  return .{ handle=file.(*void) }, error
 }
 
-pub let FileWriter.from_file(file: *std.libc.FILE): FileWriter = .{ file=file }
-
-pub let FileWriter.is_open(*self): bool = self.file != nil
+pub let FileWriter.is_open(*self): bool = self.handle != nil
 
 pub let FileWriter.write(*mut self, bytes: []u8): usz {
-  if self.file == nil || @len(bytes) == 0 { return 0 }
-  return std.libc.fwrite(bytes.(*u8), 1, @len(bytes), self.file)
+  if self.handle == nil || @len(bytes) == 0 { return 0 }
+  let file = self.handle.(*std.libc.FILE)
+  let count = std.libc.write(std.libc.fileno(file), bytes.(*u8), @len(bytes))
+  if count <= 0 { return 0 }
+  return count.(usz)
+}
+
+pub let FileWriter.write_all(*mut self, bytes: []u8): bool {
+  let mut written: usz = 0
+  for written < @len(bytes) {
+    let count = self.write(bytes[written:])
+    if count == 0 { return false }
+    written += count
+  }
+  return true
 }
 
 pub let FileWriter.flush(*mut self): bool =
-  self.file != nil && std.libc.fflush(self.file) == 0
+  self.handle != nil && std.libc.fflush(self.handle.(*std.libc.FILE)) == 0
 
 pub let FileWriter.close(*mut self): bool {
-  if self.file == nil { return true }
-  let file = self.file
-  self.file = nil
+  if self.handle == nil { return true }
+  let file = self.handle.(*std.libc.FILE)
+  self.handle = nil
   return std.libc.fclose(file) == 0
 }
 
 pub let FileReader.open(
   path: str,
 ): FileReader {
+  let file, _ = FileReader.open_checked(path)
+  return file
+}
+
+pub let FileReader.open_checked(
+  path: str,
+): (FileReader, std.os.Error) {
   let mut lc = std.alloc.LibcAllocator.init()
   let allocator = lc.(mut dyn std.alloc.Allocator)
   let c_path = path.to_cstr(allocator)
-  if c_path == nil { return .{ file=nil } }
+  if c_path == nil { return .{ handle=nil }, std.os.last_error() }
 
   let file = std.libc.fopen(c_path, c"rb")
+  let error = if file == nil { std.os.last_error() } else { std.os.Error.none() }
   allocator.free_bytes(c_path, @len(path) + 1, @alignof(u8))
-  return .{ file=file }
+  return .{ handle=file.(*void) }, error
 }
 
-pub let FileReader.from_file(file: *std.libc.FILE): FileReader = .{ file=file }
-
-pub let FileReader.is_open(*self): bool = self.file != nil
+pub let FileReader.is_open(*self): bool = self.handle != nil
 
 pub let FileReader.read(*mut self, buffer: []mut u8): usz {
-  if self.file == nil || @len(buffer) == 0 { return 0 }
-  return std.libc.fread(buffer.(*mut u8), 1, @len(buffer), self.file)
+  let count, _ = self.read_some(buffer)
+  return count
+}
+
+pub let FileReader.read_some(
+  *mut self,
+  buffer: []mut u8,
+): (usz, ReadStatus) {
+  if self.handle == nil { return 0, .Error }
+  if @len(buffer) == 0 { return 0, .Data }
+
+  let count = std.libc.read(
+    std.libc.fileno(self.handle.(*std.libc.FILE)),
+    buffer.(*mut u8),
+    @len(buffer),
+  )
+  if count < 0 { return 0, .Error }
+  if count == 0 { return 0, .End }
+  return count.(usz), .Data
 }
 
 pub let FileReader.format(self, writer: mut dyn Writer): void {
@@ -83,22 +133,22 @@ pub let FileReader.format(self, writer: mut dyn Writer): void {
   let mut buffer: [4096]u8 = ---
 
   for true {
-    let count = reader.read(buffer[:])
-    if count == 0 { break }
+    let count, status = reader.read_some(buffer[:])
+    if status != .Data { break }
     if write_all(writer, buffer[0:count]) != count { break }
   }
 }
 
 pub let FileReader.close(*mut self): bool {
-  if self.file == nil { return true }
-  let file = self.file
-  self.file = nil
+  if self.handle == nil { return true }
+  let file = self.handle.(*std.libc.FILE)
+  self.handle = nil
   return std.libc.fclose(file) == 0
 }
 
-pub let mut stdout: FileWriter = .{ file=std.libc.stdout }
-pub let mut stderr: FileWriter = .{ file=std.libc.stderr }
-pub let mut stdin: FileReader = .{ file=std.libc.stdin }
+pub let mut stdout: FileWriter = .{ handle=std.libc.stdout.(*void) }
+pub let mut stderr: FileWriter = .{ handle=std.libc.stderr.(*void) }
+pub let mut stdin: FileReader = .{ handle=std.libc.stdin.(*void) }
 }
 
 pub let write_all(writer: mut dyn Writer, bytes: []u8): usz {
