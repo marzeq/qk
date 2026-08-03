@@ -1,9 +1,9 @@
 module std
 
+import std.os
+
 let HasStdlib = comptime !NoStdlib
 let HasLibc = comptime !NoLibc
-
-pub let mut Args: []str = ---
 
 pub let Add = type trait {
   let add(self, other: Self): Self

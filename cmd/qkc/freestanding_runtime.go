@@ -69,7 +69,7 @@ entry:
 			}
 			if !noStdlib {
 				fmt.Fprintf(&out, `declare %s @strlen(ptr)
-@__qk_std_global_Args = external hidden global { ptr, %s }
+@__qk_0_3_std2_os_global_args = external hidden global { ptr, %s }
 
 define i32 @main(i32 %%argc, ptr %%argv) {
 entry:
@@ -82,7 +82,7 @@ entry:
 				fmt.Fprintf(&out, `  %%args.data = alloca { ptr, %[1]s }, %[1]s %[2]s
   %%args.with-data = insertvalue { ptr, %[1]s } zeroinitializer, ptr %%args.data, 0
   %%args = insertvalue { ptr, %[1]s } %%args.with-data, %[1]s %[2]s, 1
-  store { ptr, %[1]s } %%args, ptr @__qk_std_global_Args
+  store { ptr, %[1]s } %%args, ptr @__qk_0_3_std2_os_global_args
   %%args.empty = icmp eq i32 %%argc, 0
   br i1 %%args.empty, label %%run, label %%args.loop
 
