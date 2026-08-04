@@ -35,7 +35,7 @@ func buildFreestandingRuntime(
 			}
 			fmt.Fprintf(&out, `declare hidden void @%s()
 %s
-define void @_start() noreturn nounwind {
+define void @_start() noreturn nounwind alignstack(16) {
 entry:
 %s  call void @%s()
   %%exit = call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i32 0)

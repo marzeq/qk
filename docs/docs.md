@@ -1368,4 +1368,4 @@ Prefer the higher-level allocation, stream, filesystem, and string packages when
 
 ## Mathematics
 
-`std.math` provides `PI`, `E`, and `PHI`, together with common trigonometric, exponential, logarithmic, power, square-root, and rounding functions. These declarations use the target's C mathematics library and carry their native link requirement with the package.
+`std.math` provides `PI`, `TAU`, `E`, `PHI`, `SQRT2`, `LN2`, `LN10`, `LOG2E`, and `LOG10E`; floating-point classification, sign, minimum, maximum, decomposition, scaling, remainder, and rounding helpers; angle conversion; and trigonometric, hyperbolic, exponential, logarithmic, power, square-root, cube-root, and hypotenuse functions. `modf` returns the fractional part followed by the integral part, `frexp` returns a normalized fraction followed by its base-two exponent, and `sincos` returns sine followed by cosine. Hosted builds use the target's mathematics library where appropriate; `-nolibc` builds use QK implementations with explicit IEEE-754 special-value handling and no native library dependency.

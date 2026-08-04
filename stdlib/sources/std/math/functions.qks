@@ -1,28 +1,646 @@
 module std.math
+when !NoLibc {
   @link(system "m")
+}
 
 pub let PI: f64 = 3.14159265358979323846
+pub let TAU: f64 = 6.28318530717958647692
 pub let E: f64 = 2.71828182845904523536
 pub let PHI: f64 = 1.61803398874989484820
+pub let SQRT2: f64 = 1.41421356237309504880
+pub let LN2: f64 = 0.69314718055994530942
+pub let LN10: f64 = 2.30258509299404568402
+pub let LOG2E: f64 = 1.44269504088896340736
+pub let LOG10E: f64 = 0.43429448190325182765
 
-pub let sin(x: f64): f64 @foreign(symbol "sin")
-pub let cos(x: f64): f64 @foreign(symbol "cos")
-pub let tan(x: f64): f64 @foreign(symbol "tan")
-pub let asin(x: f64): f64 @foreign(symbol "asin")
-pub let acos(x: f64): f64 @foreign(symbol "acos")
-pub let atan(x: f64): f64 @foreign(symbol "atan")
-pub let atan2(y, x: f64): f64 @foreign(symbol "atan2")
-pub let sinh(x: f64): f64 @foreign(symbol "sinh")
-pub let cosh(x: f64): f64 @foreign(symbol "cosh")
-pub let tanh(x: f64): f64 @foreign(symbol "tanh")
+let FloatBits = type union {
+  value: f64,
+  bits: u64,
+}
 
-pub let exp(x: f64): f64 @foreign(symbol "exp")
-pub let log(x: f64): f64 @foreign(symbol "log")
-pub let log10(x: f64): f64 @foreign(symbol "log10")
-pub let pow(x, y: f64): f64 @foreign(symbol "pow")
-pub let sqrt(x: f64): f64 @foreign(symbol "sqrt")
+let SignMask: u64 = comptime 0x8000000000000000
+let MagnitudeMask: u64 = comptime 0x7fffffffffffffff
+let ExponentMask: u64 = comptime 0x7ff0000000000000
+let FractionMask: u64 = comptime 0x000fffffffffffff
+let InfinityBits: u64 = comptime 0x7ff0000000000000
+let QuietNaNBits: u64 = comptime 0x7ff8000000000000
 
-pub let ceil(x: f64): f64 @foreign(symbol "ceil")
-pub let floor(x: f64): f64 @foreign(symbol "floor")
-pub let round(x: f64): f64 @foreign(symbol "round")
-pub let trunc(x: f64): f64 @foreign(symbol "trunc")
+let to_bits(value: f64): u64 {
+  let cast = FloatBits.{ value=value }
+  return cast.bits
+}
+
+let from_bits(bits: u64): f64 {
+  let cast = FloatBits.{ bits=bits }
+  return cast.value
+}
+
+let nan(): f64 = from_bits(QuietNaNBits)
+let positive_infinity(): f64 = from_bits(InfinityBits)
+let negative_infinity(): f64 = from_bits(SignMask | InfinityBits)
+let is_negative(value: f64): bool = (to_bits(value) & SignMask) != 0
+
+pub let is_nan(value: f64): bool = value != value
+pub let is_infinite(value: f64): bool =
+  (to_bits(value) & MagnitudeMask) == InfinityBits
+pub let is_finite(value: f64): bool =
+  (to_bits(value) & ExponentMask) != ExponentMask
+pub let sign_bit(value: f64): bool = is_negative(value)
+pub let abs(value: f64): f64 = from_bits(to_bits(value) & MagnitudeMask)
+
+pub let copy_sign(value, sign: f64): f64 =
+  from_bits((to_bits(value) & MagnitudeMask) | (to_bits(sign) & SignMask))
+
+let with_sign(value: f64, negative: bool): f64 {
+  let mut bits = to_bits(value) & MagnitudeMask
+  if negative { bits |= SignMask }
+  return from_bits(bits)
+}
+
+let signed_zero(negative: bool): f64 {
+  if negative { return from_bits(SignMask) }
+  return 0.0
+}
+
+pub let min(x, y: f64): f64 {
+  if is_nan(x) { return y }
+  if is_nan(y) { return x }
+  if x < y { return x }
+  if y < x { return y }
+  if x == 0.0 && (is_negative(x) || is_negative(y)) { return signed_zero(true) }
+  return x
+}
+
+pub let max(x, y: f64): f64 {
+  if is_nan(x) { return y }
+  if is_nan(y) { return x }
+  if x > y { return x }
+  if y > x { return y }
+  if x == 0.0 && (!is_negative(x) || !is_negative(y)) { return 0.0 }
+  return x
+}
+
+pub let radians(degrees: f64): f64 = degrees * (PI / 180.0)
+pub let degrees(radians: f64): f64 = radians * (180.0 / PI)
+
+when !NoLibc {
+  pub let sin(x: f64): f64 @foreign(symbol "sin")
+  pub let cos(x: f64): f64 @foreign(symbol "cos")
+  pub let tan(x: f64): f64 @foreign(symbol "tan")
+  pub let asin(x: f64): f64 @foreign(symbol "asin")
+  pub let acos(x: f64): f64 @foreign(symbol "acos")
+  pub let atan(x: f64): f64 @foreign(symbol "atan")
+  pub let atan2(y, x: f64): f64 @foreign(symbol "atan2")
+  pub let sinh(x: f64): f64 @foreign(symbol "sinh")
+  pub let cosh(x: f64): f64 @foreign(symbol "cosh")
+  pub let tanh(x: f64): f64 @foreign(symbol "tanh")
+  pub let asinh(x: f64): f64 @foreign(symbol "asinh")
+  pub let acosh(x: f64): f64 @foreign(symbol "acosh")
+  pub let atanh(x: f64): f64 @foreign(symbol "atanh")
+
+  pub let exp(x: f64): f64 @foreign(symbol "exp")
+  pub let exp2(x: f64): f64 @foreign(symbol "exp2")
+  pub let expm1(x: f64): f64 @foreign(symbol "expm1")
+  pub let log(x: f64): f64 @foreign(symbol "log")
+  pub let log2(x: f64): f64 @foreign(symbol "log2")
+  pub let log10(x: f64): f64 @foreign(symbol "log10")
+  pub let log1p(x: f64): f64 @foreign(symbol "log1p")
+  pub let pow(x, y: f64): f64 @foreign(symbol "pow")
+  pub let sqrt(x: f64): f64 @foreign(symbol "sqrt")
+  pub let cbrt(x: f64): f64 @foreign(symbol "cbrt")
+  pub let hypot(x, y: f64): f64 @foreign(symbol "hypot")
+  pub let fmod(x, y: f64): f64 @foreign(symbol "fmod")
+  pub let ldexp(x: f64, exponent: i32): f64 @foreign(symbol "ldexp")
+
+  pub let ceil(x: f64): f64 @foreign(symbol "ceil")
+  pub let floor(x: f64): f64 @foreign(symbol "floor")
+  pub let round(x: f64): f64 @foreign(symbol "round")
+  pub let trunc(x: f64): f64 @foreign(symbol "trunc")
+} else {
+  let HalfPI: f64 = 1.57079632679489661923
+  let QuarterPI: f64 = 0.78539816339744830962
+  let Ln2High: f64 = 0.69314718036912381649
+  let Ln2Low: f64 = 0.00000000019082149293
+  let HalfPIHigh: f64 = 1.57079632673412561417
+  let HalfPILow: f64 = 0.00000000006077100506
+  let MaxLog: f64 = 709.78271289338397310
+  let MinLog: f64 = -745.13321910194110842
+  let MaxHyperbolic: f64 = 710.47586007394386325
+
+  // Construct value * 2^exponent without libc. Callers pass a value close to
+  // one, so a single exact power-of-two multiplication covers normal and
+  // subnormal results without an iterative scaling loop.
+  let scale_power_two(value: f64, exponent: i32): f64 {
+    if value == 0.0 { return value }
+    if exponent > 1023 {
+      if exponent == 1024 {
+        return (value * 2.0) * from_bits(0x7fe0000000000000)
+      }
+      return positive_infinity()
+    }
+    if exponent >= -1022 {
+      let bits = (exponent + 1023).(u64) << 52
+      return value * from_bits(bits)
+    }
+    if exponent < -1074 { return 0.0 }
+    let bit = 1.(u64) << (exponent + 1074).(u64)
+    return value * from_bits(bit)
+  }
+
+  pub let ldexp(x: f64, exponent: i32): f64 {
+    if x == 0.0 || is_nan(x) || is_infinite(x) { return x }
+    if exponent > 4096 { return with_sign(positive_infinity(), is_negative(x)) }
+    if exponent < -4096 { return signed_zero(is_negative(x)) }
+
+    let mut result = x
+    let mut remaining = exponent
+    for remaining > 1023 {
+      result *= from_bits(0x7fe0000000000000)
+      remaining -= 1023
+      if is_infinite(result) { return result }
+    }
+    for remaining < -1022 {
+      result *= from_bits(0x0010000000000000)
+      remaining += 1022
+      if result == 0.0 { return result }
+    }
+    return result * from_bits((remaining + 1023).(u64) << 52)
+  }
+
+  pub let trunc(x: f64): f64 {
+    let bits = to_bits(x)
+    let exponent = ((bits & ExponentMask) >> 52).(i32) - 1023
+    if exponent < 0 { return signed_zero(is_negative(x)) }
+    if exponent >= 52 { return x }
+
+    let fractional = (1.(u64) << (52 - exponent).(u64)) - 1
+    return from_bits(bits & ~fractional)
+  }
+
+  pub let floor(x: f64): f64 {
+    let integral = trunc(x)
+    if integral == x || is_nan(x) { return x }
+    if x < 0.0 { return integral - 1.0 }
+    return integral
+  }
+
+  pub let ceil(x: f64): f64 {
+    let integral = trunc(x)
+    if integral == x || is_nan(x) { return x }
+    if x > 0.0 { return integral + 1.0 }
+    return integral
+  }
+
+  pub let round(x: f64): f64 {
+    if x == 0.0 || is_nan(x) || is_infinite(x) ||
+      abs(x) >= 4503599627370496.0 {
+      return x
+    }
+    if x < 0.0 { return ceil(x - 0.5) }
+    return floor(x + 0.5)
+  }
+
+  pub let fmod(x, y: f64): f64 {
+    if is_nan(x) || is_nan(y) || is_infinite(x) || y == 0.0 { return nan() }
+    if is_infinite(y) || abs(x) < abs(y) { return x }
+
+    let negative = is_negative(x)
+    let divisor = abs(y)
+    let mut remainder = abs(x)
+    for remainder >= divisor {
+      let mut scale = divisor
+      for scale <= remainder * 0.5 { scale *= 2.0 }
+      remainder -= scale
+    }
+    return with_sign(remainder, negative)
+  }
+
+  pub let sqrt(x: f64): f64 {
+    if is_nan(x) { return x }
+    if x < 0.0 { return nan() }
+    if x == 0.0 || is_infinite(x) { return x }
+
+    let mut scaled = x
+    let mut correction: f64 = 1.0
+    if (to_bits(scaled) & ExponentMask) == 0 {
+      scaled *= 18014398509481984.0 // 2^54
+      correction = 0.000000007450580596923828125 // 2^-27
+    }
+
+    let mut estimate = from_bits((to_bits(scaled) >> 1) + 0x1ff8000000000000)
+    for index in 0..7 {
+      estimate = 0.5 * (estimate + scaled / estimate)
+    }
+    return estimate * correction
+  }
+
+  pub let exp(x: f64): f64 {
+    if is_nan(x) { return x }
+    if x > MaxLog { return positive_infinity() }
+    if x < MinLog { return 0.0 }
+    if x == positive_infinity() { return x }
+    if x == negative_infinity() { return 0.0 }
+    if abs(x) < 0.00000000000000011102 { return 1.0 + x }
+
+    let scaled_exponent = x * LOG2E
+    let exponent: i32 = if scaled_exponent < 0.0 {
+      (scaled_exponent - 0.5).(i32)
+    } else {
+      (scaled_exponent + 0.5).(i32)
+    }
+    let exponent_float = exponent.(f64)
+    let reduced = (x - exponent_float * Ln2High) - exponent_float * Ln2Low
+
+    let mut term: f64 = 1.0
+    let mut result: f64 = 1.0
+    for divisor in 1..18 {
+      term *= reduced / divisor.(f64)
+      result += term
+    }
+    return scale_power_two(result, exponent)
+  }
+
+  pub let log(x: f64): f64 {
+    if is_nan(x) { return x }
+    if x < 0.0 { return nan() }
+    if x == 0.0 { return negative_infinity() }
+    if is_infinite(x) { return positive_infinity() }
+
+    let mut value = x
+    let mut adjustment: i32 = 0
+    if (to_bits(value) & ExponentMask) == 0 {
+      value *= 4503599627370496.0 // 2^52
+      adjustment = -52
+    }
+
+    let bits = to_bits(value)
+    let mut exponent = ((bits & ExponentMask) >> 52).(i32) - 1023 + adjustment
+    let mut mantissa = from_bits((bits & FractionMask) | 0x3ff0000000000000)
+    if mantissa > 1.41421356237309504880 {
+      mantissa *= 0.5
+      exponent += 1
+    }
+
+    let ratio = (mantissa - 1.0) / (mantissa + 1.0)
+    let ratio_squared = ratio * ratio
+    let mut term = ratio
+    let mut series = ratio
+    for denominator in 3..40 {
+      if denominator % 2 == 1 {
+        term *= ratio_squared
+        series += term / denominator.(f64)
+      }
+    }
+
+    let exponent_float = exponent.(f64)
+    return exponent_float * Ln2High +
+      (2.0 * series + exponent_float * Ln2Low)
+  }
+
+  pub let log10(x: f64): f64 = log(x) * LOG10E
+
+  pub let exp2(x: f64): f64 = exp(x * LN2)
+
+  pub let expm1(x: f64): f64 {
+    if is_nan(x) || is_infinite(x) { return exp(x) - 1.0 }
+    if abs(x) >= 0.5 { return exp(x) - 1.0 }
+    let mut term = x
+    let mut result = x
+    for divisor in 2..24 {
+      term *= x / divisor.(f64)
+      result += term
+    }
+    return result
+  }
+
+  pub let log2(x: f64): f64 = log(x) * LOG2E
+
+  pub let log1p(x: f64): f64 {
+    if is_nan(x) { return x }
+    if x < -1.0 { return nan() }
+    if x == -1.0 { return negative_infinity() }
+    if is_infinite(x) { return x }
+    if x == 0.0 { return x }
+    if abs(x) >= 0.5 { return log(1.0 + x) }
+
+    let ratio = x / (2.0 + x)
+    let square = ratio * ratio
+    let mut term = ratio
+    let mut result = ratio
+    for denominator in 3..48 {
+      if denominator % 2 == 1 {
+        term *= square
+        result += term / denominator.(f64)
+      }
+    }
+    return 2.0 * result
+  }
+
+  pub let cbrt(x: f64): f64 {
+    if x == 0.0 || is_nan(x) || is_infinite(x) { return x }
+    let negative = is_negative(x)
+    let value = abs(x)
+    let mut estimate = exp(log(value) / 3.0)
+    for index in 0..4 {
+      estimate = (2.0 * estimate + value / (estimate * estimate)) / 3.0
+    }
+    return with_sign(estimate, negative)
+  }
+
+  pub let hypot(x, y: f64): f64 {
+    let x_abs = abs(x)
+    let y_abs = abs(y)
+    if is_infinite(x_abs) || is_infinite(y_abs) { return positive_infinity() }
+    if is_nan(x_abs) || is_nan(y_abs) { return nan() }
+    let high = max(x_abs, y_abs)
+    let low = min(x_abs, y_abs)
+    if high == 0.0 { return 0.0 }
+    let ratio = low / high
+    return high * sqrt(1.0 + ratio * ratio)
+  }
+
+  let is_integer(value: f64): bool =
+    !is_nan(value) && !is_infinite(value) && trunc(value) == value
+
+  let is_odd_integer(value: f64): bool {
+    let magnitude = abs(value)
+    if magnitude >= 9007199254740992.0 { return false }
+    return (magnitude.(u64) & 1) != 0
+  }
+
+  pub let pow(x, y: f64): f64 {
+    if y == 0.0 || x == 1.0 { return 1.0 }
+    if is_nan(x) || is_nan(y) { return nan() }
+
+    let negative_base = is_negative(x)
+    let odd = is_integer(y) && is_odd_integer(y)
+    let magnitude = abs(x)
+
+    if magnitude == 0.0 {
+      if y < 0.0 {
+        return with_sign(positive_infinity(), negative_base && odd)
+      }
+      return signed_zero(negative_base && odd)
+    }
+
+    if is_infinite(y) {
+      if magnitude == 1.0 { return 1.0 }
+      if (magnitude > 1.0) == (y > 0.0) { return positive_infinity() }
+      return 0.0
+    }
+
+    if is_infinite(magnitude) {
+      if y < 0.0 { return signed_zero(negative_base && odd) }
+      return with_sign(positive_infinity(), negative_base && odd)
+    }
+
+    if negative_base && !is_integer(y) { return nan() }
+    let result = exp(y * log(magnitude))
+    return with_sign(result, negative_base && odd)
+  }
+
+  // Reduce to one turn before choosing the nearest multiple of pi/2. The
+  // doubling reduction keeps the number of iterations bounded by the f64
+  // exponent even for very large finite inputs.
+  let reduce_turn(x: f64): f64 {
+    let negative = is_negative(x)
+    let mut value = abs(x)
+    for value >= TAU {
+      let mut scale = TAU
+      for scale <= value * 0.5 { scale *= 2.0 }
+      value -= scale
+    }
+    if negative { return -value }
+    return value
+  }
+
+  let reduce_half_pi(x: f64): (f64, i32) {
+    let turn = reduce_turn(x)
+    let multiple = round(turn / HalfPI).(i32)
+    let multiple_float = multiple.(f64)
+    let reduced = (turn - multiple_float * HalfPIHigh) -
+      multiple_float * HalfPILow
+    let mut quadrant = multiple % 4
+    if quadrant < 0 { quadrant += 4 }
+    return reduced, quadrant
+  }
+
+  let sin_kernel(x: f64): f64 {
+    let square = x * x
+    return x + x * square * (
+      -0.16666666666666632435 + square * (
+      0.00833333333332248946 + square * (
+      -0.00019841269829857949 + square * (
+      0.00000275573137070701 + square * (
+      -0.00000002505076025348 + square * 0.00000000015896909952)))))
+  }
+
+  let cos_kernel(x: f64): f64 {
+    let square = x * x
+    return 1.0 + square * (
+      -0.49999999999999994449 + square * (
+      0.04166666666666602688 + square * (
+      -0.00138888888888741096 + square * (
+      0.00002480158728947673 + square * (
+      -0.00000027557314351391 + square * 0.00000000208757232130)))))
+  }
+
+  pub let sin(x: f64): f64 {
+    if is_nan(x) { return x }
+    if is_infinite(x) { return nan() }
+    let reduced, quadrant = reduce_half_pi(x)
+    if quadrant == 0 { return sin_kernel(reduced) }
+    if quadrant == 1 { return cos_kernel(reduced) }
+    if quadrant == 2 { return -sin_kernel(reduced) }
+    return -cos_kernel(reduced)
+  }
+
+  pub let cos(x: f64): f64 {
+    if is_nan(x) { return x }
+    if is_infinite(x) { return nan() }
+    let reduced, quadrant = reduce_half_pi(x)
+    if quadrant == 0 { return cos_kernel(reduced) }
+    if quadrant == 1 { return -sin_kernel(reduced) }
+    if quadrant == 2 { return -cos_kernel(reduced) }
+    return sin_kernel(reduced)
+  }
+
+  pub let tan(x: f64): f64 {
+    if is_nan(x) { return x }
+    if is_infinite(x) { return nan() }
+    let reduced, quadrant = reduce_half_pi(x)
+    let sine = sin_kernel(reduced)
+    let cosine = cos_kernel(reduced)
+    if quadrant == 0 || quadrant == 2 { return sine / cosine }
+    return -cosine / sine
+  }
+
+  let atan_kernel(x: f64): f64 {
+    let square = x * x
+    let mut term = x
+    let mut result = x
+    let mut denominator: i32 = 3
+    for denominator <= 81 {
+      term *= -square
+      result += term / denominator.(f64)
+      denominator += 2
+    }
+    return result
+  }
+
+  pub let atan(x: f64): f64 {
+    if is_nan(x) { return x }
+    if is_infinite(x) { return with_sign(HalfPI, is_negative(x)) }
+
+    let negative = is_negative(x)
+    let value = abs(x)
+    let mut result: f64 = 0.0
+    if value > 1.0 {
+      result = HalfPI - atan_kernel(1.0 / value)
+    } else if value > 0.41421356237309504880 {
+      result = QuarterPI + atan_kernel((value - 1.0) / (value + 1.0))
+    } else {
+      result = atan_kernel(value)
+    }
+    return with_sign(result, negative)
+  }
+
+  pub let atan2(y, x: f64): f64 {
+    if is_nan(x) || is_nan(y) { return nan() }
+    let y_negative = is_negative(y)
+    let x_negative = is_negative(x)
+
+    if y == 0.0 {
+      if x_negative { return with_sign(PI, y_negative) }
+      return y
+    }
+    if x == 0.0 { return with_sign(HalfPI, y_negative) }
+
+    if is_infinite(y) && is_infinite(x) {
+      let angle = if x_negative { 3.0 * QuarterPI } else { QuarterPI }
+      return with_sign(angle, y_negative)
+    }
+    if is_infinite(y) { return with_sign(HalfPI, y_negative) }
+    if is_infinite(x) {
+      if x_negative { return with_sign(PI, y_negative) }
+      return signed_zero(y_negative)
+    }
+
+    let mut result = atan(abs(y / x))
+    if x_negative { result = PI - result }
+    return with_sign(result, y_negative)
+  }
+
+  pub let asin(x: f64): f64 {
+    if is_nan(x) { return x }
+    if x < -1.0 || x > 1.0 { return nan() }
+    if x == -1.0 { return -HalfPI }
+    if x == 1.0 { return HalfPI }
+    return atan2(x, sqrt((1.0 - x) * (1.0 + x)))
+  }
+
+  pub let acos(x: f64): f64 {
+    if is_nan(x) { return x }
+    if x < -1.0 || x > 1.0 { return nan() }
+    if x == -1.0 { return PI }
+    if x == 1.0 { return 0.0 }
+    return atan2(sqrt((1.0 - x) * (1.0 + x)), x)
+  }
+
+  pub let sinh(x: f64): f64 {
+    if is_nan(x) || is_infinite(x) || x == 0.0 { return x }
+    let negative = is_negative(x)
+    let value = abs(x)
+    let mut result: f64 = 0.0
+    if value > MaxHyperbolic { return with_sign(positive_infinity(), negative) }
+    if value > MaxLog {
+      result = exp(value - Ln2High)
+    } else if value < 0.00000001 {
+      result = value
+    } else {
+      let positive = exp(value)
+      result = 0.5 * (positive - 1.0 / positive)
+    }
+    return with_sign(result, negative)
+  }
+
+  pub let cosh(x: f64): f64 {
+    if is_nan(x) { return x }
+    if is_infinite(x) { return positive_infinity() }
+    let value = abs(x)
+    if value > MaxHyperbolic { return positive_infinity() }
+    if value > MaxLog { return exp(value - Ln2High) }
+    let positive = exp(value)
+    return 0.5 * (positive + 1.0 / positive)
+  }
+
+  pub let tanh(x: f64): f64 {
+    if is_nan(x) || x == 0.0 { return x }
+    if is_infinite(x) { return with_sign(1.0, is_negative(x)) }
+    let negative = is_negative(x)
+    let value = abs(x)
+    if value > 20.0 { return with_sign(1.0, negative) }
+    if value < 0.00000001 { return x }
+    let doubled = exp(2.0 * value)
+    return with_sign((doubled - 1.0) / (doubled + 1.0), negative)
+  }
+
+  pub let asinh(x: f64): f64 {
+    if x == 0.0 || is_nan(x) || is_infinite(x) { return x }
+    let negative = is_negative(x)
+    let value = abs(x)
+    let result = if value > 10000000000000000.0 {
+      log(value) + LN2
+    } else {
+      log1p(value + value * value / (1.0 + sqrt(1.0 + value * value)))
+    }
+    return with_sign(result, negative)
+  }
+
+  pub let acosh(x: f64): f64 {
+    if is_nan(x) { return x }
+    if x < 1.0 { return nan() }
+    if x == 1.0 { return 0.0 }
+    if is_infinite(x) { return x }
+    if x > 10000000000000000.0 { return log(x) + LN2 }
+    return log1p((x - 1.0) + sqrt((x - 1.0) * (x + 1.0)))
+  }
+
+  pub let atanh(x: f64): f64 {
+    if is_nan(x) { return x }
+    let negative = is_negative(x)
+    let value = abs(x)
+    if value > 1.0 { return nan() }
+    if value == 1.0 { return with_sign(positive_infinity(), negative) }
+    if value == 0.0 { return x }
+    return with_sign(0.5 * log1p(2.0 * value / (1.0 - value)), negative)
+  }
+}
+
+pub let modf(x: f64): (f64, f64) {
+  if is_nan(x) { return x, x }
+  if is_infinite(x) { return signed_zero(is_negative(x)), x }
+  let integral = trunc(x)
+  if integral == x { return signed_zero(is_negative(x)), integral }
+  return x - integral, integral
+}
+
+pub let frexp(x: f64): (f64, i32) {
+  if x == 0.0 || is_nan(x) || is_infinite(x) { return x, 0 }
+
+  let mut value = x
+  let mut adjustment: i32 = 0
+  if (to_bits(value) & ExponentMask) == 0 {
+    value *= 18014398509481984.0 // 2^54
+    adjustment = -54
+  }
+  let bits = to_bits(value)
+  let exponent = ((bits & ExponentMask) >> 52).(i32) - 1022 + adjustment
+  let fraction = from_bits(
+    (bits & (SignMask | FractionMask)) | 0x3fe0000000000000)
+  return fraction, exponent
+}
+
+pub let sincos(x: f64): (f64, f64) {
+  return sin(x), cos(x)
+}
