@@ -200,6 +200,14 @@ func (v *Validator) validateNode(node parser.Node) {
 				}
 			} else {
 				v.validateNode(n.Body)
+				returnType := n.Symbol.Signature.ReturnType
+				_, invalidReturnType := returnType.(types.ErrorType)
+				if returnType != nil &&
+					!returnType.Equals(types.PrimitiveVoid) &&
+					!invalidReturnType &&
+					parser.NodeFallsThrough(n.Body) {
+					v.errorf(n.Body, "non-void function may fall through without returning a value")
+				}
 			}
 		}
 		if n.Body != nil {
