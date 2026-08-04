@@ -1676,6 +1676,15 @@ func (p *Parser) parseRangeOrForEach(beginLoc shared.Location) (Node, error) {
 	if !ok {
 		return nil, shared.NewError(p.PrevLoc(), "expected loop variable name")
 	}
+	elementKind := ForEachElementValue
+	if p.Match(tokeniser.TokenDot) && p.Next().Type == tokeniser.TokenAmpersand {
+		p.Inc().Inc()
+		elementKind = ForEachElementPointer
+		if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordMut) {
+			p.Inc()
+			elementKind = ForEachElementMutablePointer
+		}
+	}
 	var indexName *tokeniser.Token
 	if p.Match(tokeniser.TokenComma) {
 		p.Inc()
@@ -1707,6 +1716,9 @@ func (p *Parser) parseRangeOrForEach(beginLoc shared.Location) (Node, error) {
 		if indexName != nil {
 			return nil, shared.NewError(indexName.Loc, "range iteration accepts exactly one variable")
 		}
+		if elementKind != ForEachElementValue {
+			return nil, shared.NewError(name.Loc, "range iteration does not support element pointer bindings")
+		}
 		reversed, err := p.parseIterationAttributes()
 		if err != nil {
 			return nil, err
@@ -1736,12 +1748,13 @@ func (p *Parser) parseRangeOrForEach(beginLoc shared.Location) (Node, error) {
 		return nil, err
 	}
 	node := &ForEachNode{
-		Name:     name.Value,
-		NameLoc:  name.Loc,
-		Iterable: iterable,
-		Reversed: reversed,
-		Body:     body,
-		Loc:      p.SpanFrom(beginLoc),
+		Name:        name.Value,
+		NameLoc:     name.Loc,
+		ElementKind: elementKind,
+		Iterable:    iterable,
+		Reversed:    reversed,
+		Body:        body,
+		Loc:         p.SpanFrom(beginLoc),
 	}
 	if indexName != nil {
 		node.IndexName = indexName.Value
@@ -1756,6 +1769,16 @@ func (p *Parser) matchesRangeOrForEachHeader() bool {
 		return false
 	}
 	pos++
+	if pos+1 < len(p.tokens) &&
+		p.tokens[pos].Type == tokeniser.TokenDot &&
+		p.tokens[pos+1].Type == tokeniser.TokenAmpersand {
+		pos += 2
+		if pos < len(p.tokens) &&
+			p.tokens[pos].Type == tokeniser.TokenKeyword &&
+			p.tokens[pos].Value == string(tokeniser.KeywordMut) {
+			pos++
+		}
+	}
 	if pos < len(p.tokens) && p.tokens[pos].Type == tokeniser.TokenComma {
 		pos++
 		if pos >= len(p.tokens) || p.tokens[pos].Type != tokeniser.TokenIdentifier {

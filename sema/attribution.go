@@ -242,9 +242,9 @@ func (a *Attributor) attributeNode(node parser.Node) {
 		if n.Symbol != nil {
 			switch iterable := types.Underlying(n.Iterable.GetType()).(type) {
 			case types.SliceType:
-				n.Symbol.Type = iterable.Base
+				n.Symbol.Type = forEachElementType(n, iterable.Base)
 			case types.ArrayType:
-				n.Symbol.Type = iterable.Base
+				n.Symbol.Type = forEachElementType(n, iterable.Base)
 			}
 		}
 		if n.IndexSymbol != nil {

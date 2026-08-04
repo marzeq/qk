@@ -229,6 +229,14 @@ for elem, _ in sl {
   // explicitly discard the index
 }
 
+for elem.&, index in sl {
+  // elem is *T and points to the element at index
+}
+
+for elem.&mut in mutable_sl {
+  // elem is *mut T; mutable_sl must have type []mut T
+}
+
 for elem in sl @reversed {
   // loop over the slice from its last element to its first
 }
@@ -247,6 +255,10 @@ slices and strings. The iterable expression and range bounds are still
 evaluated exactly once. Array, slice and string iteration may bind an optional
 second `usz` index after the element binding. Either binding may be `_`; under
 `@reversed`, the index remains the element's position in the original sequence.
+Slice and string element bindings may append `.&` to bind an immutable pointer
+to each element. Mutable slices additionally support `.&mut`, which binds a
+`*mut T`; pointer element bindings are not supported for array iteration because
+arrays are copied into the loop's iterable storage.
 
 ### `break` and `continue`
 

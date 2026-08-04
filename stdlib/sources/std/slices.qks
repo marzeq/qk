@@ -1,5 +1,7 @@
 module std
 
+import std.alloc
+
 pub let ([]T).is_empty<T>(self): bool = @len(self) == 0
 
 pub let ([]T).contains<T: PartialEq>(self, value: T): bool {
@@ -71,4 +73,26 @@ pub let ([]mut T).reverse<T>(self): void {
     self[right] = temporary
     left += 1
   }
+}
+
+pub let ([]T).reversed<T>(self, alloc: mut dyn std.alloc.Allocator): ([]T, bool) {
+  let mut result, allocated = std.alloc.allocate<T>(alloc, @len(self))
+  if !allocated { return [], false }
+  let mut index: usz = 0
+  for index < @len(self) {
+    result[@len(self) - index - 1] = self[index]
+    index += 1
+  }
+  return result, true
+}
+
+pub let ([]mut T).reversed<T>(self, alloc: mut dyn std.alloc.Allocator): ([]mut T, bool) {
+  let mut result, allocated = std.alloc.allocate<T>(alloc, @len(self))
+  if !allocated { return [], false }
+  let mut index: usz = 0
+  for index < @len(self) {
+    result[@len(self) - index - 1] = self[index]
+    index += 1
+  }
+  return result, true
 }

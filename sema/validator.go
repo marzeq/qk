@@ -1016,7 +1016,8 @@ func (v *Validator) validateRangeFor(n *parser.RangeForNode) {
 func (v *Validator) validateForEach(n *parser.ForEachNode) {
 	v.validateExpr(n.Iterable)
 	var element types.Type
-	switch iterable := types.Underlying(n.Iterable.GetType()).(type) {
+	iterableType := types.Underlying(n.Iterable.GetType())
+	switch iterable := iterableType.(type) {
 	case types.SliceType:
 		element = iterable.Base
 	case types.ArrayType:
@@ -1025,12 +1026,23 @@ func (v *Validator) validateForEach(n *parser.ForEachNode) {
 		v.errorf(n, "for loop iterable must be an array or slice")
 		return
 	}
+	if n.ElementKind != parser.ForEachElementValue {
+		slice, ok := iterableType.(types.SliceType)
+		if !ok {
+			v.errorf(n, "element pointer iteration requires a slice or string")
+			return
+		}
+		if n.ElementKind == parser.ForEachElementMutablePointer && !slice.Mutable {
+			v.errorf(n, "mutable element pointer iteration requires a mutable slice")
+			return
+		}
+	}
 	if types.HasUntyped(element) {
 		v.errorf(n, "cannot infer for loop element type from untyped array or slice")
 		return
 	}
 	if n.Symbol != nil {
-		n.Symbol.Type = element
+		n.Symbol.Type = forEachElementType(n, element)
 	}
 	if n.IndexSymbol != nil {
 		n.IndexSymbol.Type = types.PrimitiveUsz

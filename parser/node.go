@@ -816,6 +816,7 @@ func (n RangeForNode) GetLoc() shared.Location { return n.Loc }
 type ForEachNode struct {
 	Name         string
 	NameLoc      shared.Location
+	ElementKind  ForEachElementKind
 	IndexName    string
 	IndexNameLoc shared.Location
 	Iterable     ExpressionNode
@@ -827,6 +828,14 @@ type ForEachNode struct {
 }
 
 func (n ForEachNode) GetLoc() shared.Location { return n.Loc }
+
+type ForEachElementKind uint8
+
+const (
+	ForEachElementValue ForEachElementKind = iota
+	ForEachElementPointer
+	ForEachElementMutablePointer
+)
 
 type ControlKeywordNode struct {
 	Keyword      tokeniser.KeywordKind

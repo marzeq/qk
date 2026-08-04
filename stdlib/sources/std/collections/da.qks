@@ -184,3 +184,11 @@ pub let (DynamicArray<T>).deinit<T>(*mut self): void {
   self.count = 0
   self.capacity = 0
 }
+
+pub let (DynamicArray<T>).as_slice<T>(self): []T {
+  return self.ptr[0:self.count]
+}
+
+pub let (DynamicArray<T>).as_mut_slice<T>(self): []mut T {
+  return self.ptr[0:self.count]
+}

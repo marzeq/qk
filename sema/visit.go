@@ -432,6 +432,7 @@ func (a *Analyser) visitForEach(n *parser.ForEachNode) {
 	case types.ArrayType:
 		elementType = iterable.Base
 	}
+	elementType = forEachElementType(n, elementType)
 
 	if n.Name != "_" {
 		sym := &symbols.Symbol{
@@ -456,6 +457,17 @@ func (a *Analyser) visitForEach(n *parser.ForEachNode) {
 	}
 
 	a.visitBlock(n.Body)
+}
+
+func forEachElementType(n *parser.ForEachNode, elementType types.Type) types.Type {
+	switch n.ElementKind {
+	case parser.ForEachElementPointer:
+		return types.PointerType{Base: elementType}
+	case parser.ForEachElementMutablePointer:
+		return types.PointerType{Base: elementType, Mutable: true}
+	default:
+		return elementType
+	}
 }
 
 func (a *Analyser) visitControlKeyword(n *parser.ControlKeywordNode) {

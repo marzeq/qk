@@ -1169,7 +1169,17 @@ func (g *Generator) generateForEach(node *parser.ForEachNode) {
 		elementIndex = ir.ValueOperand(previousIndex, types.PrimitiveUsz)
 	}
 	if node.Symbol != nil {
-		g.storeForEachElement(iterableSlot, iterableType, elementIndex, elementSlot)
+		if node.ElementKind == parser.ForEachElementValue {
+			g.storeForEachElement(iterableSlot, iterableType, elementIndex, elementSlot)
+		} else {
+			elementPointer := g.forEachElementPointer(
+				iterableSlot,
+				iterableType,
+				elementIndex,
+				node.ElementKind == parser.ForEachElementMutablePointer,
+			)
+			g.Emit(ir.Store{Slot: elementSlot, Value: elementPointer})
+		}
 	}
 	if node.IndexSymbol != nil {
 		g.Emit(ir.Store{Slot: visibleIndexSlot, Value: elementIndex})
@@ -1212,6 +1222,19 @@ func (g *Generator) sliceLength(slot ir.SlotID, sliceType types.SliceType) ir.Op
 }
 
 func (g *Generator) storeForEachElement(iterableSlot ir.SlotID, iterableType types.Type, index ir.Operand, elementSlot ir.SlotID) {
+	elementPointer := g.forEachElementPointer(iterableSlot, iterableType, index, false)
+	pointerType := types.Underlying(elementPointer.Type).(types.PointerType)
+	elementID := g.currentFunction.NewValueOfType(pointerType.Base)
+	g.Emit(ir.LoadPtr{Dest: elementID, Ptr: elementPointer})
+	g.Emit(ir.Store{Slot: elementSlot, Value: ir.ValueOperand(elementID, pointerType.Base)})
+}
+
+func (g *Generator) forEachElementPointer(
+	iterableSlot ir.SlotID,
+	iterableType types.Type,
+	index ir.Operand,
+	mutable bool,
+) ir.Operand {
 	var base ir.Operand
 	var elementType types.Type
 	switch t := iterableType.(type) {
@@ -1231,16 +1254,15 @@ func (g *Generator) storeForEachElement(iterableSlot ir.SlotID, iterableType typ
 		g.Emit(ir.AddressOf{Dest: arrayPtrID, Slot: iterableSlot})
 		base = ir.ValueOperand(arrayPtrID, types.PointerType{Base: t})
 	}
-	elementPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: elementType})
+	elementPointerType := types.PointerType{Base: elementType, Mutable: mutable}
+	elementPtrID := g.currentFunction.NewValueOfType(elementPointerType)
 	g.Emit(ir.ElementAddress{
 		Dest:    elementPtrID,
 		Base:    base,
 		Index:   index,
 		Element: elementType,
 	})
-	elementID := g.currentFunction.NewValueOfType(elementType)
-	g.Emit(ir.LoadPtr{Dest: elementID, Ptr: ir.ValueOperand(elementPtrID, types.PointerType{Base: elementType})})
-	g.Emit(ir.Store{Slot: elementSlot, Value: ir.ValueOperand(elementID, elementType)})
+	return ir.ValueOperand(elementPtrID, elementPointerType)
 }
 
 func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
