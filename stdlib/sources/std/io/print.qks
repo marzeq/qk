@@ -1,13 +1,13 @@
 module std.io
 
-let write_format_error(writer: mut dyn Writer): void {
+let write_format_error(writer: *mut dyn Writer): void {
   "<?>".format(writer)
 }
 
 let format_print_argument(
-  writer: mut dyn Writer,
+  writer: *mut dyn Writer,
   index: usz,
-  arguments: []dyn Any,
+  arguments: []*dyn Any,
 ): void {
   if index >= @len(arguments) {
     write_format_error(writer)
@@ -15,7 +15,7 @@ let format_print_argument(
   }
 
   let argument = arguments[index]
-  let formatted, ok = argument.(dyn Format)
+  let formatted, ok = argument.(*dyn Format)
   if ok {
     formatted.format(writer)
   } else {
@@ -24,9 +24,9 @@ let format_print_argument(
 }
 
 let format_character_argument(
-  writer: mut dyn Writer,
+  writer: *mut dyn Writer,
   index: usz,
-  arguments: []dyn Any,
+  arguments: []*dyn Any,
 ): void {
   if index >= @len(arguments) {
     write_format_error(writer)
@@ -42,7 +42,7 @@ let format_character_argument(
 }
 
 let format_hex_value(
-  writer: mut dyn Writer,
+  writer: *mut dyn Writer,
   value: u64,
   uppercase: bool,
 ): void {
@@ -62,9 +62,9 @@ let format_hex_value(
 }
 
 let format_hex_argument(
-  writer: mut dyn Writer,
+  writer: *mut dyn Writer,
   index: usz,
-  arguments: []dyn Any,
+  arguments: []*dyn Any,
   uppercase: bool,
 ): void {
   if index >= @len(arguments) {
@@ -103,10 +103,10 @@ let format_hex_argument(
 }
 
 let format_specified_argument(
-  writer: mut dyn Writer,
+  writer: *mut dyn Writer,
   index: usz,
   specifier: u8,
-  arguments: []dyn Any,
+  arguments: []*dyn Any,
 ): void {
   if specifier == 'c' {
     format_character_argument(writer, index, arguments)
@@ -120,9 +120,9 @@ let format_specified_argument(
 }
 
 pub let wprint(
-  writer: mut dyn Writer,
+  writer: *mut dyn Writer,
   format: str,
-  arguments: ...dyn Any
+  arguments: ...*dyn Any
 ): void {
   let mut format_index: usz = 0
   let mut argument_index: usz = 0
@@ -197,9 +197,9 @@ pub let wprint(
 }
 
 pub let wprintln(
-  writer: mut dyn Writer,
+  writer: *mut dyn Writer,
   format: str,
-  arguments: ...dyn Any
+  arguments: ...*dyn Any
 ): void {
   wprint(writer, format, arguments...)
   write_byte(writer, '\n')
@@ -209,46 +209,46 @@ when HasIO {
 
 pub let print(
   format: str,
-  arguments: ...dyn Any
+  arguments: ...*dyn Any
 ): void {
-  wprint(stdout.&mut.(mut dyn Writer), format, arguments...)
+  wprint(stdout.&mut.(*mut dyn Writer), format, arguments...)
 }
 
 pub let println(
   format: str,
-  arguments: ...dyn Any
+  arguments: ...*dyn Any
 ): void {
-  wprintln(stdout.&mut.(mut dyn Writer), format, arguments...)
+  wprintln(stdout.&mut.(*mut dyn Writer), format, arguments...)
 }
 
 pub let fprint(
   format: str,
   file: *mut FileWriter,
-  arguments: ...dyn Any
+  arguments: ...*dyn Any
 ): void {
-  wprint(file.(mut dyn Writer), format, arguments...)
+  wprint(file.(*mut dyn Writer), format, arguments...)
 }
 
 pub let fprintln(
   format: str,
   file: *mut FileWriter,
-  arguments: ...dyn Any
+  arguments: ...*dyn Any
 ): void {
-  wprintln(file.(mut dyn Writer), format, arguments...)
+  wprintln(file.(*mut dyn Writer), format, arguments...)
 }
 
 pub let eprint(
   format: str,
-  arguments: ...dyn Any
+  arguments: ...*dyn Any
 ): void {
-  wprint(stderr.&mut.(mut dyn Writer), format, arguments...)
+  wprint(stderr.&mut.(*mut dyn Writer), format, arguments...)
 }
 
 pub let eprintln(
   format: str,
-  arguments: ...dyn Any
+  arguments: ...*dyn Any
 ): void {
-  wprintln(stderr.&mut.(mut dyn Writer), format, arguments...)
+  wprintln(stderr.&mut.(*mut dyn Writer), format, arguments...)
 }
 
 }

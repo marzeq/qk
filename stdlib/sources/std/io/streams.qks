@@ -43,7 +43,7 @@ pub let FileWriter.open_checked(
   append: bool = false,
 ): (FileWriter, std.os.Error) {
   let mut lc = std.alloc.LibcAllocator.init()
-  let allocator = lc.&mut.(mut dyn std.alloc.Allocator)
+  let allocator = lc.&mut.(*mut dyn std.alloc.Allocator)
   let c_path = path.to_cstr(allocator)
   if c_path == nil { return .{ handle=nil }, std.os.Error.out_of_memory() }
 
@@ -125,7 +125,7 @@ pub let FileReader.open_checked(
   path: str,
 ): (FileReader, std.os.Error) {
   let mut lc = std.alloc.LibcAllocator.init()
-  let allocator = lc.(mut dyn std.alloc.Allocator)
+  let allocator = lc.&mut.(*mut dyn std.alloc.Allocator)
   let c_path = path.to_cstr(allocator)
   if c_path == nil { return .{ handle=nil }, std.os.Error.out_of_memory() }
 
@@ -167,7 +167,7 @@ pub let FileReader.read_some_checked(
   return count.(usz), .Data, std.os.Error.none()
 }
 
-pub let FileReader.format(self, writer: mut dyn Writer): void {
+pub let FileReader.format(self, writer: *mut dyn Writer): void {
   let mut reader = self
   let mut buffer: [4096]u8 = ---
 
@@ -195,7 +195,7 @@ pub let mut stderr: FileWriter = .{ handle=std.libc.stderr.(*void) }
 pub let mut stdin: FileReader = .{ handle=std.libc.stdin.(*void) }
 }
 
-pub let write_all(writer: mut dyn Writer, bytes: []u8): usz {
+pub let write_all(writer: *mut dyn Writer, bytes: []u8): usz {
   let mut written: usz = 0
   for written < @len(bytes) {
     let count = writer.write(bytes[written:])

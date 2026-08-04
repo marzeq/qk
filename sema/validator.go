@@ -1237,56 +1237,23 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		}
 		if target, ok := traitPointer(targetType); ok {
 			got := n.Operand.GetType()
-			if types.HasUntyped(got) {
-				v.errorf(n, "cannot infer concrete type for trait conversion; add a type annotation or cast")
-				break
+			parameter, symbolic := genericTypeParameterBase(got)
+			constraint, constrained := types.TraitType{}, false
+			if symbolic {
+				constraint, constrained = types.Underlying(parameter.Constraint).(types.TraitType)
 			}
-			if parameter, symbolic := genericTypeParameterBase(got); symbolic {
-				constraint, constrained := types.Underlying(parameter.Constraint).(types.TraitType)
-				if constrained && traitImplementsTrait(constraint, target.Trait) {
-					if pointer, isPointer := types.Underlying(got).(types.PointerType); isPointer {
-						if target.Mutable && !pointer.Mutable {
-							v.errorf(n, "cannot cast immutable %v to mutable %v", got, targetType)
-							break
-						}
-						n.ConcreteType = pointer.Base
-					} else {
-						pointer := types.PointerType{Base: got, Mutable: target.Mutable}
-						op := parser.UnaryOpReference
-						if target.Mutable {
-							op = parser.UnaryOpMutableReference
-						}
-						reference := &parser.UnaryOpNode{Op: op, Operand: n.Operand, Loc: n.Operand.GetLoc(), Type: pointer}
-						if !v.validateReferenceTarget(reference, n.Operand, target.Mutable) {
-							break
-						}
-						n.Operand = reference
-						n.ConcreteType = got
-					}
-					n.TraitConversion = true
-					n.GenericAssertion = false
+			pointer, isPointer := types.Underlying(got).(types.PointerType)
+			if constrained && isPointer && traitImplementsTrait(constraint, target.Trait) {
+				if target.Mutable && !pointer.Mutable {
+					v.errorf(n, "cannot cast immutable %v to mutable %v", got, targetType)
 					break
 				}
-			}
-			pointer := types.PointerType{Base: got, Mutable: target.Mutable}
-			methods, conforms := v.analyser.structuralConformance(pointer, target, n)
-			if conforms {
-				op := parser.UnaryOpReference
-				if target.Mutable {
-					op = parser.UnaryOpMutableReference
-				}
-				reference := &parser.UnaryOpNode{Op: op, Operand: n.Operand, Loc: n.Operand.GetLoc(), Type: pointer}
-				if !v.validateReferenceTarget(reference, n.Operand, target.Mutable) {
-					break
-				}
-				n.Operand = reference
+				n.ConcreteType = pointer.Base
 				n.TraitConversion = true
-				n.ConcreteType = got
-				n.TraitMethods = methods
+				n.GenericAssertion = false
 				break
 			}
 		}
-
 		if types.IsUntyped(n.Operand.GetType()) {
 			n.Operand = v.createCast(n.Operand, targetType)
 		}

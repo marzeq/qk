@@ -124,7 +124,7 @@ pub let cstr.read(*mut self, buffer: []mut u8): usz {
 
 // important: due to us not being able to guarantee that self contains a null terminator,
 // this method is forced to allocate a new buffer and copy the contents of self into it, appending a null terminator at the end
-pub let str.to_cstr(self, allocator: mut dyn std.alloc.Allocator): *mut u8 {
+pub let str.to_cstr(self, allocator: *mut dyn std.alloc.Allocator): *mut u8 {
   if allocator == nil || @len(self) == ~0.(usz) {
     return nil
   }

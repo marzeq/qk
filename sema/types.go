@@ -143,11 +143,11 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 	case *parser.PointerTypeNode:
 		base := a.resolveTypeNodeAt(t.BaseType, true)
 		if trait, ok := types.Underlying(base).(types.TraitType); ok {
-			mutStr := ""
+			pointer := "*"
 			if t.Mutable {
-				mutStr = "mut "
+				pointer = "*mut "
 			}
-			a.errorf(t, "you probably meant %sdyn %v, not *%s%v", mutStr, trait, mutStr, trait)
+			a.errorf(t, "you probably meant %sdyn %v, not %s%v", pointer, trait, pointer, trait)
 			return types.ErrorType{}
 		}
 		return types.PointerType{Base: base, Mutable: t.Mutable}
@@ -156,7 +156,7 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 		base := a.resolveTypeNodeAt(t.TraitType, true)
 		trait, ok := types.Underlying(base).(types.TraitType)
 		if !ok {
-			a.errorf(t, "dyn requires a trait type, got %v", base)
+			a.errorf(t, "*dyn requires a trait type, got %v", base)
 			return types.ErrorType{}
 		}
 		if method, reason, incompatible := trait.DynamicIncompatibility(); incompatible {

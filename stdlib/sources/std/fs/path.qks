@@ -57,7 +57,7 @@ pub let extension(path: str): str {
 }
 
 pub let join(
-  allocator: mut dyn std.alloc.Allocator,
+  allocator: *mut dyn std.alloc.Allocator,
   left: str,
   right: str,
 ): (std.strings.StringBuilder, bool) {

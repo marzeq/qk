@@ -1158,15 +1158,11 @@ func (p *Parser) ParseType() (TypeNode, error) {
 		return &ReprTypeNode{Operand: operand, Loc: p.SpanFrom(begin)}, nil
 	}
 	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordDyn) {
-		return p.ParseDynType(false)
+		return nil, shared.NewError(p.CurrLoc(), "dynamic trait pointer type must start with '*'")
 	}
-	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordMut) {
-		begin := p.CurrLoc()
-		p.Inc()
-		if !p.Match(tokeniser.TokenKeyword) || p.Peek().Value != string(tokeniser.KeywordDyn) {
-			return nil, shared.NewError(begin, "expected 'dyn' after 'mut' in type")
-		}
-		return p.ParseDynType(true)
+	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordMut) &&
+		p.Next().Type == tokeniser.TokenKeyword && p.Next().Value == string(tokeniser.KeywordDyn) {
+		return nil, shared.NewError(p.CurrLoc(), "mutable dynamic trait pointer type must start with '*mut'")
 	}
 	if p.Match(tokeniser.TokenAsterisk) {
 		return p.ParsePointerType()
@@ -1205,11 +1201,7 @@ func (p *Parser) ParseType() (TypeNode, error) {
 	return p.ParseNamedType()
 }
 
-func (p *Parser) ParseDynType(mutable bool) (*DynTypeNode, error) {
-	begin := p.CurrLoc()
-	if mutable {
-		begin = p.PrevLoc()
-	}
+func (p *Parser) ParseDynType(begin shared.Location, mutable bool) (*DynTypeNode, error) {
 	if !p.Expect(tokeniser.TokenKeyword) {
 		return nil, shared.NewError(p.PrevLoc(), "expected 'dyn' to start dynamic trait type")
 	}
@@ -2019,7 +2011,7 @@ func (p *Parser) ParseArrayOrSliceType() (TypeNode, error) {
 	return &ArrayTypeNode{ElementType: elementType, Length: length, Loc: p.SpanFrom(beginLoc)}, nil
 }
 
-func (p *Parser) ParsePointerType() (*PointerTypeNode, error) {
+func (p *Parser) ParsePointerType() (TypeNode, error) {
 	beginLoc := p.CurrLoc()
 	if !p.Expect(tokeniser.TokenAsterisk) {
 		return nil, shared.NewError(p.PrevLoc(), "expected '*' to start pointer type")
@@ -2029,6 +2021,9 @@ func (p *Parser) ParsePointerType() (*PointerTypeNode, error) {
 	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordMut) {
 		p.Inc()
 		mutable = true
+	}
+	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordDyn) {
+		return p.ParseDynType(beginLoc, mutable)
 	}
 
 	var tpe TypeNode

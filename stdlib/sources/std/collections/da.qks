@@ -3,13 +3,13 @@ module std.collections
 import std.alloc
 
 pub let DynamicArray<T> = type struct {
-  allocator: mut dyn std.alloc.Allocator,
+  allocator: *mut dyn std.alloc.Allocator,
   ptr: *mut T,
   count: usz,
   capacity: usz,
 }
 
-pub let (DynamicArray<T>).init<T>(allocator: mut dyn std.alloc.Allocator): DynamicArray<T> {
+pub let (DynamicArray<T>).init<T>(allocator: *mut dyn std.alloc.Allocator): DynamicArray<T> {
   return DynamicArray<T>.{
     allocator=allocator,
     ptr=nil,

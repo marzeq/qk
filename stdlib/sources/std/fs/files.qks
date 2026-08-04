@@ -42,7 +42,7 @@ pub let file_size(path: str): (usz, std.os.Error) {
 }
 
 pub let read_file(
-  allocator: mut dyn std.alloc.Allocator,
+  allocator: *mut dyn std.alloc.Allocator,
   path: str,
 ): (std.strings.StringBuilder, std.os.Error) {
   let mut result = std.strings.StringBuilder.init(allocator)
@@ -95,7 +95,7 @@ pub let append_file(path: str, contents: []u8): std.os.Error {
 
 pub let remove(path: str): std.os.Error {
   let mut lc = std.alloc.LibcAllocator.init()
-  let allocator = lc.&mut.(mut dyn std.alloc.Allocator)
+  let allocator = lc.&mut.(*mut dyn std.alloc.Allocator)
   let c_path = path.to_cstr(allocator)
   if c_path == nil { return std.os.Error.out_of_memory() }
 
@@ -107,7 +107,7 @@ pub let remove(path: str): std.os.Error {
 
 pub let create_directory(path: str): std.os.Error {
   let mut lc = std.alloc.LibcAllocator.init()
-  let allocator = lc.&mut.(mut dyn std.alloc.Allocator)
+  let allocator = lc.&mut.(*mut dyn std.alloc.Allocator)
   let c_path = path.to_cstr(allocator)
   if c_path == nil { return std.os.Error.out_of_memory() }
 
@@ -121,7 +121,7 @@ pub let create_directory(path: str): std.os.Error {
 
 pub let remove_directory(path: str): std.os.Error {
   let mut lc = std.alloc.LibcAllocator.init()
-  let allocator = lc.&mut.(mut dyn std.alloc.Allocator)
+  let allocator = lc.&mut.(*mut dyn std.alloc.Allocator)
   let c_path = path.to_cstr(allocator)
   if c_path == nil { return std.os.Error.out_of_memory() }
 
@@ -133,7 +133,7 @@ pub let remove_directory(path: str): std.os.Error {
 
 pub let rename(from: str, to: str): std.os.Error {
   let mut lc = std.alloc.LibcAllocator.init()
-  let allocator = lc.&mut.(mut dyn std.alloc.Allocator)
+  let allocator = lc.&mut.(*mut dyn std.alloc.Allocator)
   let c_from = from.to_cstr(allocator)
   if c_from == nil { return std.os.Error.out_of_memory() }
   let c_to = to.to_cstr(allocator)
@@ -151,7 +151,7 @@ pub let rename(from: str, to: str): std.os.Error {
 
 pub let change_directory(path: str): std.os.Error {
   let mut lc = std.alloc.LibcAllocator.init()
-  let allocator = lc.&mut.(mut dyn std.alloc.Allocator)
+  let allocator = lc.&mut.(*mut dyn std.alloc.Allocator)
   let c_path = path.to_cstr(allocator)
   if c_path == nil { return std.os.Error.out_of_memory() }
 
@@ -162,7 +162,7 @@ pub let change_directory(path: str): std.os.Error {
 }
 
 pub let current_directory(
-  allocator: mut dyn std.alloc.Allocator,
+  allocator: *mut dyn std.alloc.Allocator,
 ): (std.strings.StringBuilder, std.os.Error) {
   let mut result = std.strings.StringBuilder.init(allocator)
   if !result.ensure_capacity(4096) {

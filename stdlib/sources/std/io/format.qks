@@ -1,15 +1,15 @@
 module std.io
 
 pub let Format = type trait {
-  let format(self, writer: mut dyn Writer): void
+  let format(self, writer: *mut dyn Writer): void
 }
 
-let write_byte(writer: mut dyn Writer, byte: u8): void {
+let write_byte(writer: *mut dyn Writer, byte: u8): void {
   let bytes: [1]u8 = [byte]
   write_all(writer, bytes[:])
 }
 
-let write_unsigned_decimal(writer: mut dyn Writer, value: u64): void {
+let write_unsigned_decimal(writer: *mut dyn Writer, value: u64): void {
   let mut buffer: [20]u8 = ---
   let mut cursor = @len(buffer)
   let mut remaining = value
@@ -24,7 +24,7 @@ let write_unsigned_decimal(writer: mut dyn Writer, value: u64): void {
   write_all(writer, buffer[cursor:])
 }
 
-let write_signed_decimal(writer: mut dyn Writer, value: i64): void {
+let write_signed_decimal(writer: *mut dyn Writer, value: i64): void {
   if value < 0 {
     write_byte(writer, '-')
     write_unsigned_decimal(writer, (~value).(u64) + 1)
@@ -33,7 +33,7 @@ let write_signed_decimal(writer: mut dyn Writer, value: i64): void {
   }
 }
 
-let write_fraction(writer: mut dyn Writer, value: u64, digits: usz): void {
+let write_fraction(writer: *mut dyn Writer, value: u64, digits: usz): void {
   let mut buffer: [6]u8 = ['0'; 6]
   let mut cursor = digits
   let mut remaining = value
@@ -53,7 +53,7 @@ let write_fraction(writer: mut dyn Writer, value: u64, digits: usz): void {
 
 // Portable, allocation-free general formatting with up to six fractional
 // digits. Scientific notation is used outside [1e-4, 1e6).
-let write_f64(writer: mut dyn Writer, value: f64): void {
+let write_f64(writer: *mut dyn Writer, value: f64): void {
   if value != value {
     write_all(writer, "nan".([]u8))
     return
@@ -106,29 +106,29 @@ let write_f64(writer: mut dyn Writer, value: f64): void {
   write_fraction(writer, rounded % 1000000, 6)
 }
 
-let i8.format(self, writer: mut dyn Writer): void { write_signed_decimal(writer, self.(i64)) }
-let i16.format(self, writer: mut dyn Writer): void { write_signed_decimal(writer, self.(i64)) }
-let i32.format(self, writer: mut dyn Writer): void { write_signed_decimal(writer, self.(i64)) }
-let i64.format(self, writer: mut dyn Writer): void { write_signed_decimal(writer, self) }
-let isz.format(self, writer: mut dyn Writer): void { write_signed_decimal(writer, self.(i64)) }
+let i8.format(self, writer: *mut dyn Writer): void { write_signed_decimal(writer, self.(i64)) }
+let i16.format(self, writer: *mut dyn Writer): void { write_signed_decimal(writer, self.(i64)) }
+let i32.format(self, writer: *mut dyn Writer): void { write_signed_decimal(writer, self.(i64)) }
+let i64.format(self, writer: *mut dyn Writer): void { write_signed_decimal(writer, self) }
+let isz.format(self, writer: *mut dyn Writer): void { write_signed_decimal(writer, self.(i64)) }
 
-let u8.format(self, writer: mut dyn Writer): void { write_unsigned_decimal(writer, self.(u64)) }
-let u16.format(self, writer: mut dyn Writer): void { write_unsigned_decimal(writer, self.(u64)) }
-let u32.format(self, writer: mut dyn Writer): void { write_unsigned_decimal(writer, self.(u64)) }
-let u64.format(self, writer: mut dyn Writer): void { write_unsigned_decimal(writer, self) }
-let usz.format(self, writer: mut dyn Writer): void { write_unsigned_decimal(writer, self.(u64)) }
+let u8.format(self, writer: *mut dyn Writer): void { write_unsigned_decimal(writer, self.(u64)) }
+let u16.format(self, writer: *mut dyn Writer): void { write_unsigned_decimal(writer, self.(u64)) }
+let u32.format(self, writer: *mut dyn Writer): void { write_unsigned_decimal(writer, self.(u64)) }
+let u64.format(self, writer: *mut dyn Writer): void { write_unsigned_decimal(writer, self) }
+let usz.format(self, writer: *mut dyn Writer): void { write_unsigned_decimal(writer, self.(u64)) }
 
-let f32.format(self, writer: mut dyn Writer): void { write_f64(writer, self.(f64)) }
-let f64.format(self, writer: mut dyn Writer): void { write_f64(writer, self) }
+let f32.format(self, writer: *mut dyn Writer): void { write_f64(writer, self.(f64)) }
+let f64.format(self, writer: *mut dyn Writer): void { write_f64(writer, self) }
 
-let bool.format(self, writer: mut dyn Writer): void {
+let bool.format(self, writer: *mut dyn Writer): void {
   if self { write_all(writer, "true".([]u8)) }
   else { write_all(writer, "false".([]u8)) }
 }
 
-let str.format(self, writer: mut dyn Writer): void { write_all(writer, self.([]u8)) }
+let str.format(self, writer: *mut dyn Writer): void { write_all(writer, self.([]u8)) }
 
-let cstr.format(self, writer: mut dyn Writer): void {
+let cstr.format(self, writer: *mut dyn Writer): void {
   let mut length: usz = 0
   for self[length] != '\0' { length += 1 }
   write_all(writer, self[0:length])

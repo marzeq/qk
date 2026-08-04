@@ -4,7 +4,7 @@ import std.alloc
 import std.io
 
 pub let StringBuilder = type struct {
-  allocator: mut dyn std.alloc.Allocator,
+  allocator: *mut dyn std.alloc.Allocator,
   ptr: *mut u8,
   count: usz,
   capacity: usz,
@@ -88,7 +88,7 @@ pub let parse_i64(value: str, base: u8 = 10): (i64, bool) {
 }
 
 pub let replace(
-  allocator: mut dyn std.alloc.Allocator,
+  allocator: *mut dyn std.alloc.Allocator,
   value: str,
   needle: str,
   replacement: str,
@@ -119,7 +119,7 @@ pub let replace(
 }
 
 pub let StringBuilder.init(
-  allocator: mut dyn std.alloc.Allocator,
+  allocator: *mut dyn std.alloc.Allocator,
 ): StringBuilder = .{
   allocator=allocator,
   ptr=nil,
@@ -197,7 +197,7 @@ pub let StringBuilder.read(*mut self, buffer: []mut u8): usz {
   return count
 }
 
-pub let StringBuilder.format(self, writer: mut dyn std.io.Writer): void {
+pub let StringBuilder.format(self, writer: *mut dyn std.io.Writer): void {
   std.io.write_all(writer, self.as_str().([]u8))
 }
 

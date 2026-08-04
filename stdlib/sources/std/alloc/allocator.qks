@@ -36,7 +36,7 @@ let checked_size<T>(count: usz): (usz, bool) {
 }
 
 pub let create<T>(
-  allocator: mut dyn Allocator,
+  allocator: *mut dyn Allocator,
 ): (*mut T, bool) {
   if allocator == nil {
     return nil, false
@@ -47,7 +47,7 @@ pub let create<T>(
 }
 
 pub let destroy<T>(
-  allocator: mut dyn Allocator,
+  allocator: *mut dyn Allocator,
   ptr: *mut T,
 ): void {
   if allocator != nil {
@@ -56,7 +56,7 @@ pub let destroy<T>(
 }
 
 pub let allocate<T>(
-  allocator: mut dyn Allocator,
+  allocator: *mut dyn Allocator,
   count: usz,
 ): ([]mut T, bool) {
   if allocator == nil {
@@ -76,7 +76,7 @@ pub let allocate<T>(
 }
 
 pub let free<T>(
-  allocator: mut dyn Allocator,
+  allocator: *mut dyn Allocator,
   memory: []mut T,
 ): void {
   if allocator == nil {
@@ -90,7 +90,7 @@ pub let free<T>(
 }
 
 pub let resize<T>(
-  allocator: mut dyn Allocator,
+  allocator: *mut dyn Allocator,
   memory: []mut T,
   new_count: usz,
 ): ([]mut T, bool) {

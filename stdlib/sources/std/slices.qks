@@ -75,7 +75,7 @@ pub let ([]mut T).reverse<T>(self): void {
   }
 }
 
-pub let ([]T).reversed<T>(self, alloc: mut dyn std.alloc.Allocator): ([]T, bool) {
+pub let ([]T).reversed<T>(self, alloc: *mut dyn std.alloc.Allocator): ([]T, bool) {
   let mut result, allocated = std.alloc.allocate<T>(alloc, @len(self))
   if !allocated { return [], false }
   let mut index: usz = 0
@@ -86,7 +86,7 @@ pub let ([]T).reversed<T>(self, alloc: mut dyn std.alloc.Allocator): ([]T, bool)
   return result, true
 }
 
-pub let ([]mut T).reversed<T>(self, alloc: mut dyn std.alloc.Allocator): ([]mut T, bool) {
+pub let ([]mut T).reversed<T>(self, alloc: *mut dyn std.alloc.Allocator): ([]mut T, bool) {
   let mut result, allocated = std.alloc.allocate<T>(alloc, @len(self))
   if !allocated { return [], false }
   let mut index: usz = 0
