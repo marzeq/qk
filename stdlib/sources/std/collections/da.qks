@@ -18,10 +18,6 @@ pub let (DynamicArray<T>).init<T>(allocator: *mut dyn std.alloc.Allocator): Dyna
   }
 }
 
-pub let (DynamicArray<T>).as_slice<T>(self): []mut T {
-  return self.ptr[0:self.count]
-}
-
 // Ensure that the array can hold at least minimum_capacity elements without
 // another allocation. Existing elements are preserved when the allocation is
 // moved.
