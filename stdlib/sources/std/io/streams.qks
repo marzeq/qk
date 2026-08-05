@@ -190,6 +190,30 @@ pub let FileReader.close_checked(*mut self): std.os.Error {
   return std.os.Error.none()
 }
 
+pub let FileReader.read_line_checked(
+  *mut self,
+  buffer: []mut u8,
+): (usz, ReadStatus, std.os.Error) {
+  if self.handle == nil { return 0, .Error, std.os.Error.invalid_handle() }
+  if @len(buffer) == 0 { return 0, .Data, std.os.Error.none() }
+
+  let file = self.handle.(*std.libc.FILE)
+  let c_buffer = buffer.(*mut u8)
+  let line = std.libc.fgets(c_buffer, @len(buffer).(i32), file)
+  if line == nil {
+    if std.libc.feof(file) != 0 { return 0, .End, std.os.Error.none() }
+    return 0, .Error, std.os.last_error()
+  }
+
+  let count = std.libc.strnlen(c_buffer, @len(buffer)).(usz)
+  return count, .Data, std.os.Error.none()
+}
+
+pub let FileReader.read_line(*mut self, buffer: []mut u8): (usz, ReadStatus) {
+  let count, status, _ = self.read_line_checked(buffer)
+  return count, status
+}
+
 pub let mut stdout: FileWriter = .{ handle=std.libc.stdout.(*void) }
 pub let mut stderr: FileWriter = .{ handle=std.libc.stderr.(*void) }
 pub let mut stdin: FileReader = .{ handle=std.libc.stdin.(*void) }

@@ -202,6 +202,7 @@ pub let memchr(ptr: *void, value: i32, n: usz): *void @foreign
 // -----------------------------------------------------------------------------
 
 pub let strlen(s: cstr): usz @foreign
+pub let strnlen(s: cstr, maxlen: usz): usz @foreign
 pub let strcmp(a: cstr, b: cstr): i32 @foreign
 pub let strncmp(a: cstr, b: cstr, n: usz): i32 @foreign
 
