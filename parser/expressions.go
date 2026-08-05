@@ -271,10 +271,10 @@ func (p *Parser) parseLeftAssociative(
 
 func (p *Parser) ParseUnary() (ExpressionNode, error) {
 	beginLoc := p.CurrLoc()
-	if p.Match(tokeniser.TokenIncrement) {
+	if p.MatchAdjacentPair(tokeniser.TokenPlus) {
 		return nil, shared.NewError(beginLoc, "use ... += 1 instead")
 	}
-	if p.Match(tokeniser.TokenDecrement) {
+	if p.MatchAdjacentPair(tokeniser.TokenMinus) {
 		return nil, shared.NewError(beginLoc, "use ... -= 1 instead")
 	}
 
@@ -365,9 +365,9 @@ func (p *Parser) ParsePostfix() (ExpressionNode, error) {
 				call.Name = identifier
 			}
 			expr = call
-		case p.Match(tokeniser.TokenIncrement):
+		case p.MatchAdjacentPair(tokeniser.TokenPlus):
 			return nil, shared.NewError(p.CurrLoc(), "use ... += 1 instead")
-		case p.Match(tokeniser.TokenDecrement):
+		case p.MatchAdjacentPair(tokeniser.TokenMinus):
 			return nil, shared.NewError(p.CurrLoc(), "use ... -= 1 instead")
 		case p.Match(tokeniser.TokenOpenSquare):
 			p.Inc()

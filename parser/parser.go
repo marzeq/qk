@@ -122,6 +122,11 @@ func (p *Parser) Match(ttypes ...tokeniser.TokenKind) bool {
 	return slices.Contains(ttypes, ptype)
 }
 
+func (p *Parser) MatchAdjacentPair(ttype tokeniser.TokenKind) bool {
+	current, next := p.Peek(), p.Next()
+	return current.Type == ttype && next.Type == ttype && current.Loc.EndOffset == next.Loc.Offset
+}
+
 func (p *Parser) MatchBuiltin(name string) bool {
 	return p.Match(tokeniser.TokenAt) && p.Next().Type == tokeniser.TokenIdentifier && p.Next().Value == name
 }

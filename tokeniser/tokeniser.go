@@ -308,6 +308,37 @@ func (t *Tokeniser) AddToken(ttype TokenKind, loc shared.Location, _value ...str
 	t.tokens = append(t.tokens, Token{Type: ttype, Value: value, Loc: loc})
 }
 
+func (t *Tokeniser) previousTokenEndsExpressionHere() bool {
+	if len(t.tokens) == 0 {
+		return false
+	}
+
+	previous := t.tokens[len(t.tokens)-1]
+	if previous.Loc.EndOffset != t.pos {
+		return false
+	}
+
+	switch previous.Type {
+	case TokenIdentifier, TokenNumber, TokenFloat, TokenString, TokenCString, TokenChar,
+		TokenCloseParen, TokenCloseCurly, TokenCloseSquare:
+		return true
+	case TokenKeyword:
+		return previous.Value == string(KeywordTrue) ||
+			previous.Value == string(KeywordFalse) ||
+			previous.Value == string(KeywordNil)
+	default:
+		return false
+	}
+}
+
+func (t *Tokeniser) previousTokenIsHere(ttype TokenKind) bool {
+	if len(t.tokens) == 0 {
+		return false
+	}
+	previous := t.tokens[len(t.tokens)-1]
+	return previous.Type == ttype && previous.Loc.EndOffset == t.pos
+}
+
 func tokenWidth(kind TokenKind) int {
 	switch kind {
 	case TokenNoInitializer, TokenShiftLeftBy, TokenShiftRightBy, Token3Dots:
@@ -315,8 +346,8 @@ func tokenWidth(kind TokenKind) int {
 	case TokenEqualsEquals, TokenNotEquals, TokenLessEquals, TokenGreaterEquals,
 		TokenShiftLeft, TokenShiftRight, TokenIncBy, TokenDecBy, TokenMulBy,
 		TokenDivBy, TokenModBy, TokenBitwiseAndBy, TokenBitwiseOrBy,
-		TokenBitwiseXorBy, TokenIncrement, TokenDecrement, TokenLogicalAnd,
-		TokenLogicalOr, Token2Dots, TokenArrow, TokenFatArrow:
+		TokenBitwiseXorBy, TokenLogicalAnd, TokenLogicalOr, Token2Dots,
+		TokenArrow, TokenFatArrow:
 		return 2
 	default:
 		return 1
@@ -509,9 +540,6 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 			if t.Next() == '=' {
 				t.AddToken(TokenIncBy, t.GetLoc())
 				t.Inc().Inc()
-			} else if t.Next() == '+' {
-				t.AddToken(TokenIncrement, t.GetLoc())
-				t.Inc().Inc()
 			} else {
 				t.AddToken(TokenPlus, t.GetLoc())
 				t.Inc()
@@ -521,7 +549,9 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 			if t.Next() == '-' && t.pos+2 < len(t.text) && t.text[t.pos+2] == '-' {
 				t.AddToken(TokenNoInitializer, t.GetLoc())
 				t.Inc().Inc().Inc()
-			} else if IsNum(t.Next()) {
+			} else if IsNum(t.Next()) &&
+				!t.previousTokenEndsExpressionHere() &&
+				!t.previousTokenIsHere(TokenMinus) {
 				pos := t.GetLoc()
 				n, base, err := t.ReadNumber()
 				if err != nil {
@@ -539,9 +569,6 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 				t.Inc().Inc()
 			} else if t.Next() == '>' {
 				t.AddToken(TokenArrow, t.GetLoc())
-				t.Inc().Inc()
-			} else if t.Next() == '-' {
-				t.AddToken(TokenDecrement, t.GetLoc())
 				t.Inc().Inc()
 			} else {
 				t.AddToken(TokenMinus, t.GetLoc())
