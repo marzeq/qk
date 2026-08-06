@@ -90,7 +90,15 @@ String literals are enclosed in double quotes and support common escape sequence
 "Two\nlines"
 ```
 
-They resolve to a `str` type, which is a slice of bytes. See [the types section](#types) for more information on the difference between `str` and `cstr`.
+An ordinary string literal is contextually typed as either `str` or `cstr`. It becomes a null-terminated `cstr` when used where that type is expected, including function arguments, return values, declarations, assignments, and aggregate fields. Without such context it defaults to `str`:
+
+```qk
+let text = "length-aware"       // str
+let name: cstr = "terminated"   // cstr
+let file = fopen("input.txt", "rb")
+```
+
+See [the types section](#types) for more information on the difference between `str` and `cstr`.
 
 ## C-String literals
 
@@ -101,7 +109,7 @@ c"Hello, world!"
 c"Two\nlines"
 ```
 
-They resolve to a `cstr` type, which is a pointer to bytes. See [the types section](#types) for more information on the difference between `str` and `cstr`.
+They always resolve to a `cstr` type, which is a pointer to bytes. The explicit prefix remains useful when no expected type is available or when the spelling should document C-string intent. See [the types section](#types) for more information on the difference between `str` and `cstr`.
 
 ## Character literals
 

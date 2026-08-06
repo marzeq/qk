@@ -2090,6 +2090,15 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 	}
 
 	switch n := node.(type) {
+	case *parser.StringLiteralNode:
+		cstr := v.analyser.universe.Symbols["cstr"].TypeInfo
+		if expected != nil && expected.Equals(cstr) {
+			return &parser.CStringLiteralNode{
+				Value: n.Value,
+				Loc:   n.Loc,
+				Type:  cstr,
+			}
+		}
 	case *parser.NilLiteralNode:
 		if types.IsPointer(expected) || isTraitPointerType(expected) {
 			n.SetType(expected)

@@ -120,6 +120,16 @@ Use repeatable `-I` options before the package argument to add package roots:
 qkc run -I ../qk-packages ./games/flappy
 ```
 
+#### Reader and writer composition
+
+[`examples/stream_report`](examples/stream_report) is a mid-sized command-line
+example that combines builtin string readers, file readers, a `StringBuilder`,
+and standard output through the structural `Reader` and `Writer` traits:
+
+```bash
+qkc run ./examples/stream_report README.md docs/docs.md
+```
+
 #### Specifying an output file
 
 ```bash
