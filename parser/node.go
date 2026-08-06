@@ -176,6 +176,8 @@ type TraitMethodNode struct {
 	Receiver          MethodReceiverKind
 	Args              []*FunctionNodeArg
 	ReturnType        TypeNode
+	Body              Node
+	ExpressionBody    bool
 	Loc               shared.Location
 }
 

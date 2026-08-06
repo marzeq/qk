@@ -711,6 +711,7 @@ type TraitMethod struct {
 	Receiver          TraitReceiverKind
 	Parameters        []Type
 	ReturnType        Type
+	HasDefault        bool
 }
 
 type TraitReceiverKind uint8

@@ -33,6 +33,7 @@ type genericAliasSpecialization struct {
 
 type genericAliasInfo struct {
 	node            *parser.TypeAliasNode
+	root            *parser.RootNode
 	module          string
 	parameters      []types.TypeParameter
 	specializations map[string]*genericAliasSpecialization
@@ -182,12 +183,19 @@ func (a *Analyser) resolveGenericArguments(nodes []parser.TypeNode) []types.Type
 }
 
 func (a *Analyser) checkGenericArguments(node parser.Node, parameters []types.TypeParameter, arguments []types.Type) bool {
+	return a.checkGenericArgumentsFrom(node, parameters, arguments, 0)
+}
+
+func (a *Analyser) checkGenericArgumentsFrom(node parser.Node, parameters []types.TypeParameter, arguments []types.Type, start int) bool {
 	if len(parameters) != len(arguments) {
 		a.errorf(node, "generic binding expects %d type arguments, got %d", len(parameters), len(arguments))
 		return false
 	}
 	valid := true
 	for i, parameter := range parameters {
+		if i < start {
+			continue
+		}
 		if parameter.Constraint == nil {
 			continue
 		}
@@ -268,6 +276,7 @@ func (a *Analyser) specializeGenericAlias(info *genericAliasInfo, arguments []ty
 		if trait, ok := resolved.(types.TraitType); ok && !info.node.Transparent {
 			trait.Module, trait.Name = info.module, displayName
 			resolved = trait
+			a.registerTraitDefaults(info.node, trait, info.root)
 		} else if !info.node.Transparent {
 			resolved = types.DefinedType{
 				Module: info.module, Name: displayName, Underlying: resolved,
@@ -325,8 +334,16 @@ func (a *Analyser) specializeGenericValue(template *symbols.Symbol, arguments []
 }
 
 func (a *Analyser) specializeGenericFunction(template *symbols.Symbol, arguments []types.Type, use parser.Node) *parser.FunctionDefNode {
+	if template.TraitDefaultTemplate != nil {
+		arguments = append([]types.Type{template.TraitDefaultSelf}, arguments...)
+		template = template.TraitDefaultTemplate
+	}
 	info := a.genericFunctions[template]
-	if info == nil || !a.checkGenericArguments(use, template.GenericParameters, arguments) {
+	checkFrom := 0
+	if template.TraitDefault {
+		checkFrom = 1
+	}
+	if info == nil || !a.checkGenericArgumentsFrom(use, template.GenericParameters, arguments, checkFrom) {
 		return nil
 	}
 	key := specializationKey(arguments)

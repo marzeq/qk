@@ -202,6 +202,7 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 			methods[i] = types.TraitMethod{
 				Name: method.Name, GenericParameters: genericParameters, Receiver: receiver,
 				Parameters: params, ReturnType: a.resolveTypeNode(method.ReturnType),
+				HasDefault: method.Body != nil,
 			}
 			a.typeParameterBindings = previousBindings
 		}

@@ -29,25 +29,29 @@ type Analyser struct {
 	genericFunctions              map[*symbols.Symbol]*genericFunctionInfo
 	genericValues                 map[*symbols.Symbol]*genericValueInfo
 	genericAliases                map[*symbols.Symbol]*genericAliasInfo
+	traitDefaults                 map[string][]*symbols.Symbol
+	definitionTypeBindings        map[*symbols.Symbol]map[string]types.Type
 }
 
 func NewAnalyser() *Analyser {
 	u := symbols.NewScope(nil)
 
 	a := &Analyser{
-		universe:            u,
-		modules:             make(map[string]*symbols.Module),
-		aliases:             make(map[string]*aliasInfo),
-		aliasesByModule:     make(map[string]map[string]*aliasInfo),
-		methods:             make(map[string]map[string]*symbols.Symbol),
-		structuralMethods:   make(map[string][]*symbols.Symbol),
-		concreteTypes:       make(map[string]types.Type),
-		importsByModule:     make(map[string]map[string]bool),
-		modulePaths:         make(map[*parser.RootNode]string),
-		functionDefinitions: make(map[*symbols.Symbol]*functionDefinitionInfo),
-		genericFunctions:    make(map[*symbols.Symbol]*genericFunctionInfo),
-		genericValues:       make(map[*symbols.Symbol]*genericValueInfo),
-		genericAliases:      make(map[*symbols.Symbol]*genericAliasInfo),
+		universe:               u,
+		modules:                make(map[string]*symbols.Module),
+		aliases:                make(map[string]*aliasInfo),
+		aliasesByModule:        make(map[string]map[string]*aliasInfo),
+		methods:                make(map[string]map[string]*symbols.Symbol),
+		structuralMethods:      make(map[string][]*symbols.Symbol),
+		concreteTypes:          make(map[string]types.Type),
+		importsByModule:        make(map[string]map[string]bool),
+		modulePaths:            make(map[*parser.RootNode]string),
+		functionDefinitions:    make(map[*symbols.Symbol]*functionDefinitionInfo),
+		genericFunctions:       make(map[*symbols.Symbol]*genericFunctionInfo),
+		genericValues:          make(map[*symbols.Symbol]*genericValueInfo),
+		genericAliases:         make(map[*symbols.Symbol]*genericAliasInfo),
+		traitDefaults:          make(map[string][]*symbols.Symbol),
+		definitionTypeBindings: make(map[*symbols.Symbol]map[string]types.Type),
 	}
 
 	a.predefineBuiltins()

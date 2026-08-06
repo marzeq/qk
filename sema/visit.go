@@ -73,10 +73,7 @@ func (a *Analyser) visitFunction(n *parser.FunctionDefNode) {
 
 	previousBindings := a.typeParameterBindings
 	if n.Symbol.Template {
-		a.typeParameterBindings = make(map[string]types.Type, len(n.Symbol.GenericParameters))
-		for _, parameter := range n.Symbol.GenericParameters {
-			a.typeParameterBindings[parameter.Name] = parameter
-		}
+		a.typeParameterBindings = a.templateBindings(n.Symbol)
 		defer func() { a.typeParameterBindings = previousBindings }()
 	}
 
@@ -253,6 +250,12 @@ func (a *Analyser) visitExpression(expr parser.ExpressionNode) {
 
 	case *parser.CastNode:
 		a.visitExpression(e.Operand)
+		// Resolve cast targets during analysis as well as attribution so generic
+		// trait specializations (and their default templates) exist before the
+		// template attribution/validation passes begin.
+		if e.ToType != nil {
+			a.resolveCastTarget(e.ToType)
+		}
 
 	case *parser.ReprNode:
 		a.visitExpression(e.Operand)

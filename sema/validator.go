@@ -54,10 +54,7 @@ func (v *Validator) ValidateGenericTemplates(root *parser.RootNode) {
 		if !ok || !function.IsGeneric() {
 			continue
 		}
-		bindings := make(map[string]types.Type, len(function.Symbol.GenericParameters))
-		for _, parameter := range function.Symbol.GenericParameters {
-			bindings[parameter.Name] = parameter
-		}
+		bindings := v.analyser.templateBindings(function.Symbol)
 		v.analyser.withDefinitionContext(
 			v.analyser.currentMod,
 			v.analyser.currentTrustedStandardLibrary,

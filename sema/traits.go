@@ -34,7 +34,14 @@ func (a *Analyser) structuralConformance(from types.Type, target types.TraitPoin
 	selected := make([]*symbols.Symbol, len(target.Trait.Methods))
 	for i, requirement := range target.Trait.Methods {
 		method := methodSet[requirement.Name]
-		if method == nil || method.StaticMethod {
+		if method == nil {
+			if requirement.HasDefault {
+				method = a.defaultTraitMethod(target.Trait, i, pointer.Base, at)
+			}
+			if method == nil {
+				return nil, false
+			}
+		} else if method.StaticMethod {
 			return nil, false
 		}
 		sig := method.Signature
@@ -114,12 +121,16 @@ func traitImplementsTrait(source, target types.TraitType) bool {
 	for _, required := range target.Methods {
 		found := false
 		for _, available := range source.Methods {
-			if traitMethodShapeMatches(required, available, nil) {
-				found = true
-				break
+			if available.Name != required.Name {
+				continue
 			}
+			if !traitMethodShapeMatches(required, available, nil) {
+				return false
+			}
+			found = true
+			break
 		}
-		if !found {
+		if !found && !required.HasDefault {
 			return false
 		}
 	}

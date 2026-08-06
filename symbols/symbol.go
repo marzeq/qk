@@ -44,10 +44,16 @@ type Symbol struct {
 	RequirementTrait  types.TraitType
 	RequirementSlot   int
 	RequirementAccess types.TraitReceiverKind
-	GenericParameters []types.TypeParameter
-	Template          bool
-	TemplateSymbol    *Symbol
-	TypeArguments     []types.Type
+	// TraitDefaultTemplate and TraitDefaultSelf describe a concrete-facing
+	// facade for a generic default trait method. Specialization prepends the
+	// hidden Self argument and delegates to the underlying default template.
+	TraitDefaultTemplate *Symbol
+	TraitDefaultSelf     types.Type
+	TraitDefault         bool
+	GenericParameters    []types.TypeParameter
+	Template             bool
+	TemplateSymbol       *Symbol
+	TypeArguments        []types.Type
 }
 
 type FunctionSignature struct {

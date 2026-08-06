@@ -978,6 +978,17 @@ let Writer = type trait {
 
 Traits are structural: a nominal type implements `Writer` by defining the required method with the same receiver and signature. There is no separate `implements` declaration.
 
+A requirement may provide a default block or expression body. `Self` is available throughout the body, and the symbolic `self` value exposes only methods declared by the trait:
+
+```qk
+let Measured = type trait {
+  let measure(self): usz
+  let double_measure(self): usz = self.measure() * 2
+}
+```
+
+A type may omit `double_measure` and inherit the default, or declare a matching method to override it. An explicitly declared same-name method with an incompatible receiver or signature still prevents conformance. The compiler validates the default once, then emits a specialized variant for each concrete conforming type that uses it.
+
 `Self` refers to the concrete implementing type within a trait:
 
 ```qk

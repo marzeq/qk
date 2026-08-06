@@ -1338,9 +1338,32 @@ func (p *Parser) ParseTraitType() (*TraitTypeNode, error) {
 				return nil, err
 			}
 		}
+		var body Node
+		expressionBody := false
+		if p.Match(tokeniser.TokenOpenCurly) {
+			body, err = p.ParseBlock()
+			if err != nil {
+				return nil, err
+			}
+		} else if p.Match(tokeniser.TokenEquals) {
+			p.Inc()
+			expressionBody = true
+			for p.Match(tokeniser.TokenNewline) {
+				p.Inc()
+			}
+			if p.Match(tokeniser.TokenOpenCurly) {
+				body, err = p.ParseBlockExpression()
+			} else {
+				body, err = p.ParseExpression()
+			}
+			if err != nil {
+				return nil, err
+			}
+		}
 		methods = append(methods, TraitMethodNode{
 			Name: name.Value, GenericParameters: genericParameters, Receiver: receiver,
-			Args: args, ReturnType: ret, Loc: p.SpanFrom(loc),
+			Args: args, ReturnType: ret, Body: body, ExpressionBody: expressionBody,
+			Loc: p.SpanFrom(loc),
 		})
 		if p.Match(tokeniser.TokenComma, tokeniser.TokenSemicolon) {
 			p.Inc()

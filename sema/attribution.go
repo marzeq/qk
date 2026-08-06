@@ -57,10 +57,7 @@ func (a *Attributor) AttributeGenericTemplates(root *parser.RootNode) {
 		if !ok || !function.IsGeneric() {
 			continue
 		}
-		bindings := make(map[string]types.Type, len(function.Symbol.GenericParameters))
-		for _, parameter := range function.Symbol.GenericParameters {
-			bindings[parameter.Name] = parameter
-		}
+		bindings := a.analyser.templateBindings(function.Symbol)
 		a.analyser.withDefinitionContext(
 			a.analyser.currentMod,
 			a.analyser.currentTrustedStandardLibrary,
@@ -1086,7 +1083,7 @@ func staticTraitView(node parser.ExpressionNode) *types.StaticTraitView {
 		}
 		return &result
 	}
-	return nil
+	return staticTraitViewForGenericType(node.GetType())
 }
 
 func fieldOwnerDisplayType(t types.Type) types.Type {

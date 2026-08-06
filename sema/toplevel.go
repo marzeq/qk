@@ -46,7 +46,11 @@ func (a *Analyser) resolveBodies(root *parser.RootNode) {
 		}
 	}
 
-	for _, node := range root.Body {
+	// Resolving a generic trait use can materialize hidden default-method
+	// templates in this root. Keep walking until those appended definitions
+	// have received their scopes and parameter symbols too.
+	for i := 0; i < len(root.Body); i++ {
+		node := root.Body[i]
 		switch n := node.(type) {
 		case *parser.FunctionDefNode:
 			a.visitFunction(n)
@@ -512,7 +516,7 @@ func (a *Analyser) finishGenericTypeAlias(n *parser.TypeAliasNode) {
 	genericParameters := a.makeGenericParameters(n.Name, n.GenericParameters)
 	n.Symbol.GenericParameters = genericParameters
 	a.genericAliases[n.Symbol] = &genericAliasInfo{
-		node: n, module: a.currentMod, parameters: genericParameters,
+		node: n, root: a.currentRoot, module: a.currentMod, parameters: genericParameters,
 		specializations: make(map[string]*genericAliasSpecialization),
 	}
 }
