@@ -1,7 +1,6 @@
 module std.strings
 
 import std.alloc
-import std.io
 
 pub let StringBuilder = type struct {
   allocator: *mut dyn std.alloc.Allocator,
@@ -195,10 +194,6 @@ pub let StringBuilder.read(*mut self, buffer: []mut u8): usz {
   }
   self.read_offset += count
   return count
-}
-
-pub let StringBuilder.format(self, writer: *mut dyn std.io.Writer): void {
-  std.io.write_all(writer, self.as_str().([]u8))
 }
 
 pub let StringBuilder.reset_reader(*mut self): void {

@@ -369,8 +369,11 @@ func (a *Analyser) classifyPatternMethodOwner(n *parser.FunctionDefNode, ownerTy
 			return "builtin", name, false, true
 		}
 		if owner.Module != a.currentMod {
-			a.errorf(n, "cannot attach method to type %v owned by another module", ownerType)
-			return "", "", false, false
+			if !a.currentTrustedStandardLibrary {
+				a.errorf(n, "cannot attach method to type %v owned by another module", ownerType)
+				return "", "", false, false
+			}
+			return owner.Module, name, false, true
 		}
 		if n.Pub {
 			if symbol, ok := a.current.Resolve(name); ok && !symbol.Public {
@@ -381,8 +384,11 @@ func (a *Analyser) classifyPatternMethodOwner(n *parser.FunctionDefNode, ownerTy
 		return owner.Module, name, false, true
 	case *types.AliasRef:
 		if owner.Module != a.currentMod {
-			a.errorf(n, "cannot attach method to type %v owned by another module", ownerType)
-			return "", "", false, false
+			if !a.currentTrustedStandardLibrary {
+				a.errorf(n, "cannot attach method to type %v owned by another module", ownerType)
+				return "", "", false, false
+			}
+			return owner.Module, owner.Name, false, true
 		}
 		return owner.Module, owner.Name, false, true
 	case types.PrimitiveType:

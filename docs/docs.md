@@ -1347,11 +1347,11 @@ Hosted builds provide `std.alloc.LibcAllocator`. `std.alloc.Arena` is also hoste
 
 `std.collections.DynamicArray<T>` is an allocator-backed growable array. It supports reserving, appending, inserting, removing, clearing, slice views, and explicit `deinit`.
 
-`std.strings.StringBuilder` is an allocator-backed builder that also implements reader, writer, and formatter traits. `std.strings` provides split iteration, replacement, and integer parsing in addition to the root string methods.
+`std.strings.StringBuilder` is an allocator-backed builder that also implements reader, writer, and formatter traits. `std.strings` provides split iteration, replacement, and integer parsing in addition to the root string methods. Mutable `str` and `cstr` bindings are consuming `std.io.Reader` implementations.
 
 ## Input, output, and formatting
 
-`std.io.Reader` and `std.io.Writer` are structural stream traits. `std.io.Format` lets a value format itself into a writer.
+`std.io.Reader` and `std.io.Writer` are structural stream traits. Their default `read_to_builder` and `write_builder` methods transfer bytes to or from a `std.strings.StringBuilder`, so implementations only need to supply the core `read` or `write` method. `std.io.Format` lets a value format itself into a writer.
 
 `std.io.wprint` and `wprintln` work with any writer and remain useful without hosted standard streams. Hosted builds add `print`, `println`, file printing, and standard input, output, and error streams.
 

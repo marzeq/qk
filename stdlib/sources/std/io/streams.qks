@@ -1,13 +1,36 @@
 module std.io
 
+import std.strings
+
 pub let HasIO = comptime !NoLibc
 
 pub let Writer = type trait {
   let write(*mut self, bytes: []u8): usz
+
+  let write_builder(
+    *mut self,
+    builder: *std.strings.StringBuilder,
+  ): usz = self.write(builder.as_str().([]u8))
 }
 
 pub let Reader = type trait {
   let read(*mut self, buffer: []mut u8): usz
+
+  let read_to_builder(
+    *mut self,
+    builder: *mut std.strings.StringBuilder,
+  ): usz {
+    let mut total: usz = 0
+    let mut buffer: [4096]u8 = ---
+    for true {
+      let count = self.read(buffer[:])
+      if count == 0 { break }
+      let written = builder.write(buffer[0:count])
+      total += written
+      if written != count { break }
+    }
+    return total
+  }
 }
 
 when HasIO {
