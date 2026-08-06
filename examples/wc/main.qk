@@ -1,0 +1,202 @@
+module main
+
+import (
+  std.fs
+  std.io
+  std.os
+)
+
+let Counts = type struct {
+  lines: usz,
+  words: usz,
+  bytes: usz,
+}
+
+let Options = type struct {
+  lines: bool,
+  words: bool,
+  bytes: bool,
+}
+
+let is_whitespace(byte: u8): bool =
+  byte == ' ' || byte == '\t' || byte == '\n' ||
+  byte == '\r' || byte == '\v' || byte == '\f'
+
+let count(reader: *mut dyn std.io.Reader): Counts {
+  let mut result: Counts = .{ lines=0, words=0, bytes=0 }
+  let mut in_word = false
+  let mut buffer: [4096]u8 = ---
+
+  for true {
+    let read = reader.read(buffer[:])
+    if read == 0 { break }
+
+    result.bytes += read
+    for byte in buffer[0:read] {
+      if byte == '\n' { result.lines += 1 }
+
+      if is_whitespace(byte) {
+        in_word = false
+      } else if !in_word {
+        result.words += 1
+        in_word = true
+      }
+    }
+  }
+
+  return result
+}
+
+let add(total: *mut Counts, counts: Counts): void {
+  total.lines += counts.lines
+  total.words += counts.words
+  total.bytes += counts.bytes
+}
+
+let digit_count(value: usz): usz {
+  let mut digits: usz = 1
+  let mut remaining = value
+  for remaining >= 10 {
+    remaining /= 10
+    digits += 1
+  }
+  return digits
+}
+
+let print_count(value: usz, width: usz, separator: bool): void {
+  if separator { std.io.print(" ") }
+  for _ in digit_count(value)..width { std.io.print(" ") }
+  std.io.print("{}", value)
+}
+
+let print_counts(counts: Counts, options: Options, name: str, named: bool, width: usz): void {
+  let mut printed = false
+  if options.lines {
+    print_count(counts.lines, width, printed)
+    printed = true
+  }
+  if options.words {
+    print_count(counts.words, width, printed)
+    printed = true
+  }
+  if options.bytes {
+    print_count(counts.bytes, width, printed)
+  }
+  if named { std.io.print(" {}", name) }
+  std.io.println("")
+}
+
+let output_width(first_file: usz): usz {
+  if first_file == @len(std.os.args) { return 7 }
+
+  let mut total_size: usz = 0
+  for index in first_file..@len(std.os.args) {
+    let path = std.os.args[index]
+    if path.eq("-") { return 7 }
+    let size, error = std.fs.file_size(path)
+    if error.is_none() { total_size += size }
+  }
+  return digit_count(total_size)
+}
+
+let usage(): void {
+  std.io.eprintln("usage: wc [-clw] [--bytes] [--lines] [--words] [file ...]")
+}
+
+let parse_short_options(argument: str, options: *mut Options): bool {
+  if @len(argument) < 2 || argument[0] != '-' { return false }
+
+  for index in 1..@len(argument) {
+    let option = argument[index]
+    if option == 'c' {
+      options.bytes = true
+    } else if option == 'l' {
+      options.lines = true
+    } else if option == 'w' {
+      options.words = true
+    } else {
+      return false
+    }
+  }
+  return true
+}
+
+let main() {
+  let mut options: Options = .{ lines=false, words=false, bytes=false }
+  let mut first_file: usz = 1
+  let mut parsing_options = true
+
+  for first_file < @len(std.os.args) {
+    let argument = std.os.args[first_file]
+    if !parsing_options || argument.eq("-") || @len(argument) == 0 || argument[0] != '-' {
+      break
+    }
+    if argument.eq("--") {
+      parsing_options = false
+      first_file += 1
+      break
+    }
+    if argument.eq("--bytes") {
+      options.bytes = true
+    } else if argument.eq("--lines") {
+      options.lines = true
+    } else if argument.eq("--words") {
+      options.words = true
+    } else if argument.eq("--help") {
+      usage()
+      return
+    } else if !parse_short_options(argument, options.&mut) {
+      std.io.eprintln("wc: unrecognized option '{}'", argument)
+      usage()
+      std.os.exit(1)
+    }
+    first_file += 1
+  }
+
+  if !options.lines && !options.words && !options.bytes {
+    options.lines = true
+    options.words = true
+    options.bytes = true
+  }
+
+  let width = output_width(first_file)
+
+  if first_file == @len(std.os.args) {
+    let counts = count(std.io.stdin.&mut.(*mut dyn std.io.Reader))
+    print_counts(counts, options, "", false, width)
+    return
+  }
+
+  let file_count = @len(std.os.args) - first_file
+  let mut total: Counts = .{ lines=0, words=0, bytes=0 }
+  let mut failed = false
+
+  for index in first_file..@len(std.os.args) {
+    let path = std.os.args[index]
+    if path.eq("-") {
+      let counts = count(std.io.stdin.&mut.(*mut dyn std.io.Reader))
+      print_counts(counts, options, path, true, width)
+      add(total.&mut, counts)
+      continue
+    }
+
+    let mut file, error = std.io.FileReader.open_checked(path)
+    if error.is_error() {
+      std.io.eprintln("wc: {}: {}", path, error.message())
+      failed = true
+      continue
+    }
+
+    let counts = count(file.&mut.(*mut dyn std.io.Reader))
+    let close_error = file.close_checked()
+    if close_error.is_error() {
+      std.io.eprintln("wc: {}: {}", path, close_error.message())
+      failed = true
+    }
+    print_counts(counts, options, path, true, width)
+    add(total.&mut, counts)
+  }
+
+  if file_count > 1 { print_counts(total, options, "total", true, width) }
+  if failed { std.os.exit(1) }
+}
