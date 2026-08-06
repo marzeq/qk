@@ -208,7 +208,10 @@ func (v *Validator) validateNode(node parser.Node) {
 			}
 		}
 		if n.Body != nil {
-			for _, arg := range n.Args {
+			for i, arg := range n.Args {
+				if n.Symbol.Method && !n.Symbol.StaticMethod && i == 0 && arg.Name == "self" {
+					continue
+				}
 				v.warnIfUnused(arg.Symbol, arg.GetLoc(), shared.WarningUnusedParameter, "function parameter")
 			}
 		}
