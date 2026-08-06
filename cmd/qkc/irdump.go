@@ -112,6 +112,18 @@ func formatInstr(inst ir.Instr) string {
 			return fmt.Sprintf("call %s(%s) ; sig %s", target, args.String(), sig)
 		}
 		return fmt.Sprintf("v%d = call %s(%s) ; sig %s", i.Dest, target, args.String(), sig)
+	case ir.InlineAsm:
+		args := make([]string, len(i.Args))
+		for index, arg := range i.Args {
+			args[index] = formatOperand(arg)
+		}
+		prefix := ""
+		if i.Dest != 0 {
+			prefix = fmt.Sprintf("v%d = ", i.Dest)
+		}
+		return fmt.Sprintf("%sasm %q (%s) -> %s", prefix, i.Template, strings.Join(args, ", "), formatType(i.ResultType))
+	case ir.ExtractValue:
+		return fmt.Sprintf("v%d = extractvalue %s, %d", i.Dest, formatOperand(i.Aggregate), i.Index)
 	case ir.Jump:
 		return fmt.Sprintf("jmp b%d", i.Target)
 	case ir.Branch:

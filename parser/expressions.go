@@ -737,6 +737,9 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 	if p.MatchBuiltin("offsetof") {
 		return p.ParseOffsetOfExpression()
 	}
+	if p.MatchBuiltin("asm") {
+		return p.ParseInlineAsmExpression()
+	}
 	if p.MatchBuiltin("repr") {
 		begin := p.CurrLoc()
 		p.ConsumeBuiltin("repr")
@@ -889,6 +892,120 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 	}
 
 	return nil, shared.NewError(p.CurrLoc(), "unexpected token %s", p.Peek())
+}
+
+// ParseInlineAsmExpression parses:
+//
+//	@asm("template",
+//	  out u64 "=r",
+//	  in value "r",
+//	  clobber "cc",
+//	  volatile)
+//
+// Outputs are intentionally listed before inputs because their positions form
+// the leading operands in LLVM's inline-assembly constraint string.
+func (p *Parser) ParseInlineAsmExpression() (*InlineAsmNode, error) {
+	begin := p.CurrLoc()
+	p.ConsumeBuiltin("asm")
+	if !p.Expect(tokeniser.TokenOpenParen) {
+		return nil, shared.NewError(p.PrevLoc(), "expected '(' after '@asm'")
+	}
+	for p.Match(tokeniser.TokenNewline) {
+		p.Inc()
+	}
+	template, ok := p.ExpectGet(tokeniser.TokenString)
+	if !ok {
+		return nil, shared.NewError(p.PrevLoc(), "@asm requires a string literal template")
+	}
+	node := &InlineAsmNode{Template: template.Value}
+	seenInput := false
+	seenClobber := false
+	for {
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+		if p.Match(tokeniser.TokenCloseParen) {
+			p.Inc()
+			break
+		}
+		if !p.Expect(tokeniser.TokenComma) {
+			return nil, shared.NewError(p.PrevLoc(), "expected ',' or ')' in @asm")
+		}
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+		if p.Match(tokeniser.TokenCloseParen) {
+			p.Inc()
+			break
+		}
+		entryLoc := p.CurrLoc()
+		if p.Match(tokeniser.TokenIdentifier) && p.Peek().Value == "out" {
+			if seenInput || seenClobber {
+				return nil, shared.NewError(entryLoc, "@asm outputs must precede inputs and clobbers")
+			}
+			p.Inc()
+			for p.Match(tokeniser.TokenNewline) {
+				p.Inc()
+			}
+			typeNode, err := p.ParseType()
+			if err != nil {
+				return nil, err
+			}
+			for p.Match(tokeniser.TokenNewline) {
+				p.Inc()
+			}
+			constraint, ok := p.ExpectGet(tokeniser.TokenString)
+			if !ok {
+				return nil, shared.NewError(p.PrevLoc(), "expected output constraint string after @asm output type")
+			}
+			node.Outputs = append(node.Outputs, InlineAsmOutput{TypeNode: typeNode, Constraint: constraint.Value, Loc: p.SpanFrom(entryLoc)})
+			continue
+		}
+		if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordIn) {
+			if seenClobber {
+				return nil, shared.NewError(entryLoc, "@asm inputs must precede clobbers")
+			}
+			seenInput = true
+			p.Inc()
+			for p.Match(tokeniser.TokenNewline) {
+				p.Inc()
+			}
+			value, err := p.ParseExpression()
+			if err != nil {
+				return nil, err
+			}
+			for p.Match(tokeniser.TokenNewline) {
+				p.Inc()
+			}
+			constraint, ok := p.ExpectGet(tokeniser.TokenString)
+			if !ok {
+				return nil, shared.NewError(p.PrevLoc(), "expected input constraint string after @asm input value")
+			}
+			node.Inputs = append(node.Inputs, InlineAsmInput{Value: value, Constraint: constraint.Value, Loc: p.SpanFrom(entryLoc)})
+			continue
+		}
+		if p.Match(tokeniser.TokenIdentifier) && p.Peek().Value == "clobber" {
+			seenClobber = true
+			p.Inc()
+			for p.Match(tokeniser.TokenNewline) {
+				p.Inc()
+			}
+			name, ok := p.ExpectGet(tokeniser.TokenString)
+			if !ok {
+				return nil, shared.NewError(p.PrevLoc(), "expected clobber name string")
+			}
+			node.Clobbers = append(node.Clobbers, name.Value)
+			continue
+		}
+		if p.Match(tokeniser.TokenIdentifier) && p.Peek().Value == "volatile" {
+			p.Inc()
+			node.Volatile = true
+			continue
+		}
+		return nil, shared.NewError(entryLoc, "expected 'out', 'in', 'clobber', or 'volatile' in @asm")
+	}
+	node.Loc = p.SpanFrom(begin)
+	return node, nil
 }
 
 func (p *Parser) ParseFunctionCall(name *IdentifierNode) (*FunctionCallNode, error) {

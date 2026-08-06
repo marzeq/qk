@@ -199,6 +199,14 @@ func (a *Analyser) visitExpression(expr parser.ExpressionNode) {
 	case *parser.FunctionCallNode:
 		a.resolveFunctionCall(e)
 
+	case *parser.InlineAsmNode:
+		for i := range e.Outputs {
+			e.Outputs[i].Type = a.resolveTypeNode(e.Outputs[i].TypeNode)
+		}
+		for _, input := range e.Inputs {
+			a.visitExpression(input.Value)
+		}
+
 	case *parser.IndexExprNode:
 		a.visitExpression(e.Subject)
 		a.visitExpression(e.Index)

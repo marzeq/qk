@@ -1351,7 +1351,7 @@ func (p *Parser) parseMultiDeclaration() (*MultiDeclarationNode, error) {
 		return nil, err
 	}
 	if !isMultiResultSource(value) {
-		return nil, shared.NewError(value.GetLoc(), "multiple declaration requires a function call or checked cast")
+		return nil, shared.NewError(value.GetLoc(), "multiple declaration requires a function call, checked cast, or inline assembly expression")
 	}
 	return &MultiDeclarationNode{
 		Names:    names,
@@ -1364,7 +1364,7 @@ func (p *Parser) parseMultiDeclaration() (*MultiDeclarationNode, error) {
 
 func isMultiResultSource(value ExpressionNode) bool {
 	switch value.(type) {
-	case *FunctionCallNode, *CastNode:
+	case *FunctionCallNode, *CastNode, *InlineAsmNode:
 		return true
 	}
 	return false

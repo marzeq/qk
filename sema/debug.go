@@ -177,6 +177,14 @@ func (w *debugWalker) walkExpr(expr parser.ExpressionNode) {
 			w.walkExpr(arg)
 		}
 
+	case *parser.InlineAsmNode:
+		for _, output := range n.Outputs {
+			w.checkType(output.Type)
+		}
+		for _, input := range n.Inputs {
+			w.walkExpr(input.Value)
+		}
+
 	case *parser.IndexExprNode:
 		w.walkExpr(n.Subject)
 		w.walkExpr(n.Index)

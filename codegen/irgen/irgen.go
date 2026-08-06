@@ -1303,6 +1303,8 @@ func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
 			return g.generateTaggedUnionConstructor(n)
 		}
 		return g.generateFunctionCallExpr(n)
+	case *parser.InlineAsmNode:
+		return g.generateInlineAsmExpr(n)
 	case *parser.FieldAccessNode:
 		if n.TaggedUnionType != nil {
 			return g.generateTaggedUnionConstructor(&parser.FunctionCallNode{
@@ -1336,6 +1338,33 @@ func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
 		fmt.Printf("todo: generate expr %T\n", n)
 		panic("todo")
 	}
+}
+
+func (g *Generator) generateInlineAsmExpr(node *parser.InlineAsmNode) ir.Operand {
+	args := make([]ir.Operand, len(node.Inputs))
+	constraints := make([]string, 0, len(node.Outputs)+len(node.Inputs))
+	for _, output := range node.Outputs {
+		constraints = append(constraints, output.Constraint)
+	}
+	for i, input := range node.Inputs {
+		args[i] = g.GenerateExpr(input.Value)
+		constraints = append(constraints, input.Constraint)
+	}
+	instr := ir.InlineAsm{
+		Template:    node.Template,
+		Constraints: constraints,
+		Clobbers:    append([]string(nil), node.Clobbers...),
+		Args:        args,
+		ResultType:  node.GetType(),
+		SideEffect:  node.Volatile || len(node.Outputs) == 0 || len(node.Clobbers) != 0,
+	}
+	if node.GetType().Equals(types.PrimitiveVoid) {
+		g.Emit(instr)
+		return ir.NullConstOperand(types.PrimitiveVoid)
+	}
+	instr.Dest = g.currentFunction.NewValueOfType(node.GetType())
+	g.Emit(instr)
+	return ir.ValueOperand(instr.Dest, node.GetType())
 }
 
 func (g *Generator) generateBlockExpr(node *parser.BlockNode) ir.Operand {

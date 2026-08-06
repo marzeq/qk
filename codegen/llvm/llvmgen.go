@@ -659,6 +659,8 @@ func (e *Emitter) InstrEmit(out *strings.Builder, instr ir.Instr) {
 		fmt.Fprintf(out, "%s = extractvalue %s %s, %d", e.ValueIDEmit(instr.Dest), e.TypeEmit(instr.Aggregate.Type), e.OperandEmit(instr.Aggregate), instr.Index)
 	case ir.Call:
 		e.CallEmit(out, instr)
+	case ir.InlineAsm:
+		e.InlineAsmEmit(out, instr)
 	case ir.Jump:
 		e.JumpEmit(out, instr)
 	case ir.Branch:
@@ -1064,6 +1066,28 @@ func (e *Emitter) CallEmit(out *strings.Builder, c ir.Call) {
 	if noreturnAttr != nil {
 		out.WriteString("\nunreachable")
 	}
+}
+
+func (e *Emitter) InlineAsmEmit(out *strings.Builder, asm ir.InlineAsm) {
+	constraints := append([]string(nil), asm.Constraints...)
+	for _, clobber := range asm.Clobbers {
+		constraints = append(constraints, "~{"+clobber+"}")
+	}
+	if !asm.ResultType.Equals(types.PrimitiveVoid) {
+		fmt.Fprintf(out, "%s = ", e.ValueIDEmit(asm.Dest))
+	}
+	fmt.Fprintf(out, "call %s asm", e.TypeEmit(asm.ResultType))
+	if asm.SideEffect {
+		out.WriteString(" sideeffect")
+	}
+	fmt.Fprintf(out, " \"%s\", \"%s\"(", encodeLLVMString(asm.Template), encodeLLVMString(strings.Join(constraints, ",")))
+	for i, arg := range asm.Args {
+		if i > 0 {
+			out.WriteString(", ")
+		}
+		fmt.Fprintf(out, "%s %s", e.TypeEmit(arg.Type), e.OperandEmit(arg))
+	}
+	out.WriteString(")")
 }
 
 func (e *Emitter) callABIParamTypes(ty types.Type, foreign bool) []string {

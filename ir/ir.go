@@ -514,6 +514,18 @@ type Call struct {
 
 func (Call) isInstr() {}
 
+type InlineAsm struct {
+	Dest        ValueID
+	Template    string
+	Constraints []string
+	Clobbers    []string
+	Args        []Operand
+	ResultType  types.Type
+	SideEffect  bool
+}
+
+func (InlineAsm) isInstr() {}
+
 type Jump struct {
 	Target BlockID
 }

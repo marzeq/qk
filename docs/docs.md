@@ -1071,6 +1071,33 @@ The single-result form traps on a length mismatch. The checked form returns a ze
 
 Compiler builtins use a leading `@` and call-like syntax. They are not ordinary functions and may accept types where a function would require values.
 
+## Inline assembly
+
+`@asm` embeds target-specific LLVM inline assembly. Its ordered entries declare every output, input, and clobber visible to the optimizer:
+
+```qk
+let low, high = @asm(
+  "rdtsc",
+  out u32 "={ax}",
+  out u32 "={dx}",
+  volatile)
+```
+
+Outputs use an explicit QK type and an LLVM output constraint beginning with `=`. Inputs contain an evaluated QK expression followed by an LLVM input constraint, and may refer to earlier outputs with tied constraints such as `"0"`. Outputs must precede inputs, which must precede clobbers:
+
+```qk
+let sum = @asm(
+  "add $2, $0",
+  out u64 "=r",
+  in left "0",
+  in right "r",
+  clobber "cc")
+```
+
+One output makes the asm expression produce that type. Two or more outputs produce a multiple-result bundle and must be unpacked like a multiple-returning call. With no outputs, `@asm` produces `void` and may be used as a statement. `volatile` preserves assembly whose effects are not completely represented by its outputs. Output-free assembly and assembly with clobbers are also treated as side-effecting automatically.
+
+Clobber names omit LLVM's surrounding `~{...}` syntax; for example, `clobber "memory"` tells the optimizer that arbitrary memory may be read or written. This is a compiler memory barrier, not a processor memory fence. Constraints and register names are target-specific, and incorrect assembly or an incomplete operand/clobber declaration can still cause invalid code or miscompilation.
+
 ## Layout and length
 
 `@sizeof(T)` and `@alignof(T)` return the target-specific byte size and alignment as `usz`. Both also accept a value expression without evaluating it for side effects solely to discover its type:

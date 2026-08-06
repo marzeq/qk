@@ -388,6 +388,36 @@ type FunctionCallNode struct {
 	TaggedUnionTemplate *symbols.Symbol
 }
 
+// InlineAsmNode describes one LLVM-style inline assembly expression. Output
+// constraints precede input constraints in the constraint string assembled by
+// the backend, matching LLVM's operand numbering rules.
+type InlineAsmNode struct {
+	Template string
+	Outputs  []InlineAsmOutput
+	Inputs   []InlineAsmInput
+	Clobbers []string
+	Volatile bool
+	Loc      shared.Location
+	Type     types.Type
+}
+
+type InlineAsmOutput struct {
+	TypeNode   TypeNode
+	Type       types.Type
+	Constraint string
+	Loc        shared.Location
+}
+
+type InlineAsmInput struct {
+	Value      ExpressionNode
+	Constraint string
+	Loc        shared.Location
+}
+
+func (n InlineAsmNode) GetLoc() shared.Location { return n.Loc }
+func (n *InlineAsmNode) SetType(t types.Type)   { n.Type = t }
+func (n *InlineAsmNode) GetType() types.Type    { return n.Type }
+
 func (n FunctionCallNode) GetLoc() shared.Location { return n.Loc }
 func (n *FunctionCallNode) SetType(t types.Type)   {}
 func (n *FunctionCallNode) GetType() types.Type {

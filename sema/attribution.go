@@ -387,6 +387,23 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 			n.SetType(types.SequenceType{Base: types.PrimitiveVoid, Length: 0})
 		}
 
+	case *parser.InlineAsmNode:
+		for _, input := range n.Inputs {
+			a.attributeExpr(input.Value)
+		}
+		switch len(n.Outputs) {
+		case 0:
+			n.SetType(types.PrimitiveVoid)
+		case 1:
+			n.SetType(n.Outputs[0].Type)
+		default:
+			result := make([]types.Type, len(n.Outputs))
+			for i := range n.Outputs {
+				result[i] = n.Outputs[i].Type
+			}
+			n.SetType(types.MultipleReturnType{Types: result})
+		}
+
 	case *parser.FunctionCallNode:
 		if n.TaggedUnionType != nil {
 			for _, arg := range n.Args {
@@ -1872,6 +1889,12 @@ func collectFunctionReturnNodesFromExpr(expr parser.ExpressionNode) []*parser.Co
 		return collect(n.Operand)
 	case *parser.FunctionCallNode:
 		return collect(append([]parser.ExpressionNode{n.Callee}, n.Args...)...)
+	case *parser.InlineAsmNode:
+		inputs := make([]parser.ExpressionNode, len(n.Inputs))
+		for i := range n.Inputs {
+			inputs[i] = n.Inputs[i].Value
+		}
+		return collect(inputs...)
 	case *parser.IndexExprNode:
 		return collect(n.Subject, n.Index)
 	case *parser.SliceExprNode:

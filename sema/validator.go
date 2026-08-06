@@ -315,6 +315,8 @@ func (v *Validator) validateStatement(node parser.Node) {
 	switch n := node.(type) {
 	case *parser.FunctionCallNode:
 		return
+	case *parser.InlineAsmNode:
+		return
 	case *parser.BlockNode:
 		if !n.Expression {
 			return
@@ -439,7 +441,7 @@ func (v *Validator) validateAssignment(n *parser.AssignmentNode) {
 		v.validateValueExpr(n.Value)
 		result, ok := n.Value.GetType().(types.MultipleReturnType)
 		if !ok {
-			v.errorf(n, "multiple assignment requires a function returning multiple values")
+			v.errorf(n, "multiple assignment requires a multiple-result expression")
 			return
 		}
 		if len(result.Types) != len(n.Assignees) {
@@ -484,7 +486,7 @@ func (v *Validator) validateMultiDeclaration(n *parser.MultiDeclarationNode) {
 	v.validateValueExpr(n.Value)
 	result, ok := n.Value.GetType().(types.MultipleReturnType)
 	if !ok {
-		v.errorf(n, "multiple declaration requires a function returning multiple values")
+		v.errorf(n, "multiple declaration requires a multiple-result expression")
 		return
 	}
 	if len(result.Types) != len(n.Names) {
@@ -1070,7 +1072,8 @@ func (v *Validator) validateReturn(n *parser.ControlKeywordNode) {
 	expected := v.currentFunction.Signature.ReturnType
 	if multi, ok := expected.(types.MultipleReturnType); ok {
 		if len(n.ReturnValues) == 1 {
-			if _, forwarded := n.ReturnValue.(*parser.FunctionCallNode); forwarded {
+			switch n.ReturnValue.(type) {
+			case *parser.FunctionCallNode, *parser.InlineAsmNode:
 				n.ReturnValue = v.validateExprWithExpected(n.ReturnValue, expected)
 				return
 			}
@@ -1097,6 +1100,9 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 	}
 
 	switch n := node.(type) {
+	case *parser.InlineAsmNode:
+		v.validateInlineAsm(n)
+
 	case *parser.EnumLiteralNode:
 		v.errorf(n, "cannot infer enum type for .%s", n.Variant)
 		n.SetType(types.ErrorType{})
@@ -1836,6 +1842,60 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		panic(fmt.Sprintf("unhandled expression type %T", n))
 	}
 
+}
+
+func (v *Validator) validateInlineAsm(n *parser.InlineAsmNode) {
+	seenClobbers := make(map[string]struct{}, len(n.Clobbers))
+	for i := range n.Outputs {
+		output := &n.Outputs[i]
+		if !validInlineAsmType(output.Type) {
+			v.errorf(n, "@asm output %d has unsupported type %v; use an integer, float, pointer, enum, or flags type", i+1, output.Type)
+		}
+		if output.Constraint == "" || output.Constraint[0] != '=' {
+			v.errorf(n, "@asm output %d constraint must begin with '='", i+1)
+		} else if strings.ContainsAny(output.Constraint, ",*") {
+			v.errorf(n, "@asm output %d constraint cannot contain ',' or use an indirect '*' operand", i+1)
+		}
+	}
+	for i := range n.Inputs {
+		input := &n.Inputs[i]
+		v.validateExpr(input.Value)
+		inputType := input.Value.GetType()
+		if !validInlineAsmType(inputType) {
+			v.errorf(input.Value, "@asm input %d has unsupported type %v; use an integer, float, pointer, enum, or flags value", i+1, inputType)
+		}
+		if types.HasUntyped(inputType) {
+			v.errorf(input.Value, "@asm input %d has an inferred numeric type; add an explicit cast", i+1)
+		}
+		if input.Constraint == "" {
+			v.errorf(n, "@asm input %d constraint cannot be empty", i+1)
+		} else if input.Constraint[0] == '=' || input.Constraint[0] == '~' || strings.Contains(input.Constraint, ",") {
+			v.errorf(n, "invalid @asm input %d constraint %q", i+1, input.Constraint)
+		}
+	}
+	for _, clobber := range n.Clobbers {
+		if clobber == "" || strings.ContainsAny(clobber, "{},") {
+			v.errorf(n, "invalid @asm clobber name %q", clobber)
+			continue
+		}
+		if _, duplicate := seenClobbers[clobber]; duplicate {
+			v.errorf(n, "duplicate @asm clobber %q", clobber)
+		}
+		seenClobbers[clobber] = struct{}{}
+	}
+}
+
+func validInlineAsmType(t types.Type) bool {
+	if t == nil || types.HasUntyped(t) || types.HasTypeParameter(t) {
+		return false
+	}
+	underlying := types.Underlying(t)
+	switch underlying.(type) {
+	case types.PrimitiveType, types.PointerType, types.EnumType, types.FlagsType:
+		return !underlying.Equals(types.PrimitiveVoid)
+	default:
+		return false
+	}
 }
 
 func (v *Validator) validateStaticTraitAssertion(node *parser.CastNode) {
