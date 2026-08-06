@@ -1,0 +1,21 @@
+{
+  "name": "tree-sitter-qk",
+  "version": "0.1.0",
+  "description": "Tree-sitter grammar for the QK programming language",
+  "license": "MIT",
+  "repository": "github:marzeq/qk",
+  "main": "grammar.js",
+  "keywords": [
+    "incremental",
+    "parsing",
+    "qk",
+    "tree-sitter"
+  ],
+  "scripts": {
+    "generate": "tree-sitter generate",
+    "parse": "tree-sitter parse"
+  },
+  "devDependencies": {
+    "tree-sitter-cli": "^0.26.4"
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "grammars": [
+    {
+      "name": "qk",
+      "camelcase": "QK",
+      "scope": "source.qk",
+      "path": ".",
+      "file-types": ["qk", "qks"],
+      "highlights": "queries/highlights.scm"
+    }
+  ],
+  "metadata": {
+    "version": "0.1.0",
+    "license": "MIT",
+    "description": "Tree-sitter grammar for the QK programming language",
+    "authors": [
+      {
+        "name": "QK contributors"
+      }
+    ],
+    "links": {
+      "repository": "https://github.com/marzeq/qk"
+    }
+  },
+  "bindings": {
+    "c": true,
+    "go": false,
+    "node": false,
+    "python": false,
+    "rust": false,
+    "swift": false,
+    "zig": false
+  }
+}
