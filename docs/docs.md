@@ -1404,7 +1404,7 @@ Hosted `std.io.FileReader` and `FileWriter` provide checked open, read, write, f
 
 `std.fs` supplies allocator-aware whole-file reads, writes, appends, sizing, removal, renaming, directory operations, and current-directory access. Its lexical path helpers handle platform separators without filesystem access.
 
-`std.os.Error` wraps platform errors while reserving negative codes for library-originated failures. `std.os.args` holds command-line arguments for hosted executables, and `std.os.exit` terminates the process.
+`std.os.Error` wraps platform errors while reserving negative codes for library-originated failures. `std.os.args` holds command-line arguments for hosted executables, and `std.os.exit` terminates the process. Hosted programs can query environment variables with `std.os.environment_variable` (or `std.os.getenv`); the returned `str` is borrowed from the host environment. `std.os.environment_variable_owned` and `std.os.getenv_owned` copy the value into an allocator-backed `StringBuilder`.
 
 ## C library bindings
 

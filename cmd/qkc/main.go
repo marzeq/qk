@@ -9,7 +9,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/marzeq/qk/attributes"
 	"github.com/marzeq/qk/comptime"
 	"github.com/marzeq/qk/ir"
 	"github.com/marzeq/qk/loader"
@@ -331,12 +330,7 @@ func main() {
 		}
 	}
 
-	var moduleLinks []attributes.Link
-	for _, moduleName := range order {
-		if module := modules[moduleName]; module != nil {
-			moduleLinks = append(moduleLinks, module.Links...)
-		}
-	}
+	moduleLinks := linksForUsedForeignSymbols(partials, irModules, args.outputType == OutputObject)
 	var linkRoots []string
 	if args.outputType == OutputObject {
 		for _, moduleName := range order {

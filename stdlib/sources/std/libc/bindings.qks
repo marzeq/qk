@@ -1,6 +1,7 @@
 module std.libc
 
 when !NoLibc {
+  @link(system "c")
 
 pub let FILE = type opaque
 pub let DIR = type opaque
@@ -667,5 +668,9 @@ when OS == .Linux {
     flags: u32,
   ): i32 @foreign
 }
+
+} else when !CheckingStdlib { // when NoLibc
+
+@compiler_error("The std.libc module is not available when libc is disabled")
 
 }

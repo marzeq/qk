@@ -3,7 +3,47 @@ module std.os
 pub let mut args: []str = ---
 
 when !NoLibc {
+  import std.alloc
   import std.libc
+  import std.strings
+
+  // Returns a borrowed view into storage owned by the host environment.
+  // The view may be invalidated by a later environment mutation.
+  pub let environment_variable(name: str): (str, bool) {
+    let mut lc = std.alloc.LibcAllocator.init()
+    let allocator = lc.&mut.(*mut dyn std.alloc.Allocator)
+    let c_name = name.to_cstr(allocator)
+    if c_name == nil { return "", false }
+
+    let value = std.libc.getenv(c_name)
+    allocator.free_bytes(c_name, @len(name) + 1, @alignof(u8))
+    if value == nil { return "", false }
+    return value.(cstr).to_str(), true
+  }
+
+  pub let getenv(name: str): (str, bool) = environment_variable(name)
+
+  // Copies an environment variable into allocator-owned storage.
+  // found is false both when the variable is absent and when allocation fails.
+  pub let environment_variable_owned(
+    allocator: *mut dyn std.alloc.Allocator,
+    name: str,
+  ): (std.strings.StringBuilder, bool) {
+    let value, found = environment_variable(name)
+    let mut result = std.strings.StringBuilder.init(allocator)
+    if !found { return result, false }
+    if result.write(value.([]u8)) != @len(value) {
+      result.deinit()
+      return std.strings.StringBuilder.init(allocator), false
+    }
+    return result, true
+  }
+
+  pub let getenv_owned(
+    allocator: *mut dyn std.alloc.Allocator,
+    name: str,
+  ): (std.strings.StringBuilder, bool) =
+    environment_variable_owned(allocator, name)
 
   pub let Error = type struct {
     code: i32,

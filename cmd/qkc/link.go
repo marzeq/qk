@@ -2,11 +2,173 @@ package main
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/marzeq/qk/attributes"
 	"github.com/marzeq/qk/codegen/llvmbackend"
+	"github.com/marzeq/qk/ir"
+	"github.com/marzeq/qk/loader"
+	"github.com/marzeq/qk/parser"
 )
+
+// linksForUsedForeignSymbols activates a source file's link attributes only
+// when a reachable function or initializer references a foreign declaration
+// from that same file. This keeps convenience binding files from eagerly
+// adding native libraries merely because their package was loaded.
+func linksForUsedForeignSymbols(partials []*loader.PartialModuleInfo, modules map[string]*ir.Module, rootAllExternal bool) []attributes.Link {
+	referenced := reachableNativeSymbols(modules, rootAllExternal)
+	var links []attributes.Link
+	seen := map[attributes.Link]bool{}
+	for _, partial := range partials {
+		path := partial.Path
+		if path == "" {
+			path = partial.Name
+		}
+		if modules[path] == nil || len(partial.Links) == 0 || !fileProvidesReferencedForeign(partial.Root, referenced) {
+			continue
+		}
+		for _, link := range partial.Links {
+			if !seen[link] {
+				seen[link] = true
+				links = append(links, link)
+			}
+		}
+	}
+	return links
+}
+
+func fileProvidesReferencedForeign(root *parser.RootNode, referenced map[string]bool) bool {
+	for _, node := range root.Body {
+		switch node := node.(type) {
+		case *parser.FunctionDefNode:
+			if foreignName(node.Name, node.Attributes, referenced) {
+				return true
+			}
+		case *parser.DeclarationNode:
+			if foreignName(node.Name, node.Attributes, referenced) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func foreignName(name string, attrs attributes.Attributes, referenced map[string]bool) bool {
+	foreign, ok := attrs.Get(attributes.AttributeTypeForeign).(attributes.FunctionAttributeForeign)
+	if !ok {
+		return false
+	}
+	if foreign.From != "" {
+		name = foreign.From
+	}
+	return referenced[name]
+}
+
+func reachableNativeSymbols(modules map[string]*ir.Module, rootAllExternal bool) map[string]bool {
+	functions := map[string]*ir.Function{}
+	functionModules := map[string]*ir.Module{}
+	queue := []string{}
+	for _, module := range modules {
+		for _, fn := range module.Functions {
+			functions[fn.Name] = fn
+			functionModules[fn.Name] = module
+			if fn.Linkage == ir.LinkageExternal && (rootAllExternal || fn.Visibility == ir.VisibilityDefault) {
+				queue = append(queue, fn.Name)
+			}
+		}
+		if module.Entry != "" {
+			queue = append(queue, module.Entry)
+		}
+		if module.Entry != "" && module.Initializer != "" {
+			queue = append(queue, module.Initializer)
+		}
+	}
+
+	referenced := map[string]bool{}
+	visited := map[string]bool{}
+	for len(queue) != 0 {
+		name := queue[0]
+		queue = queue[1:]
+		if visited[name] {
+			continue
+		}
+		visited[name] = true
+		fn := functions[name]
+		if fn == nil {
+			continue
+		}
+		native := nativeDeclarations(functionModules[name])
+		for _, block := range fn.Blocks {
+			for _, instruction := range block.Instr {
+				for _, target := range instructionSymbolReferences(instruction) {
+					if functions[target] != nil {
+						queue = append(queue, target)
+					} else if native[target] {
+						referenced[target] = true
+					}
+				}
+			}
+		}
+	}
+	return referenced
+}
+
+func nativeDeclarations(module *ir.Module) map[string]bool {
+	names := map[string]bool{}
+	if module == nil {
+		return names
+	}
+	for _, declaration := range module.Externs {
+		if declaration.From != "" {
+			names[declaration.Name] = true
+			names[declaration.From] = true
+		}
+	}
+	for _, declaration := range module.ExternGlobals {
+		names[declaration.Name] = true
+	}
+	return names
+}
+
+func instructionSymbolReferences(instruction ir.Instr) []string {
+	var names []string
+	if call, ok := instruction.(ir.Call); ok && call.Name != "" {
+		names = append(names, call.Name)
+	}
+	if address, ok := instruction.(ir.AddressOfGlobal); ok {
+		names = append(names, address.Name)
+	}
+	collectFunctionOperands(reflect.ValueOf(instruction), &names)
+	return names
+}
+
+func collectFunctionOperands(value reflect.Value, names *[]string) {
+	if !value.IsValid() {
+		return
+	}
+	if value.Type() == reflect.TypeFor[ir.Operand]() {
+		operand := value.Interface().(ir.Operand)
+		if operand.Kind == ir.OperandFunctionConst && operand.FunctionName != "" {
+			*names = append(*names, operand.FunctionName)
+		}
+		return
+	}
+	switch value.Kind() {
+	case reflect.Interface, reflect.Pointer:
+		if !value.IsNil() {
+			collectFunctionOperands(value.Elem(), names)
+		}
+	case reflect.Struct:
+		for i := 0; i < value.NumField(); i++ {
+			collectFunctionOperands(value.Field(i), names)
+		}
+	case reflect.Slice, reflect.Array:
+		for i := 0; i < value.Len(); i++ {
+			collectFunctionOperands(value.Index(i), names)
+		}
+	}
+}
 
 func linkObjects(objFiles []string, moduleLinks []attributes.Link, roots []string, config *Args) error {
 	args, err := buildLinkArgs(objFiles, moduleLinks, roots, config)
@@ -37,6 +199,9 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots []str
 	}
 	if config.outputType != OutputObject || !isWindowsGNUTarget(config.target) {
 		args = append(args, deadStripLinkerFlag(config.target))
+		if config.outputType != OutputObject {
+			args = append(args, unusedDynamicLibrariesFlag(config.target))
+		}
 	}
 	if config.outputType == OutputObject {
 		for _, root := range roots {
@@ -47,12 +212,21 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots []str
 	if config.static {
 		args = append(args, "-static")
 	}
+	linksLibc := false
+	for _, link := range moduleLinks {
+		if link.Kind == attributes.LinkSystem && (link.Value == "c" || link.Value == "System") {
+			linksLibc = true
+			break
+		}
+	}
 	if config.noLibc {
 		if config.outputType == OutputExecutable {
 			args = append(args, "-nostdlib", "-Wl,-e,_start")
 		} else {
 			args = append(args, "-nolibc")
 		}
+	} else if !linksLibc {
+		args = append(args, "-nolibc")
 	}
 	sysroot := config.sysroot
 	if sysroot == "" && targetIsApple(config.target) {
@@ -87,6 +261,10 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots []str
 	for _, lib := range config.libs {
 		args = append(args, "-l"+lib)
 	}
+	if targetIsWindows(config.target) {
+		// The thin runtime uses the stable Win32 kernel ABI, never the CRT.
+		args = append(args, "-lkernel32")
+	}
 	for _, path := range config.libraryPaths {
 		args = append(args, "-L"+path)
 	}
@@ -110,6 +288,18 @@ func deadStripLinkerFlag(target string) string {
 		return "-Wl,/OPT:REF"
 	default:
 		return "-Wl,--gc-sections"
+	}
+}
+
+func unusedDynamicLibrariesFlag(target string) string {
+	target = effectiveTargetName(target)
+	switch {
+	case targetIsApple(target):
+		return "-Wl,-dead_strip_dylibs"
+	case targetIsWindows(target):
+		return "-Wl,/OPT:REF"
+	default:
+		return "-Wl,--as-needed"
 	}
 }
 

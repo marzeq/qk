@@ -24,9 +24,10 @@ func main() {
 		releaseMode = comptime.ReleaseModeRelease
 	}
 	errs := stdlib.CheckEmbedded(comptime.Config{
-		TargetTriple: *targetTriple,
-		NoLibc:       *noLibc,
-		ReleaseMode:  releaseMode,
+		TargetTriple:   *targetTriple,
+		NoLibc:         *noLibc,
+		CheckingStdlib: true,
+		ReleaseMode:    releaseMode,
 	})
 	for _, err := range errs {
 		fmt.Fprintln(os.Stderr, err)

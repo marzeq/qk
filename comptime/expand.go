@@ -23,6 +23,7 @@ type Config struct {
 	TargetTriple   string
 	NoLibc         bool
 	NoStdlib       bool
+	CheckingStdlib bool
 	ReleaseMode    ReleaseMode
 	PackagePath    string
 	ModuleBindings map[string]Value
@@ -41,6 +42,7 @@ func Expand(tokens []tokeniser.Token, config Config) ([]tokeniser.Token, error) 
 	target := targetFromTriple(config.TargetTriple)
 	target.noLibc = config.NoLibc
 	target.noStdlib = config.NoStdlib
+	target.checkingStdlib = config.CheckingStdlib
 	target.releaseMode = config.ReleaseMode
 	target.bindings = cloneValues(config.ModuleBindings)
 	currentModule := config.PackagePath
@@ -510,14 +512,15 @@ type Value struct {
 }
 
 type targetValues struct {
-	os          string
-	arch        string
-	environment string
-	pointerBits int64
-	noLibc      bool
-	noStdlib    bool
-	releaseMode ReleaseMode
-	bindings    map[string]Value
+	os             string
+	arch           string
+	environment    string
+	pointerBits    int64
+	noLibc         bool
+	noStdlib       bool
+	checkingStdlib bool
+	releaseMode    ReleaseMode
+	bindings       map[string]Value
 }
 
 func evaluate(node parser.ExpressionNode, target targetValues, resolveBinding func(string, shared.Location) (Value, error)) (Value, error) {
@@ -552,6 +555,8 @@ func evaluate(node parser.ExpressionNode, target targetValues, resolveBinding fu
 			return Value{kind: valueBool, boolean: target.noLibc}, nil
 		case "NoStdlib":
 			return Value{kind: valueBool, boolean: target.noStdlib}, nil
+		case "CheckingStdlib":
+			return Value{kind: valueBool, boolean: target.checkingStdlib}, nil
 		default:
 			if resolveBinding != nil {
 				value, err := resolveBinding(n.Name, n.Loc)
