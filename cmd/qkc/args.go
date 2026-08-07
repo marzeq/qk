@@ -18,6 +18,7 @@ const (
 	OutputExecutable
 	OutputObject
 	OutputSharedLib
+	OutputWebAssembly
 )
 
 type OptimisationLevel string
@@ -120,6 +121,8 @@ func parseOutputType(value string) (OutputType, error) {
 		return OutputObject, nil
 	case "so", "shared", "sharedlib", ".so", ".dll", ".dylib":
 		return OutputSharedLib, nil
+	case "wasm", ".wasm":
+		return OutputWebAssembly, nil
 	default:
 		return OutputUnspecified, fmt.Errorf("unknown output type: %s", value)
 	}
@@ -434,7 +437,7 @@ func printUsage() {
 	fmt.Println("The package defaults to the current directory and may be a directory or one .qk file.")
 	fmt.Println("Options:")
 	fmt.Println("  -o <file>          Output file name")
-	fmt.Println("  -t <type>          Output type (exe, obj, so)")
+	fmt.Println("  -t <type>          Output type (exe, obj, so, wasm)")
 	fmt.Println("  -O <level>         Optimisation level (0, 1, 2, 3, s, z, fast, g)")
 	fmt.Println("  -warn <show|off|error>  Warning mode (default: show)")
 	fmt.Println("  -warn-unused-variable <show|off|error>   Override unused-variable warnings")
@@ -546,6 +549,8 @@ func finaliseOutputArgs(args *Args) error {
 			args.output = defaultObjectName(args.outputName, args.target)
 		case OutputSharedLib:
 			args.output = defaultSharedLibraryName(args.outputName, args.target)
+		case OutputWebAssembly:
+			args.output = args.outputName + ".wasm"
 		}
 	} else {
 		switch args.outputType {
@@ -555,10 +560,7 @@ func finaliseOutputArgs(args *Args) error {
 			case ".o", ".obj":
 				args.outputType = OutputObject
 			case ".wasm":
-				if !targetIsWebAssembly(args.target) {
-					return fmt.Errorf("cannot use .wasm output for non-WebAssembly target %q", effectiveTargetName(args.target))
-				}
-				args.outputType = OutputObject
+				args.outputType = OutputWebAssembly
 			case ".so", ".dll", ".dylib":
 				args.outputType = OutputSharedLib
 			case "", ".exe":
@@ -567,6 +569,9 @@ func finaliseOutputArgs(args *Args) error {
 				return fmt.Errorf("cannot infer output type from extension: %s", ext)
 			}
 		}
+	}
+	if args.outputType == OutputWebAssembly && !targetIsWebAssembly(args.target) {
+		return fmt.Errorf("cannot use WebAssembly output for non-WebAssembly target %q", effectiveTargetName(args.target))
 	}
 
 	if args.run && args.outputType != OutputExecutable {

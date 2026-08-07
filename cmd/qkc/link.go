@@ -243,18 +243,25 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots []str
 			return nil, fmt.Errorf("cannot use --static with shared lib output")
 		}
 		args = append(args, "-shared")
+	case OutputWebAssembly:
+		args = append(args, "-Wl,--no-entry")
 	default:
 		return nil, fmt.Errorf("unknown output type")
 	}
 	if config.outputType != OutputObject || !targetIsWebAssembly(config.target) {
 		args = append(args, deadStripLinkerFlag(config.target))
-		if config.outputType != OutputObject {
+		if config.outputType != OutputObject && config.outputType != OutputWebAssembly {
 			args = append(args, unusedDynamicLibrariesFlag(config.target))
 		}
 	}
-	if config.outputType == OutputObject {
+	if config.outputType == OutputObject && !targetIsWebAssembly(config.target) {
 		for _, root := range roots {
 			args = append(args, linkerUndefinedFlag(config.target, root))
+		}
+	}
+	if config.outputType == OutputWebAssembly {
+		for _, root := range roots {
+			args = append(args, "-Wl,--export="+root)
 		}
 	}
 
@@ -262,7 +269,7 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots []str
 		args = append(args, "-static")
 	}
 	linksLibc := moduleLinksContainLibc(moduleLinks)
-	if config.outputType == OutputObject {
+	if config.outputType == OutputObject || config.outputType == OutputWebAssembly {
 		args = append(args, defaultLibrarySuppressionArgs(config.target, config.outputType)...)
 	} else if config.noLibc {
 		if config.outputType == OutputExecutable {
@@ -320,7 +327,7 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots []str
 }
 
 func defaultLibrarySuppressionArgs(target string, outputType OutputType) []string {
-	if outputType == OutputObject {
+	if outputType == OutputObject || outputType == OutputWebAssembly {
 		return []string{"-nostdlib"}
 	}
 	// Darwin's loader requires every executable to load libSystem, even when

@@ -109,7 +109,7 @@ func main() {
 	if args.run && discovered[0].Name != "main" {
 		fatal("cannot run package %q: package must declare module main", discovered[0].Name)
 	}
-	if !args.run && args.outputType == OutputUnspecified && discovered[0].Name != "main" {
+	if !args.run && args.output == "" && args.outputType == OutputUnspecified && discovered[0].Name != "main" {
 		args.outputType = OutputObject
 	}
 	check(finaliseOutputArgs(args))
@@ -334,7 +334,7 @@ func main() {
 	}
 
 	var linkRoots []string
-	if args.outputType == OutputObject {
+	if args.outputType == OutputObject || args.outputType == OutputWebAssembly {
 		for _, moduleName := range order {
 			for _, fn := range irModules[moduleName].Functions {
 				if fn.Linkage == ir.LinkageExternal && fn.Visibility == ir.VisibilityDefault {
