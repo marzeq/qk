@@ -222,11 +222,9 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots []str
 	if config.noLibc {
 		if config.outputType == OutputExecutable {
 			args = append(args, "-nostdlib", "-Wl,-e,_start")
-		} else {
-			args = append(args, "-nolibc")
 		}
 	} else if !linksLibc {
-		args = append(args, "-nolibc")
+		args = append(args, defaultLibrarySuppressionArgs(config.target, config.outputType)...)
 	}
 	sysroot := config.sysroot
 	if sysroot == "" && targetIsApple(config.target) {
@@ -271,6 +269,23 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots []str
 
 	args = append(args, "-o", config.output)
 	return args, nil
+}
+
+func defaultLibrarySuppressionArgs(target string, outputType OutputType) []string {
+	if outputType == OutputObject {
+		return nil
+	}
+	// Darwin's loader requires every executable to load libSystem, even when
+	// the program uses only direct syscalls. Clang adds that load command by
+	// default; -nolibc is unsupported and -nodefaultlibs produces an image that
+	// dyld refuses to launch.
+	if targetIsApple(target) {
+		return nil
+	}
+	if targetIsWindows(target) {
+		return []string{"-nodefaultlibs"}
+	}
+	return []string{"-nolibc"}
 }
 
 func isWindowsGNUTarget(target string) bool {

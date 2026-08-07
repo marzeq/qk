@@ -133,10 +133,6 @@ entry:
 		}
 		out.WriteString(panicRuntime)
 	}
-	if !noLibc {
-		out.WriteString("attributes #1 = { cold noinline noreturn nounwind }\n")
-		return out.String(), nil
-	}
 	fmt.Fprintf(&out, `
 
 define hidden ptr @memset(ptr %%dest, i32 %%value, %[1]s %%length) #0 {
@@ -210,6 +206,22 @@ backward.loop:
 
 done:
   ret ptr %%dest
+}
+
+define hidden %[1]s @strlen(ptr %%text) #0 {
+entry:
+  br label %%loop
+
+loop:
+  %%length = phi %[1]s [ 0, %%entry ], [ %%next, %%loop ]
+  %%address = getelementptr inbounds i8, ptr %%text, %[1]s %%length
+  %%byte = load i8, ptr %%address
+  %%finished = icmp eq i8 %%byte, 0
+  %%next = add nuw %[1]s %%length, 1
+  br i1 %%finished, label %%done, label %%loop
+
+done:
+  ret %[1]s %%length
 }
 
 attributes #0 = { noinline nounwind optnone nobuiltin }
