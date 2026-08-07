@@ -13,6 +13,59 @@ pub let exists(path: str): bool {
   return found
 }
 
+let path_is_directory(path: str): bool {
+  let mut lc = std.alloc.LibcAllocator.init()
+  let allocator = lc.&mut.(*mut dyn std.alloc.Allocator)
+  let c_path = path.to_cstr(allocator)
+  if c_path == nil { return false }
+
+  let mut result = false
+  when OS == .Windows {
+    let attributes = std.libc.get_file_attributes(c_path)
+    result = attributes != std.libc.InvalidFileAttributes
+      && (attributes & std.libc.FileAttributeDirectory) != 0
+  } else {
+    let directory = std.libc.opendir(c_path)
+    if directory != nil {
+      result = true
+      std.libc.closedir(directory)
+    }
+  }
+  allocator.free_bytes(c_path, @len(path) + 1, @alignof(u8))
+  return result
+}
+
+pub let Path.exists(self): bool = exists(self.to_str()) || self.is_directory()
+
+pub let Path.exists_checked(self): (bool, std.os.Error) =
+  exists_checked(self.to_str())
+
+pub let Path.is_file(self): bool {
+  let mut file, error = std.io.FileReader.open_checked(self.to_str())
+  if error.is_error() { return false }
+  file.close()
+  return !self.is_directory()
+}
+
+pub let Path.is_directory(self): bool = path_is_directory(self.to_str())
+
+pub let Path.is_dir(self): bool = self.is_directory()
+
+pub let Path.reader(self): std.io.FileReader =
+  std.io.FileReader.open(self.to_str())
+
+pub let Path.reader_checked(self): (std.io.FileReader, std.os.Error) =
+  std.io.FileReader.open_checked(self.to_str())
+
+pub let Path.writer(self, append: bool = false): std.io.FileWriter =
+  std.io.FileWriter.open(self.to_str(), append)
+
+pub let Path.writer_checked(
+  self,
+  append: bool = false,
+): (std.io.FileWriter, std.os.Error) =
+  std.io.FileWriter.open_checked(self.to_str(), append)
+
 pub let exists_checked(path: str): (bool, std.os.Error) {
   let mut file, error = std.io.FileReader.open_checked(path)
   if error.is_error() { return false, error }
@@ -40,6 +93,8 @@ pub let file_size(path: str): (usz, std.os.Error) {
   if error.is_error() { return 0, error }
   return size.(usz), std.os.Error.none()
 }
+
+pub let Path.file_size(self): (usz, std.os.Error) = file_size(self.to_str())
 
 pub let read_file(
   allocator: *mut dyn std.alloc.Allocator,
@@ -73,6 +128,11 @@ pub let read_file(
   return result, std.os.Error.none()
 }
 
+pub let Path.read(
+  self,
+): (std.strings.StringBuilder, std.os.Error) =
+  read_file(self.bytes.allocator, self.to_str())
+
 pub let write_file(path: str, contents: []u8): std.os.Error {
   let mut file, error = std.io.FileWriter.open_checked(path)
   if error.is_error() { return error }
@@ -83,6 +143,9 @@ pub let write_file(path: str, contents: []u8): std.os.Error {
   return close_error
 }
 
+pub let Path.write(self, contents: []u8): std.os.Error =
+  write_file(self.to_str(), contents)
+
 pub let append_file(path: str, contents: []u8): std.os.Error {
   let mut file, error = std.io.FileWriter.open_checked(path, true)
   if error.is_error() { return error }
@@ -92,6 +155,9 @@ pub let append_file(path: str, contents: []u8): std.os.Error {
   if write_error.is_error() { return write_error }
   return close_error
 }
+
+pub let Path.append(self, contents: []u8): std.os.Error =
+  append_file(self.to_str(), contents)
 
 pub let remove(path: str): std.os.Error {
   let mut lc = std.alloc.LibcAllocator.init()
@@ -104,6 +170,8 @@ pub let remove(path: str): std.os.Error {
   allocator.free_bytes(c_path, @len(path) + 1, @alignof(u8))
   return error
 }
+
+pub let Path.remove(self): std.os.Error = remove(self.to_str())
 
 pub let create_directory(path: str): std.os.Error {
   let mut lc = std.alloc.LibcAllocator.init()
@@ -119,6 +187,9 @@ pub let create_directory(path: str): std.os.Error {
   return error
 }
 
+pub let Path.create_directory(self): std.os.Error =
+  create_directory(self.to_str())
+
 pub let remove_directory(path: str): std.os.Error {
   let mut lc = std.alloc.LibcAllocator.init()
   let allocator = lc.&mut.(*mut dyn std.alloc.Allocator)
@@ -130,6 +201,9 @@ pub let remove_directory(path: str): std.os.Error {
   allocator.free_bytes(c_path, @len(path) + 1, @alignof(u8))
   return error
 }
+
+pub let Path.remove_directory(self): std.os.Error =
+  remove_directory(self.to_str())
 
 pub let rename(from: str, to: str): std.os.Error {
   let mut lc = std.alloc.LibcAllocator.init()
@@ -149,6 +223,9 @@ pub let rename(from: str, to: str): std.os.Error {
   return error
 }
 
+pub let Path.rename(self, to: *Path): std.os.Error =
+  rename(self.to_str(), to.to_str())
+
 pub let change_directory(path: str): std.os.Error {
   let mut lc = std.alloc.LibcAllocator.init()
   let allocator = lc.&mut.(*mut dyn std.alloc.Allocator)
@@ -160,6 +237,9 @@ pub let change_directory(path: str): std.os.Error {
   allocator.free_bytes(c_path, @len(path) + 1, @alignof(u8))
   return error
 }
+
+pub let Path.change_directory(self): std.os.Error =
+  change_directory(self.to_str())
 
 pub let current_directory(
   allocator: *mut dyn std.alloc.Allocator,
@@ -181,6 +261,17 @@ pub let current_directory(
   let mut length: usz = 0
   for result.ptr[length] != '\0' { length += 1 }
   result.count = length
+  return result, std.os.Error.none()
+}
+
+pub let Path.current_directory(
+  allocator: *mut dyn std.alloc.Allocator,
+): (Path, std.os.Error) {
+  let mut builder, error = current_directory(allocator)
+  if error.is_error() { return Path.init(allocator), error }
+  let result, success = Path.from_string_builder(builder.&)
+  builder.deinit()
+  if !success { return result, std.os.Error.out_of_memory() }
   return result, std.os.Error.none()
 }
 }

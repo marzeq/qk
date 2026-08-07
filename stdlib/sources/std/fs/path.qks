@@ -2,7 +2,70 @@ module std.fs
 
 import std
 import std.alloc
+import std.collections
 import std.strings
+
+pub let Path = type struct {
+  bytes: std.collections.DynamicArray<u8>,
+}
+
+pub let Path.init(allocator: *mut dyn std.alloc.Allocator): Path = .{
+  bytes=std.collections.DynamicArray<u8>.init(allocator),
+}
+
+pub let Path.from_str(
+  allocator: *mut dyn std.alloc.Allocator,
+  value: str,
+): (Path, bool) {
+  let mut result = Path.init(allocator)
+  if !result.bytes.ensure_capacity(@len(value)) {
+    return result, false
+  }
+  
+  for let mut index: usz = 0; index < @len(value); index += 1 {
+    result.bytes.ptr[index] = value[index]
+  }
+
+  result.bytes.count = @len(value)
+  return result, true
+}
+
+pub let Path.from_cstr(
+  allocator: *mut dyn std.alloc.Allocator,
+  value: cstr,
+): (Path, bool) {
+  if value == nil { return Path.init(allocator), false }
+  return Path.from_str(allocator, value.to_str())
+}
+
+pub let Path.from_string_builder(
+  value: *std.strings.StringBuilder,
+): (Path, bool) {
+  return Path.from_str(value.allocator, value.as_str())
+}
+
+pub let Path.from_builder(
+  value: *std.strings.StringBuilder,
+): (Path, bool) = Path.from_string_builder(value)
+
+pub let Path.to_str(self): str = self.bytes.as_slice().(str)
+
+pub let Path.to_string_builder(self): (std.strings.StringBuilder, bool) {
+  let mut result = std.strings.StringBuilder.init(self.bytes.allocator)
+  let value = self.to_str()
+  if result.write(value.([]u8)) != @len(value) {
+    result.deinit()
+    return std.strings.StringBuilder.init(self.bytes.allocator), false
+  }
+  return result, true
+}
+
+pub let Path.to_str_builder(self): (std.strings.StringBuilder, bool) =
+  self.to_string_builder()
+
+pub let Path.deinit(*mut self): void {
+  self.bytes.deinit()
+}
 
 when OS == .Windows {
   pub let Separator: u8 = '\\'
@@ -26,6 +89,8 @@ pub let is_absolute(path: str): bool {
   }
 }
 
+pub let Path.is_absolute(self): bool = is_absolute(self.to_str())
+
 pub let basename(path: str): str {
   let mut end = @len(path)
   for end > 1 && is_separator(path[end - 1]) { end -= 1 }
@@ -33,6 +98,8 @@ pub let basename(path: str): str {
   for start > 0 && !is_separator(path[start - 1]) { start -= 1 }
   return path[start:end]
 }
+
+pub let Path.basename(self): str = basename(self.to_str())
 
 pub let dirname(path: str): str {
   let mut end = @len(path)
@@ -42,6 +109,8 @@ pub let dirname(path: str): str {
   if end == 0 { return "." }
   return path[0:end]
 }
+
+pub let Path.dirname(self): str = dirname(self.to_str())
 
 pub let extension(path: str): str {
   let name = basename(path)
@@ -55,6 +124,8 @@ pub let extension(path: str): str {
   }
   return ""
 }
+
+pub let Path.extension(self): str = extension(self.to_str())
 
 pub let join(
   allocator: *mut dyn std.alloc.Allocator,
@@ -82,3 +153,31 @@ pub let join(
   }
   return result, true
 }
+
+pub let Path.join(self, right: str): (Path, bool) {
+  if is_absolute(right) {
+    return Path.from_str(self.bytes.allocator, right)
+  }
+
+  let mut result, success = Path.from_str(self.bytes.allocator, self.to_str())
+  if !success { return result, false }
+  let left = self.to_str()
+  if @len(left) > 0 && !is_separator(left[@len(left) - 1]) {
+    if !result.bytes.append(Separator) {
+      result.deinit()
+      return Path.init(self.bytes.allocator), false
+    }
+  }
+  let mut index: usz = 0
+  for index < @len(right) {
+    if !result.bytes.append(right[index]) {
+      result.deinit()
+      return Path.init(self.bytes.allocator), false
+    }
+    index += 1
+  }
+  return result, true
+}
+
+pub let Path.join_path(self, right: *Path): (Path, bool) =
+  self.join(right.to_str())

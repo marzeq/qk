@@ -3,6 +3,7 @@ module std.libc
 when !NoLibc {
 
 pub let FILE = type opaque
+pub let DIR = type opaque
 
 // -----------------------------------------------------------------------------
 // C ABI types
@@ -63,6 +64,9 @@ pub let getchar(): i32 @foreign
 pub let puts(str: cstr): i32 @foreign
 
 pub let fopen(path: cstr, mode: cstr): *FILE @foreign
+when OS != .Windows {
+  pub let fdopen(fd: i32, mode: cstr): *FILE @foreign
+}
 pub let fclose(file: *FILE): i32 @foreign
 
 pub let fread(
@@ -109,9 +113,15 @@ when OS == .Windows {
   pub let rmdir(path: cstr): i32 @foreign(symbol "_rmdir")
   pub let chdir(path: cstr): i32 @foreign(symbol "_chdir")
   pub let getcwd(buffer: *mut u8, size: i32): *mut u8 @foreign(symbol "_getcwd")
+
+  pub let InvalidFileAttributes: u32 = 0xffffffff
+  pub let FileAttributeDirectory: u32 = 0x10
+  pub let get_file_attributes(path: cstr): u32 @foreign(symbol "GetFileAttributesA")
 } else {
   pub let mkdir(path: cstr, mode: u32): i32 @foreign
   pub let rmdir(path: cstr): i32 @foreign
+  pub let opendir(path: cstr): *DIR @foreign
+  pub let closedir(directory: *DIR): i32 @foreign
 }
 
 pub let EOF: i32 = comptime -1
@@ -273,16 +283,25 @@ pub let getenv(name: cstr): *u8 @foreign
 // standard streams
 // -----------------------------------------------------------------------------
 
-when OS == .Linux
-  || OS == .MacOS
+when OS == .Linux {
+
+  pub let stdin: *FILE @foreign
+  pub let stdout: *FILE @foreign
+  pub let stderr: *FILE @foreign
+
+} else when OS == .MacOS
   || OS == .FreeBSD
   || OS == .OpenBSD
   || OS == .NetBSD
   || OS == .DragonFly {
 
-  pub let stdin: *FILE @foreign
-  pub let stdout: *FILE @foreign
-  pub let stderr: *FILE @foreign
+  // On the BSD libc ABIs these names are macros backed by non-portable
+  // symbols (for example __stdinp on macOS and FreeBSD, and __sF on
+  // NetBSD). Obtain the POSIX streams from their standard descriptors
+  // instead of referring to nonexistent stdin/stdout/stderr symbols.
+  pub let stdin = fdopen(0, c"r")
+  pub let stdout = fdopen(1, c"w")
+  pub let stderr = fdopen(2, c"w")
 
 } else when OS == .Windows {
 
