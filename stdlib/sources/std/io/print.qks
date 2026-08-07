@@ -102,13 +102,37 @@ let format_hex_argument(
   write_format_error(writer)
 }
 
+let format_general_float_argument(
+  writer: *mut dyn Writer,
+  index: usz,
+  arguments: []*dyn Any,
+): void {
+  if index >= @len(arguments) {
+    write_format_error(writer)
+    return
+  }
+  let value_f32, is_f32 = arguments[index].(f32)
+  if is_f32 {
+    write_f64_general(writer, value_f32.(f64))
+    return
+  }
+  let value_f64, is_f64 = arguments[index].(f64)
+  if is_f64 {
+    write_f64_general(writer, value_f64)
+    return
+  }
+  write_format_error(writer)
+}
+
 let format_specified_argument(
   writer: *mut dyn Writer,
   index: usz,
   specifier: u8,
   arguments: []*dyn Any,
 ): void {
-  if specifier == 'c' {
+  if specifier == 'g' {
+    format_general_float_argument(writer, index, arguments)
+  } else if specifier == 'c' {
     format_character_argument(writer, index, arguments)
   } else if specifier == 'x' {
     format_hex_argument(writer, index, arguments, false)
@@ -157,10 +181,19 @@ pub let wprint(
     }
     if format_index + 2 < @len(format) && format[format_index + 2] == '}' {
       let specifier = format[format_index + 1]
-      if specifier == 'c' || specifier == 'x' || specifier == 'X' {
+      if specifier == 'g' || specifier == 'c' || specifier == 'x' || specifier == 'X' {
         format_specified_argument(writer, argument_index, specifier, arguments)
         argument_index += 1
         format_index += 3
+        continue
+      }
+    }
+    if format_index + 3 < @len(format) && format[format_index + 1] == ':' && format[format_index + 3] == '}' {
+      let specifier = format[format_index + 2]
+      if specifier == 'g' || specifier == 'c' || specifier == 'x' || specifier == 'X' {
+        format_specified_argument(writer, argument_index, specifier, arguments)
+        argument_index += 1
+        format_index += 4
         continue
       }
     }
@@ -182,7 +215,7 @@ pub let wprint(
       }
       if cursor + 2 < @len(format) && format[cursor] == ':' && format[cursor + 2] == '}' {
         let specifier = format[cursor + 1]
-        if specifier == 'c' || specifier == 'x' || specifier == 'X' {
+        if specifier == 'g' || specifier == 'c' || specifier == 'x' || specifier == 'X' {
           format_specified_argument(writer, selected, specifier, arguments)
           argument_index = selected + 1
           format_index = cursor + 3

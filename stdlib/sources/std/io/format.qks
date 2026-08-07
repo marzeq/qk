@@ -55,7 +55,7 @@ let write_fraction(writer: *mut dyn Writer, value: u64, digits: usz): void {
 
 // Portable, allocation-free general formatting with up to six fractional
 // digits. Scientific notation is used outside [1e-4, 1e6).
-let write_f64(writer: *mut dyn Writer, value: f64): void {
+let write_f64_general(writer: *mut dyn Writer, value: f64): void {
   if value != value {
     write_all(writer, "nan".([]u8))
     return
@@ -108,6 +108,38 @@ let write_f64(writer: *mut dyn Writer, value: f64): void {
   write_fraction(writer, rounded % 1000000, 6)
 }
 
+// Default float formatting is a trimmed %.6f: values that round to six
+// fractional zeroes print as 0, and redundant trailing zeroes are omitted.
+let write_f64_fixed(writer: *mut dyn Writer, value: f64): void {
+  if value != value {
+    write_all(writer, "nan".([]u8))
+    return
+  }
+
+  let magnitude = if value < 0.0 { -value } else { value }
+  if magnitude / 2.0 == magnitude && magnitude != 0.0 {
+    if value < 0.0 { write_byte(writer, '-') }
+    write_all(writer, "inf".([]u8))
+    return
+  }
+
+  // The decimal helper below uses a u64 accumulator. Preserve useful output
+  // for larger finite numbers by falling back to general notation.
+  if magnitude >= 18446744073709.0 {
+    write_f64_general(writer, value)
+    return
+  }
+
+  let rounded = (magnitude * 1000000.0 + 0.5).(u64)
+  if rounded == 0 {
+    write_byte(writer, '0')
+    return
+  }
+  if value < 0.0 { write_byte(writer, '-') }
+  write_unsigned_decimal(writer, rounded / 1000000)
+  write_fraction(writer, rounded % 1000000, 6)
+}
+
 let i8.format(self, writer: *mut dyn Writer): void { write_signed_decimal(writer, self.(i64)) }
 let i16.format(self, writer: *mut dyn Writer): void { write_signed_decimal(writer, self.(i64)) }
 let i32.format(self, writer: *mut dyn Writer): void { write_signed_decimal(writer, self.(i64)) }
@@ -120,8 +152,8 @@ let u32.format(self, writer: *mut dyn Writer): void { write_unsigned_decimal(wri
 let u64.format(self, writer: *mut dyn Writer): void { write_unsigned_decimal(writer, self) }
 let usz.format(self, writer: *mut dyn Writer): void { write_unsigned_decimal(writer, self.(u64)) }
 
-let f32.format(self, writer: *mut dyn Writer): void { write_f64(writer, self.(f64)) }
-let f64.format(self, writer: *mut dyn Writer): void { write_f64(writer, self) }
+let f32.format(self, writer: *mut dyn Writer): void { write_f64_fixed(writer, self.(f64)) }
+let f64.format(self, writer: *mut dyn Writer): void { write_f64_fixed(writer, self) }
 
 let bool.format(self, writer: *mut dyn Writer): void {
   if self { write_all(writer, "true".([]u8)) }

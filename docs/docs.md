@@ -1390,7 +1390,7 @@ Hosted builds provide `std.alloc.LibcAllocator`. `std.alloc.Arena` is also hoste
 
 `std.io.wprint` and `wprintln` work with any writer. `print`, `println`, `eprint`, and `eprintln` use libc-free standard streams: Unix-family targets issue target-specific kernel calls with inline assembly, while Windows uses the stable Kernel32 console/file-handle API. Libc-backed file readers, file writers, and file printing are available when `std.io.HasFiles` is true.
 
-Formatting uses `{}` for the next argument, `{N}` for an indexed argument, and `c`, `x`, or `X` format specifiers. `{{` and `}}` emit literal braces.
+Formatting uses `{}` for the next argument and `{N}` for an indexed argument. Floats use trimmed fixed-point output with six fractional digits by default, so values sufficiently close to zero print as `0`; `g` retains general/scientific notation. The other specifiers are `c`, `x`, and `X`. `{{` and `}}` emit literal braces.
 
 ```qk
 std.io.println("name: {}, value: {1:x}", name, value)
