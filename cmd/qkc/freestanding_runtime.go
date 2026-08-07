@@ -9,7 +9,7 @@ import (
 
 func buildFreestandingRuntime(
 	targetTriple string,
-	noLibc, noStdlib, linksLibc, executable bool,
+	linksLibc, executable bool,
 	mainInitializer, userMain string,
 ) (string, error) {
 	pointerBits, ok := qktarget.PointerBits(qktarget.EffectiveTriple(targetTriple))
@@ -22,11 +22,8 @@ func buildFreestandingRuntime(
 	out.WriteString("; qk thin runtime\n\n")
 	target := strings.ToLower(qktarget.EffectiveTriple(targetTriple))
 	linuxX8664 := strings.Contains(target, "linux") && (qktarget.Arch(targetTriple) == "x86_64" || qktarget.Arch(targetTriple) == "amd64")
-	if noLibc && executable && !linuxX8664 {
-		return "", fmt.Errorf("freestanding -nolibc executables are currently supported only for Linux x86-64, not target %q", target)
-	}
-	libcFreeHosted := !noLibc && !linksLibc && executable && linuxX8664
-	if (noLibc || libcFreeHosted) && linuxX8664 {
+	libcFreeHosted := !linksLibc && executable && linuxX8664
+	if libcFreeHosted && linuxX8664 {
 		if executable && userMain != "" {
 			initializerDeclaration := ""
 			initializerCall := ""
@@ -34,8 +31,7 @@ func buildFreestandingRuntime(
 				initializerDeclaration = fmt.Sprintf("declare hidden void @%s()\n", mainInitializer)
 				initializerCall = fmt.Sprintf("  call void @%s()\n", mainInitializer)
 			}
-			if !noStdlib {
-				fmt.Fprintf(&out, `declare hidden void @%[2]s()
+			fmt.Fprintf(&out, `declare hidden void @%[2]s()
 %[3]s
 @__qk_0_3_std2_os_global_args = external hidden global { ptr, %[1]s }
 @__qk_0_3_std2_os_global_env = external hidden global { ptr, %[1]s }
@@ -141,18 +137,6 @@ run:
 }
 
 `, usz, userMain, initializerDeclaration, initializerCall)
-			} else {
-				fmt.Fprintf(&out, `declare hidden void @%s()
-%s
-define void @_start() noreturn nounwind alignstack(16) {
-entry:
-%s  call void @%s()
-  %%exit = call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i32 0)
-  unreachable
-}
-
-`, userMain, initializerDeclaration, initializerCall, userMain)
-			}
 		}
 		fmt.Fprintf(&out, `define hidden void @__qk_panic({ ptr, %[1]s } %%message) #1 {
 entry:
@@ -177,20 +161,19 @@ entry:
 				fmt.Fprintf(&out, "declare hidden void @%s()\n", mainInitializer)
 				initializerCall = fmt.Sprintf("  call void @%s()\n", mainInitializer)
 			}
-			if !noStdlib {
-				fmt.Fprintf(&out, `
+			fmt.Fprintf(&out, `
 @__qk_0_3_std2_os_global_args = external hidden global { ptr, %s }
 @__qk_0_3_std2_os_global_env = external hidden global { ptr, %s }
 
 define i32 @main(i32 %%argc, ptr %%argv, ptr %%envp) {
 entry:
 `, usz, usz)
-				argc := "%argc"
-				if pointerBits != 32 {
-					fmt.Fprintf(&out, "  %%argc.usz = zext i32 %%argc to %s\n", usz)
-					argc = "%argc.usz"
-				}
-				fmt.Fprintf(&out, `  br label %%env.count
+			argc := "%argc"
+			if pointerBits != 32 {
+				fmt.Fprintf(&out, "  %%argc.usz = zext i32 %%argc to %s\n", usz)
+				argc = "%argc.usz"
+			}
+			fmt.Fprintf(&out, `  br label %%env.count
 
 env.count:
   %%env.count.index = phi %[1]s [ 0, %%entry ], [ %%env.count.next, %%env.count.next-block ]
@@ -274,16 +257,6 @@ run:
 }
 
 `, usz, argc, userMain, initializerCall)
-			} else {
-				fmt.Fprintf(&out, `
-define i32 @main(i32 %%argc, ptr %%argv) {
-entry:
-%s  call void @%s()
-  ret i32 0
-}
-
-`, initializerCall, userMain)
-			}
 		}
 		panicRuntime, err := buildPlatformPanicRuntime(target, usz)
 		if err != nil {

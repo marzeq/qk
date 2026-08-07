@@ -271,10 +271,10 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots []str
 	linksLibc := moduleLinksContainLibc(moduleLinks)
 	if config.outputType == OutputObject || config.outputType == OutputWebAssembly {
 		args = append(args, defaultLibrarySuppressionArgs(config.target, config.outputType)...)
-	} else if config.noLibc {
-		if config.outputType == OutputExecutable {
-			args = append(args, "-nostdlib", "-Wl,-e,_start")
-		}
+		// } else if config.noLibc {
+		// 	if config.outputType == OutputExecutable {
+		// 		args = append(args, "-nostdlib", "-Wl,-e,_start")
+		// 	}
 	} else if !linksLibc {
 		args = append(args, defaultLibrarySuppressionArgs(config.target, config.outputType)...)
 		if config.outputType == OutputExecutable && targetIsLinuxX8664(config.target) {

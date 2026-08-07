@@ -11,7 +11,6 @@ import (
 
 func main() {
 	targetTriple := flag.String("target", "", "target triple used for compile-time selection")
-	noLibc := flag.Bool("nolibc", false, "select NoLibc compile-time branches")
 	release := flag.Bool("release", false, "select the .Release compile-time mode")
 	flag.Parse()
 	if flag.NArg() != 0 {
@@ -25,7 +24,6 @@ func main() {
 	}
 	errs := stdlib.CheckEmbedded(comptime.Config{
 		TargetTriple:   *targetTriple,
-		NoLibc:         *noLibc,
 		CheckingStdlib: true,
 		ReleaseMode:    releaseMode,
 	})

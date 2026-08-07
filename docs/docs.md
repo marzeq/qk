@@ -1131,7 +1131,7 @@ Prefix an initializer expression with `comptime` to require compile-time evaluat
 
 ```qk
 let BufferSize: usz = comptime 4 * 1024
-let HasFiles = comptime !NoLibc
+let HasFiles = comptime !NoHasFies
 ```
 
 Compile-time values may be boolean or integer. Untyped integer bindings stay untyped, have no addressable runtime storage, and are materialised separately in each typed use.
@@ -1171,8 +1171,6 @@ The built-in configuration values are:
 - `ReleaseMode`, either `.Debug` or `.Release`.
 
 - `PointerBits`, an integer target pointer width.
-
-- `NoLibc` and `NoStdlib`, boolean driver configurations.
 
 Compile-time expressions support booleans, integers, the configuration enum values, logical operations, integer arithmetic and comparison, and references to visible compile-time bindings.
 

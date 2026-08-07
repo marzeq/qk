@@ -31,8 +31,6 @@ func main() {
 	}
 	comptimeConfig := comptime.Config{
 		TargetTriple: args.target,
-		NoLibc:       args.noLibc,
-		NoStdlib:     args.noStdlib,
 		ReleaseMode:  releaseMode,
 	}
 	embeddedStdlibSources, err := stdlib.ReadSources()
@@ -53,17 +51,12 @@ func main() {
 	}
 	stdlibPackagePaths, availablePackages, err := virtualSourcePackagePaths(selectedStdlibSources)
 	check(err)
-	if args.noStdlib {
-		availablePackages = map[string]bool{}
-	}
 	discovered, compileTimeSources, sourcePackagePaths, err := discoverSourcePackages(
 		args.mainModule, args.baseDir, args.file, searchPaths, availablePackages,
 	)
 	check(err)
-	if !args.noStdlib {
-		maps.Copy(compileTimeSources, selectedStdlibSources)
-		maps.Copy(sourcePackagePaths, stdlibPackagePaths)
-	}
+	maps.Copy(compileTimeSources, selectedStdlibSources)
+	maps.Copy(sourcePackagePaths, stdlibPackagePaths)
 	comptimeConfig.ModuleBindings, err = comptime.ResolvePackageBindings(compileTimeSources, sourcePackagePaths, comptimeConfig)
 	check(err)
 
@@ -97,11 +90,9 @@ func main() {
 			}
 		}
 	}
-	if !args.noStdlib {
-		stdlibPartials, err := stdlib.ParseTrustedSources(selectedStdlibSources, comptimeConfig)
-		check(err)
-		partials = append(partials, stdlibPartials...)
-	}
+	stdlibPartials, err := stdlib.ParseTrustedSources(selectedStdlibSources, comptimeConfig)
+	check(err)
+	partials = append(partials, stdlibPartials...)
 
 	if args.verbose && args.debug {
 		fmt.Println("parsed and collected modules")
@@ -119,11 +110,9 @@ func main() {
 
 	modules, err := loader.BuildModules(partials)
 	check(err)
-	if !args.noStdlib {
-		for name, module := range modules {
-			if name != "std" && !strings.HasPrefix(name, "std.") && !slices.Contains(module.Imports, "std") {
-				module.Imports = append(module.Imports, "std")
-			}
+	for name, module := range modules {
+		if name != "std" && !strings.HasPrefix(name, "std.") && !slices.Contains(module.Imports, "std") {
+			module.Imports = append(module.Imports, "std")
 		}
 	}
 
@@ -192,8 +181,6 @@ func main() {
 	}
 	freestandingRuntime, err := buildFreestandingRuntime(
 		args.target,
-		args.noLibc,
-		args.noStdlib,
 		linksLibc,
 		args.outputType == OutputExecutable,
 		mainInitializer,
