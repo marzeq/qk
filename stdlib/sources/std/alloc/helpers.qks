@@ -1,7 +1,5 @@
 module std.alloc
 
-when !NoLibc {
-
 let is_power_of_two(value: usz): bool =
   value != 0 && (value & (value - 1)) == 0
 
@@ -34,6 +32,4 @@ let checked_align_forward(
   }
 
   return padded & ~padding, true
-}
-
 }

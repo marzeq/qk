@@ -1,24 +1,30 @@
 module std.os
 
 pub let mut args: []str = ---
+pub let mut env: []str = ---
 
-when !NoLibc {
+when TargetHasEnvironment {
   import std.alloc
-  import std.libc
   import std.strings
 
-  // Returns a borrowed view into storage owned by the host environment.
-  // The view may be invalidated by a later environment mutation.
-  pub let environment_variable(name: str): (str, bool) {
-    let mut lc = std.alloc.LibcAllocator.init()
-    let allocator = lc.&mut.(*mut dyn std.alloc.Allocator)
-    let c_name = name.to_cstr(allocator)
-    if c_name == nil { return "", false }
+  let environment_name_matches(entry: str, name: str): bool {
+    if @len(entry) <= @len(name) || entry[@len(name)] != '=' { return false }
+    let mut index: usz = 0
+    for index < @len(name) {
+      if entry[index] != name[index] { return false }
+      index += 1
+    }
+    return true
+  }
 
-    let value = std.libc.getenv(c_name)
-    allocator.free_bytes(c_name, @len(name) + 1, @alignof(u8))
-    if value == nil { return "", false }
-    return value.(cstr).to_str(), true
+  // Returns a borrowed view into the environment captured at process startup.
+  pub let environment_variable(name: str): (str, bool) {
+    for entry in env {
+      if environment_name_matches(entry, name) {
+        return entry[@len(name) + 1:], true
+      }
+    }
+    return "", false
   }
 
   pub let getenv(name: str): (str, bool) = environment_variable(name)
@@ -44,22 +50,26 @@ when !NoLibc {
     name: str,
   ): (std.strings.StringBuilder, bool) =
     environment_variable_owned(allocator, name)
+}
 
-  pub let Error = type struct {
-    code: i32,
-  }
+pub let Error = type struct {
+  code: i32,
+}
 
-  pub let Error.none(): Error = .{ code=0 }
+pub let Error.none(): Error = .{ code=0 }
 
-  pub let Error.out_of_memory(): Error = .{ code=-1 }
+pub let Error.out_of_memory(): Error = .{ code=-1 }
 
-  pub let Error.invalid_handle(): Error = .{ code=-2 }
+pub let Error.invalid_handle(): Error = .{ code=-2 }
 
-  pub let Error.no_progress(): Error = .{ code=-3 }
+pub let Error.no_progress(): Error = .{ code=-3 }
 
-  pub let Error.is_none(self): bool = self.code == 0
+pub let Error.is_none(self): bool = self.code == 0
 
-  pub let Error.is_error(self): bool = self.code != 0
+pub let Error.is_error(self): bool = self.code != 0
+
+when TargetHasLibc {
+  import std.libc
 
   // The returned view points to platform-owned storage and should be consumed
   // before requesting another error message.
@@ -75,8 +85,51 @@ when !NoLibc {
   }
 
   pub let last_error(): Error = .{ code=std.libc.errno_location().* }
+}
 
-  pub let exit(code: i32): void @noreturn {
-    std.libc.exit(code)
+when TargetHasProcessExit {
+  when OS == .Windows {
+    let exit_process(code: u32): void @foreign(symbol "ExitProcess") @noreturn
+
+    pub let exit(code: i32): void @noreturn {
+      exit_process(code.(u32))
+    }
+  } else {
+    pub let exit(code: i32): void @noreturn {
+      let syscall: u64 =
+        when OS == .Linux && Arch == .X86_64 { 60 }
+        else when OS == .Linux && Arch == .AArch64 { 93 }
+        else when OS == .MacOS { 33554433 }
+        else { 1 }
+
+      when Arch == .X86_64 {
+        let _ = @asm(
+          "syscall",
+          out i64 "={rax}",
+          in syscall "{rax}",
+          in code.(i64) "{rdi}",
+          clobber "rcx",
+          clobber "r11",
+          clobber "memory",
+          volatile)
+      } else when Arch == .AArch64 && OS == .MacOS {
+        let _ = @asm(
+          "svc #0x80",
+          out i64 "={x0}",
+          in syscall "{x16}",
+          in code.(i64) "{x0}",
+          clobber "memory",
+          volatile)
+      } else when Arch == .AArch64 {
+        let _ = @asm(
+          "svc #0",
+          out i64 "={x0}",
+          in syscall "{x8}",
+          in code.(i64) "{x0}",
+          clobber "memory",
+          volatile)
+      }
+      for true {}
+    }
   }
 }

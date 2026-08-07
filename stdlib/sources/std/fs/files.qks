@@ -1,6 +1,6 @@
 module std.fs
 
-when !NoLibc {
+when TargetHasFilesystem {
 import std
 import std.alloc
 import std.io
@@ -22,8 +22,8 @@ let path_is_directory(path: str): bool {
   let mut result = false
   when OS == .Windows {
     let attributes = std.libc.get_file_attributes(c_path)
-    result = attributes != std.libc.InvalidFileAttributes
-      && (attributes & std.libc.FileAttributeDirectory) != 0
+    result = attributes != std.libc.InvalidFileAttributes &&
+      (attributes & std.libc.FileAttributeDirectory) != 0
   } else {
     let directory = std.libc.opendir(c_path)
     if directory != nil {

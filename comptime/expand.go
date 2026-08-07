@@ -512,15 +512,19 @@ type Value struct {
 }
 
 type targetValues struct {
-	os             string
-	arch           string
-	environment    string
-	pointerBits    int64
-	noLibc         bool
-	noStdlib       bool
-	checkingStdlib bool
-	releaseMode    ReleaseMode
-	bindings       map[string]Value
+	os                   string
+	arch                 string
+	environment          string
+	pointerBits          int64
+	targetHasLibc        bool
+	targetHasFilesystem  bool
+	targetHasEnvironment bool
+	targetHasProcessExit bool
+	noLibc               bool
+	noStdlib             bool
+	checkingStdlib       bool
+	releaseMode          ReleaseMode
+	bindings             map[string]Value
 }
 
 func evaluate(node parser.ExpressionNode, target targetValues, resolveBinding func(string, shared.Location) (Value, error)) (Value, error) {
@@ -551,6 +555,14 @@ func evaluate(node parser.ExpressionNode, target targetValues, resolveBinding fu
 			return Value{kind: valueEnum, domain: "ReleaseMode", name: name}, nil
 		case "PointerBits":
 			return Value{kind: valueInteger, integer: big.NewInt(target.pointerBits)}, nil
+		case "TargetHasLibc":
+			return Value{kind: valueBool, boolean: target.targetHasLibc}, nil
+		case "TargetHasFilesystem":
+			return Value{kind: valueBool, boolean: target.targetHasFilesystem}, nil
+		case "TargetHasEnvironment":
+			return Value{kind: valueBool, boolean: target.targetHasEnvironment}, nil
+		case "TargetHasProcessExit":
+			return Value{kind: valueBool, boolean: target.targetHasProcessExit}, nil
 		case "NoLibc":
 			return Value{kind: valueBool, boolean: target.noLibc}, nil
 		case "NoStdlib":
@@ -773,5 +785,11 @@ func targetFromTriple(triple string) targetValues {
 	case strings.Contains(target, "gnu"), strings.Contains(target, "mingw"):
 		values.environment = "GNU"
 	}
+	nativeOS := values.os == "Windows" || values.os == "Linux" || values.os == "MacOS" ||
+		values.os == "FreeBSD" || values.os == "OpenBSD" || values.os == "NetBSD" || values.os == "DragonFly"
+	values.targetHasLibc = nativeOS
+	values.targetHasFilesystem = nativeOS
+	values.targetHasEnvironment = nativeOS
+	values.targetHasProcessExit = nativeOS && (values.os == "Windows" || values.arch == "X86_64" || values.arch == "AArch64")
 	return values
 }

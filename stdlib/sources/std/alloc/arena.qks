@@ -1,6 +1,6 @@
 module std.alloc
 
-when !NoLibc {
+when TargetHasLibc {
 
 import std.libc
 

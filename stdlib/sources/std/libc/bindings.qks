@@ -1,6 +1,6 @@
 module std.libc
 
-when !NoLibc {
+when TargetHasLibc {
   @link(system "c")
 
 pub let FILE = type opaque

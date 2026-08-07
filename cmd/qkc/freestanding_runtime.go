@@ -34,10 +34,11 @@ func buildFreestandingRuntime(
 				initializerDeclaration = fmt.Sprintf("declare hidden void @%s()\n", mainInitializer)
 				initializerCall = fmt.Sprintf("  call void @%s()\n", mainInitializer)
 			}
-			if libcFreeHosted && !noStdlib {
+			if !noStdlib {
 				fmt.Fprintf(&out, `declare hidden void @%[2]s()
 %[3]s
 @__qk_0_3_std2_os_global_args = external hidden global { ptr, %[1]s }
+@__qk_0_3_std2_os_global_env = external hidden global { ptr, %[1]s }
 
 module asm ".text"
 module asm ".globl _start"
@@ -53,6 +54,55 @@ define hidden void @__qk_start(ptr %%stack) noreturn nounwind {
 entry:
 	%%argc = load %[1]s, ptr %%stack
 	%%argv = getelementptr inbounds %[1]s, ptr %%stack, %[1]s 1
+	%%envp.offset = add nuw %[1]s %%argc, 1
+	%%envp = getelementptr inbounds ptr, ptr %%argv, %[1]s %%envp.offset
+	br label %%env.count
+
+env.count:
+	%%env.count.index = phi %[1]s [ 0, %%entry ], [ %%env.count.next, %%env.count.next-block ]
+	%%env.count.slot = getelementptr inbounds ptr, ptr %%envp, %[1]s %%env.count.index
+	%%env.count.data = load ptr, ptr %%env.count.slot
+	%%env.count.done = icmp eq ptr %%env.count.data, null
+	br i1 %%env.count.done, label %%env.ready, label %%env.count.next-block
+
+env.count.next-block:
+	%%env.count.next = add nuw %[1]s %%env.count.index, 1
+	br label %%env.count
+
+env.ready:
+	%%env.count.value = phi %[1]s [ %%env.count.index, %%env.count ]
+	%%env.data = alloca { ptr, %[1]s }, %[1]s %%env.count.value
+	%%env.with-data = insertvalue { ptr, %[1]s } zeroinitializer, ptr %%env.data, 0
+	%%env.value = insertvalue { ptr, %[1]s } %%env.with-data, %[1]s %%env.count.value, 1
+	store { ptr, %[1]s } %%env.value, ptr @__qk_0_3_std2_os_global_env
+	%%env.empty = icmp eq %[1]s %%env.count.value, 0
+	br i1 %%env.empty, label %%args.setup, label %%env.loop
+
+env.loop:
+	%%env.index = phi %[1]s [ 0, %%env.ready ], [ %%env.next, %%env.strlen.end ]
+	%%envp.slot = getelementptr inbounds ptr, ptr %%envp, %[1]s %%env.index
+	%%env.entry.data = load ptr, ptr %%envp.slot
+	br label %%env.strlen.loop
+
+env.strlen.loop:
+	%%env.strlen.index = phi %[1]s [ 0, %%env.loop ], [ %%env.strlen.next, %%env.strlen.loop ]
+	%%env.strlen.address = getelementptr inbounds i8, ptr %%env.entry.data, %[1]s %%env.strlen.index
+	%%env.strlen.byte = load i8, ptr %%env.strlen.address
+	%%env.strlen.done = icmp eq i8 %%env.strlen.byte, 0
+	%%env.strlen.next = add nuw %[1]s %%env.strlen.index, 1
+	br i1 %%env.strlen.done, label %%env.strlen.end, label %%env.strlen.loop
+
+env.strlen.end:
+	%%env.entry.length = phi %[1]s [ %%env.strlen.index, %%env.strlen.loop ]
+	%%env.entry.with-data = insertvalue { ptr, %[1]s } zeroinitializer, ptr %%env.entry.data, 0
+	%%env.entry = insertvalue { ptr, %[1]s } %%env.entry.with-data, %[1]s %%env.entry.length, 1
+	%%env.slot = getelementptr inbounds { ptr, %[1]s }, ptr %%env.data, %[1]s %%env.index
+	store { ptr, %[1]s } %%env.entry, ptr %%env.slot
+	%%env.next = add nuw %[1]s %%env.index, 1
+	%%env.finished = icmp eq %[1]s %%env.next, %%env.count.value
+	br i1 %%env.finished, label %%args.setup, label %%env.loop
+
+args.setup:
 	%%args.data = alloca { ptr, %[1]s }, %[1]s %%argc
 	%%args.with-data = insertvalue { ptr, %[1]s } zeroinitializer, ptr %%args.data, 0
 	%%args = insertvalue { ptr, %[1]s } %%args.with-data, %[1]s %%argc, 1
@@ -61,7 +111,7 @@ entry:
 	br i1 %%args.empty, label %%run, label %%args.loop
 
 args.loop:
-	%%arg.index = phi %[1]s [ 0, %%entry ], [ %%arg.next, %%strlen.end ]
+	%%arg.index = phi %[1]s [ 0, %%args.setup ], [ %%arg.next, %%strlen.end ]
 	%%argv.slot = getelementptr inbounds ptr, ptr %%argv, %[1]s %%arg.index
 	%%arg.data = load ptr, ptr %%argv.slot
 	br label %%strlen.loop
@@ -130,16 +180,64 @@ entry:
 			if !noStdlib {
 				fmt.Fprintf(&out, `
 @__qk_0_3_std2_os_global_args = external hidden global { ptr, %s }
+@__qk_0_3_std2_os_global_env = external hidden global { ptr, %s }
 
-define i32 @main(i32 %%argc, ptr %%argv) {
+define i32 @main(i32 %%argc, ptr %%argv, ptr %%envp) {
 entry:
-`, usz)
+`, usz, usz)
 				argc := "%argc"
 				if pointerBits != 32 {
 					fmt.Fprintf(&out, "  %%argc.usz = zext i32 %%argc to %s\n", usz)
 					argc = "%argc.usz"
 				}
-				fmt.Fprintf(&out, `  %%args.data = alloca { ptr, %[1]s }, %[1]s %[2]s
+				fmt.Fprintf(&out, `  br label %%env.count
+
+env.count:
+  %%env.count.index = phi %[1]s [ 0, %%entry ], [ %%env.count.next, %%env.count.next-block ]
+  %%env.count.slot = getelementptr inbounds ptr, ptr %%envp, %[1]s %%env.count.index
+  %%env.count.data = load ptr, ptr %%env.count.slot
+  %%env.count.done = icmp eq ptr %%env.count.data, null
+  br i1 %%env.count.done, label %%env.ready, label %%env.count.next-block
+
+env.count.next-block:
+  %%env.count.next = add nuw %[1]s %%env.count.index, 1
+  br label %%env.count
+
+env.ready:
+  %%env.count.value = phi %[1]s [ %%env.count.index, %%env.count ]
+  %%env.data = alloca { ptr, %[1]s }, %[1]s %%env.count.value
+  %%env.with-data = insertvalue { ptr, %[1]s } zeroinitializer, ptr %%env.data, 0
+  %%env.value = insertvalue { ptr, %[1]s } %%env.with-data, %[1]s %%env.count.value, 1
+  store { ptr, %[1]s } %%env.value, ptr @__qk_0_3_std2_os_global_env
+  %%env.empty = icmp eq %[1]s %%env.count.value, 0
+  br i1 %%env.empty, label %%args.setup, label %%env.loop
+
+env.loop:
+  %%env.index = phi %[1]s [ 0, %%env.ready ], [ %%env.next, %%env.strlen.end ]
+  %%envp.slot = getelementptr inbounds ptr, ptr %%envp, %[1]s %%env.index
+  %%env.entry.data = load ptr, ptr %%envp.slot
+  br label %%env.strlen.loop
+
+env.strlen.loop:
+  %%env.strlen.index = phi %[1]s [ 0, %%env.loop ], [ %%env.strlen.next, %%env.strlen.loop ]
+  %%env.strlen.address = getelementptr inbounds i8, ptr %%env.entry.data, %[1]s %%env.strlen.index
+  %%env.strlen.byte = load i8, ptr %%env.strlen.address
+  %%env.strlen.done = icmp eq i8 %%env.strlen.byte, 0
+  %%env.strlen.next = add nuw %[1]s %%env.strlen.index, 1
+  br i1 %%env.strlen.done, label %%env.strlen.end, label %%env.strlen.loop
+
+env.strlen.end:
+  %%env.entry.length = phi %[1]s [ %%env.strlen.index, %%env.strlen.loop ]
+  %%env.entry.with-data = insertvalue { ptr, %[1]s } zeroinitializer, ptr %%env.entry.data, 0
+  %%env.entry = insertvalue { ptr, %[1]s } %%env.entry.with-data, %[1]s %%env.entry.length, 1
+  %%env.slot = getelementptr inbounds { ptr, %[1]s }, ptr %%env.data, %[1]s %%env.index
+  store { ptr, %[1]s } %%env.entry, ptr %%env.slot
+  %%env.next = add nuw %[1]s %%env.index, 1
+  %%env.finished = icmp eq %[1]s %%env.next, %%env.count.value
+  br i1 %%env.finished, label %%args.setup, label %%env.loop
+
+args.setup:
+  %%args.data = alloca { ptr, %[1]s }, %[1]s %[2]s
   %%args.with-data = insertvalue { ptr, %[1]s } zeroinitializer, ptr %%args.data, 0
   %%args = insertvalue { ptr, %[1]s } %%args.with-data, %[1]s %[2]s, 1
   store { ptr, %[1]s } %%args, ptr @__qk_0_3_std2_os_global_args
@@ -147,7 +245,7 @@ entry:
   br i1 %%args.empty, label %%run, label %%args.loop
 
 args.loop:
-  %%arg.index = phi %[1]s [ 0, %%entry ], [ %%arg.next, %%strlen.end ]
+  %%arg.index = phi %[1]s [ 0, %%args.setup ], [ %%arg.next, %%strlen.end ]
   %%argv.slot = getelementptr inbounds ptr, ptr %%argv, %[1]s %%arg.index
   %%arg.data = load ptr, ptr %%argv.slot
   br label %%strlen.loop

@@ -1,22 +1,15 @@
 module std
 
-when NoLibc {
-  let strlen(s: cstr): usz {
-    if s == nil {
-      return 0
-    }
-
-    let mut l: usz = 0
-    for s[l] != '\0' {
-      l += 1
-    }
-    return l
+let strlen(s: cstr): usz {
+  if s == nil {
+    return 0
   }
-} else {
-  import std.libc
 
-  let strlen(s: cstr): usz =
-    std.libc.strlen(s)
+  let mut length: usz = 0
+  for s[length] != '\0' {
+    length += 1
+  }
+  return length
 }
 
 // important: this method does not copy self, it just creates a str view of the cstr

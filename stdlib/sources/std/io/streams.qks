@@ -3,7 +3,7 @@ module std.io
 import std.strings
 
 pub let HasIO = comptime true
-pub let HasFiles = comptime !NoLibc
+pub let HasFiles = comptime TargetHasFilesystem
 
 pub let Writer = type trait {
   let write(*mut self, bytes: []u8): usz
@@ -189,7 +189,6 @@ pub let ConsoleWriter.write(*mut self, bytes: []u8): usz {
 }
 
 when OS == .Windows {
-  @link(system "kernel32")
   let _get_std_handle(which: i32): *void @foreign(symbol "GetStdHandle")
   let _write_file(
     handle: *void,

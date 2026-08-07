@@ -68,6 +68,8 @@ func foreignName(name string, attrs attributes.Attributes, referenced map[string
 func reachableNativeSymbols(modules map[string]*ir.Module, rootAllExternal bool) map[string]bool {
 	functions := map[string]*ir.Function{}
 	functionModules := map[string]*ir.Module{}
+	globals := map[string]*ir.Global{}
+	globalModules := map[string]*ir.Module{}
 	queue := []string{}
 	for _, module := range modules {
 		for _, fn := range module.Functions {
@@ -75,6 +77,14 @@ func reachableNativeSymbols(modules map[string]*ir.Module, rootAllExternal bool)
 			functionModules[fn.Name] = module
 			if fn.Linkage == ir.LinkageExternal && (rootAllExternal || fn.Visibility == ir.VisibilityDefault) {
 				queue = append(queue, fn.Name)
+			}
+		}
+		for index := range module.Globals {
+			global := &module.Globals[index]
+			globals[global.Name] = global
+			globalModules[global.Name] = module
+			if rootAllExternal && global.Linkage == ir.LinkageExternal {
+				queue = append(queue, global.Name)
 			}
 		}
 		if module.Entry != "" {
@@ -94,6 +104,17 @@ func reachableNativeSymbols(modules map[string]*ir.Module, rootAllExternal bool)
 			continue
 		}
 		visited[name] = true
+		if global := globals[name]; global != nil {
+			native := nativeDeclarations(globalModules[name])
+			for _, target := range operandSymbolReferences(global.Value) {
+				if functions[target] != nil || globals[target] != nil {
+					queue = append(queue, target)
+				} else if native[target] {
+					referenced[target] = true
+				}
+			}
+			continue
+		}
 		fn := functions[name]
 		if fn == nil {
 			continue
@@ -102,7 +123,7 @@ func reachableNativeSymbols(modules map[string]*ir.Module, rootAllExternal bool)
 		for _, block := range fn.Blocks {
 			for _, instruction := range block.Instr {
 				for _, target := range instructionSymbolReferences(instruction) {
-					if functions[target] != nil {
+					if functions[target] != nil || globals[target] != nil {
 						queue = append(queue, target)
 					} else if native[target] {
 						referenced[target] = true
@@ -112,6 +133,12 @@ func reachableNativeSymbols(modules map[string]*ir.Module, rootAllExternal bool)
 		}
 	}
 	return referenced
+}
+
+func operandSymbolReferences(operand ir.Operand) []string {
+	var names []string
+	collectFunctionOperands(reflect.ValueOf(operand), &names)
+	return names
 }
 
 func nativeDeclarations(module *ir.Module) map[string]bool {
@@ -151,6 +178,15 @@ func collectFunctionOperands(value reflect.Value, names *[]string) {
 		operand := value.Interface().(ir.Operand)
 		if operand.Kind == ir.OperandFunctionConst && operand.FunctionName != "" {
 			*names = append(*names, operand.FunctionName)
+		}
+		for index := range operand.Fields {
+			collectFunctionOperands(reflect.ValueOf(operand.Fields[index]), names)
+		}
+		if operand.Left != nil {
+			collectFunctionOperands(reflect.ValueOf(*operand.Left), names)
+		}
+		if operand.Right != nil {
+			collectFunctionOperands(reflect.ValueOf(*operand.Right), names)
 		}
 		return
 	}
