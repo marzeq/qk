@@ -82,10 +82,14 @@ pub let degrees(radians: f64): f64 = radians * (180.0 / PI)
 
 let HalfPI: f64 = 1.57079632679489661923
 let QuarterPI: f64 = 0.78539816339744830962
-let Ln2High: f64 = 0.69314718036912381649
-let Ln2Low: f64 = 0.00000000019082149293
+// Cody-Waite split constants. Keeping the complete low parts matters: the
+// previous shortened pi/2 tail introduced about 1e-20 of reduction error,
+// visible even in sin(PI).
+let Ln2High: f64 = 0.693147180369123816490
+let Ln2Low: f64 = 0.000000000190821492927058770002
 let HalfPIHigh: f64 = 1.57079632673412561417
-let HalfPILow: f64 = 0.00000000006077100506
+let HalfPILow: f64 = 0.0000000000607710050650619224932
+let MediumTrigLimit: f64 = 1048576.0
 let MaxLog: f64 = 709.78271289338397310
 let MinLog: f64 = -745.13321910194110842
 let MaxHyperbolic: f64 = 710.47586007394386325
@@ -378,10 +382,13 @@ let reduce_turn(x: f64): f64 {
 }
 
 let reduce_half_pi(x: f64): (f64, i32) {
-  let turn = reduce_turn(x)
-  let multiple = round(turn / HalfPI).(i32)
+  // Avoid the preliminary modulo reduction while the nearest quadrant fits
+  // exactly in an i32. This is both faster and more accurate for the range in
+  // which nearly all numerical work occurs.
+  let value = if abs(x) <= MediumTrigLimit { x } else { reduce_turn(x) }
+  let multiple = round(value / HalfPI).(i32)
   let multiple_float = multiple.(f64)
-  let reduced = (turn - multiple_float * HalfPIHigh) -
+  let reduced = (value - multiple_float * HalfPIHigh) -
     multiple_float * HalfPILow
   let mut quadrant = multiple % 4
   if quadrant < 0 { quadrant += 4 }
@@ -604,5 +611,16 @@ pub let frexp(x: f64): (f64, i32) {
 }
 
 pub let sincos(x: f64): (f64, f64) {
-  return sin(x), cos(x)
+  if is_nan(x) { return x, x }
+  if is_infinite(x) {
+    let invalid = nan()
+    return invalid, invalid
+  }
+  let reduced, quadrant = reduce_half_pi(x)
+  let sine = sin_kernel(reduced)
+  let cosine = cos_kernel(reduced)
+  if quadrant == 0 { return sine, cosine }
+  if quadrant == 1 { return cosine, -sine }
+  if quadrant == 2 { return -sine, -cosine }
+  return -cosine, sine
 }
