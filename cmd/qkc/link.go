@@ -10,6 +10,7 @@ import (
 	"github.com/marzeq/qk/ir"
 	"github.com/marzeq/qk/loader"
 	"github.com/marzeq/qk/parser"
+	"github.com/marzeq/qk/types"
 )
 
 // linksForUsedForeignSymbols activates a source file's link attributes only
@@ -172,6 +173,9 @@ func instructionSymbolReferences(instruction ir.Instr) []string {
 
 func collectFunctionOperands(value reflect.Value, names *[]string) {
 	if !value.IsValid() {
+		return
+	}
+	if value.Type() == reflect.TypeFor[types.Type]() {
 		return
 	}
 	if value.Type() == reflect.TypeFor[ir.Operand]() {
