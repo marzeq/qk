@@ -2,7 +2,8 @@ module std.io
 
 import std.strings
 
-pub let HasIO = comptime !NoLibc
+pub let HasIO = comptime true
+pub let HasFiles = comptime !NoLibc
 
 pub let Writer = type trait {
   let write(*mut self, bytes: []u8): usz
@@ -33,7 +34,184 @@ pub let Reader = type trait {
   }
 }
 
-when HasIO {
+pub let ConsoleWriter = type struct {
+  descriptor: i32,
+}
+
+pub let ConsoleReader = type struct {
+  descriptor: i32,
+}
+
+pub let ConsoleReader.read(*mut self, buffer: []mut u8): usz {
+  if @len(buffer) == 0 { return 0 }
+
+  when OS == .Windows {
+    let handle = _get_std_handle(-10)
+    if handle == nil { return 0 }
+    let mut read: u32 = 0
+    let ok = _read_file(
+      handle,
+      buffer.(*mut u8),
+      if @len(buffer) > 4294967295 { 4294967295 } else { @len(buffer).(u32) },
+      read.&mut,
+      nil,
+    )
+    return if ok == 0 { 0 } else { read.(usz) }
+  } else when Arch == .X86_64 {
+    let syscall: u64 =
+      when OS == .Linux { 0 }
+      else when OS == .MacOS { 33554435 }
+      else when OS == .FreeBSD { 3 }
+      else when OS == .OpenBSD { 3 }
+      else when OS == .NetBSD { 3 }
+      else when OS == .DragonFly { 3 }
+      else { 0 }
+    let result = @asm(
+      "syscall",
+      out i64 "={rax}",
+      in syscall "{rax}",
+      in self.descriptor.(i64) "{rdi}",
+      in buffer.(*mut u8) "{rsi}",
+      in @len(buffer) "{rdx}",
+      clobber "rcx",
+      clobber "r11",
+      clobber "memory",
+      volatile)
+    return if result < 0 { 0 } else { result.(usz) }
+  } else when Arch == .AArch64 {
+    let syscall: u64 =
+      when OS == .Linux { 63 }
+      else when OS == .MacOS { 33554435 }
+      else when OS == .FreeBSD { 3 }
+      else when OS == .OpenBSD { 3 }
+      else when OS == .NetBSD { 3 }
+      else when OS == .DragonFly { 3 }
+      else { 0 }
+    when OS == .MacOS {
+      let result = @asm(
+        "svc #0x80",
+        out i64 "={x0}",
+        in syscall "{x16}",
+        in self.descriptor.(i64) "{x0}",
+        in buffer.(*mut u8) "{x1}",
+        in @len(buffer) "{x2}",
+        clobber "memory",
+        volatile)
+      return if result < 0 { 0 } else { result.(usz) }
+    } else {
+      let result = @asm(
+        "svc #0",
+        out i64 "={x0}",
+        in syscall "{x8}",
+        in self.descriptor.(i64) "{x0}",
+        in buffer.(*mut u8) "{x1}",
+        in @len(buffer) "{x2}",
+        clobber "memory",
+        volatile)
+      return if result < 0 { 0 } else { result.(usz) }
+    }
+  } else {
+    return 0
+  }
+}
+
+pub let ConsoleWriter.write(*mut self, bytes: []u8): usz {
+  if @len(bytes) == 0 { return 0 }
+
+  when OS == .Windows {
+    let handle = _get_std_handle(if self.descriptor == 1 { -11 } else { -12 })
+    if handle == nil { return 0 }
+    let mut written: u32 = 0
+    let ok = _write_file(
+      handle,
+      bytes.(*u8),
+      if @len(bytes) > 4294967295 { 4294967295 } else { @len(bytes).(u32) },
+      written.&mut,
+      nil,
+    )
+    return if ok == 0 { 0 } else { written.(usz) }
+  } else when Arch == .X86_64 {
+    let syscall: u64 =
+      when OS == .Linux { 1 }
+      else when OS == .MacOS { 33554436 }
+      else when OS == .FreeBSD { 4 }
+      else when OS == .OpenBSD { 4 }
+      else when OS == .NetBSD { 4 }
+      else when OS == .DragonFly { 4 }
+      else { 0 }
+    let result = @asm(
+      "syscall",
+      out i64 "={rax}",
+      in syscall "{rax}",
+      in self.descriptor.(i64) "{rdi}",
+      in bytes.(*u8) "{rsi}",
+      in @len(bytes) "{rdx}",
+      clobber "rcx",
+      clobber "r11",
+      clobber "memory",
+      volatile)
+    return if result < 0 { 0 } else { result.(usz) }
+  } else when Arch == .AArch64 {
+    let syscall: u64 =
+      when OS == .Linux { 64 }
+      else when OS == .MacOS { 33554436 }
+      else when OS == .FreeBSD { 4 }
+      else when OS == .OpenBSD { 4 }
+      else when OS == .NetBSD { 4 }
+      else when OS == .DragonFly { 4 }
+      else { 0 }
+    when OS == .MacOS {
+      let result = @asm(
+        "svc #0x80",
+        out i64 "={x0}",
+        in syscall "{x16}",
+        in self.descriptor.(i64) "{x0}",
+        in bytes.(*u8) "{x1}",
+        in @len(bytes) "{x2}",
+        clobber "memory",
+        volatile)
+      return if result < 0 { 0 } else { result.(usz) }
+    } else {
+      let result = @asm(
+        "svc #0",
+        out i64 "={x0}",
+        in syscall "{x8}",
+        in self.descriptor.(i64) "{x0}",
+        in bytes.(*u8) "{x1}",
+        in @len(bytes) "{x2}",
+        clobber "memory",
+        volatile)
+      return if result < 0 { 0 } else { result.(usz) }
+    }
+  } else {
+    return 0
+  }
+}
+
+when OS == .Windows {
+  @link(system "kernel32")
+  let _get_std_handle(which: i32): *void @foreign(symbol "GetStdHandle")
+  let _write_file(
+    handle: *void,
+    buffer: *u8,
+    length: u32,
+    written: *mut u32,
+    overlapped: *void,
+  ): i32 @foreign(symbol "WriteFile")
+  let _read_file(
+    handle: *void,
+    buffer: *mut u8,
+    length: u32,
+    read: *mut u32,
+    overlapped: *void,
+  ): i32 @foreign(symbol "ReadFile")
+}
+
+pub let mut stdin: ConsoleReader = .{ descriptor=0 }
+pub let mut stdout: ConsoleWriter = .{ descriptor=1 }
+pub let mut stderr: ConsoleWriter = .{ descriptor=2 }
+
+when HasFiles {
 import std
 import std.alloc
 import std.libc
@@ -237,9 +415,6 @@ pub let FileReader.read_line(*mut self, buffer: []mut u8): (usz, ReadStatus) {
   return count, status
 }
 
-pub let mut stdout: FileWriter = .{ handle=std.libc.stdout.(*void) }
-pub let mut stderr: FileWriter = .{ handle=std.libc.stderr.(*void) }
-pub let mut stdin: FileReader = .{ handle=std.libc.stdin.(*void) }
 }
 
 pub let write_all(writer: *mut dyn Writer, bytes: []u8): usz {

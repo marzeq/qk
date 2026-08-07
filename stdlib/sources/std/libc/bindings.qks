@@ -299,18 +299,19 @@ when OS == .Linux {
   // On the BSD libc ABIs these names are macros backed by non-portable
   // symbols (for example __stdinp on macOS and FreeBSD, and __sF on
   // NetBSD). Obtain the POSIX streams from their standard descriptors
-  // instead of referring to nonexistent stdin/stdout/stderr symbols.
-  pub let stdin = fdopen(0, c"r")
-  pub let stdout = fdopen(1, c"w")
-  pub let stderr = fdopen(2, c"w")
+  // instead of referring to nonexistent stdin/stdout/stderr symbols. Keep
+  // these lazy so merely importing the bindings does not open three streams.
+  pub let stdin(): *FILE = fdopen(0, c"r")
+  pub let stdout(): *FILE = fdopen(1, c"w")
+  pub let stderr(): *FILE = fdopen(2, c"w")
 
 } else when OS == .Windows {
 
   let _acrt_iob_func(index: u32): *FILE @foreign(symbol "__acrt_iob_func")
 
-  pub let stdin = _acrt_iob_func(0)
-  pub let stdout = _acrt_iob_func(1)
-  pub let stderr = _acrt_iob_func(2)
+  pub let stdin(): *FILE = _acrt_iob_func(0)
+  pub let stdout(): *FILE = _acrt_iob_func(1)
+  pub let stderr(): *FILE = _acrt_iob_func(2)
 
 } else {
   @compiler_error("Unsupported OS")
@@ -668,9 +669,5 @@ when OS == .Linux {
     flags: u32,
   ): i32 @foreign
 }
-
-} else when !CheckingStdlib { // when NoLibc
-
-@compiler_error("The std.libc module is not available when libc is disabled")
 
 }

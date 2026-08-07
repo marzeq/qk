@@ -1388,7 +1388,7 @@ Hosted builds provide `std.alloc.LibcAllocator`. `std.alloc.Arena` is also hoste
 
 `std.io.Reader` and `std.io.Writer` are structural stream traits. Their default `read_to_builder` and `write_builder` methods transfer bytes to or from a `std.strings.StringBuilder`, so implementations only need to supply the core `read` or `write` method. `std.io.Format` lets a value format itself into a writer.
 
-`std.io.wprint` and `wprintln` work with any writer and remain useful without hosted standard streams. Hosted builds add `print`, `println`, file printing, and standard input, output, and error streams.
+`std.io.wprint` and `wprintln` work with any writer. `print`, `println`, `eprint`, and `eprintln` use libc-free standard streams: Unix-family targets issue target-specific kernel calls with inline assembly, while Windows uses the stable Kernel32 console/file-handle API. Libc-backed file readers, file writers, and file printing are available when `std.io.HasFiles` is true.
 
 Formatting uses `{}` for the next argument, `{N}` for an indexed argument, and `c`, `x`, or `X` format specifiers. `{{` and `}}` emit literal braces.
 

@@ -221,6 +221,10 @@ pub let println(
   wprintln(stdout.&mut.(*mut dyn Writer), format, arguments...)
 }
 
+}
+
+when HasFiles {
+
 pub let fprint(
   format: str,
   file: *mut FileWriter,
@@ -236,6 +240,10 @@ pub let fprintln(
 ): void {
   wprintln(file.(*mut dyn Writer), format, arguments...)
 }
+
+}
+
+when HasIO {
 
 pub let eprint(
   format: str,
