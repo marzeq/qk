@@ -172,6 +172,8 @@ func main() {
 
 	irModules, errs := loader.GenerateIRModules(modules, args.mainModule, order, args.verbose, args.debug)
 	checkErrs(errs)
+	moduleLinks := linksForUsedForeignSymbols(partials, irModules, args.outputType == OutputObject)
+	linksLibc := moduleLinksContainLibc(moduleLinks)
 
 	llvmOutputs := make(map[string]string, len(irModules))
 	for _, moduleName := range order {
@@ -192,6 +194,7 @@ func main() {
 		args.target,
 		args.noLibc,
 		args.noStdlib,
+		linksLibc,
 		args.outputType == OutputExecutable,
 		mainInitializer,
 		userMain,
@@ -330,7 +333,6 @@ func main() {
 		}
 	}
 
-	moduleLinks := linksForUsedForeignSymbols(partials, irModules, args.outputType == OutputObject)
 	var linkRoots []string
 	if args.outputType == OutputObject {
 		for _, moduleName := range order {

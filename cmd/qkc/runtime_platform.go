@@ -31,6 +31,12 @@ func buildPlatformPanicRuntime(target, usz string) (string, error) {
 	}
 }
 
+func targetIsLinuxX8664(target string) bool {
+	target = strings.ToLower(qktarget.EffectiveTriple(target))
+	arch := qktarget.Arch(target)
+	return strings.Contains(target, "linux") && (arch == "x86_64" || arch == "amd64")
+}
+
 func unixPanicRuntime(osName, arch, usz string, writeNumber, exitNumber uint64) (string, error) {
 	if arch == "aarch64" || arch == "arm64" {
 		return arm64UnixPanicRuntime(usz, writeNumber, exitNumber, osName == "Darwin"), nil

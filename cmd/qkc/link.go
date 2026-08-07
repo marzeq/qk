@@ -179,6 +179,15 @@ func linkObjects(objFiles []string, moduleLinks []attributes.Link, roots []strin
 	return llvmbackend.Link(args, config.verbose)
 }
 
+func moduleLinksContainLibc(moduleLinks []attributes.Link) bool {
+	for _, link := range moduleLinks {
+		if link.Kind == attributes.LinkSystem && (link.Value == "c" || link.Value == "System") {
+			return true
+		}
+	}
+	return false
+}
+
 func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots []string, config *Args) ([]string, error) {
 	args := append([]string{}, objFiles...)
 
@@ -212,19 +221,16 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots []str
 	if config.static {
 		args = append(args, "-static")
 	}
-	linksLibc := false
-	for _, link := range moduleLinks {
-		if link.Kind == attributes.LinkSystem && (link.Value == "c" || link.Value == "System") {
-			linksLibc = true
-			break
-		}
-	}
+	linksLibc := moduleLinksContainLibc(moduleLinks)
 	if config.noLibc {
 		if config.outputType == OutputExecutable {
 			args = append(args, "-nostdlib", "-Wl,-e,_start")
 		}
 	} else if !linksLibc {
 		args = append(args, defaultLibrarySuppressionArgs(config.target, config.outputType)...)
+		if config.outputType == OutputExecutable && targetIsLinuxX8664(config.target) {
+			args = append(args, "-nostartfiles", "-Wl,-e,_start")
+		}
 	}
 	sysroot := config.sysroot
 	if sysroot == "" && targetIsApple(config.target) {

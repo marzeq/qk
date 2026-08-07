@@ -9,7 +9,7 @@ import (
 
 func buildFreestandingRuntime(
 	targetTriple string,
-	noLibc, noStdlib, executable bool,
+	noLibc, noStdlib, linksLibc, executable bool,
 	mainInitializer, userMain string,
 ) (string, error) {
 	pointerBits, ok := qktarget.PointerBits(qktarget.EffectiveTriple(targetTriple))
@@ -25,7 +25,8 @@ func buildFreestandingRuntime(
 	if noLibc && executable && !linuxX8664 {
 		return "", fmt.Errorf("freestanding -nolibc executables are currently supported only for Linux x86-64, not target %q", target)
 	}
-	if noLibc && linuxX8664 {
+	libcFreeHosted := !noLibc && !linksLibc && executable && linuxX8664
+	if (noLibc || libcFreeHosted) && linuxX8664 {
 		if executable && userMain != "" {
 			initializerDeclaration := ""
 			initializerCall := ""
@@ -33,7 +34,65 @@ func buildFreestandingRuntime(
 				initializerDeclaration = fmt.Sprintf("declare hidden void @%s()\n", mainInitializer)
 				initializerCall = fmt.Sprintf("  call void @%s()\n", mainInitializer)
 			}
-			fmt.Fprintf(&out, `declare hidden void @%s()
+			if libcFreeHosted && !noStdlib {
+				fmt.Fprintf(&out, `declare hidden void @%[2]s()
+%[3]s
+@__qk_0_3_std2_os_global_args = external hidden global { ptr, %[1]s }
+
+module asm ".text"
+module asm ".globl _start"
+module asm ".type _start,@function"
+module asm "_start:"
+module asm "movq %%rsp, %%rdi"
+module asm "andq $-16, %%rsp"
+module asm "subq $8, %%rsp"
+module asm "jmp __qk_start"
+module asm ".size _start, .-_start"
+
+define hidden void @__qk_start(ptr %%stack) noreturn nounwind {
+entry:
+	%%argc = load %[1]s, ptr %%stack
+	%%argv = getelementptr inbounds %[1]s, ptr %%stack, %[1]s 1
+	%%args.data = alloca { ptr, %[1]s }, %[1]s %%argc
+	%%args.with-data = insertvalue { ptr, %[1]s } zeroinitializer, ptr %%args.data, 0
+	%%args = insertvalue { ptr, %[1]s } %%args.with-data, %[1]s %%argc, 1
+	store { ptr, %[1]s } %%args, ptr @__qk_0_3_std2_os_global_args
+	%%args.empty = icmp eq %[1]s %%argc, 0
+	br i1 %%args.empty, label %%run, label %%args.loop
+
+args.loop:
+	%%arg.index = phi %[1]s [ 0, %%entry ], [ %%arg.next, %%strlen.end ]
+	%%argv.slot = getelementptr inbounds ptr, ptr %%argv, %[1]s %%arg.index
+	%%arg.data = load ptr, ptr %%argv.slot
+	br label %%strlen.loop
+
+strlen.loop:
+	%%strlen.index = phi %[1]s [ 0, %%args.loop ], [ %%strlen.next, %%strlen.loop ]
+	%%strlen.address = getelementptr inbounds i8, ptr %%arg.data, %[1]s %%strlen.index
+	%%strlen.byte = load i8, ptr %%strlen.address
+	%%strlen.done = icmp eq i8 %%strlen.byte, 0
+	%%strlen.next = add nuw %[1]s %%strlen.index, 1
+	br i1 %%strlen.done, label %%strlen.end, label %%strlen.loop
+
+strlen.end:
+	%%arg.length = phi %[1]s [ %%strlen.index, %%strlen.loop ]
+	%%arg.with-data = insertvalue { ptr, %[1]s } zeroinitializer, ptr %%arg.data, 0
+	%%arg = insertvalue { ptr, %[1]s } %%arg.with-data, %[1]s %%arg.length, 1
+	%%arg.slot = getelementptr inbounds { ptr, %[1]s }, ptr %%args.data, %[1]s %%arg.index
+	store { ptr, %[1]s } %%arg, ptr %%arg.slot
+	%%arg.next = add nuw %[1]s %%arg.index, 1
+	%%args.finished = icmp eq %[1]s %%arg.next, %%argc
+	br i1 %%args.finished, label %%run, label %%args.loop
+
+run:
+%[4]s  call void @%[2]s()
+  %%exit = call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i32 0)
+  unreachable
+}
+
+`, usz, userMain, initializerDeclaration, initializerCall)
+			} else {
+				fmt.Fprintf(&out, `declare hidden void @%s()
 %s
 define void @_start() noreturn nounwind alignstack(16) {
 entry:
@@ -43,6 +102,7 @@ entry:
 }
 
 `, userMain, initializerDeclaration, initializerCall, userMain)
+			}
 		}
 		fmt.Fprintf(&out, `define hidden void @__qk_panic({ ptr, %[1]s } %%message) #1 {
 entry:
