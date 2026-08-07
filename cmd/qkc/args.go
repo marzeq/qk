@@ -612,3 +612,8 @@ func targetIsApple(target string) bool {
 	target = effectiveTargetName(target)
 	return strings.Contains(target, "darwin") || strings.Contains(target, "apple") || strings.Contains(target, "macos") || strings.Contains(target, "ios")
 }
+
+func targetIsWebAssembly(target string) bool {
+	target = effectiveTargetName(target)
+	return strings.HasPrefix(target, "wasm32-") || strings.HasPrefix(target, "wasm64-")
+}

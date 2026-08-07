@@ -43,6 +43,7 @@ LLD_HAS_DRIVER(coff)
 LLD_HAS_DRIVER(elf)
 LLD_HAS_DRIVER(macho)
 LLD_HAS_DRIVER(mingw)
+LLD_HAS_DRIVER(wasm)
 
 namespace {
 
@@ -394,6 +395,7 @@ extern "C" int qk_link_lld(
       {lld::MinGW, &lld::mingw::link},
       {lld::WinLink, &lld::coff::link},
       {lld::Darwin, &lld::macho::link},
+      {lld::Wasm, &lld::wasm::link},
   };
   lld::Result result = lld::lldMain(
       lld_arguments, stdout_stream, stderr_stream, drivers);

@@ -246,7 +246,7 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots []str
 	default:
 		return nil, fmt.Errorf("unknown output type")
 	}
-	if config.outputType != OutputObject || !isWindowsGNUTarget(config.target) {
+	if config.outputType != OutputObject || !targetIsWebAssembly(config.target) {
 		args = append(args, deadStripLinkerFlag(config.target))
 		if config.outputType != OutputObject {
 			args = append(args, unusedDynamicLibrariesFlag(config.target))
@@ -262,7 +262,9 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots []str
 		args = append(args, "-static")
 	}
 	linksLibc := moduleLinksContainLibc(moduleLinks)
-	if config.noLibc {
+	if config.outputType == OutputObject {
+		args = append(args, defaultLibrarySuppressionArgs(config.target, config.outputType)...)
+	} else if config.noLibc {
 		if config.outputType == OutputExecutable {
 			args = append(args, "-nostdlib", "-Wl,-e,_start")
 		}
@@ -319,7 +321,7 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots []str
 
 func defaultLibrarySuppressionArgs(target string, outputType OutputType) []string {
 	if outputType == OutputObject {
-		return nil
+		return []string{"-nostdlib"}
 	}
 	// Darwin's loader requires every executable to load libSystem, even when
 	// the program uses only direct syscalls. Clang adds that load command by

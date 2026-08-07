@@ -14,6 +14,8 @@ func buildPlatformPanicRuntime(target, usz string) (string, error) {
 	switch {
 	case targetIsWindows(target):
 		return windowsPanicRuntime(usz), nil
+	case arch == "wasm32" || arch == "wasm64":
+		return wasmPanicRuntime(usz), nil
 	case strings.Contains(target, "linux"):
 		return unixPanicRuntime("Linux", arch, usz, 1, 60)
 	case strings.Contains(target, "freebsd"):
@@ -29,6 +31,15 @@ func buildPlatformPanicRuntime(target, usz string) (string, error) {
 	default:
 		return "", fmt.Errorf("the QK runtime has no libc-free process I/O implementation for target %q", target)
 	}
+}
+
+func wasmPanicRuntime(usz string) string {
+	return fmt.Sprintf(`define hidden void @__qk_panic({ ptr, %s } %%message) #1 {
+entry:
+  unreachable
+}
+
+`, usz)
 }
 
 func targetIsLinuxX8664(target string) bool {

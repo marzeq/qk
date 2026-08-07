@@ -3,6 +3,6 @@
 package llvmbackend
 
 /*
-#cgo LDFLAGS: -lclang-cpp -llldELF -llldCOFF -llldMinGW -llldMachO -llldCommon -lLLVM
+#cgo LDFLAGS: -lclang-cpp -llldELF -llldCOFF -llldMinGW -llldMachO -llldWasm -llldCommon -lLLVM
 */
 import "C"
