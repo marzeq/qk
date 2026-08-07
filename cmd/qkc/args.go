@@ -554,6 +554,11 @@ func finaliseOutputArgs(args *Args) error {
 			switch ext {
 			case ".o", ".obj":
 				args.outputType = OutputObject
+			case ".wasm":
+				if !targetIsWebAssembly(args.target) {
+					return fmt.Errorf("cannot use .wasm output for non-WebAssembly target %q", effectiveTargetName(args.target))
+				}
+				args.outputType = OutputObject
 			case ".so", ".dll", ".dylib":
 				args.outputType = OutputSharedLib
 			case "", ".exe":
