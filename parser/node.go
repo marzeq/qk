@@ -848,6 +848,7 @@ func (n RangeForNode) GetLoc() shared.Location { return n.Loc }
 type ForEachNode struct {
 	Name         string
 	NameLoc      shared.Location
+	Destructure  []ForEachBinding
 	ElementKind  ForEachElementKind
 	IndexName    string
 	IndexNameLoc shared.Location
@@ -857,6 +858,12 @@ type ForEachNode struct {
 	Loc          shared.Location
 	Symbol       *symbols.Symbol
 	IndexSymbol  *symbols.Symbol
+}
+
+type ForEachBinding struct {
+	Name   string
+	Loc    shared.Location
+	Symbol *symbols.Symbol
 }
 
 func (n ForEachNode) GetLoc() shared.Location { return n.Loc }

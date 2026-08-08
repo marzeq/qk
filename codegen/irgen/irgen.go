@@ -1418,7 +1418,19 @@ func (g *Generator) generateForEach(node *parser.ForEachNode) {
 		g.Emit(ir.Store{Slot: indexSlot, Value: ir.IntConstOperand("0", types.PrimitiveUsz)})
 	}
 	var elementSlot ir.SlotID
-	if node.Symbol != nil {
+	destructureSlots := make([]ir.SlotID, len(node.Destructure))
+	if len(node.Destructure) != 0 {
+		for i := range node.Destructure {
+			binding := &node.Destructure[i]
+			if binding.Symbol == nil {
+				continue
+			}
+			slot := g.currentFunction.NewSlot(binding.Symbol.Type, binding.Name)
+			destructureSlots[i] = slot
+			g.currentEnv.Variables[binding.Symbol] = slot
+			g.Emit(ir.Alloca{Slot: slot})
+		}
+	} else if node.Symbol != nil {
 		elementSlot = g.currentFunction.NewSlot(node.Symbol.Type, node.Name)
 		g.currentEnv.Variables[node.Symbol] = elementSlot
 		g.Emit(ir.Alloca{Slot: elementSlot})
@@ -1460,7 +1472,10 @@ func (g *Generator) generateForEach(node *parser.ForEachNode) {
 		g.Emit(ir.Sub{Dest: previousIndex, Left: index, Right: ir.IntConstOperand("1", types.PrimitiveUsz)})
 		elementIndex = ir.ValueOperand(previousIndex, types.PrimitiveUsz)
 	}
-	if node.Symbol != nil {
+	if len(node.Destructure) != 0 {
+		elementPointer := g.forEachElementPointer(iterableSlot, iterableType, elementIndex, false)
+		g.storeForEachDestructure(elementPointer, node.Destructure, destructureSlots)
+	} else if node.Symbol != nil {
 		if node.ElementKind == parser.ForEachElementValue {
 			g.storeForEachElement(iterableSlot, iterableType, elementIndex, elementSlot)
 		} else {
@@ -1494,6 +1509,48 @@ func (g *Generator) generateForEach(node *parser.ForEachNode) {
 	g.Emit(ir.Store{Slot: indexSlot, Value: ir.ValueOperand(nextIndex, types.PrimitiveUsz)})
 	g.Emit(ir.Jump{Target: conditionBlock.ID})
 	g.currentBlock = endBlock
+}
+
+func (g *Generator) storeForEachDestructure(
+	elementPointer ir.Operand,
+	bindings []parser.ForEachBinding,
+	slots []ir.SlotID,
+) {
+	elementType := types.Underlying(types.Underlying(elementPointer.Type).(types.PointerType).Base)
+	switch element := elementType.(type) {
+	case types.ArrayType:
+		for i := range bindings {
+			if bindings[i].Symbol == nil {
+				continue
+			}
+			pointerType := types.PointerType{Base: element.Base}
+			componentPointer := g.currentFunction.NewValueOfType(pointerType)
+			g.Emit(ir.ElementAddress{
+				Dest:        componentPointer,
+				Base:        elementPointer,
+				Index:       ir.IntConstOperand(strconv.Itoa(i), types.PrimitiveUsz),
+				Element:     element.Base,
+				ArrayObject: true,
+			})
+			value := g.currentFunction.NewValueOfType(element.Base)
+			g.Emit(ir.LoadPtr{Dest: value, Ptr: ir.ValueOperand(componentPointer, pointerType)})
+			g.Emit(ir.Store{Slot: slots[i], Value: ir.ValueOperand(value, element.Base)})
+		}
+	case types.StructType:
+		for i, field := range element.Fields {
+			if bindings[i].Symbol == nil {
+				continue
+			}
+			pointerType := types.PointerType{Base: field.R}
+			componentPointer := g.currentFunction.NewValueOfType(pointerType)
+			g.Emit(ir.FieldAddress{Dest: componentPointer, Base: elementPointer, Field: field.L})
+			value := g.currentFunction.NewValueOfType(field.R)
+			g.Emit(ir.LoadPtr{Dest: value, Ptr: ir.ValueOperand(componentPointer, pointerType)})
+			g.Emit(ir.Store{Slot: slots[i], Value: ir.ValueOperand(value, field.R)})
+		}
+	default:
+		panic("validated for-each destructuring element is not an array or struct")
+	}
 }
 
 func (g *Generator) loadSlot(slot ir.SlotID, ty types.Type) ir.Operand {

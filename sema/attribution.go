@@ -236,12 +236,24 @@ func (a *Attributor) attributeNode(node parser.Node) {
 
 	case *parser.ForEachNode:
 		a.attributeExpr(n.Iterable)
-		if n.Symbol != nil {
-			switch iterable := types.Underlying(n.Iterable.GetType()).(type) {
-			case types.SliceType:
-				n.Symbol.Type = forEachElementType(n, iterable.Base)
-			case types.ArrayType:
-				n.Symbol.Type = forEachElementType(n, iterable.Base)
+		var elementType types.Type
+		switch iterable := types.Underlying(n.Iterable.GetType()).(type) {
+		case types.SliceType:
+			elementType = iterable.Base
+		case types.ArrayType:
+			elementType = iterable.Base
+		}
+		if n.Symbol != nil && elementType != nil {
+			n.Symbol.Type = forEachElementType(n, elementType)
+		}
+		if len(n.Destructure) != 0 && elementType != nil {
+			componentTypes, valid := forEachDestructureTypes(elementType)
+			if valid {
+				for i := range n.Destructure {
+					if n.Destructure[i].Symbol != nil && i < len(componentTypes) {
+						n.Destructure[i].Symbol.Type = componentTypes[i]
+					}
+				}
 			}
 		}
 		if n.IndexSymbol != nil {

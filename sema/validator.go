@@ -1065,14 +1065,37 @@ func (v *Validator) validateForEach(n *parser.ForEachNode) {
 		v.errorf(n, "cannot infer for loop element type from untyped array or slice")
 		return
 	}
-	if n.Symbol != nil {
+	if len(n.Destructure) != 0 {
+		componentTypes, destructurable := forEachDestructureTypes(element)
+		if !destructurable {
+			v.errorf(n, "for loop destructuring requires an array or struct element")
+			return
+		}
+		if len(n.Destructure) != len(componentTypes) {
+			v.errorf(n, "destructuring pattern has %d bindings, but loop element has %d values",
+				len(n.Destructure), len(componentTypes))
+			return
+		}
+		for i := range n.Destructure {
+			if n.Destructure[i].Symbol != nil {
+				n.Destructure[i].Symbol.Type = componentTypes[i]
+			}
+		}
+	} else if n.Symbol != nil {
 		n.Symbol.Type = forEachElementType(n, element)
 	}
 	if n.IndexSymbol != nil {
 		n.IndexSymbol.Type = types.PrimitiveUsz
 	}
 	v.validateNode(n.Body)
-	v.warnIfUnused(n.Symbol, n.NameLoc, shared.WarningUnusedVariable, "variable")
+	if len(n.Destructure) != 0 {
+		for i := range n.Destructure {
+			binding := &n.Destructure[i]
+			v.warnIfUnused(binding.Symbol, binding.Loc, shared.WarningUnusedVariable, "variable")
+		}
+	} else {
+		v.warnIfUnused(n.Symbol, n.NameLoc, shared.WarningUnusedVariable, "variable")
+	}
 	if n.IndexName != "" {
 		v.warnIfUnused(n.IndexSymbol, n.IndexNameLoc, shared.WarningUnusedVariable, "variable")
 	}

@@ -1672,12 +1672,33 @@ func (p *Parser) ParseForLoop() (Node, error) {
 }
 
 func (p *Parser) parseRangeOrForEach(beginLoc shared.Location) (Node, error) {
-	name, ok := p.ExpectGet(tokeniser.TokenIdentifier)
-	if !ok {
-		return nil, shared.NewError(p.PrevLoc(), "expected loop variable name")
+	var name *tokeniser.Token
+	var destructure []ForEachBinding
+	var ok bool
+	if p.Match(tokeniser.TokenOpenParen) {
+		p.Inc()
+		for {
+			binding, found := p.ExpectGet(tokeniser.TokenIdentifier)
+			if !found {
+				return nil, shared.NewError(p.PrevLoc(), "expected destructuring binding name")
+			}
+			destructure = append(destructure, ForEachBinding{Name: binding.Value, Loc: binding.Loc})
+			if p.Match(tokeniser.TokenCloseParen) {
+				p.Inc()
+				break
+			}
+			if !p.Expect(tokeniser.TokenComma) {
+				return nil, shared.NewError(p.PrevLoc(), "expected ',' or ')' in destructuring pattern")
+			}
+		}
+	} else {
+		name, ok = p.ExpectGet(tokeniser.TokenIdentifier)
+		if !ok {
+			return nil, shared.NewError(p.PrevLoc(), "expected loop variable name")
+		}
 	}
 	elementKind := ForEachElementValue
-	if p.Match(tokeniser.TokenDot) && p.Next().Type == tokeniser.TokenAmpersand {
+	if name != nil && p.Match(tokeniser.TokenDot) && p.Next().Type == tokeniser.TokenAmpersand {
 		p.Inc().Inc()
 		elementKind = ForEachElementPointer
 		if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordMut) {
@@ -1716,6 +1737,9 @@ func (p *Parser) parseRangeOrForEach(beginLoc shared.Location) (Node, error) {
 		if indexName != nil {
 			return nil, shared.NewError(indexName.Loc, "range iteration accepts exactly one variable")
 		}
+		if len(destructure) != 0 {
+			return nil, shared.NewError(destructure[0].Loc, "range iteration does not support destructuring")
+		}
 		if elementKind != ForEachElementValue {
 			return nil, shared.NewError(name.Loc, "range iteration does not support element pointer bindings")
 		}
@@ -1748,13 +1772,16 @@ func (p *Parser) parseRangeOrForEach(beginLoc shared.Location) (Node, error) {
 		return nil, err
 	}
 	node := &ForEachNode{
-		Name:        name.Value,
-		NameLoc:     name.Loc,
+		Destructure: destructure,
 		ElementKind: elementKind,
 		Iterable:    iterable,
 		Reversed:    reversed,
 		Body:        body,
 		Loc:         p.SpanFrom(beginLoc),
+	}
+	if name != nil {
+		node.Name = name.Value
+		node.NameLoc = name.Loc
 	}
 	if indexName != nil {
 		node.IndexName = indexName.Value
@@ -1765,10 +1792,36 @@ func (p *Parser) parseRangeOrForEach(beginLoc shared.Location) (Node, error) {
 
 func (p *Parser) matchesRangeOrForEachHeader() bool {
 	pos := p.pos
-	if pos >= len(p.tokens) || p.tokens[pos].Type != tokeniser.TokenIdentifier {
+	if pos >= len(p.tokens) {
 		return false
 	}
-	pos++
+	if p.tokens[pos].Type == tokeniser.TokenOpenParen {
+		pos++
+		if pos >= len(p.tokens) || p.tokens[pos].Type != tokeniser.TokenIdentifier {
+			return false
+		}
+		for {
+			pos++
+			if pos >= len(p.tokens) {
+				return false
+			}
+			if p.tokens[pos].Type == tokeniser.TokenCloseParen {
+				pos++
+				break
+			}
+			if p.tokens[pos].Type != tokeniser.TokenComma {
+				return false
+			}
+			pos++
+			if pos >= len(p.tokens) || p.tokens[pos].Type != tokeniser.TokenIdentifier {
+				return false
+			}
+		}
+	} else if p.tokens[pos].Type == tokeniser.TokenIdentifier {
+		pos++
+	} else {
+		return false
+	}
 	if pos+1 < len(p.tokens) &&
 		p.tokens[pos].Type == tokeniser.TokenDot &&
 		p.tokens[pos+1].Type == tokeniser.TokenAmpersand {

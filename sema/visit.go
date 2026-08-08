@@ -443,9 +443,24 @@ func (a *Analyser) visitForEach(n *parser.ForEachNode) {
 	case types.ArrayType:
 		elementType = iterable.Base
 	}
-	elementType = forEachElementType(n, elementType)
-
-	if n.Name != "_" {
+	if len(n.Destructure) != 0 {
+		componentTypes, valid := forEachDestructureTypes(elementType)
+		for i := range n.Destructure {
+			binding := &n.Destructure[i]
+			if binding.Name == "_" {
+				continue
+			}
+			bindingType := types.Type(types.ErrorType{})
+			if valid && i < len(componentTypes) {
+				bindingType = componentTypes[i]
+			}
+			sym := &symbols.Symbol{Name: binding.Name, Kind: symbols.SymbolKindVariable, Type: bindingType}
+			if a.defineSymbol(sym, n) {
+				binding.Symbol = sym
+			}
+		}
+	} else if n.Name != "_" {
+		elementType = forEachElementType(n, elementType)
 		sym := &symbols.Symbol{
 			Name: n.Name,
 			Kind: symbols.SymbolKindVariable,
@@ -468,6 +483,25 @@ func (a *Analyser) visitForEach(n *parser.ForEachNode) {
 	}
 
 	a.visitBlock(n.Body)
+}
+
+func forEachDestructureTypes(elementType types.Type) ([]types.Type, bool) {
+	switch element := types.Underlying(elementType).(type) {
+	case types.ArrayType:
+		result := make([]types.Type, element.Length)
+		for i := range result {
+			result[i] = element.Base
+		}
+		return result, true
+	case types.StructType:
+		result := make([]types.Type, len(element.Fields))
+		for i, field := range element.Fields {
+			result[i] = field.R
+		}
+		return result, true
+	default:
+		return nil, false
+	}
 }
 
 func forEachElementType(n *parser.ForEachNode, elementType types.Type) types.Type {
