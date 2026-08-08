@@ -44,6 +44,7 @@ type Generator struct {
 	ModuleName             string
 	MainModule             string
 	DependencyInitializers []string
+	DemandedTraitSlots     map[string]map[int]bool
 
 	currentFunction             *ir.Function
 	currentBlock                *ir.Block
@@ -2133,6 +2134,12 @@ func (g *Generator) ensureTraitVTable(node *parser.CastNode, trait types.TraitTy
 	}
 	for i, method := range node.TraitMethods {
 		req := trait.Methods[i]
+		if g.DemandedTraitSlots != nil && !g.DemandedTraitSlots[trait.String()][i] {
+			params := append([]types.Type{traitErasedReceiverType(req)}, req.Parameters...)
+			fnType := types.PointerType{Base: types.FunctionType{Parameters: params, ReturnType: req.ReturnType}}
+			values = append(values, ir.NullConstOperand(fnType))
+			continue
+		}
 		methodModule := concreteModule
 		if method.DefinitionModule != "" {
 			methodModule = method.DefinitionModule

@@ -3,6 +3,7 @@ package loader
 import (
 	"reflect"
 
+	"github.com/marzeq/qk/attributes"
 	"github.com/marzeq/qk/parser"
 	"github.com/marzeq/qk/types"
 )
@@ -76,6 +77,50 @@ func narrowRuntimeTraitCastCandidates(mods map[string]*ModuleInfo, order []strin
 		}
 		recast.node.TraitCandidates = kept
 	}
+}
+
+// demandedDynamicTraitSlots records the method slots that can be reached by
+// dynamic dispatch in this compilation. Vtables retain their complete layout,
+// but IR generation can leave unused entries null so those entries do not keep
+// otherwise dead method implementations reachable.
+func demandedDynamicTraitSlots(mods map[string]*ModuleInfo, order []string) map[string]map[int]bool {
+	used := make(map[string]map[int]bool)
+	externallyOpen := false
+	for _, name := range order {
+		walkParserNodes(mods[name].Root, func(node parser.Node) {
+			switch node := node.(type) {
+			case *parser.FunctionCallNode:
+				if !node.TraitCall || len(node.Args) == 0 {
+					return
+				}
+				pointer, ok := types.Underlying(node.Args[0].GetType()).(types.TraitPointerType)
+				if !ok {
+					return
+				}
+				key := pointer.Trait.String()
+				if used[key] == nil {
+					used[key] = make(map[int]bool)
+				}
+				used[key][node.TraitSlot] = true
+			case *parser.FunctionDefNode:
+				if node.Symbol == nil || node.Symbol.Signature == nil ||
+					(node.Symbol.Attributes.Get(attributes.AttributeTypeExport) == nil &&
+						node.Symbol.Attributes.Get(attributes.AttributeTypeForeign) == nil) {
+					return
+				}
+				for _, parameter := range node.Symbol.Signature.Parameters {
+					externallyOpen = externallyOpen || types.HasTraitPointer(parameter)
+				}
+				externallyOpen = externallyOpen || types.HasTraitPointer(node.Symbol.Signature.ReturnType)
+			}
+		})
+	}
+	if externallyOpen {
+		// A foreign or exported QK ABI can expose a generated trait value to code
+		// outside this compilation, whose dynamic calls are not visible here.
+		return nil
+	}
+	return used
 }
 
 func flowKey(pointer types.TraitPointerType) traitFlowKey {
