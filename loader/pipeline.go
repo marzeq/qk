@@ -5,7 +5,9 @@ import (
 
 	"github.com/marzeq/qk/codegen/irgen"
 	"github.com/marzeq/qk/ir"
+	"github.com/marzeq/qk/parser"
 	"github.com/marzeq/qk/sema"
+	"github.com/marzeq/qk/symbols"
 )
 
 func ComputeModuleOrder(mods map[string]*ModuleInfo, primaryModule string) ([]string, []error) {
@@ -102,6 +104,7 @@ func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, o
 func GenerateIRModules(mods map[string]*ModuleInfo, mainModule string, order []string, verbose bool, debug bool) (map[string]*ir.Module, []error) {
 	out := make(map[string]*ir.Module, len(order))
 	narrowRuntimeTraitCastCandidates(mods, order)
+	propagateTypedVariadicArities(mods, order)
 
 	for _, name := range order {
 		info := mods[name]
@@ -125,6 +128,35 @@ func GenerateIRModules(mods map[string]*ModuleInfo, mainModule string, order []s
 	}
 
 	return out, nil
+}
+
+func propagateTypedVariadicArities(mods map[string]*ModuleInfo, order []string) {
+	var signatures []*symbols.FunctionSignature
+	for _, name := range order {
+		for _, node := range mods[name].Root.Body {
+			if function, ok := node.(*parser.FunctionDefNode); ok && function.Symbol != nil &&
+				function.Symbol.Signature != nil && function.Symbol.Signature.TypedVariadic {
+				signatures = append(signatures, function.Symbol.Signature)
+			}
+		}
+	}
+	changed := true
+	for changed {
+		changed = false
+		for _, signature := range signatures {
+			for arity := range signature.TypedVariadicArities {
+				for _, forwarded := range signature.TypedVariadicForwards {
+					if forwarded.TypedVariadicArities == nil {
+						forwarded.TypedVariadicArities = make(map[int]bool)
+					}
+					if !forwarded.TypedVariadicArities[arity] {
+						forwarded.TypedVariadicArities[arity] = true
+						changed = true
+					}
+				}
+			}
+		}
+	}
 }
 
 func deduplicateIRDeclarations(module *ir.Module) {

@@ -63,6 +63,10 @@ type FunctionSignature struct {
 	Variadic           bool
 	TypedVariadic      bool
 	VariadicElement    types.Type
+	// TypedVariadicArities records fixed direct-call tail lengths. Forwards
+	// connects functions that pass their complete variadic slice onward.
+	TypedVariadicArities  map[int]bool
+	TypedVariadicForwards []*FunctionSignature
 }
 
 func NewVariable(name string, typ types.Type) *Symbol {

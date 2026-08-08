@@ -45,14 +45,15 @@ type Generator struct {
 	MainModule             string
 	DependencyInitializers []string
 
-	currentFunction    *ir.Function
-	currentBlock       *ir.Block
-	currentEnv         *Env
-	globals            map[*symbols.Symbol]string
-	loopTargets        []loopTargets
-	deferScopes        [][]parser.Node
-	dynamicGlobals     []dynamicGlobalInitializer
-	initializingGlobal bool
+	currentFunction             *ir.Function
+	currentBlock                *ir.Block
+	currentEnv                  *Env
+	globals                     map[*symbols.Symbol]string
+	loopTargets                 []loopTargets
+	deferScopes                 [][]parser.Node
+	dynamicGlobals              []dynamicGlobalInitializer
+	initializingGlobal          bool
+	specializedVariadicElements map[*symbols.Symbol][]ir.Operand
 }
 
 type dynamicGlobalInitializer struct {
@@ -412,7 +413,18 @@ func (g *Generator) GenerateFunction(fn *parser.FunctionDefNode) {
 	g.deferScopes = nil
 
 	g.emitFunctionParams(fn)
+	g.generateFunctionBody(fn)
 
+	g.currentEnv = nil
+	g.currentBlock = nil
+	g.currentFunction = nil
+	g.deferScopes = nil
+
+	g.generateDefaultWrappers(fn, name)
+	g.generateTypedVariadicWrappers(fn, name)
+}
+
+func (g *Generator) generateFunctionBody(fn *parser.FunctionDefNode) {
 	if fn.ExpressionBody {
 		ret := g.GenerateExpr(fn.Body.(parser.ExpressionNode))
 		if !g.currentBlockHasTerminator() {
@@ -432,13 +444,6 @@ func (g *Generator) GenerateFunction(fn *parser.FunctionDefNode) {
 			}
 		}
 	}
-
-	g.currentEnv = nil
-	g.currentBlock = nil
-	g.currentFunction = nil
-	g.deferScopes = nil
-
-	g.generateDefaultWrappers(fn, name)
 }
 
 func (g *Generator) generateDefaultWrappers(fn *parser.FunctionDefNode, targetName string) {
@@ -512,8 +517,155 @@ func (g *Generator) generateDefaultWrappers(fn *parser.FunctionDefNode, targetNa
 	}
 }
 
+func (g *Generator) generateTypedVariadicWrappers(fn *parser.FunctionDefNode, targetName string) {
+	// Multiple clones can cost more than the generic body. Specialize only when
+	// whole-program analysis found one observed fixed arity.
+	if !fn.Symbol.Signature.TypedVariadic || len(fn.Symbol.Signature.TypedVariadicArities) != 1 {
+		return
+	}
+
+	arities := make([]int, 0, len(fn.Symbol.Signature.TypedVariadicArities))
+	for arity := range fn.Symbol.Signature.TypedVariadicArities {
+		arities = append(arities, arity)
+	}
+	slices.Sort(arities)
+
+	fixedCount := len(fn.Symbol.Signature.Parameters) - 1
+	sliceType := fn.Symbol.Signature.Parameters[fixedCount]
+	for _, arity := range arities {
+		linkage := ir.LinkageInternal
+		visibility := ir.VisibilityDefault
+		if fn.Attributes.Get(attributes.AttributeTypeExport) != nil {
+			linkage = ir.LinkageExternal
+		} else if fn.Symbol.Public || fn.Symbol.Method {
+			linkage = ir.LinkageExternal
+			visibility = ir.VisibilityHidden
+		}
+
+		paramTypes := append([]types.Type(nil), fn.Symbol.Signature.Parameters[:fixedCount]...)
+		for range arity {
+			paramTypes = append(paramTypes, fn.Symbol.Signature.VariadicElement)
+		}
+		wrapper := ir.NewFunction(g.typedVariadicWrapperName(targetName, arity), linkage, nil)
+		wrapper.Visibility = visibility
+		wrapper.Signature = ir.FunctionSignature{
+			ParamTypes: paramTypes,
+			ReturnType: fn.Symbol.Signature.ReturnType,
+		}
+		g.Module.AddFunction(wrapper)
+
+		g.currentFunction = wrapper
+		g.currentBlock = wrapper.NewBlock("entry")
+		wrapper.Entry = g.currentBlock.ID
+		g.currentEnv = NewEnv(nil)
+		g.deferScopes = nil
+
+		variadicElements := make([]ir.Operand, 0, arity)
+		variadicSlots := make([]ir.SlotID, 0, arity)
+		for i, paramType := range paramTypes {
+			slot := wrapper.NewSlot(paramType, fmt.Sprintf("arg%d", i))
+			name := fmt.Sprintf("arg%d", i)
+			if i < fixedCount {
+				name = fn.Args[i].Name
+				g.currentEnv.Variables[fn.Args[i].Symbol] = slot
+			}
+			wrapper.AddParameter(name, paramType, slot)
+			g.Emit(ir.Alloca{Slot: slot})
+			value := wrapper.NewValueOfType(paramType)
+			g.Emit(ir.Store{Slot: slot, Value: ir.ValueOperand(value, paramType)})
+			if i >= fixedCount {
+				variadicSlots = append(variadicSlots, slot)
+			}
+		}
+		for _, slot := range variadicSlots {
+			loaded := wrapper.NewValueOfType(fn.Symbol.Signature.VariadicElement)
+			g.Emit(ir.Load{Dest: loaded, Slot: slot})
+			variadicElements = append(variadicElements, ir.ValueOperand(loaded, fn.Symbol.Signature.VariadicElement))
+		}
+
+		packed := g.generatePackedVariadicSlice(variadicElements, sliceType)
+		variadicSlot := wrapper.NewSlot(sliceType, fn.Args[fixedCount].Name)
+		g.currentEnv.Variables[fn.Args[fixedCount].Symbol] = variadicSlot
+		g.Emit(ir.Alloca{Slot: variadicSlot})
+		g.Emit(ir.Store{Slot: variadicSlot, Value: packed})
+		previousSpecialized := g.specializedVariadicElements
+		g.specializedVariadicElements = map[*symbols.Symbol][]ir.Operand{
+			fn.Args[fixedCount].Symbol: variadicElements,
+		}
+		g.generateFunctionBody(fn)
+		g.specializedVariadicElements = previousSpecialized
+
+		g.currentEnv = nil
+		g.currentBlock = nil
+		g.currentFunction = nil
+		g.deferScopes = nil
+	}
+}
+
+func (g *Generator) generatePackedVariadicSlice(elements []ir.Operand, targetType types.Type) ir.Operand {
+	sliceType := types.Underlying(targetType).(types.SliceType)
+	tmpSlot := g.currentFunction.NewSlot(targetType, "")
+	g.Emit(ir.Alloca{Slot: tmpSlot})
+	slicePtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: targetType})
+	g.Emit(ir.AddressOf{Dest: slicePtrID, Slot: tmpSlot})
+	slicePtr := ir.ValueOperand(slicePtrID, types.PointerType{Base: targetType})
+
+	var elemPtr ir.Operand
+	if len(elements) == 0 {
+		elemPtr = ir.NullConstOperand(types.PointerType{Base: sliceType.Base})
+	} else {
+		bufferType := types.StructType{Fields: make([]shared.Pair[string, types.Type], len(elements))}
+		for i := range elements {
+			bufferType.Fields[i] = shared.Pair[string, types.Type]{L: fmt.Sprintf("%d", i), R: sliceType.Base}
+		}
+		bufferSlot := g.currentFunction.NewSlot(bufferType, "")
+		g.Emit(ir.Alloca{Slot: bufferSlot})
+		bufferPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: bufferType})
+		g.Emit(ir.AddressOf{Dest: bufferPtrID, Slot: bufferSlot})
+		bufferPtr := ir.ValueOperand(bufferPtrID, types.PointerType{Base: bufferType})
+		for i, element := range elements {
+			fieldPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: sliceType.Base})
+			g.Emit(ir.FieldAddress{Dest: fieldPtrID, Base: bufferPtr, Field: fmt.Sprintf("%d", i)})
+			g.Emit(ir.StorePtr{
+				Ptr:   ir.ValueOperand(fieldPtrID, types.PointerType{Base: sliceType.Base}),
+				Value: element,
+			})
+		}
+		elemPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: sliceType.Base})
+		g.Emit(ir.FieldAddress{Dest: elemPtrID, Base: bufferPtr, Field: "0"})
+		elemPtr = ir.ValueOperand(elemPtrID, types.PointerType{Base: sliceType.Base})
+	}
+
+	basePtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: sliceType.Base})
+	g.Emit(ir.FieldAddress{Dest: basePtrID, Base: slicePtr, Field: "0"})
+	g.Emit(ir.StorePtr{Ptr: ir.ValueOperand(basePtrID, types.PointerType{Base: sliceType.Base}), Value: elemPtr})
+	lenPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: types.PrimitiveUsz})
+	g.Emit(ir.FieldAddress{Dest: lenPtrID, Base: slicePtr, Field: "1"})
+	g.Emit(ir.StorePtr{
+		Ptr:   ir.ValueOperand(lenPtrID, types.PointerType{Base: types.PrimitiveUsz}),
+		Value: ir.IntConstOperand(strconv.Itoa(len(elements)), types.PrimitiveUsz),
+	})
+	loaded := g.currentFunction.NewValueOfType(targetType)
+	g.Emit(ir.Load{Dest: loaded, Slot: tmpSlot})
+	return ir.ValueOperand(loaded, targetType)
+}
+
 func (g *Generator) defaultWrapperName(targetName string, arity int) string {
 	return fmt.Sprintf("%s__default_%d", targetName, arity)
+}
+
+func (g *Generator) typedVariadicWrapperName(targetName string, arity int) string {
+	return fmt.Sprintf("%s__variadic_%d", targetName, arity)
+}
+
+func typedVariadicSpecializedArity(signature *symbols.FunctionSignature) (int, bool) {
+	if signature == nil || len(signature.TypedVariadicArities) != 1 {
+		return 0, false
+	}
+	for arity := range signature.TypedVariadicArities {
+		return arity, true
+	}
+	return 0, false
 }
 
 func (g *Generator) emitFunctionParams(fn *parser.FunctionDefNode) {
@@ -2756,7 +2908,34 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 		callee = &value
 	}
 	args := make([]ir.Operand, 0, len(node.Args))
-	if node.TypedVariadic {
+	specializedArity, hasSpecializedArity := 0, false
+	if node.Symbol != nil {
+		specializedArity, hasSpecializedArity = typedVariadicSpecializedArity(node.Symbol.Signature)
+	}
+	typedVariadicWrapper := node.TypedVariadic && !node.VariadicExpansion && node.Symbol != nil &&
+		hasSpecializedArity && len(node.Args)-node.TypedVariadicStart == specializedArity
+	flattenedTypedVariadic := false
+	typedVariadicArity := len(node.Args) - node.TypedVariadicStart
+	if node.TypedVariadic && node.VariadicExpansion && node.Symbol != nil &&
+		len(node.Args) == node.TypedVariadicStart+1 {
+		if argument, ok := node.Args[node.TypedVariadicStart].(*parser.IdentifierNode); ok {
+			if elements, specialized := g.specializedVariadicElements[argument.Symbol]; specialized &&
+				hasSpecializedArity && len(elements) == specializedArity {
+				typedVariadicWrapper = true
+				flattenedTypedVariadic = true
+				typedVariadicArity = len(elements)
+				for _, arg := range node.Args[:node.TypedVariadicStart] {
+					args = append(args, g.GenerateExpr(arg))
+				}
+				args = append(args, elements...)
+			}
+		}
+	}
+	if typedVariadicWrapper && !flattenedTypedVariadic {
+		for _, arg := range node.Args {
+			args = append(args, g.GenerateExpr(arg))
+		}
+	} else if !typedVariadicWrapper && node.TypedVariadic {
 		for _, arg := range node.Args[:node.TypedVariadicStart] {
 			args = append(args, g.GenerateExpr(arg))
 		}
@@ -2814,6 +2993,20 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 		if !node.Symbol.Signature.TypedVariadic && len(node.Args) < len(node.Symbol.Signature.Parameters) {
 			name = g.defaultWrapperName(name, len(node.Args))
 			callSig.ParamTypes = append([]types.Type(nil), node.Symbol.Signature.Parameters[:len(node.Args)]...)
+			callSig.Variadic = false
+			callSig.Attributes = nil
+			if node.Symbol.DefinitionModule != "" && node.Symbol.DefinitionModule != g.ModuleName ||
+				node.Name != nil && node.Name.Module != "" {
+				hidden := node.Symbol.Attributes.Get(attributes.AttributeTypeExport) == nil
+				g.addExternForCall(name, callSig, "", hidden)
+			}
+		}
+		if typedVariadicWrapper {
+			name = g.typedVariadicWrapperName(name, typedVariadicArity)
+			callSig.ParamTypes = callSig.ParamTypes[:node.TypedVariadicStart]
+			for range typedVariadicArity {
+				callSig.ParamTypes = append(callSig.ParamTypes, node.Symbol.Signature.VariadicElement)
+			}
 			callSig.Variadic = false
 			callSig.Attributes = nil
 			if node.Symbol.DefinitionModule != "" && node.Symbol.DefinitionModule != g.ModuleName ||

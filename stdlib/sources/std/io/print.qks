@@ -182,7 +182,11 @@ pub let wprint(
     if format_index + 2 < @len(format) && format[format_index + 2] == '}' {
       let specifier = format[format_index + 1]
       if specifier == 'g' || specifier == 'c' || specifier == 'x' || specifier == 'X' {
-        format_specified_argument(writer, argument_index, specifier, arguments)
+        if argument_index < @len(arguments) {
+          format_specified_argument(writer, argument_index, specifier, arguments)
+        } else {
+          write_format_error(writer)
+        }
         argument_index += 1
         format_index += 3
         continue
@@ -191,7 +195,11 @@ pub let wprint(
     if format_index + 3 < @len(format) && format[format_index + 1] == ':' && format[format_index + 3] == '}' {
       let specifier = format[format_index + 2]
       if specifier == 'g' || specifier == 'c' || specifier == 'x' || specifier == 'X' {
-        format_specified_argument(writer, argument_index, specifier, arguments)
+        if argument_index < @len(arguments) {
+          format_specified_argument(writer, argument_index, specifier, arguments)
+        } else {
+          write_format_error(writer)
+        }
         argument_index += 1
         format_index += 4
         continue
@@ -216,7 +224,11 @@ pub let wprint(
       if cursor + 2 < @len(format) && format[cursor] == ':' && format[cursor + 2] == '}' {
         let specifier = format[cursor + 1]
         if specifier == 'g' || specifier == 'c' || specifier == 'x' || specifier == 'X' {
-          format_specified_argument(writer, selected, specifier, arguments)
+          if selected < @len(arguments) {
+            format_specified_argument(writer, selected, specifier, arguments)
+          } else {
+            write_format_error(writer)
+          }
           argument_index = selected + 1
           format_index = cursor + 3
           continue

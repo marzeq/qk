@@ -14,11 +14,12 @@ import (
 )
 
 type Validator struct {
-	analyser           *Analyser
-	currentFunction    *symbols.Symbol
-	errors             []error
-	warnings           []error
-	validatingTemplate bool
+	analyser                      *Analyser
+	currentFunction               *symbols.Symbol
+	currentTypedVariadicParameter *symbols.Symbol
+	errors                        []error
+	warnings                      []error
+	validatingTemplate            bool
 }
 
 func (a *Analyser) NewValidator() *Validator {
@@ -114,7 +115,12 @@ func (v *Validator) validateNode(node parser.Node) {
 		}
 
 		prev := v.currentFunction
+		prevTypedVariadicParameter := v.currentTypedVariadicParameter
 		v.currentFunction = n.Symbol
+		v.currentTypedVariadicParameter = nil
+		if n.Symbol.Signature.TypedVariadic {
+			v.currentTypedVariadicParameter = n.Args[len(n.Args)-1].Symbol
+		}
 
 		foreign, isForeign := n.Symbol.Attributes.Get(attributes.AttributeTypeForeign).(attributes.FunctionAttributeForeign)
 		exported, isExported := n.Symbol.Attributes.Get(attributes.AttributeTypeExport).(attributes.FunctionAttributeExport)
@@ -217,6 +223,7 @@ func (v *Validator) validateNode(node parser.Node) {
 		}
 
 		v.currentFunction = prev
+		v.currentTypedVariadicParameter = prevTypedVariadicParameter
 
 	case *parser.BlockNode:
 		for _, stmt := range n.Body {
@@ -1220,6 +1227,21 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			n.TypedVariadic = true
 			n.TypedVariadicStart = len(params) - 1
 			n.TypedVariadicSlice = params[len(params)-1]
+			if n.Symbol != nil && n.Symbol.Attributes.Get(attributes.AttributeTypeForeign) == nil && !n.VariadicExpansion {
+				if n.Symbol.Signature.TypedVariadicArities == nil {
+					n.Symbol.Signature.TypedVariadicArities = make(map[int]bool)
+				}
+				n.Symbol.Signature.TypedVariadicArities[len(n.Args)-n.TypedVariadicStart] = true
+			} else if n.Symbol != nil && n.Symbol.Attributes.Get(attributes.AttributeTypeForeign) == nil &&
+				n.VariadicExpansion && v.currentTypedVariadicParameter != nil {
+				if argument, ok := n.Args[n.TypedVariadicStart].(*parser.IdentifierNode); ok &&
+					argument.Symbol == v.currentTypedVariadicParameter {
+					v.currentFunction.Signature.TypedVariadicForwards = append(
+						v.currentFunction.Signature.TypedVariadicForwards,
+						n.Symbol.Signature,
+					)
+				}
+			}
 		} else if n.VariadicExpansion {
 			v.errorf(n, "slice expansion requires a typed variadic function")
 		}
