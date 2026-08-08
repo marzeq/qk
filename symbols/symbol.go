@@ -67,6 +67,27 @@ type FunctionSignature struct {
 	// connects functions that pass their complete variadic slice onward.
 	TypedVariadicArities  map[int]bool
 	TypedVariadicForwards []*FunctionSignature
+	// ConstantArguments records literal values observed at direct calls. ConstantForwards
+	// connects fixed parameters passed unchanged between direct calls so the bounded
+	// whole-program specialization decision can cross module boundaries.
+	ConstantArguments map[int]map[string]SpecializationConstant
+	ConstantForwards  []ConstantForward
+}
+
+type SpecializationConstant struct {
+	Kind  string
+	Value string
+	Type  types.Type
+}
+
+func (c SpecializationConstant) Key() string {
+	return c.Kind + ":" + c.Value + ":" + c.Type.String()
+}
+
+type ConstantForward struct {
+	CallerParameter int
+	Callee          *FunctionSignature
+	CalleeParameter int
 }
 
 func NewVariable(name string, typ types.Type) *Symbol {

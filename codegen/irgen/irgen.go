@@ -54,6 +54,7 @@ type Generator struct {
 	dynamicGlobals              []dynamicGlobalInitializer
 	initializingGlobal          bool
 	specializedVariadicElements map[*symbols.Symbol][]ir.Operand
+	specializedConstants        map[*symbols.Symbol]symbols.SpecializationConstant
 }
 
 type dynamicGlobalInitializer struct {
@@ -422,6 +423,9 @@ func (g *Generator) GenerateFunction(fn *parser.FunctionDefNode) {
 
 	g.generateDefaultWrappers(fn, name)
 	g.generateTypedVariadicWrappers(fn, name)
+	if !fn.Symbol.Signature.TypedVariadic {
+		g.generateConstantWrapper(fn, name)
+	}
 }
 
 func (g *Generator) generateFunctionBody(fn *parser.FunctionDefNode) {
@@ -531,22 +535,26 @@ func (g *Generator) generateTypedVariadicWrappers(fn *parser.FunctionDefNode, ta
 	slices.Sort(arities)
 
 	fixedCount := len(fn.Symbol.Signature.Parameters) - 1
+	constants := selectedSpecializationConstants(fn.Symbol.Signature)
 	sliceType := fn.Symbol.Signature.Parameters[fixedCount]
 	for _, arity := range arities {
 		linkage := ir.LinkageInternal
 		visibility := ir.VisibilityDefault
-		if fn.Attributes.Get(attributes.AttributeTypeExport) != nil {
-			linkage = ir.LinkageExternal
-		} else if fn.Symbol.Public || fn.Symbol.Method {
+		if fn.Attributes.Get(attributes.AttributeTypeExport) != nil || fn.Symbol.Public || fn.Symbol.Method {
 			linkage = ir.LinkageExternal
 			visibility = ir.VisibilityHidden
 		}
 
-		paramTypes := append([]types.Type(nil), fn.Symbol.Signature.Parameters[:fixedCount]...)
+		paramTypes := make([]types.Type, 0, fixedCount+arity)
+		for i, parameter := range fn.Symbol.Signature.Parameters[:fixedCount] {
+			if _, specialized := constants[i]; !specialized {
+				paramTypes = append(paramTypes, parameter)
+			}
+		}
 		for range arity {
 			paramTypes = append(paramTypes, fn.Symbol.Signature.VariadicElement)
 		}
-		wrapper := ir.NewFunction(g.typedVariadicWrapperName(targetName, arity), linkage, nil)
+		wrapper := ir.NewFunction(g.specializedFunctionName(g.typedVariadicWrapperName(targetName, arity), constants), linkage, nil)
 		wrapper.Visibility = visibility
 		wrapper.Signature = ir.FunctionSignature{
 			ParamTypes: paramTypes,
@@ -562,20 +570,26 @@ func (g *Generator) generateTypedVariadicWrappers(fn *parser.FunctionDefNode, ta
 
 		variadicElements := make([]ir.Operand, 0, arity)
 		variadicSlots := make([]ir.SlotID, 0, arity)
-		for i, paramType := range paramTypes {
-			slot := wrapper.NewSlot(paramType, fmt.Sprintf("arg%d", i))
-			name := fmt.Sprintf("arg%d", i)
-			if i < fixedCount {
-				name = fn.Args[i].Name
-				g.currentEnv.Variables[fn.Args[i].Symbol] = slot
+		for i := 0; i < fixedCount; i++ {
+			if _, specialized := constants[i]; specialized {
+				continue
 			}
-			wrapper.AddParameter(name, paramType, slot)
+			paramType := fn.Symbol.Signature.Parameters[i]
+			slot := wrapper.NewSlot(paramType, fmt.Sprintf("arg%d", i))
+			g.currentEnv.Variables[fn.Args[i].Symbol] = slot
+			wrapper.AddParameter(fn.Args[i].Name, paramType, slot)
 			g.Emit(ir.Alloca{Slot: slot})
 			value := wrapper.NewValueOfType(paramType)
 			g.Emit(ir.Store{Slot: slot, Value: ir.ValueOperand(value, paramType)})
-			if i >= fixedCount {
-				variadicSlots = append(variadicSlots, slot)
-			}
+		}
+		for i := 0; i < arity; i++ {
+			paramType := fn.Symbol.Signature.VariadicElement
+			slot := wrapper.NewSlot(paramType, fmt.Sprintf("variadic%d", i))
+			wrapper.AddParameter(fmt.Sprintf("variadic%d", i), paramType, slot)
+			g.Emit(ir.Alloca{Slot: slot})
+			value := wrapper.NewValueOfType(paramType)
+			g.Emit(ir.Store{Slot: slot, Value: ir.ValueOperand(value, paramType)})
+			variadicSlots = append(variadicSlots, slot)
 		}
 		for _, slot := range variadicSlots {
 			loaded := wrapper.NewValueOfType(fn.Symbol.Signature.VariadicElement)
@@ -589,17 +603,142 @@ func (g *Generator) generateTypedVariadicWrappers(fn *parser.FunctionDefNode, ta
 		g.Emit(ir.Alloca{Slot: variadicSlot})
 		g.Emit(ir.Store{Slot: variadicSlot, Value: packed})
 		previousSpecialized := g.specializedVariadicElements
+		previousConstants := g.specializedConstants
 		g.specializedVariadicElements = map[*symbols.Symbol][]ir.Operand{
 			fn.Args[fixedCount].Symbol: variadicElements,
 		}
+		g.specializedConstants = make(map[*symbols.Symbol]symbols.SpecializationConstant, len(constants))
+		for index, constant := range constants {
+			symbol := fn.Args[index].Symbol
+			g.specializedConstants[symbol] = constant
+			slot := wrapper.NewSlot(symbol.Type, fmt.Sprintf("constant%d", index))
+			g.currentEnv.Variables[symbol] = slot
+			g.Emit(ir.Alloca{Slot: slot})
+			g.Emit(ir.Store{Slot: slot, Value: g.generateSpecializationConstant(constant)})
+		}
 		g.generateFunctionBody(fn)
 		g.specializedVariadicElements = previousSpecialized
+		g.specializedConstants = previousConstants
 
 		g.currentEnv = nil
 		g.currentBlock = nil
 		g.currentFunction = nil
 		g.deferScopes = nil
 	}
+}
+
+func (g *Generator) generateConstantWrapper(fn *parser.FunctionDefNode, targetName string) {
+	constants := selectedSpecializationConstants(fn.Symbol.Signature)
+	if len(constants) == 0 {
+		return
+	}
+	linkage := ir.LinkageInternal
+	visibility := ir.VisibilityDefault
+	if fn.Attributes.Get(attributes.AttributeTypeExport) != nil || fn.Symbol.Public || fn.Symbol.Method {
+		linkage = ir.LinkageExternal
+		visibility = ir.VisibilityHidden
+	}
+	paramTypes := make([]types.Type, 0, len(fn.Symbol.Signature.Parameters)-len(constants))
+	for i, parameter := range fn.Symbol.Signature.Parameters {
+		if _, specialized := constants[i]; !specialized {
+			paramTypes = append(paramTypes, parameter)
+		}
+	}
+	wrapper := ir.NewFunction(g.specializedFunctionName(targetName, constants), linkage, nil)
+	wrapper.Visibility = visibility
+	wrapper.Signature = ir.FunctionSignature{ParamTypes: paramTypes, ReturnType: fn.Symbol.Signature.ReturnType}
+	g.Module.AddFunction(wrapper)
+
+	g.currentFunction = wrapper
+	g.currentBlock = wrapper.NewBlock("entry")
+	wrapper.Entry = g.currentBlock.ID
+	g.currentEnv = NewEnv(nil)
+	g.deferScopes = nil
+	for i, argument := range fn.Args {
+		if _, specialized := constants[i]; specialized {
+			continue
+		}
+		slot := wrapper.NewSlot(argument.Symbol.Type, fmt.Sprintf("arg%d", i))
+		wrapper.AddParameter(argument.Name, argument.Symbol.Type, slot)
+		g.currentEnv.Variables[argument.Symbol] = slot
+		g.Emit(ir.Alloca{Slot: slot})
+		incoming := wrapper.NewValueOfType(argument.Symbol.Type)
+		g.Emit(ir.Store{Slot: slot, Value: ir.ValueOperand(incoming, argument.Symbol.Type)})
+	}
+	previousConstants := g.specializedConstants
+	g.specializedConstants = make(map[*symbols.Symbol]symbols.SpecializationConstant, len(constants))
+	for index, constant := range constants {
+		symbol := fn.Args[index].Symbol
+		g.specializedConstants[symbol] = constant
+		slot := wrapper.NewSlot(symbol.Type, fmt.Sprintf("constant%d", index))
+		g.currentEnv.Variables[symbol] = slot
+		g.Emit(ir.Alloca{Slot: slot})
+		g.Emit(ir.Store{Slot: slot, Value: g.generateSpecializationConstant(constant)})
+	}
+	g.generateFunctionBody(fn)
+	g.specializedConstants = previousConstants
+
+	g.currentEnv = nil
+	g.currentBlock = nil
+	g.currentFunction = nil
+	g.deferScopes = nil
+}
+
+func selectedSpecializationConstants(signature *symbols.FunctionSignature) map[int]symbols.SpecializationConstant {
+	selected := make(map[int]symbols.SpecializationConstant)
+	if signature == nil {
+		return selected
+	}
+	type candidate struct {
+		index    int
+		priority int
+		constant symbols.SpecializationConstant
+	}
+	var candidates []candidate
+	for i := 0; i < len(signature.Parameters); i++ {
+		values := signature.ConstantArguments[i]
+		if len(values) != 1 {
+			continue
+		}
+		for _, constant := range values {
+			priority := 2
+			switch constant.Kind {
+			case "str", "cstr":
+				priority = 0
+			case "bool":
+				priority = 1
+			case "float":
+				priority = 3
+			}
+			candidates = append(candidates, candidate{index: i, priority: priority, constant: constant})
+		}
+	}
+	slices.SortFunc(candidates, func(left, right candidate) int {
+		if left.priority != right.priority {
+			return left.priority - right.priority
+		}
+		return left.index - right.index
+	})
+	for _, candidate := range candidates[:min(2, len(candidates))] {
+		selected[candidate.index] = candidate.constant
+	}
+	return selected
+}
+
+func (g *Generator) specializedFunctionName(targetName string, constants map[int]symbols.SpecializationConstant) string {
+	if len(constants) == 0 {
+		return targetName
+	}
+	hash := fnv.New64a()
+	indices := make([]int, 0, len(constants))
+	for index := range constants {
+		indices = append(indices, index)
+	}
+	slices.Sort(indices)
+	for _, index := range indices {
+		fmt.Fprintf(hash, "%d:%s;", index, constants[index].Key())
+	}
+	return fmt.Sprintf("%s__const_%016x", targetName, hash.Sum64())
 }
 
 func (g *Generator) generatePackedVariadicSlice(elements []ir.Operand, targetType types.Type) ir.Operand {
@@ -2914,25 +3053,43 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 	}
 	typedVariadicWrapper := node.TypedVariadic && !node.VariadicExpansion && node.Symbol != nil &&
 		hasSpecializedArity && len(node.Args)-node.TypedVariadicStart == specializedArity
+	constants := map[int]symbols.SpecializationConstant(nil)
+	constantWrapper := false
+	if node.Symbol != nil {
+		constants = selectedSpecializationConstants(node.Symbol.Signature)
+		constantWrapper = len(constants) != 0 && g.callMatchesSpecialization(node, constants)
+		if !node.Symbol.Signature.TypedVariadic && len(node.Args) != len(node.Symbol.Signature.Parameters) {
+			constantWrapper = false
+		}
+	}
+	typedVariadicWrapper = typedVariadicWrapper && (len(constants) == 0 || constantWrapper)
 	flattenedTypedVariadic := false
 	typedVariadicArity := len(node.Args) - node.TypedVariadicStart
 	if node.TypedVariadic && node.VariadicExpansion && node.Symbol != nil &&
 		len(node.Args) == node.TypedVariadicStart+1 {
 		if argument, ok := node.Args[node.TypedVariadicStart].(*parser.IdentifierNode); ok {
 			if elements, specialized := g.specializedVariadicElements[argument.Symbol]; specialized &&
-				hasSpecializedArity && len(elements) == specializedArity {
+				hasSpecializedArity && len(elements) == specializedArity &&
+				(len(constants) == 0 || constantWrapper) {
 				typedVariadicWrapper = true
 				flattenedTypedVariadic = true
 				typedVariadicArity = len(elements)
-				for _, arg := range node.Args[:node.TypedVariadicStart] {
-					args = append(args, g.GenerateExpr(arg))
+				for i, arg := range node.Args[:node.TypedVariadicStart] {
+					if _, specialized := constants[i]; !specialized {
+						args = append(args, g.GenerateExpr(arg))
+					}
 				}
 				args = append(args, elements...)
 			}
 		}
 	}
 	if typedVariadicWrapper && !flattenedTypedVariadic {
-		for _, arg := range node.Args {
+		for i, arg := range node.Args {
+			if i < node.TypedVariadicStart {
+				if _, specialized := constants[i]; specialized {
+					continue
+				}
+			}
 			args = append(args, g.GenerateExpr(arg))
 		}
 	} else if !typedVariadicWrapper && node.TypedVariadic {
@@ -2947,7 +3104,12 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 			args = append(args, g.generateSliceLiteralExpr(packed))
 		}
 	} else {
-		for _, arg := range node.Args {
+		for i, arg := range node.Args {
+			if constantWrapper {
+				if _, specialized := constants[i]; specialized {
+					continue
+				}
+			}
 			args = append(args, g.GenerateExpr(arg))
 		}
 	}
@@ -3003,10 +3165,33 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 		}
 		if typedVariadicWrapper {
 			name = g.typedVariadicWrapperName(name, typedVariadicArity)
-			callSig.ParamTypes = callSig.ParamTypes[:node.TypedVariadicStart]
+			fixedTypes := make([]types.Type, 0, node.TypedVariadicStart)
+			for i, parameter := range callSig.ParamTypes[:node.TypedVariadicStart] {
+				if _, specialized := constants[i]; !specialized {
+					fixedTypes = append(fixedTypes, parameter)
+				}
+			}
+			callSig.ParamTypes = fixedTypes
 			for range typedVariadicArity {
 				callSig.ParamTypes = append(callSig.ParamTypes, node.Symbol.Signature.VariadicElement)
 			}
+			name = g.specializedFunctionName(name, constants)
+			callSig.Variadic = false
+			callSig.Attributes = nil
+			if node.Symbol.DefinitionModule != "" && node.Symbol.DefinitionModule != g.ModuleName ||
+				node.Name != nil && node.Name.Module != "" {
+				hidden := node.Symbol.Attributes.Get(attributes.AttributeTypeExport) == nil
+				g.addExternForCall(name, callSig, "", hidden)
+			}
+		} else if constantWrapper {
+			name = g.specializedFunctionName(name, constants)
+			paramTypes := make([]types.Type, 0, len(callSig.ParamTypes)-len(constants))
+			for i, parameter := range callSig.ParamTypes {
+				if _, specialized := constants[i]; !specialized {
+					paramTypes = append(paramTypes, parameter)
+				}
+			}
+			callSig.ParamTypes = paramTypes
 			callSig.Variadic = false
 			callSig.Attributes = nil
 			if node.Symbol.DefinitionModule != "" && node.Symbol.DefinitionModule != g.ModuleName ||
@@ -3036,6 +3221,45 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 	dst := g.currentFunction.NewValueOfType(node.GetType())
 	g.Emit(ir.Call{Dest: dst, Name: name, Callee: callee, Args: args, Signature: callSig})
 	return ir.ValueOperand(dst, node.GetType())
+}
+
+func (g *Generator) callMatchesSpecialization(node *parser.FunctionCallNode, constants map[int]symbols.SpecializationConstant) bool {
+	for index, expected := range constants {
+		if index >= len(node.Args) {
+			return false
+		}
+		actual, ok := specializationConstantExpr(node.Args[index])
+		if !ok {
+			identifier, identifierOK := node.Args[index].(*parser.IdentifierNode)
+			if !identifierOK || identifier.Symbol == nil {
+				return false
+			}
+			actual, ok = g.specializedConstants[identifier.Symbol]
+		}
+		if !ok || actual.Key() != expected.Key() {
+			return false
+		}
+	}
+	return true
+}
+
+func specializationConstantExpr(expr parser.ExpressionNode) (symbols.SpecializationConstant, bool) {
+	switch node := expr.(type) {
+	case *parser.StringLiteralNode:
+		return symbols.SpecializationConstant{Kind: "str", Value: node.Value, Type: node.GetType()}, true
+	case *parser.CStringLiteralNode:
+		return symbols.SpecializationConstant{Kind: "cstr", Value: node.Value, Type: node.GetType()}, true
+	case *parser.BoolLiteralNode:
+		return symbols.SpecializationConstant{Kind: "bool", Value: node.Value, Type: node.GetType()}, true
+	case *parser.IntegerLiteralNode:
+		return symbols.SpecializationConstant{Kind: "int", Value: node.Value, Type: node.GetType()}, true
+	case *parser.FloatLiteralNode:
+		return symbols.SpecializationConstant{Kind: "float", Value: node.Value, Type: node.GetType()}, true
+	case *parser.CharLiteralNode:
+		return symbols.SpecializationConstant{Kind: "char", Value: strconv.Itoa(int(node.Value)), Type: node.GetType()}, true
+	default:
+		return symbols.SpecializationConstant{}, false
+	}
 }
 
 func (g *Generator) generateTraitCall(node *parser.FunctionCallNode) ir.Operand {
@@ -3226,6 +3450,26 @@ func (g *Generator) generateIdentifierExpr(node *parser.IdentifierNode) ir.Opera
 	g.Emit(ir.Load{Dest: dst, Slot: slot})
 
 	return ir.ValueOperand(dst, node.GetType())
+}
+
+func (g *Generator) generateSpecializationConstant(constant symbols.SpecializationConstant) ir.Operand {
+	switch constant.Kind {
+	case "str":
+		return g.generateStringLiteralExpr(&parser.StringLiteralNode{Value: constant.Value, Type: constant.Type})
+	case "cstr":
+		return g.generateCStringLiteralExpr(&parser.CStringLiteralNode{Value: constant.Value, Type: constant.Type})
+	case "bool":
+		return ir.BoolConstOperand(constant.Value == string(tokeniser.KeywordTrue))
+	case "float":
+		return ir.FloatConstOperand(constant.Value, constant.Type)
+	case "int", "char":
+		if types.IsFloat(constant.Type) {
+			return ir.FloatConstOperand(constant.Value, constant.Type)
+		}
+		return ir.IntConstOperand(constant.Value, constant.Type)
+	default:
+		panic("unsupported specialization constant")
+	}
 }
 
 func (g *Generator) functionValueName(node *parser.IdentifierNode) (string, ir.FunctionSignature) {

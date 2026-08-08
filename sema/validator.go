@@ -16,6 +16,7 @@ import (
 type Validator struct {
 	analyser                      *Analyser
 	currentFunction               *symbols.Symbol
+	currentFunctionParameters     map[*symbols.Symbol]int
 	currentTypedVariadicParameter *symbols.Symbol
 	errors                        []error
 	warnings                      []error
@@ -115,8 +116,13 @@ func (v *Validator) validateNode(node parser.Node) {
 		}
 
 		prev := v.currentFunction
+		prevFunctionParameters := v.currentFunctionParameters
 		prevTypedVariadicParameter := v.currentTypedVariadicParameter
 		v.currentFunction = n.Symbol
+		v.currentFunctionParameters = make(map[*symbols.Symbol]int, len(n.Args))
+		for i, argument := range n.Args {
+			v.currentFunctionParameters[argument.Symbol] = i
+		}
 		v.currentTypedVariadicParameter = nil
 		if n.Symbol.Signature.TypedVariadic {
 			v.currentTypedVariadicParameter = n.Args[len(n.Args)-1].Symbol
@@ -223,6 +229,7 @@ func (v *Validator) validateNode(node parser.Node) {
 		}
 
 		v.currentFunction = prev
+		v.currentFunctionParameters = prevFunctionParameters
 		v.currentTypedVariadicParameter = prevTypedVariadicParameter
 
 	case *parser.BlockNode:
@@ -1223,6 +1230,43 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			paramType := params[i]
 			n.Args[i] = v.validateExprWithExpected(arg, paramType)
 		}
+		if n.Symbol != nil && n.Symbol.Signature != nil &&
+			n.Symbol.Attributes.Get(attributes.AttributeTypeForeign) == nil {
+			fixedCount := len(n.Symbol.Signature.Parameters)
+			if n.Symbol.Signature.TypedVariadic {
+				fixedCount--
+			}
+			crossModule := v.currentFunction != nil &&
+				v.currentFunction.DefinitionModule != n.Symbol.DefinitionModule
+			for i := 0; i < len(n.Args) && i < fixedCount; i++ {
+				if constant, ok := specializationConstant(n.Args[i]); crossModule && ok {
+					if n.Symbol.Signature.ConstantArguments == nil {
+						n.Symbol.Signature.ConstantArguments = make(map[int]map[string]symbols.SpecializationConstant)
+					}
+					if n.Symbol.Signature.ConstantArguments[i] == nil {
+						n.Symbol.Signature.ConstantArguments[i] = make(map[string]symbols.SpecializationConstant)
+					}
+					n.Symbol.Signature.ConstantArguments[i][constant.Key()] = constant
+					continue
+				}
+				identifier, ok := n.Args[i].(*parser.IdentifierNode)
+				if !ok || identifier.Symbol == nil || identifier.Symbol.Mutable || v.currentFunction == nil {
+					continue
+				}
+				callerParameter, forwarded := v.currentFunctionParameters[identifier.Symbol]
+				if !forwarded {
+					continue
+				}
+				v.currentFunction.Signature.ConstantForwards = append(
+					v.currentFunction.Signature.ConstantForwards,
+					symbols.ConstantForward{
+						CallerParameter: callerParameter,
+						Callee:          n.Symbol.Signature,
+						CalleeParameter: i,
+					},
+				)
+			}
+		}
 		if typedVariadic {
 			n.TypedVariadic = true
 			n.TypedVariadicStart = len(params) - 1
@@ -1864,6 +1908,31 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		panic(fmt.Sprintf("unhandled expression type %T", n))
 	}
 
+}
+
+func specializationConstant(expr parser.ExpressionNode) (symbols.SpecializationConstant, bool) {
+	switch node := expr.(type) {
+	case *parser.StringLiteralNode:
+		if len(node.Value) > 256 {
+			return symbols.SpecializationConstant{}, false
+		}
+		return symbols.SpecializationConstant{Kind: "str", Value: node.Value, Type: node.GetType()}, true
+	case *parser.CStringLiteralNode:
+		if len(node.Value) > 256 {
+			return symbols.SpecializationConstant{}, false
+		}
+		return symbols.SpecializationConstant{Kind: "cstr", Value: node.Value, Type: node.GetType()}, true
+	case *parser.BoolLiteralNode:
+		return symbols.SpecializationConstant{Kind: "bool", Value: node.Value, Type: node.GetType()}, true
+	case *parser.IntegerLiteralNode:
+		return symbols.SpecializationConstant{Kind: "int", Value: node.Value, Type: node.GetType()}, true
+	case *parser.FloatLiteralNode:
+		return symbols.SpecializationConstant{Kind: "float", Value: node.Value, Type: node.GetType()}, true
+	case *parser.CharLiteralNode:
+		return symbols.SpecializationConstant{Kind: "char", Value: strconv.Itoa(int(node.Value)), Type: node.GetType()}, true
+	default:
+		return symbols.SpecializationConstant{}, false
+	}
 }
 
 func (v *Validator) validateInlineAsm(n *parser.InlineAsmNode) {

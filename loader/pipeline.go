@@ -105,6 +105,7 @@ func GenerateIRModules(mods map[string]*ModuleInfo, mainModule string, order []s
 	out := make(map[string]*ir.Module, len(order))
 	narrowRuntimeTraitCastCandidates(mods, order)
 	propagateTypedVariadicArities(mods, order)
+	propagateSpecializationConstants(mods, order)
 
 	for _, name := range order {
 		info := mods[name]
@@ -128,6 +129,38 @@ func GenerateIRModules(mods map[string]*ModuleInfo, mainModule string, order []s
 	}
 
 	return out, nil
+}
+
+func propagateSpecializationConstants(mods map[string]*ModuleInfo, order []string) {
+	var signatures []*symbols.FunctionSignature
+	for _, name := range order {
+		for _, node := range mods[name].Root.Body {
+			if function, ok := node.(*parser.FunctionDefNode); ok && function.Symbol != nil &&
+				function.Symbol.Signature != nil {
+				signatures = append(signatures, function.Symbol.Signature)
+			}
+		}
+	}
+	changed := true
+	for changed {
+		changed = false
+		for _, signature := range signatures {
+			for _, forward := range signature.ConstantForwards {
+				for key, constant := range signature.ConstantArguments[forward.CallerParameter] {
+					if forward.Callee.ConstantArguments == nil {
+						forward.Callee.ConstantArguments = make(map[int]map[string]symbols.SpecializationConstant)
+					}
+					if forward.Callee.ConstantArguments[forward.CalleeParameter] == nil {
+						forward.Callee.ConstantArguments[forward.CalleeParameter] = make(map[string]symbols.SpecializationConstant)
+					}
+					if _, exists := forward.Callee.ConstantArguments[forward.CalleeParameter][key]; !exists {
+						forward.Callee.ConstantArguments[forward.CalleeParameter][key] = constant
+						changed = true
+					}
+				}
+			}
+		}
+	}
 }
 
 func propagateTypedVariadicArities(mods map[string]*ModuleInfo, order []string) {
