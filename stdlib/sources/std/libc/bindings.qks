@@ -3,6 +3,8 @@ module std.libc
 when TargetHasLibc {
   @link(system "c")
 
+import std.ctypes
+
 pub let FILE = type opaque
 pub let DIR = type opaque
 
@@ -10,21 +12,8 @@ pub let DIR = type opaque
 // C ABI types
 // -----------------------------------------------------------------------------
 
-pub let long = type
-  when OS == .Windows { i32 }
-  else when PointerBits == 32 { i32 }
-  else when PointerBits == 64 { i64 }
-  else {
-    @compiler_error("Unsupported pointer width")
-  }
-
-pub let ulong = type
-  when OS == .Windows { u32 }
-  else when PointerBits == 32 { u32 }
-  else when PointerBits == 64 { u64 }
-  else {
-    @compiler_error("Unsupported pointer width")
-  }
+pub let long = type std.ctypes.long
+pub let ulong = type std.ctypes.unsigned_long
 
 pub let time_t = type
   when OS == .Windows
@@ -33,9 +22,8 @@ pub let time_t = type
     || OS == .OpenBSD
     || OS == .NetBSD
     || OS == .DragonFly
-    || OS == .WASI { i64 }
-    else when OS == .Linux && PointerBits == 64 { i64 }
-    else when OS == .Linux && PointerBits == 32 { i32 }
+    || OS == .WASI { std.ctypes.long_long }
+    else when OS == .Linux { std.ctypes.long }
     else {
     @compiler_error("Unsupported time_t ABI")
   }
@@ -45,8 +33,8 @@ pub let clock_t = type
     || OS == .FreeBSD
     || OS == .OpenBSD
     || OS == .NetBSD
-    || OS == .DragonFly { i32 }
-    else { long }
+    || OS == .DragonFly { std.ctypes.int }
+    else { std.ctypes.long }
 
 // -----------------------------------------------------------------------------
 // stdio
@@ -330,12 +318,12 @@ when OS == .Linux
   || OS == .DragonFly {
 
   // On the supported Unix ABIs, pid_t is a signed 32-bit integer.
-  pub let pid_t = type i32
+  pub let pid_t = type std.ctypes.int
 
   // POSIX uses int for file descriptors, signals and wait status values.
-  pub let fd_t = type i32
-  pub let signal_t = type i32
-  pub let wait_status_t = type i32
+  pub let fd_t = type std.ctypes.int
+  pub let signal_t = type std.ctypes.int
+  pub let wait_status_t = type std.ctypes.int
 
   // Environment inherited by exec-family calls.
   pub let environ: *mut *mut u8 @foreign
