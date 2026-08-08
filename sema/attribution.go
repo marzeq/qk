@@ -2,6 +2,8 @@ package sema
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 
 	"github.com/marzeq/qk/attributes"
@@ -329,6 +331,20 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 
 	case *parser.StringLiteralNode:
 		n.SetType(a.analyser.universe.Symbols["str"].TypeInfo)
+
+	case *parser.EmbedNode:
+		n.SetType(types.SliceType{Base: types.PrimitiveU8})
+		if filepath.IsAbs(n.Path) {
+			a.errorf(n, "@embed path must be relative to the source file")
+			break
+		}
+		path := filepath.Join(filepath.Dir(n.Loc.FilePath), filepath.FromSlash(n.Path))
+		contents, err := os.ReadFile(path)
+		if err != nil {
+			a.errorf(n, "cannot embed %q: %v", n.Path, err)
+			break
+		}
+		n.Contents = string(contents)
 
 	case *parser.CStringLiteralNode:
 		n.SetType(a.analyser.universe.Symbols["cstr"].TypeInfo)

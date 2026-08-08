@@ -737,6 +737,9 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 	if p.MatchBuiltin("offsetof") {
 		return p.ParseOffsetOfExpression()
 	}
+	if p.MatchBuiltin("embed") {
+		return p.ParseEmbedExpression()
+	}
 	if p.MatchBuiltin("asm") {
 		return p.ParseInlineAsmExpression()
 	}
@@ -892,6 +895,28 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 	}
 
 	return nil, shared.NewError(p.CurrLoc(), "unexpected token %s", p.Peek())
+}
+
+func (p *Parser) ParseEmbedExpression() (*EmbedNode, error) {
+	begin := p.CurrLoc()
+	p.ConsumeBuiltin("embed")
+	if !p.Expect(tokeniser.TokenOpenParen) {
+		return nil, shared.NewError(p.PrevLoc(), "expected '(' after '@embed'")
+	}
+	for p.Match(tokeniser.TokenNewline) {
+		p.Inc()
+	}
+	if !p.Match(tokeniser.TokenString) {
+		return nil, shared.NewError(p.CurrLoc(), "expected file path string in '@embed'")
+	}
+	path := p.Consume().Value
+	for p.Match(tokeniser.TokenNewline) {
+		p.Inc()
+	}
+	if !p.Expect(tokeniser.TokenCloseParen) {
+		return nil, shared.NewError(p.PrevLoc(), "expected ')' after '@embed' path")
+	}
+	return &EmbedNode{Path: path, Loc: p.SpanFrom(begin)}, nil
 }
 
 // ParseInlineAsmExpression parses:

@@ -146,6 +146,7 @@ func (w *debugWalker) walkExpr(expr parser.ExpressionNode) {
 		*parser.FloatLiteralNode,
 		*parser.BoolLiteralNode,
 		*parser.StringLiteralNode,
+		*parser.EmbedNode,
 		*parser.CStringLiteralNode,
 		*parser.CharLiteralNode,
 		*parser.NilLiteralNode,

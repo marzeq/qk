@@ -299,6 +299,17 @@ func (n StringLiteralNode) GetLoc() shared.Location { return n.Loc }
 func (n *StringLiteralNode) SetType(t types.Type)   { n.Type = t }
 func (n *StringLiteralNode) GetType() types.Type    { return n.Type }
 
+type EmbedNode struct {
+	Path     string
+	Contents string
+	Loc      shared.Location
+	Type     types.Type
+}
+
+func (n EmbedNode) GetLoc() shared.Location { return n.Loc }
+func (n *EmbedNode) SetType(t types.Type)   { n.Type = t }
+func (n *EmbedNode) GetType() types.Type    { return n.Type }
+
 type CStringLiteralNode struct {
 	Value string
 	Loc   shared.Location

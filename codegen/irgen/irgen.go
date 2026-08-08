@@ -1683,6 +1683,8 @@ func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
 		return g.generateOffsetOfExpr(n)
 	case *parser.StringLiteralNode:
 		return g.generateStringLiteralExpr(n)
+	case *parser.EmbedNode:
+		return g.generateStringLiteralExpr(&parser.StringLiteralNode{Value: n.Contents, Type: n.GetType()})
 	case *parser.CStringLiteralNode:
 		return g.generateCStringLiteralExpr(n)
 	case *parser.CharLiteralNode:

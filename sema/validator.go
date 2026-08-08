@@ -1874,6 +1874,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		*parser.FloatLiteralNode,
 		*parser.BoolLiteralNode,
 		*parser.StringLiteralNode,
+		*parser.EmbedNode,
 		*parser.CStringLiteralNode,
 		*parser.CharLiteralNode,
 		*parser.NilLiteralNode:
