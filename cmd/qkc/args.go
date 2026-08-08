@@ -304,14 +304,6 @@ func (p *argumentParser) parseCurrent() error {
 		p.args.static = true
 		p.index++
 
-	// case tok == "-nolibc":
-	// 	p.args.noLibc = true
-	// 	p.index++
-	//
-	// case tok == "-nostdlib":
-	// 	p.args.noStdlib = true
-	// 	p.index++
-
 	case tok == "-release":
 		p.args.release = true
 		p.index++
@@ -517,9 +509,6 @@ func finaliseArgs(args *Args) error {
 		}
 		args.sysroot = abs
 	}
-	// if args.noStdlib && args.stdlibPath != "" {
-	// 	return fmt.Errorf("-nostdlib and -stdlib cannot be used together")
-	// }
 	if args.stdlibPath != "" {
 		info, err := os.Stat(args.stdlibPath)
 		if err != nil || !info.IsDir() {

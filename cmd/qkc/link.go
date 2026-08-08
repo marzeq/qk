@@ -271,10 +271,6 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots []str
 	linksLibc := moduleLinksContainLibc(moduleLinks)
 	if config.outputType == OutputObject || config.outputType == OutputWebAssembly {
 		args = append(args, defaultLibrarySuppressionArgs(config.target, config.outputType)...)
-		// } else if config.noLibc {
-		// 	if config.outputType == OutputExecutable {
-		// 		args = append(args, "-nostdlib", "-Wl,-e,_start")
-		// 	}
 	} else if !linksLibc {
 		args = append(args, defaultLibrarySuppressionArgs(config.target, config.outputType)...)
 		if config.outputType == OutputExecutable && targetIsLinuxX8664(config.target) {
@@ -332,8 +328,8 @@ func defaultLibrarySuppressionArgs(target string, outputType OutputType) []strin
 	}
 	// Darwin's loader requires every executable to load libSystem, even when
 	// the program uses only direct syscalls. Clang adds that load command by
-	// default; -nolibc is unsupported and -nodefaultlibs produces an image that
-	// dyld refuses to launch.
+	// default; suppressing its default libraries produces an image that dyld
+	// refuses to launch.
 	if targetIsApple(target) {
 		return nil
 	}
