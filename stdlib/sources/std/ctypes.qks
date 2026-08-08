@@ -3,39 +3,38 @@ module std.ctypes
 // C scalar types. These aliases describe the target C ABI rather than QK's
 // preferred types for arithmetic or storage.
 
-pub let char = type i8
-pub let signed_char = type i8
-pub let unsigned_char = type u8
+pub let char = type alias u8
+pub let signed_char = type alias i8
+pub let unsigned_char = type alias u8
 
-pub let short = type i16
-pub let signed_short = type i16
-pub let unsigned_short = type u16
+pub let short = type alias i16
+pub let signed_short = type alias i16
+pub let unsigned_short = type alias u16
 
-pub let int = type i32
-pub let signed_int = type i32
-pub let unsigned_int = type u32
+pub let int = type alias i32
+pub let signed_int = type alias i32
+pub let unsigned_int = type alias u32
 
-pub let long = type
-  when OS == .Windows { i32 }
-  else when PointerBits == 32 { i32 }
-  else when PointerBits == 64 { i64 }
-  else {
-    @compiler_error("Unsupported C long width")
-  }
+when OS == .Windows || PointerBits == 32 {
+  pub let long = type alias i32
+  pub let unsigned_long = type alias u32
+} else when PointerBits == 64 {
+  pub let long = type alias i64
+  pub let unsigned_long = type alias u64
+} else {
+  @compiler_error("Unsupported C long width")
+}
 
-pub let unsigned_long = type
-  when OS == .Windows { u32 }
-  else when PointerBits == 32 { u32 }
-  else when PointerBits == 64 { u64 }
-  else {
-    @compiler_error("Unsupported C unsigned long width")
-  }
+pub let signed_long = type alias long
 
-pub let signed_long = type long
+pub let long_long = type alias i64
+pub let signed_long_long = type alias i64
+pub let unsigned_long_long = type alias u64
 
-pub let long_long = type i64
-pub let signed_long_long = type i64
-pub let unsigned_long_long = type u64
+pub let float = type alias f32
+pub let double = type alias f64
 
-pub let float = type f32
-pub let double = type f64
+// Common C and POSIX scalar typedefs used by foreign declarations.
+pub let size_t = type alias usz
+pub let ptrdiff_t = type alias isz
+pub let ssize_t = type alias isz

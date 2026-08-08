@@ -12,9 +12,6 @@ pub let DIR = type opaque
 // C ABI types
 // -----------------------------------------------------------------------------
 
-pub let long = type std.ctypes.long
-pub let ulong = type std.ctypes.unsigned_long
-
 pub let time_t = type
   when OS == .Windows
     || OS == .MacOS
@@ -40,38 +37,38 @@ pub let clock_t = type
 // stdio
 // -----------------------------------------------------------------------------
 
-pub let printf(fmt: cstr, ...): i32 @foreign
-pub let fprintf(stream: *FILE, fmt: cstr, ...): i32 @foreign
-pub let sprintf(buffer: *mut u8, fmt: cstr, ...): i32 @foreign
-pub let snprintf(buffer: *mut u8, n: usz, fmt: cstr, ...): i32 @foreign
+pub let printf(fmt: cstr, ...): std.ctypes.int @foreign
+pub let fprintf(stream: *FILE, fmt: cstr, ...): std.ctypes.int @foreign
+pub let sprintf(buffer: *mut std.ctypes.char, fmt: cstr, ...): std.ctypes.int @foreign
+pub let snprintf(buffer: *mut std.ctypes.char, n: std.ctypes.size_t, fmt: cstr, ...): std.ctypes.int @foreign
 
-pub let scanf(fmt: cstr, ...): i32 @foreign
-pub let fscanf(stream: *FILE, fmt: cstr, ...): i32 @foreign
-pub let sscanf(str: cstr, fmt: cstr, ...): i32 @foreign
+pub let scanf(fmt: cstr, ...): std.ctypes.int @foreign
+pub let fscanf(stream: *FILE, fmt: cstr, ...): std.ctypes.int @foreign
+pub let sscanf(str: cstr, fmt: cstr, ...): std.ctypes.int @foreign
 
-pub let putchar(ch: i32): i32 @foreign
-pub let getchar(): i32 @foreign
-pub let puts(str: cstr): i32 @foreign
+pub let putchar(ch: std.ctypes.int): std.ctypes.int @foreign
+pub let getchar(): std.ctypes.int @foreign
+pub let puts(str: cstr): std.ctypes.int @foreign
 
 pub let fopen(path: cstr, mode: cstr): *FILE @foreign
 when OS != .Windows {
-  pub let fdopen(fd: i32, mode: cstr): *FILE @foreign
+  pub let fdopen(fd: std.ctypes.int, mode: cstr): *FILE @foreign
 }
-pub let fclose(file: *FILE): i32 @foreign
+pub let fclose(file: *FILE): std.ctypes.int @foreign
 
 pub let fread(
   ptr: *mut void,
-  size: usz,
-  count: usz,
+  size: std.ctypes.size_t,
+  count: std.ctypes.size_t,
   stream: *FILE,
-): usz @foreign
+): std.ctypes.size_t @foreign
 
 pub let fwrite(
   ptr: *void,
-  size: usz,
-  count: usz,
+  size: std.ctypes.size_t,
+  count: std.ctypes.size_t,
   stream: *FILE,
-): usz @foreign
+): std.ctypes.size_t @foreign
 
 pub let SeekOrigin = type enum {
   Set = 0,
@@ -79,170 +76,170 @@ pub let SeekOrigin = type enum {
   End = 2,
 }
 
-pub let fseek(stream: *FILE, offset: long, whence: SeekOrigin): i32 @foreign
+pub let fseek(stream: *FILE, offset: std.ctypes.long, whence: SeekOrigin): std.ctypes.int @foreign
 
-pub let ftell(stream: *FILE): long @foreign
+pub let ftell(stream: *FILE): std.ctypes.long @foreign
 
 pub let rewind(stream: *FILE): void @foreign
-pub let fflush(stream: *FILE): i32 @foreign
-pub let feof(stream: *FILE): i32 @foreign
-pub let ferror(stream: *FILE): i32 @foreign
+pub let fflush(stream: *FILE): std.ctypes.int @foreign
+pub let feof(stream: *FILE): std.ctypes.int @foreign
+pub let ferror(stream: *FILE): std.ctypes.int @foreign
 pub let clearerr(stream: *FILE): void @foreign
 
-pub let fgets(s: *mut u8, n: i32, stream: *FILE): *mut u8 @foreign
-pub let fgetc(stream: *FILE): i32 @foreign
-pub let fputs(s: cstr, stream: *FILE): i32 @foreign
-pub let fputc(ch: i32, stream: *FILE): i32 @foreign
+pub let fgets(s: *mut std.ctypes.char, n: std.ctypes.int, stream: *FILE): *mut std.ctypes.char @foreign
+pub let fgetc(stream: *FILE): std.ctypes.int @foreign
+pub let fputs(s: cstr, stream: *FILE): std.ctypes.int @foreign
+pub let fputc(ch: std.ctypes.int, stream: *FILE): std.ctypes.int @foreign
 
-pub let remove(path: cstr): i32 @foreign
-pub let rename(old: cstr, new: cstr): i32 @foreign
+pub let remove(path: cstr): std.ctypes.int @foreign
+pub let rename(old: cstr, new: cstr): std.ctypes.int @foreign
 pub let tmpfile(): *FILE @foreign
 
 when OS == .Windows {
-  pub let mkdir(path: cstr): i32 @foreign(symbol "_mkdir")
-  pub let rmdir(path: cstr): i32 @foreign(symbol "_rmdir")
-  pub let chdir(path: cstr): i32 @foreign(symbol "_chdir")
-  pub let getcwd(buffer: *mut u8, size: i32): *mut u8 @foreign(symbol "_getcwd")
+  pub let mkdir(path: cstr): std.ctypes.int @foreign(symbol "_mkdir")
+  pub let rmdir(path: cstr): std.ctypes.int @foreign(symbol "_rmdir")
+  pub let chdir(path: cstr): std.ctypes.int @foreign(symbol "_chdir")
+  pub let getcwd(buffer: *mut std.ctypes.char, size: std.ctypes.int): *mut std.ctypes.char @foreign(symbol "_getcwd")
 
-  pub let InvalidFileAttributes: u32 = 0xffffffff
-  pub let FileAttributeDirectory: u32 = 0x10
-  pub let get_file_attributes(path: cstr): u32 @foreign(symbol "GetFileAttributesA")
+  pub let InvalidFileAttributes: std.ctypes.unsigned_long = 0xffffffff
+  pub let FileAttributeDirectory: std.ctypes.unsigned_long = 0x10
+  pub let get_file_attributes(path: cstr): std.ctypes.unsigned_long @foreign(symbol "GetFileAttributesA")
 } else {
-  pub let mkdir(path: cstr, mode: u32): i32 @foreign
-  pub let rmdir(path: cstr): i32 @foreign
+  pub let mkdir(path: cstr, mode: std.ctypes.unsigned_int): std.ctypes.int @foreign
+  pub let rmdir(path: cstr): std.ctypes.int @foreign
   pub let opendir(path: cstr): *DIR @foreign
-  pub let closedir(directory: *DIR): i32 @foreign
+  pub let closedir(directory: *DIR): std.ctypes.int @foreign
 }
 
-pub let EOF: i32 = comptime -1
+pub let EOF: std.ctypes.int = comptime -1
 
 when OS == .Windows {
-  pub let fileno(stream: *FILE): i32 @foreign(symbol "_fileno")
+  pub let fileno(stream: *FILE): std.ctypes.int @foreign(symbol "_fileno")
 } else {
-  pub let fileno(stream: *FILE): i32 @foreign
+  pub let fileno(stream: *FILE): std.ctypes.int @foreign
 }
 
 when OS == .Windows {
   let windows_read(
-    fd: i32,
+    fd: std.ctypes.int,
     buf: *mut void,
-    count: u32,
-  ): i32 @foreign(symbol "_read")
+    count: std.ctypes.unsigned_int,
+  ): std.ctypes.int @foreign(symbol "_read")
 
   let windows_write(
-    fd: i32,
+    fd: std.ctypes.int,
     buf: *void,
-    count: u32,
-  ): i32 @foreign(symbol "_write")
+    count: std.ctypes.unsigned_int,
+  ): std.ctypes.int @foreign(symbol "_write")
 
   pub let read(
-    fd: i32,
+    fd: std.ctypes.int,
     buf: *mut void,
-    count: usz,
-  ): isz {
-    let limited = if count > 0xffffffff.(usz) { 0xffffffff.(usz) } else { count }
-    return windows_read(fd, buf, limited.(u32)).(isz)
+    count: std.ctypes.size_t,
+  ): std.ctypes.ssize_t {
+    let limited = if count > 0xffffffff.(std.ctypes.size_t) { 0xffffffff.(std.ctypes.size_t) } else { count }
+    return windows_read(fd, buf, limited.(std.ctypes.unsigned_int)).(std.ctypes.ssize_t)
   }
 
   pub let write(
-    fd: i32,
+    fd: std.ctypes.int,
     buf: *void,
-    count: usz,
-  ): isz {
-    let limited = if count > 0xffffffff.(usz) { 0xffffffff.(usz) } else { count }
-    return windows_write(fd, buf, limited.(u32)).(isz)
+    count: std.ctypes.size_t,
+  ): std.ctypes.ssize_t {
+    let limited = if count > 0xffffffff.(std.ctypes.size_t) { 0xffffffff.(std.ctypes.size_t) } else { count }
+    return windows_write(fd, buf, limited.(std.ctypes.unsigned_int)).(std.ctypes.ssize_t)
   }
 } else {
   pub let read(
-    fd: i32,
+    fd: std.ctypes.int,
     buf: *mut void,
-    count: usz,
-  ): isz @foreign
+    count: std.ctypes.size_t,
+  ): std.ctypes.ssize_t @foreign
 
   pub let write(
-    fd: i32,
+    fd: std.ctypes.int,
     buf: *void,
-    count: usz,
-  ): isz @foreign
+    count: std.ctypes.size_t,
+  ): std.ctypes.ssize_t @foreign
 }
 
 when OS == .Windows {
-  pub let errno_location(): *mut i32 @foreign(symbol "_errno")
+  pub let errno_location(): *mut std.ctypes.int @foreign(symbol "_errno")
 } else when OS == .Linux || OS == .WASI {
-  pub let errno_location(): *mut i32 @foreign(symbol "__errno_location")
+  pub let errno_location(): *mut std.ctypes.int @foreign(symbol "__errno_location")
 } else when OS == .MacOS
   || OS == .FreeBSD
   || OS == .OpenBSD
   || OS == .NetBSD
   || OS == .DragonFly {
-  pub let errno_location(): *mut i32 @foreign(symbol "__error")
+  pub let errno_location(): *mut std.ctypes.int @foreign(symbol "__error")
 } else {
   @compiler_error("Unsupported errno ABI")
 }
 
-pub let strerror(error: i32): cstr @foreign
+pub let strerror(error: std.ctypes.int): cstr @foreign
 
 // -----------------------------------------------------------------------------
 // memory
 // -----------------------------------------------------------------------------
 
-pub let malloc(size: usz): *mut void @foreign
-pub let calloc(count: usz, size: usz): *mut void @foreign
-pub let realloc(ptr: *void, size: usz): *mut void @foreign
+pub let malloc(size: std.ctypes.size_t): *mut void @foreign
+pub let calloc(count: std.ctypes.size_t, size: std.ctypes.size_t): *mut void @foreign
+pub let realloc(ptr: *void, size: std.ctypes.size_t): *mut void @foreign
 pub let free(ptr: *void): void @foreign
 
-pub let memcpy(dest: *mut void, src: *void, n: usz): *mut void @foreign
-pub let memmove(dest: *mut void, src: *void, n: usz): *mut void @foreign
-pub let memset(dest: *mut void, value: i32, n: usz): *mut void @foreign
-pub let memcmp(s1: *void, s2: *void, n: usz): i32 @foreign
-pub let memchr(ptr: *void, value: i32, n: usz): *void @foreign
+pub let memcpy(dest: *mut void, src: *void, n: std.ctypes.size_t): *mut void @foreign
+pub let memmove(dest: *mut void, src: *void, n: std.ctypes.size_t): *mut void @foreign
+pub let memset(dest: *mut void, value: std.ctypes.int, n: std.ctypes.size_t): *mut void @foreign
+pub let memcmp(s1: *void, s2: *void, n: std.ctypes.size_t): std.ctypes.int @foreign
+pub let memchr(ptr: *void, value: std.ctypes.int, n: std.ctypes.size_t): *void @foreign
 
 // -----------------------------------------------------------------------------
 // strings
 // -----------------------------------------------------------------------------
 
-pub let strlen(s: cstr): usz @foreign
-pub let strnlen(s: cstr, maxlen: usz): usz @foreign
-pub let strcmp(a: cstr, b: cstr): i32 @foreign
-pub let strncmp(a: cstr, b: cstr, n: usz): i32 @foreign
+pub let strlen(s: cstr): std.ctypes.size_t @foreign
+pub let strnlen(s: cstr, maxlen: std.ctypes.size_t): std.ctypes.size_t @foreign
+pub let strcmp(a: cstr, b: cstr): std.ctypes.int @foreign
+pub let strncmp(a: cstr, b: cstr, n: std.ctypes.size_t): std.ctypes.int @foreign
 
-pub let strcpy(dest: *mut u8, src: cstr): *mut u8 @foreign
+pub let strcpy(dest: *mut std.ctypes.char, src: cstr): *mut std.ctypes.char @foreign
 
-pub let strncpy(dest: *mut u8, src: cstr, n: usz): *mut u8 @foreign
+pub let strncpy(dest: *mut std.ctypes.char, src: cstr, n: std.ctypes.size_t): *mut std.ctypes.char @foreign
 
-pub let strcat(dest: *mut u8, src: cstr): *mut u8 @foreign
+pub let strcat(dest: *mut std.ctypes.char, src: cstr): *mut std.ctypes.char @foreign
 
 pub let strncat(
-  dest: *mut u8,
+  dest: *mut std.ctypes.char,
   src: cstr,
-  n: usz,
-): *mut u8 @foreign
+  n: std.ctypes.size_t,
+): *mut std.ctypes.char @foreign
 
-pub let strchr(s: cstr, ch: i32): *u8 @foreign
-pub let strrchr(s: cstr, ch: i32): *u8 @foreign
-pub let strstr(haystack: cstr, needle: cstr): *u8 @foreign
+pub let strchr(s: cstr, ch: std.ctypes.int): *std.ctypes.char @foreign
+pub let strrchr(s: cstr, ch: std.ctypes.int): *std.ctypes.char @foreign
+pub let strstr(haystack: cstr, needle: cstr): *std.ctypes.char @foreign
 
-pub let strtok(str: *mut u8, delim: cstr): *mut u8 @foreign
+pub let strtok(str: *mut std.ctypes.char, delim: cstr): *mut std.ctypes.char @foreign
 
 when OS == .Windows {
-  pub let strdup(str: cstr): *mut u8 @foreign(symbol "_strdup")
-  pub let strcasecmp(a: cstr, b: cstr): i32 @foreign(symbol "_stricmp")
+  pub let strdup(str: cstr): *mut std.ctypes.char @foreign(symbol "_strdup")
+  pub let strcasecmp(a: cstr, b: cstr): std.ctypes.int @foreign(symbol "_stricmp")
 } else {
-  pub let strdup(str: cstr): *mut u8 @foreign
-  pub let strcasecmp(a: cstr, b: cstr): i32 @foreign
+  pub let strdup(str: cstr): *mut std.ctypes.char @foreign
+  pub let strcasecmp(a: cstr, b: cstr): std.ctypes.int @foreign
 }
 
 // -----------------------------------------------------------------------------
 // conversion
 // -----------------------------------------------------------------------------
 
-pub let atoi(str: cstr): i32 @foreign
-pub let atol(str: cstr): long @foreign
-pub let atof(str: cstr): f64 @foreign
+pub let atoi(str: cstr): std.ctypes.int @foreign
+pub let atol(str: cstr): std.ctypes.long @foreign
+pub let atof(str: cstr): std.ctypes.double @foreign
 
-pub let strtol(str: cstr, end: *mut *mut u8, base: i32): long @foreign
+pub let strtol(str: cstr, end: *mut *mut std.ctypes.char, base: std.ctypes.int): std.ctypes.long @foreign
 
-pub let strtoul(str: cstr, end: *mut *mut u8, base: i32): ulong @foreign
+pub let strtoul(str: cstr, end: *mut *mut std.ctypes.char, base: std.ctypes.int): std.ctypes.unsigned_long @foreign
 
 // -----------------------------------------------------------------------------
 // random / time
@@ -256,18 +253,18 @@ when OS == .Windows {
 
 pub let clock(): clock_t @foreign
 
-pub let srand(seed: u32): void @foreign
-pub let rand(): i32 @foreign
+pub let srand(seed: std.ctypes.unsigned_int): void @foreign
+pub let rand(): std.ctypes.int @foreign
 
 // -----------------------------------------------------------------------------
 // process
 // -----------------------------------------------------------------------------
 
-pub let exit(code: i32): void @foreign @noreturn
+pub let exit(code: std.ctypes.int): void @foreign @noreturn
 pub let abort(): void @foreign @noreturn
 
-pub let system(command: cstr): i32 @foreign
-pub let getenv(name: cstr): *u8 @foreign
+pub let system(command: cstr): std.ctypes.int @foreign
+pub let getenv(name: cstr): *std.ctypes.char @foreign
 
 // -----------------------------------------------------------------------------
 // standard streams
@@ -296,7 +293,7 @@ when OS == .Linux || OS == .WASI {
 
 } else when OS == .Windows {
 
-  let _acrt_iob_func(index: u32): *FILE @foreign(symbol "__acrt_iob_func")
+  let _acrt_iob_func(index: std.ctypes.unsigned_int): *FILE @foreign(symbol "__acrt_iob_func")
 
   pub let stdin(): *FILE = _acrt_iob_func(0)
   pub let stdout(): *FILE = _acrt_iob_func(1)
@@ -326,7 +323,7 @@ when OS == .Linux
   pub let wait_status_t = type std.ctypes.int
 
   // Environment inherited by exec-family calls.
-  pub let environ: *mut *mut u8 @foreign
+  pub let environ: *mut *mut std.ctypes.char @foreign
 
   // ---------------------------------------------------------------------------
   // Process creation and termination
@@ -338,7 +335,7 @@ when OS == .Linux
   // call exec*() or _exit() without returning or modifying shared state.
   pub let vfork(): pid_t @foreign
 
-  pub let _exit(status: i32): void @foreign @noreturn
+  pub let _exit(status: std.ctypes.int): void @foreign @noreturn
 
   // ---------------------------------------------------------------------------
   // Program execution
@@ -350,26 +347,26 @@ when OS == .Linux
   // envp must be terminated by a null pointer.
   pub let execve(
     path: cstr,
-    argv: **u8,
-    envp: **u8,
-  ): i32 @foreign
+    argv: **std.ctypes.char,
+    envp: **std.ctypes.char,
+  ): std.ctypes.int @foreign
 
   pub let execv(
     path: cstr,
-    argv: **u8,
-  ): i32 @foreign
+    argv: **std.ctypes.char,
+  ): std.ctypes.int @foreign
 
   pub let execvp(
     file: cstr,
-    argv: **u8,
-  ): i32 @foreign
+    argv: **std.ctypes.char,
+  ): std.ctypes.int @foreign
 
   // Variadic exec forms. The argument list must end with a null pointer.
-  pub let execl(path: cstr, arg0: cstr, ...): i32 @foreign
-  pub let execlp(file: cstr, arg0: cstr, ...): i32 @foreign
+  pub let execl(path: cstr, arg0: cstr, ...): std.ctypes.int @foreign
+  pub let execlp(file: cstr, arg0: cstr, ...): std.ctypes.int @foreign
 
   // execle() also requires envp after the null argument-list terminator.
-  pub let execle(path: cstr, arg0: cstr, ...): i32 @foreign
+  pub let execle(path: cstr, arg0: cstr, ...): std.ctypes.int @foreign
 
   // exec*() returns only when execution fails, in which case it returns -1.
 
@@ -382,7 +379,7 @@ when OS == .Linux
   pub let waitpid(
     pid: pid_t,
     status: *mut wait_status_t,
-    options: i32,
+    options: std.ctypes.int,
   ): pid_t @foreign
 
   // waitpid() pid argument meanings.
@@ -390,12 +387,12 @@ when OS == .Linux
   pub let WaitMyProcessGroup: pid_t = 0
 
   // POSIX waitpid() option bits.
-  pub let WaitNoHang: i32 = 1
-  pub let WaitUntraced: i32 = 2
+  pub let WaitNoHang: std.ctypes.int = 1
+  pub let WaitUntraced: std.ctypes.int = 2
 
   // WCONTINUED is available on the supported contemporary Unix systems,
   // although its numeric value is ABI-specific.
-  pub let WaitContinued: i32 =
+  pub let WaitContinued: std.ctypes.int =
     when OS == .Linux { 8 }
     else when OS == .MacOS
       || OS == .FreeBSD
@@ -411,8 +408,8 @@ when OS == .Linux
 
   // Equivalent to WEXITSTATUS(status).
   // Call only when wait_exited(status) is true.
-  pub let wait_exit_status(status: wait_status_t): i32 {
-    return ((status >> 8) & 0xff).(i32)
+  pub let wait_exit_status(status: wait_status_t): std.ctypes.int {
+    return ((status >> 8) & 0xff).(std.ctypes.int)
   }
 
   // Equivalent to WIFSIGNALED(status).
@@ -471,7 +468,7 @@ when OS == .Linux
   pub let setpgid(
     pid: pid_t,
     pgid: pid_t,
-  ): i32 @foreign
+  ): std.ctypes.int @foreign
 
   pub let getsid(pid: pid_t): pid_t @foreign
   pub let setsid(): pid_t @foreign
@@ -482,7 +479,7 @@ when OS == .Linux
   pub let tcsetpgrp(
     fd: fd_t,
     pgrp: pid_t,
-  ): i32 @foreign
+  ): std.ctypes.int @foreign
 
   // ---------------------------------------------------------------------------
   // Signals
@@ -491,9 +488,9 @@ when OS == .Linux
   pub let kill(
     pid: pid_t,
     signal: signal_t,
-  ): i32 @foreign
+  ): std.ctypes.int @foreign
 
-  pub let raise(signal: signal_t): i32 @foreign
+  pub let raise(signal: signal_t): std.ctypes.int @foreign
 
   // kill() pid argument behaviour:
   //
@@ -559,12 +556,12 @@ when OS == .Linux
   pub let StandardOutput: fd_t = 1
   pub let StandardError: fd_t = 2
 
-  pub let PipeRead: usz = 0
-  pub let PipeWrite: usz = 1
+  pub let PipeRead: std.ctypes.size_t = 0
+  pub let PipeWrite: std.ctypes.size_t = 1
 
-  // pipefd must point to storage for two i32 values:
+  // pipefd must point to storage for two std.ctypes.int values:
   // pipefd[PipeRead] and pipefd[PipeWrite].
-  pub let pipe(pipefd: *mut fd_t): i32 @foreign
+  pub let pipe(pipefd: *mut fd_t): std.ctypes.int @foreign
 
   pub let dup(oldfd: fd_t): fd_t @foreign
 
@@ -573,48 +570,48 @@ when OS == .Linux
     newfd: fd_t,
   ): fd_t @foreign
 
-  pub let close(fd: fd_t): i32 @foreign
+  pub let close(fd: fd_t): std.ctypes.int @foreign
 
   // ---------------------------------------------------------------------------
   // Environment and working directory
   // ---------------------------------------------------------------------------
 
-  pub let chdir(path: cstr): i32 @foreign
-  pub let fchdir(fd: fd_t): i32 @foreign
+  pub let chdir(path: cstr): std.ctypes.int @foreign
+  pub let fchdir(fd: fd_t): std.ctypes.int @foreign
 
   pub let getcwd(
-    buffer: *mut u8,
-    size: usz,
-  ): *mut u8 @foreign
+    buffer: *mut std.ctypes.char,
+    size: std.ctypes.size_t,
+  ): *mut std.ctypes.char @foreign
 
   pub let setenv(
     name: cstr,
     value: cstr,
-    overwrite: i32,
-  ): i32 @foreign
+    overwrite: std.ctypes.int,
+  ): std.ctypes.int @foreign
 
-  pub let unsetenv(name: cstr): i32 @foreign
+  pub let unsetenv(name: cstr): std.ctypes.int @foreign
 
   // ---------------------------------------------------------------------------
   // Process scheduling
   // ---------------------------------------------------------------------------
 
-  pub let nice(increment: i32): i32 @foreign
+  pub let nice(increment: std.ctypes.int): std.ctypes.int @foreign
 
-  pub let PriorityProcess: i32 = 0
-  pub let PriorityProcessGroup: i32 = 1
-  pub let PriorityUser: i32 = 2
+  pub let PriorityProcess: std.ctypes.int = 0
+  pub let PriorityProcessGroup: std.ctypes.int = 1
+  pub let PriorityUser: std.ctypes.int = 2
 
   pub let getpriority(
-    which: i32,
-    who: u32,
-  ): i32 @foreign
+    which: std.ctypes.int,
+    who: std.ctypes.unsigned_int,
+  ): std.ctypes.int @foreign
 
   pub let setpriority(
-    which: i32,
-    who: u32,
-    priority: i32,
-  ): i32 @foreign
+    which: std.ctypes.int,
+    who: std.ctypes.unsigned_int,
+    priority: std.ctypes.int,
+  ): std.ctypes.int @foreign
 }
 
 // -----------------------------------------------------------------------------
@@ -626,37 +623,37 @@ when OS == .Linux {
   // GNU extension: PATH lookup with an explicit environment.
   pub let execvpe(
     file: cstr,
-    argv: **u8,
-    envp: **u8,
-  ): i32 @foreign
+    argv: **std.ctypes.char,
+    envp: **std.ctypes.char,
+  ): std.ctypes.int @foreign
 
   // Linux versions allowing atomic close-on-exec configuration.
   pub let pipe2(
     pipefd: *mut fd_t,
-    flags: i32,
-  ): i32 @foreign
+    flags: std.ctypes.int,
+  ): std.ctypes.int @foreign
 
   pub let dup3(
     oldfd: fd_t,
     newfd: fd_t,
-    flags: i32,
+    flags: std.ctypes.int,
   ): fd_t @foreign
 
-  pub let CloseOnExec: i32 = 0x80000
-  pub let NonBlocking: i32 = 0x800
+  pub let CloseOnExec: std.ctypes.int = 0x80000
+  pub let NonBlocking: std.ctypes.int = 0x800
 
   // Linux pidfd APIs provide race-resistant references to processes.
   pub let pidfd_open(
     pid: pid_t,
-    flags: u32,
+    flags: std.ctypes.unsigned_int,
   ): fd_t @foreign
 
   pub let pidfd_send_signal(
     pidfd: fd_t,
     signal: signal_t,
     info: *void,
-    flags: u32,
-  ): i32 @foreign
+    flags: std.ctypes.unsigned_int,
+  ): std.ctypes.int @foreign
 }
 
 }
