@@ -1,0 +1,3 @@
+[submodule "editor_support/tree-sitter-qk"]
+	path = editor_support/tree-sitter-qk
+	url = git@git.marzeq.foo:marzeq/tree-sitter-qk
