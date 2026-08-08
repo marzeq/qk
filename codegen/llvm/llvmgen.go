@@ -943,19 +943,18 @@ func (e *Emitter) FieldAddressEmit(out *strings.Builder, f ir.FieldAddress) {
 }
 
 func (e *Emitter) ElementAddressEmit(out *strings.Builder, eaddr ir.ElementAddress) {
-	if pointer, ok := types.Underlying(eaddr.Base.Type).(types.PointerType); ok {
-		if array, ok := types.Underlying(pointer.Base).(types.ArrayType); ok {
-			fmt.Fprintf(
-				out,
-				"%s = getelementptr inbounds %s, ptr %s, i32 0, %s %s",
-				e.ValueIDEmit(eaddr.Dest),
-				e.TypeEmit(array),
-				e.OperandEmit(eaddr.Base),
-				e.TypeEmit(eaddr.Index.Type),
-				e.OperandEmit(eaddr.Index),
-			)
-			return
-		}
+	if eaddr.ArrayObject {
+		array := types.Underlying(types.Underlying(eaddr.Base.Type).(types.PointerType).Base).(types.ArrayType)
+		fmt.Fprintf(
+			out,
+			"%s = getelementptr inbounds %s, ptr %s, i32 0, %s %s",
+			e.ValueIDEmit(eaddr.Dest),
+			e.TypeEmit(array),
+			e.OperandEmit(eaddr.Base),
+			e.TypeEmit(eaddr.Index.Type),
+			e.OperandEmit(eaddr.Index),
+		)
+		return
 	}
 	fmt.Fprintf(
 		out,

@@ -67,7 +67,7 @@ env.count.next-block:
 
 env.ready:
 	%%env.count.value = phi %[1]s [ %%env.count.index, %%env.count ]
-	%%env.data = alloca { ptr, %[1]s }, %[1]s %%env.count.value
+	%%env.data = alloca [2 x { ptr, %[1]s }], %[1]s %%env.count.value
 	%%env.with-data = insertvalue { ptr, %[1]s } zeroinitializer, ptr %%env.data, 0
 	%%env.value = insertvalue { ptr, %[1]s } %%env.with-data, %[1]s %%env.count.value, 1
 	store { ptr, %[1]s } %%env.value, ptr @__qk_0_3_std2_os_global_env
@@ -75,7 +75,7 @@ env.ready:
 	br i1 %%env.empty, label %%args.setup, label %%env.loop
 
 env.loop:
-	%%env.index = phi %[1]s [ 0, %%env.ready ], [ %%env.next, %%env.strlen.end ]
+	%%env.index = phi %[1]s [ 0, %%env.ready ], [ %%env.next, %%env.entry.ready ]
 	%%envp.slot = getelementptr inbounds ptr, ptr %%envp, %[1]s %%env.index
 	%%env.entry.data = load ptr, ptr %%envp.slot
 	br label %%env.strlen.loop
@@ -90,10 +90,37 @@ env.strlen.loop:
 
 env.strlen.end:
 	%%env.entry.length = phi %[1]s [ %%env.strlen.index, %%env.strlen.loop ]
-	%%env.entry.with-data = insertvalue { ptr, %[1]s } zeroinitializer, ptr %%env.entry.data, 0
-	%%env.entry = insertvalue { ptr, %[1]s } %%env.entry.with-data, %[1]s %%env.entry.length, 1
-	%%env.slot = getelementptr inbounds { ptr, %[1]s }, ptr %%env.data, %[1]s %%env.index
-	store { ptr, %[1]s } %%env.entry, ptr %%env.slot
+	br label %%env.name.loop
+
+env.name.loop:
+	%%env.name.index = phi %[1]s [ 0, %%env.strlen.end ], [ %%env.name.next, %%env.name.next-block ]
+	%%env.name.done = icmp eq %[1]s %%env.name.index, %%env.entry.length
+	br i1 %%env.name.done, label %%env.entry.ready, label %%env.name.byte
+
+env.name.byte:
+	%%env.name.address = getelementptr inbounds i8, ptr %%env.entry.data, %[1]s %%env.name.index
+	%%env.name.character = load i8, ptr %%env.name.address
+	%%env.name.separator = icmp eq i8 %%env.name.character, 61
+	br i1 %%env.name.separator, label %%env.entry.ready, label %%env.name.next-block
+
+env.name.next-block:
+	%%env.name.next = add nuw %[1]s %%env.name.index, 1
+	br label %%env.name.loop
+
+env.entry.ready:
+	%%env.value.has-separator = icmp ult %[1]s %%env.name.index, %%env.entry.length
+	%%env.value.offset.with-separator = add nuw %[1]s %%env.name.index, 1
+	%%env.value.offset = select i1 %%env.value.has-separator, %[1]s %%env.value.offset.with-separator, %[1]s %%env.entry.length
+	%%env.value.data = getelementptr inbounds i8, ptr %%env.entry.data, %[1]s %%env.value.offset
+	%%env.value.length = sub nuw %[1]s %%env.entry.length, %%env.value.offset
+	%%env.name.with-data = insertvalue { ptr, %[1]s } zeroinitializer, ptr %%env.entry.data, 0
+	%%env.name = insertvalue { ptr, %[1]s } %%env.name.with-data, %[1]s %%env.name.index, 1
+	%%env.value.with-data = insertvalue { ptr, %[1]s } zeroinitializer, ptr %%env.value.data, 0
+	%%env.entry.value = insertvalue { ptr, %[1]s } %%env.value.with-data, %[1]s %%env.value.length, 1
+	%%env.name.slot = getelementptr inbounds [2 x { ptr, %[1]s }], ptr %%env.data, %[1]s %%env.index, i32 0
+	%%env.value.slot = getelementptr inbounds [2 x { ptr, %[1]s }], ptr %%env.data, %[1]s %%env.index, i32 1
+	store { ptr, %[1]s } %%env.name, ptr %%env.name.slot
+	store { ptr, %[1]s } %%env.entry.value, ptr %%env.value.slot
 	%%env.next = add nuw %[1]s %%env.index, 1
 	%%env.finished = icmp eq %[1]s %%env.next, %%env.count.value
 	br i1 %%env.finished, label %%args.setup, label %%env.loop
@@ -188,7 +215,7 @@ env.count.next-block:
 
 env.ready:
   %%env.count.value = phi %[1]s [ %%env.count.index, %%env.count ]
-  %%env.data = alloca { ptr, %[1]s }, %[1]s %%env.count.value
+  %%env.data = alloca [2 x { ptr, %[1]s }], %[1]s %%env.count.value
   %%env.with-data = insertvalue { ptr, %[1]s } zeroinitializer, ptr %%env.data, 0
   %%env.value = insertvalue { ptr, %[1]s } %%env.with-data, %[1]s %%env.count.value, 1
   store { ptr, %[1]s } %%env.value, ptr @__qk_0_3_std2_os_global_env
@@ -196,7 +223,7 @@ env.ready:
   br i1 %%env.empty, label %%args.setup, label %%env.loop
 
 env.loop:
-  %%env.index = phi %[1]s [ 0, %%env.ready ], [ %%env.next, %%env.strlen.end ]
+  %%env.index = phi %[1]s [ 0, %%env.ready ], [ %%env.next, %%env.entry.ready ]
   %%envp.slot = getelementptr inbounds ptr, ptr %%envp, %[1]s %%env.index
   %%env.entry.data = load ptr, ptr %%envp.slot
   br label %%env.strlen.loop
@@ -211,10 +238,37 @@ env.strlen.loop:
 
 env.strlen.end:
   %%env.entry.length = phi %[1]s [ %%env.strlen.index, %%env.strlen.loop ]
-  %%env.entry.with-data = insertvalue { ptr, %[1]s } zeroinitializer, ptr %%env.entry.data, 0
-  %%env.entry = insertvalue { ptr, %[1]s } %%env.entry.with-data, %[1]s %%env.entry.length, 1
-  %%env.slot = getelementptr inbounds { ptr, %[1]s }, ptr %%env.data, %[1]s %%env.index
-  store { ptr, %[1]s } %%env.entry, ptr %%env.slot
+  br label %%env.name.loop
+
+env.name.loop:
+  %%env.name.index = phi %[1]s [ 0, %%env.strlen.end ], [ %%env.name.next, %%env.name.next-block ]
+  %%env.name.done = icmp eq %[1]s %%env.name.index, %%env.entry.length
+  br i1 %%env.name.done, label %%env.entry.ready, label %%env.name.byte
+
+env.name.byte:
+  %%env.name.address = getelementptr inbounds i8, ptr %%env.entry.data, %[1]s %%env.name.index
+  %%env.name.character = load i8, ptr %%env.name.address
+  %%env.name.separator = icmp eq i8 %%env.name.character, 61
+  br i1 %%env.name.separator, label %%env.entry.ready, label %%env.name.next-block
+
+env.name.next-block:
+  %%env.name.next = add nuw %[1]s %%env.name.index, 1
+  br label %%env.name.loop
+
+env.entry.ready:
+  %%env.value.has-separator = icmp ult %[1]s %%env.name.index, %%env.entry.length
+  %%env.value.offset.with-separator = add nuw %[1]s %%env.name.index, 1
+  %%env.value.offset = select i1 %%env.value.has-separator, %[1]s %%env.value.offset.with-separator, %[1]s %%env.entry.length
+  %%env.value.data = getelementptr inbounds i8, ptr %%env.entry.data, %[1]s %%env.value.offset
+  %%env.value.length = sub nuw %[1]s %%env.entry.length, %%env.value.offset
+  %%env.name.with-data = insertvalue { ptr, %[1]s } zeroinitializer, ptr %%env.entry.data, 0
+  %%env.name = insertvalue { ptr, %[1]s } %%env.name.with-data, %[1]s %%env.name.index, 1
+  %%env.value.with-data = insertvalue { ptr, %[1]s } zeroinitializer, ptr %%env.value.data, 0
+  %%env.entry.value = insertvalue { ptr, %[1]s } %%env.value.with-data, %[1]s %%env.value.length, 1
+  %%env.name.slot = getelementptr inbounds [2 x { ptr, %[1]s }], ptr %%env.data, %[1]s %%env.index, i32 0
+  %%env.value.slot = getelementptr inbounds [2 x { ptr, %[1]s }], ptr %%env.data, %[1]s %%env.index, i32 1
+  store { ptr, %[1]s } %%env.name, ptr %%env.name.slot
+  store { ptr, %[1]s } %%env.entry.value, ptr %%env.value.slot
   %%env.next = add nuw %[1]s %%env.index, 1
   %%env.finished = icmp eq %[1]s %%env.next, %%env.count.value
   br i1 %%env.finished, label %%args.setup, label %%env.loop

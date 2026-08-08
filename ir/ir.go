@@ -500,6 +500,9 @@ type ElementAddress struct {
 	Base    Operand
 	Index   Operand
 	Element types.Type
+	// ArrayObject selects an element within one inline array value. Without it,
+	// a pointer whose pointee is an array advances by whole array values.
+	ArrayObject bool
 }
 
 func (ElementAddress) isInstr() {}

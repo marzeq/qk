@@ -1,17 +1,17 @@
 module std.os
 
 pub let mut args: []str = ---
-pub let mut env: []str = ---
+pub let mut env: [][2]str = ---
 
 when TargetHasEnvironment {
   import std.alloc
   import std.strings
 
-  let environment_name_matches(entry: str, name: str): bool {
-    if @len(entry) <= @len(name) || entry[@len(name)] != '=' { return false }
+  let environment_name_matches(entry: [2]str, name: str): bool {
+    if @len(entry[0]) != @len(name) { return false }
     let mut index: usz = 0
     for index < @len(name) {
-      if entry[index] != name[index] { return false }
+      if entry[0][index] != name[index] { return false }
       index += 1
     }
     return true
@@ -20,9 +20,7 @@ when TargetHasEnvironment {
   // Returns a borrowed view into the environment captured at process startup.
   pub let environment_variable(name: str): (str, bool) {
     for entry in env {
-      if environment_name_matches(entry, name) {
-        return entry[@len(name) + 1:], true
-      }
+      if environment_name_matches(entry, name) { return entry[1], true }
     }
     return "", false
   }

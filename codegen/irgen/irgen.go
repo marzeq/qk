@@ -1521,6 +1521,11 @@ func (g *Generator) storeForEachElement(iterableSlot ir.SlotID, iterableType typ
 	g.Emit(ir.Store{Slot: elementSlot, Value: ir.ValueOperand(elementID, pointerType.Base)})
 }
 
+func iterableTypeIsArray(iterableType types.Type) bool {
+	_, ok := iterableType.(types.ArrayType)
+	return ok
+}
+
 func (g *Generator) forEachElementPointer(
 	iterableSlot ir.SlotID,
 	iterableType types.Type,
@@ -1549,10 +1554,11 @@ func (g *Generator) forEachElementPointer(
 	elementPointerType := types.PointerType{Base: elementType, Mutable: mutable}
 	elementPtrID := g.currentFunction.NewValueOfType(elementPointerType)
 	g.Emit(ir.ElementAddress{
-		Dest:    elementPtrID,
-		Base:    base,
-		Index:   index,
-		Element: elementType,
+		Dest:        elementPtrID,
+		Base:        base,
+		Index:       index,
+		Element:     elementType,
+		ArrayObject: iterableTypeIsArray(iterableType),
 	})
 	return ir.ValueOperand(elementPtrID, elementPointerType)
 }
@@ -1702,6 +1708,7 @@ func (g *Generator) generateIndexExpr(node *parser.IndexExprNode) ir.Operand {
 func (g *Generator) generateIndexAddress(node *parser.IndexExprNode) ir.Operand {
 	index := g.GenerateExpr(node.Index)
 	var base ir.Operand
+	arrayObject := false
 	switch subjectType := types.Underlying(node.Subject.GetType()).(type) {
 	case types.SliceType:
 		slicePtr := g.generateAddressOfExpr(node.Subject)
@@ -1721,6 +1728,7 @@ func (g *Generator) generateIndexAddress(node *parser.IndexExprNode) ir.Operand 
 
 	case types.ArrayType:
 		base = g.generateAddressOfExpr(node.Subject)
+		arrayObject = true
 
 	case types.PointerType:
 		base = g.GenerateExpr(node.Subject)
@@ -1731,10 +1739,11 @@ func (g *Generator) generateIndexAddress(node *parser.IndexExprNode) ir.Operand 
 
 	elementPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: node.GetType()})
 	g.Emit(ir.ElementAddress{
-		Dest:    elementPtrID,
-		Base:    base,
-		Index:   index,
-		Element: node.GetType(),
+		Dest:        elementPtrID,
+		Base:        base,
+		Index:       index,
+		Element:     node.GetType(),
+		ArrayObject: arrayObject,
 	})
 	return ir.ValueOperand(elementPtrID, types.PointerType{Base: node.GetType()})
 }
@@ -1760,7 +1769,7 @@ func (g *Generator) generateSliceExpr(node *parser.SliceExprNode) ir.Operand {
 		arrayPtr := g.generateAddressOfExpr(node.Subject)
 		dataID := g.currentFunction.NewValueOfType(types.PointerType{Base: subjectType.Base})
 		g.Emit(ir.ElementAddress{
-			Dest: dataID, Base: arrayPtr, Index: ir.IntConstOperand("0", types.PrimitiveUsz), Element: subjectType.Base,
+			Dest: dataID, Base: arrayPtr, Index: ir.IntConstOperand("0", types.PrimitiveUsz), Element: subjectType.Base, ArrayObject: true,
 		})
 		data = ir.ValueOperand(dataID, types.PointerType{Base: subjectType.Base})
 		length = ir.IntConstOperand(strconv.Itoa(subjectType.Length), types.PrimitiveUsz)
@@ -1966,7 +1975,7 @@ func (g *Generator) generateArrayBorrow(operand parser.ExpressionNode, targetTyp
 	arrayPtr := g.generateAddressOfExpr(operand)
 	dataID := g.currentFunction.NewValueOfType(types.PointerType{Base: arrayType.Base})
 	g.Emit(ir.ElementAddress{
-		Dest: dataID, Base: arrayPtr, Index: ir.IntConstOperand("0", types.PrimitiveUsz), Element: arrayType.Base,
+		Dest: dataID, Base: arrayPtr, Index: ir.IntConstOperand("0", types.PrimitiveUsz), Element: arrayType.Base, ArrayObject: true,
 	})
 	data := ir.ValueOperand(dataID, types.PointerType{Base: arrayType.Base})
 
@@ -2029,7 +2038,7 @@ func (g *Generator) generateSliceToArrayCast(node *parser.CastNode, targetType t
 		valueID := g.currentFunction.NewValueOfType(sourceSlice.Base)
 		g.Emit(ir.LoadPtr{Dest: valueID, Ptr: ir.ValueOperand(sourcePtrID, types.PointerType{Base: sourceSlice.Base})})
 		targetPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: targetArray.Base, Mutable: true})
-		g.Emit(ir.ElementAddress{Dest: targetPtrID, Base: arrayPtr, Index: index, Element: targetArray.Base})
+		g.Emit(ir.ElementAddress{Dest: targetPtrID, Base: arrayPtr, Index: index, Element: targetArray.Base, ArrayObject: true})
 		g.Emit(ir.StorePtr{
 			Ptr:   ir.ValueOperand(targetPtrID, types.PointerType{Base: targetArray.Base, Mutable: true}),
 			Value: ir.ValueOperand(valueID, sourceSlice.Base),
@@ -2752,7 +2761,7 @@ func (g *Generator) generateArrayLiteral(node *parser.SliceLiteralNode, arrayTyp
 
 	storeElement := func(index ir.Operand, value ir.Operand) {
 		elementPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: arrayType.Base, Mutable: true})
-		g.Emit(ir.ElementAddress{Dest: elementPtrID, Base: arrayPtr, Index: index, Element: arrayType.Base})
+		g.Emit(ir.ElementAddress{Dest: elementPtrID, Base: arrayPtr, Index: index, Element: arrayType.Base, ArrayObject: true})
 		g.Emit(ir.StorePtr{Ptr: ir.ValueOperand(elementPtrID, types.PointerType{Base: arrayType.Base, Mutable: true}), Value: value})
 	}
 
