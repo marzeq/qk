@@ -21,6 +21,7 @@ type expander struct {
 
 type Config struct {
 	TargetTriple   string
+	Sysroot        string
 	CheckingStdlib bool
 	ReleaseMode    ReleaseMode
 	PackagePath    string
@@ -37,7 +38,7 @@ const (
 // Expand evaluates compile-time declarations and selects compile-time branches,
 // returning the token stream that should continue through the compiler pipeline.
 func Expand(tokens []tokeniser.Token, config Config) ([]tokeniser.Token, error) {
-	target := targetFromTriple(config.TargetTriple)
+	target := targetFromConfig(config)
 	target.checkingStdlib = config.CheckingStdlib
 	target.releaseMode = config.ReleaseMode
 	target.bindings = cloneValues(config.ModuleBindings)
@@ -783,5 +784,13 @@ func targetFromTriple(triple string) targetValues {
 	values.targetHasFilesystem = nativeOS
 	values.targetHasEnvironment = nativeOS
 	values.targetHasProcessExit = nativeOS && (values.os == "Windows" || values.arch == "X86_64" || values.arch == "AArch64")
+	return values
+}
+
+func targetFromConfig(config Config) targetValues {
+	values := targetFromTriple(config.TargetTriple)
+	if values.os == "WASI" && config.Sysroot != "" {
+		values.targetHasLibc = true
+	}
 	return values
 }

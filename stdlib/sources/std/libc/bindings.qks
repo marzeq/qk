@@ -32,7 +32,8 @@ pub let time_t = type
     || OS == .FreeBSD
     || OS == .OpenBSD
     || OS == .NetBSD
-    || OS == .DragonFly { i64 }
+    || OS == .DragonFly
+    || OS == .WASI { i64 }
     else when OS == .Linux && PointerBits == 64 { i64 }
     else when OS == .Linux && PointerBits == 32 { i32 }
     else {
@@ -179,7 +180,7 @@ when OS == .Windows {
 
 when OS == .Windows {
   pub let errno_location(): *mut i32 @foreign(symbol "_errno")
-} else when OS == .Linux {
+} else when OS == .Linux || OS == .WASI {
   pub let errno_location(): *mut i32 @foreign(symbol "__errno_location")
 } else when OS == .MacOS
   || OS == .FreeBSD
@@ -284,7 +285,7 @@ pub let getenv(name: cstr): *u8 @foreign
 // standard streams
 // -----------------------------------------------------------------------------
 
-when OS == .Linux {
+when OS == .Linux || OS == .WASI {
 
   pub let stdin: *FILE @foreign
   pub let stdout: *FILE @foreign

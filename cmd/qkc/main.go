@@ -31,6 +31,7 @@ func main() {
 	}
 	comptimeConfig := comptime.Config{
 		TargetTriple: args.target,
+		Sysroot:      args.sysroot,
 		ReleaseMode:  releaseMode,
 	}
 	embeddedStdlibSources, err := stdlib.ReadSources()

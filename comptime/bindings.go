@@ -49,7 +49,7 @@ func ResolvePackageBindings(sources map[string]string, packagePaths map[string]s
 		}
 	}
 	values := make(map[string]Value, len(declarations))
-	target := targetFromTriple(config.TargetTriple)
+	target := targetFromConfig(config)
 	target.checkingStdlib = config.CheckingStdlib
 	target.releaseMode = config.ReleaseMode
 	state := map[string]uint8{}
