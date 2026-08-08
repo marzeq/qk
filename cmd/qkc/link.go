@@ -60,10 +60,10 @@ func foreignName(name string, attrs attributes.Attributes, referenced map[string
 	if !ok {
 		return false
 	}
-	if foreign.From != "" {
-		name = foreign.From
+	if referenced[name] {
+		return true
 	}
-	return referenced[name]
+	return foreign.From != "" && referenced[foreign.From]
 }
 
 func reachableNativeSymbols(modules map[string]*ir.Module, rootAllExternal bool) map[string]bool {
@@ -161,11 +161,17 @@ func nativeDeclarations(module *ir.Module) map[string]bool {
 
 func instructionSymbolReferences(instruction ir.Instr) []string {
 	var names []string
-	if call, ok := instruction.(ir.Call); ok && call.Name != "" {
-		names = append(names, call.Name)
-	}
-	if address, ok := instruction.(ir.AddressOfGlobal); ok {
-		names = append(names, address.Name)
+	switch instruction := instruction.(type) {
+	case ir.Call:
+		if instruction.Name != "" {
+			names = append(names, instruction.Name)
+		}
+	case ir.LoadGlobal:
+		names = append(names, instruction.Name)
+	case ir.StoreGlobal:
+		names = append(names, instruction.Name)
+	case ir.AddressOfGlobal:
+		names = append(names, instruction.Name)
 	}
 	collectFunctionOperands(reflect.ValueOf(instruction), &names)
 	return names
