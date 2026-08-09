@@ -2,6 +2,7 @@ module std.random
 
 // Small deterministic generator suitable for simulation, randomized
 // algorithms, and tests. It is not a cryptographic random-number generator.
+// Use openSSL or similar for cryptographic randomness.
 pub let Random = type struct {
   state: u64,
 }
@@ -22,14 +23,14 @@ pub let Random.next_u64(*mut self): u64 {
 
 pub let Random.next_u32(*mut self): u32 = (self.next_u64() >> 32).(u32)
 
-pub let Random.next_bool(*mut self): bool = (self.next_u64() & 1) != 0
+pub let Random.next_bool(*mut self): bool = (self.next_u64() & (1 << 63)) != 0
 
 // Returns a uniformly distributed value in [0, upper). False is returned for
 // an empty range.
 pub let Random.less_than(*mut self, upper: u64): (u64, bool) {
   if upper == 0 { return 0, false }
   let threshold = ((~upper) + 1) % upper
-  for true {
+  for {
     let value = self.next_u64()
     if value >= threshold { return value % upper, true }
   }
@@ -48,7 +49,13 @@ pub let Random.range(*mut self, start: u64, end: u64): (u64, bool) {
 pub let Random.next_f64(*mut self): f64 =
   (self.next_u64() >> 11).(f64) * (1.0 / 9007199254740992.0)
 
-pub let Random.fill(*mut self, bytes: []mut u8): void {
+// Produces a value by filling its complete object representation with random
+// bytes. Values wider than u64 consume consecutive generator outputs. This is
+// a raw C-style operation: types with invalid bit patterns remain the caller's
+// responsibility.
+pub let Random.fill<T>(*mut self): T {
+  let mut result: T = ---
+  let bytes = result.&mut.(*mut u8)[0:@sizeof(T)]
   let mut offset: usz = 0
   for offset < @len(bytes) {
     let value = self.next_u64()
@@ -59,6 +66,7 @@ pub let Random.fill(*mut self, bytes: []mut u8): void {
       index += 1
     }
   }
+  return result
 }
 
 pub let Random.shuffle<T>(*mut self, values: []mut T): void {
