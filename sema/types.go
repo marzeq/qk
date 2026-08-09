@@ -39,6 +39,9 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 	switch t := n.(type) {
 	case *parser.ReprTypeNode:
 		operand := a.resolveTypeNodeAt(t.Operand, indirect)
+		if types.HasError(operand) {
+			return types.ErrorType{}
+		}
 		repr, ok := types.TaggedUnionRepr(operand)
 		if !ok {
 			a.errorf(t, "@reprof requires an explicitly tagged union type, got %v", operand)
@@ -142,6 +145,9 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 
 	case *parser.PointerTypeNode:
 		base := a.resolveTypeNodeAt(t.BaseType, true)
+		if types.HasError(base) {
+			return types.ErrorType{}
+		}
 		if trait, ok := types.Underlying(base).(types.TraitType); ok {
 			pointer := "*"
 			if t.Mutable {
@@ -154,6 +160,9 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 
 	case *parser.DynTypeNode:
 		base := a.resolveTypeNodeAt(t.TraitType, true)
+		if types.HasError(base) {
+			return types.ErrorType{}
+		}
 		trait, ok := types.Underlying(base).(types.TraitType)
 		if !ok {
 			a.errorf(t, "*dyn requires a trait type, got %v", base)
@@ -216,7 +225,11 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 		}
 		fn := types.FunctionType{Parameters: params, ReturnType: a.resolveTypeNodeAt(t.ReturnType, indirect), TypedVariadic: t.TypedVariadic}
 		if t.TypedVariadic {
-			fn.VariadicElement = types.Underlying(params[len(params)-1]).(types.SliceType).Base
+			if tail, ok := types.Underlying(params[len(params)-1]).(types.SliceType); ok {
+				fn.VariadicElement = tail.Base
+			} else {
+				fn.VariadicElement = types.ErrorType{}
+			}
 		}
 		return fn
 
@@ -229,6 +242,9 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 	case *parser.ArrayTypeNode:
 		length, ok := staticIntegerValue(t.Length)
 		if !ok || !length.IsInt64() || length.Sign() < 0 || length.BitLen() >= strconv.IntSize {
+			if types.HasError(t.Length.GetType()) {
+				return types.ErrorType{}
+			}
 			a.errorf(t.Length, "array length must be a non-negative compile-time integer")
 			return types.ErrorType{}
 		}
@@ -276,6 +292,9 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 
 	case *parser.FlagsTypeNode:
 		base := a.resolveTypeNodeAt(t.Underlying, indirect)
+		if types.HasError(base) {
+			return types.ErrorType{}
+		}
 		primitive, ok := types.Underlying(base).(types.PrimitiveType)
 		if !ok || !types.IsInteger(primitive) || primitive == types.PrimitiveIsz || primitive == types.PrimitiveUsz {
 			a.errorf(t, "flags underlying type must be a fixed-width integer")
@@ -309,6 +328,9 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 				}
 			} else {
 				tagType = a.resolveTypeNodeAt(t.TagType, indirect)
+			}
+			if types.HasError(tagType) {
+				return types.ErrorType{}
 			}
 			tagEnum, ok := types.Underlying(tagType).(types.EnumType)
 			if !ok {

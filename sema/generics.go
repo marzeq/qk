@@ -83,6 +83,11 @@ func (a *Analyser) makeGenericParameters(name string, nodes []parser.GenericPara
 			continue
 		}
 		constraint := a.resolveTypeNode(node.Constraint)
+		if types.HasError(constraint) {
+			parameters[i].Constraint = types.ErrorType{}
+			bindings[node.Name] = parameters[i]
+			continue
+		}
 		if _, ok := types.Underlying(constraint).(types.TraitType); !ok {
 			a.errorf(node, "generic constraint must be a trait type, got %v", constraint)
 			constraint = types.ErrorType{}
@@ -193,6 +198,10 @@ func (a *Analyser) checkGenericArgumentsFrom(node parser.Node, parameters []type
 	}
 	valid := true
 	for i, parameter := range parameters {
+		if types.HasError(arguments[i]) || types.HasError(parameter.Constraint) {
+			valid = false
+			continue
+		}
 		if i < start {
 			continue
 		}
@@ -286,7 +295,9 @@ func (a *Analyser) specializeGenericAlias(info *genericAliasInfo, arguments []ty
 		}
 		specialization.resolved = resolved
 		underlying := types.Underlying(resolved)
-		if info.node.Transparent && types.IsOpaque(resolved) {
+		if types.HasError(resolved) {
+			// Type resolution already reported the primary error.
+		} else if info.node.Transparent && types.IsOpaque(resolved) {
 			a.errorf(info.node, "opaque generic type %q cannot be a transparent alias", info.node.Name)
 		} else if _, trait := underlying.(types.TraitType); trait {
 			if info.node.Transparent {
@@ -394,11 +405,15 @@ func (a *Analyser) instantiateSemanticNode(node parser.Node) {
 	if !ok {
 		return
 	}
+	targetType := cast.Type
+	if cast.Checked {
+		targetType = cast.CheckedType
+	}
+	if types.HasError(cast.Operand.GetType()) || types.HasError(targetType) {
+		cast.SetType(types.ErrorType{})
+		return
+	}
 	if cast.TraitConversion {
-		targetType := cast.Type
-		if cast.Checked {
-			targetType = cast.CheckedType
-		}
 		if target, ok := traitPointer(targetType); ok {
 			methods, conforms := a.structuralConformance(cast.Operand.GetType(), target, cast)
 			if !conforms {
@@ -411,10 +426,7 @@ func (a *Analyser) instantiateSemanticNode(node parser.Node) {
 		}
 	}
 	if cast.GenericAssertion {
-		target := cast.Type
-		if cast.Checked {
-			target = cast.CheckedType
-		}
+		target := targetType
 		source := cast.Operand.GetType()
 		if specializedExplicitCast(cast.Operand, source, target) {
 			// A cast involving symbolic types may have been conservatively
@@ -627,6 +639,10 @@ func (a *Analyser) instantiateFunctionSymbol(
 	substituted := a.substituteSymbol(original, substitutions, use)
 	if original.TraitRequirement {
 		receiver := substituted.Signature.Parameters[0]
+		if types.HasError(receiver) || types.HasError(substituted.RequirementTrait) {
+			cloned[original] = substituted
+			return substituted
+		}
 		var probe types.PointerType
 		if original.RequirementAccess == types.TraitReceiverValue {
 			probe = types.PointerType{Base: receiver}

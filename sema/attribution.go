@@ -175,6 +175,13 @@ func (a *Attributor) attributeNode(node parser.Node) {
 		if n.Value != nil && n.Symbol.Type == nil {
 			n.Symbol.Type = n.Value.GetType()
 		}
+		// Ordinary runtime declarations cannot retain an untyped numeric or
+		// unresolved enum type. Mark the symbol erroneous immediately so later
+		// attribution silently poisons dependent expressions; validation still
+		// reports the primary diagnostic at this declaration.
+		if n.Symbol.Type != nil && types.HasUntyped(n.Symbol.Type) && !n.Symbol.InlineComptime {
+			n.Symbol.Type = types.ErrorType{}
+		}
 		if n.Value != nil && n.Symbol.GenericOrigin == nil {
 			n.Symbol.GenericOrigin = genericExpressionOrigin(n.Value)
 		}
@@ -372,6 +379,15 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		for _, field := range n.Fields {
 			a.attributeExpr(field.R)
 		}
+		for _, field := range n.Fields {
+			if types.HasError(field.R.GetType()) {
+				n.SetType(types.ErrorType{})
+				break
+			}
+		}
+		if types.HasError(n.GetType()) {
+			break
+		}
 
 		if n.Symbol != nil {
 			n.SetType(n.Symbol.TypeInfo)
@@ -390,6 +406,10 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		if n.RepeatValue != nil {
 			a.attributeExpr(n.RepeatValue)
 			a.attributeExpr(n.RepeatAmount)
+			if anyErrorExpression(n.RepeatValue, n.RepeatAmount) {
+				n.SetType(types.ErrorType{})
+				break
+			}
 			size := -1
 			if amount, ok := n.RepeatAmount.(*parser.IntegerLiteralNode); ok {
 				if parsed, err := strconv.Atoi(amount.Value); err == nil {
@@ -402,13 +422,19 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		typs := []types.Type{}
 		for _, elem := range n.Elements {
 			a.attributeExpr(elem)
+			if types.HasError(elem.GetType()) {
+				n.SetType(types.ErrorType{})
+			}
 			typs = append(typs, elem.GetType())
+		}
+		if types.HasError(n.GetType()) {
+			break
 		}
 		if len(typs) > 0 {
 			currentType := typs[0]
 			for _, t := range typs[1:] {
 				got := types.CommonType(currentType, t)
-				if got.Equals(types.ErrorType{}) {
+				if types.HasError(got) {
 					a.errorf(n, "inconsistent slice element types: expected %v, got %v", currentType, t)
 				}
 				currentType = got
@@ -419,8 +445,20 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		}
 
 	case *parser.InlineAsmNode:
+		for _, output := range n.Outputs {
+			if types.HasError(output.Type) {
+				n.SetType(types.ErrorType{})
+				break
+			}
+		}
 		for _, input := range n.Inputs {
 			a.attributeExpr(input.Value)
+			if types.HasError(input.Value.GetType()) {
+				n.SetType(types.ErrorType{})
+			}
+		}
+		if types.HasError(n.GetType()) {
+			break
 		}
 		switch len(n.Outputs) {
 		case 0:
@@ -439,6 +477,10 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		if n.TaggedUnionType != nil {
 			for _, arg := range n.Args {
 				a.attributeExpr(arg)
+			}
+			if types.HasError(n.TaggedUnionType) || anyErrorExpression(n.Args...) {
+				n.SetType(types.ErrorType{})
+				break
 			}
 			if n.TaggedUnionTemplate != nil {
 				info, tagged := types.TaggedUnion(n.TaggedUnionType)
@@ -505,6 +547,12 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		for _, arg := range n.Args {
 			a.attributeExpr(arg)
 		}
+		if (n.Symbol == nil && anyErrorExpression(n.Callee)) ||
+			(n.Symbol != nil && hasErrorSignature(n.Symbol.Signature)) ||
+			anyErrorExpression(n.Args...) {
+			n.SetType(types.ErrorType{})
+			break
+		}
 
 		if n.Symbol != nil && n.Symbol.Template {
 			template := n.Symbol
@@ -565,6 +613,10 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 
 	case *parser.UnaryOpNode:
 		a.attributeExpr(n.Operand)
+		if types.HasError(n.Operand.GetType()) {
+			n.SetType(types.ErrorType{})
+			break
+		}
 		switch n.Op {
 		case parser.UnaryOpNegate:
 			if types.IsSigned(n.Operand.GetType()) || types.IsFloat(n.Operand.GetType()) {
@@ -621,6 +673,10 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 	case *parser.IndexExprNode:
 		a.attributeExpr(n.Subject)
 		a.attributeExpr(n.Index)
+		if anyErrorExpression(n.Subject, n.Index) {
+			n.SetType(types.ErrorType{})
+			break
+		}
 
 		switch t := types.Underlying(n.Subject.GetType()).(type) {
 		case types.SliceType:
@@ -652,6 +708,10 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		}
 		if n.End != nil {
 			a.attributeExpr(n.End)
+		}
+		if anyErrorExpression(n.Subject, n.Start, n.End) {
+			n.SetType(types.ErrorType{})
+			break
 		}
 
 		switch t := types.Underlying(n.Subject.GetType()).(type) {
@@ -736,6 +796,10 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 			break
 		}
 		if ident := resolvedTypeIdentifier(n.Subject); ident != nil {
+			if types.HasError(ident.Symbol.TypeInfo) {
+				n.SetType(types.ErrorType{})
+				break
+			}
 			if info, tagged := types.TaggedUnion(ident.Symbol.TypeInfo); tagged {
 				variant, index, exists := info.Variant(n.Field.Name)
 				if !exists {
@@ -785,6 +849,10 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		}
 
 		a.attributeExpr(n.Subject)
+		if types.HasError(n.Subject.GetType()) {
+			n.SetType(types.ErrorType{})
+			break
+		}
 		subjectType := types.Underlying(n.Subject.GetType())
 		if ptr, ok := subjectType.(types.PointerType); ok {
 			subjectType = types.Underlying(ptr.Base)
@@ -855,6 +923,10 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 	case *parser.BinaryOpNode:
 		a.attributeExpr(n.Operand1)
 		a.attributeExpr(n.Operand2)
+		if anyErrorExpression(n.Operand1, n.Operand2) {
+			n.SetType(types.ErrorType{})
+			break
+		}
 		if literal, ok := n.Operand1.(*parser.EnumLiteralNode); ok && isUnresolvedEnum(literal.GetType()) {
 			if isEnumOrFlags(n.Operand2.GetType()) {
 				a.resolveEnumLiteral(literal, n.Operand2.GetType())
@@ -889,7 +961,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 				n.SetType(types.PrimitiveIsz)
 			} else if types.IsNumeric(t1) && types.IsNumeric(t2) {
 				got := types.PromoteNumeric(t1, t2)
-				if got.Equals(types.ErrorType{}) {
+				if types.HasError(got) {
 					a.errorf(n, "incompatible types for binary operator: %v and %v", t1, t2)
 					n.SetType(types.ErrorType{})
 				} else {
@@ -936,7 +1008,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 			}
 			if types.IsInteger(t1) && types.IsInteger(t2) {
 				got := types.PromoteNumeric(t1, t2)
-				if got.Equals(types.ErrorType{}) {
+				if types.HasError(got) {
 					a.errorf(n, "incompatible integer types for bitwise operator: %v and %v", t1, t2)
 					n.SetType(types.ErrorType{})
 				} else {
@@ -980,6 +1052,10 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 			}
 		}
 		n.CheckedType = target
+		if types.HasError(n.Operand.GetType()) || types.HasError(target) {
+			n.SetType(types.ErrorType{})
+			break
+		}
 		if n.Checked {
 			n.SetType(types.MultipleReturnType{Types: []types.Type{target, types.PrimitiveBool}})
 		} else {
@@ -988,6 +1064,10 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 
 	case *parser.ReprNode:
 		a.attributeExpr(n.Operand)
+		if types.HasError(n.Operand.GetType()) {
+			n.SetType(types.ErrorType{})
+			break
+		}
 		operand := n.Operand.GetType()
 		if pointer, ok := types.Underlying(operand).(types.PointerType); ok {
 			if pointer.Mutable {
@@ -1013,26 +1093,48 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		n.SetType(repr)
 
 	case *parser.SizeOfNode:
-		n.SetType(types.PrimitiveUsz)
 		n.OperandType = a.analyser.resolveTypeNode(n.Operand)
+		if types.HasError(n.OperandType) {
+			n.SetType(types.ErrorType{})
+			break
+		}
+		n.SetType(types.PrimitiveUsz)
 
 	case *parser.SizeOfExprNode:
 		a.attributeExpr(n.Operand)
+		if types.HasError(n.Operand.GetType()) {
+			n.SetType(types.ErrorType{})
+			n.OperandType = types.ErrorType{}
+			break
+		}
 		n.SetType(types.PrimitiveUsz)
 		n.OperandType = n.Operand.GetType()
 
 	case *parser.AlignOfNode:
-		n.SetType(types.PrimitiveUsz)
 		if n.Expression != nil {
 			a.attributeExpr(n.Expression)
+			if types.HasError(n.Expression.GetType()) {
+				n.SetType(types.ErrorType{})
+				n.OperandType = types.ErrorType{}
+				break
+			}
 			n.OperandType = n.Expression.GetType()
 		} else {
 			n.OperandType = a.analyser.resolveTypeNode(n.Operand)
 		}
+		if types.HasError(n.OperandType) {
+			n.SetType(types.ErrorType{})
+			break
+		}
+		n.SetType(types.PrimitiveUsz)
 
 	case *parser.OffsetOfNode:
-		n.SetType(types.PrimitiveUsz)
 		n.OperandType = a.analyser.resolveTypeNode(n.Operand)
+		if types.HasError(n.OperandType) {
+			n.SetType(types.ErrorType{})
+			break
+		}
+		n.SetType(types.PrimitiveUsz)
 
 	default:
 		panic(fmt.Sprintf("unexpected expression type: %T\n", node))
@@ -1351,6 +1453,10 @@ func (a *Attributor) attributeMethodCall(n *parser.FunctionCallNode) bool {
 		return false
 	}
 	a.attributeExpr(member.Subject)
+	if types.HasError(member.Subject.GetType()) {
+		n.SetType(types.ErrorType{})
+		return true
+	}
 	if view := staticTraitView(member.Subject); view != nil {
 		return a.attributeStaticTraitMethodCall(n, member, view)
 	}
@@ -1775,11 +1881,16 @@ func (a *Attributor) mergeReturnTypes(candidates []returnTypeCandidate) types.Ty
 	if len(candidates) == 0 {
 		return types.PrimitiveVoid
 	}
+	for _, candidate := range candidates {
+		if types.HasError(candidate.ty) {
+			return types.ErrorType{}
+		}
+	}
 	current := candidates[0].ty
 	for _, candidate := range candidates[1:] {
 		if types.IsNumeric(current) && types.IsNumeric(candidate.ty) {
 			current = types.PromoteNumeric(current, candidate.ty)
-			if current.Equals(types.ErrorType{}) {
+			if types.HasError(current) {
 				a.errorf(candidate.node, "inconsistent return types")
 				return current
 			}
@@ -1826,6 +1937,16 @@ func (a *Attributor) attributeIf(n *parser.IfNode) {
 		n.SetType(types.PrimitiveVoid)
 		return
 	}
+	if types.HasError(n.IfBranch.Condition.GetType()) {
+		n.SetType(types.ErrorType{})
+		return
+	}
+	for _, branch := range n.ElseIfBranches {
+		if types.HasError(branch.Condition.GetType()) {
+			n.SetType(types.ErrorType{})
+			return
+		}
+	}
 
 	var candidates []returnTypeCandidate
 	addBranch := func(block *parser.BlockNode) {
@@ -1862,6 +1983,17 @@ func (a *Attributor) attributeMatch(n *parser.MatchNode) {
 		n.SetType(types.PrimitiveVoid)
 		return
 	}
+	if types.HasError(n.Subject.GetType()) {
+		n.SetType(types.ErrorType{})
+		return
+	}
+	for i := range n.Arms {
+		arm := &n.Arms[i]
+		if anyErrorExpression(arm.Guard, arm.Body) {
+			n.SetType(types.ErrorType{})
+			return
+		}
+	}
 	var candidates []returnTypeCandidate
 	for i := range n.Arms {
 		body := n.Arms[i].Body
@@ -1878,6 +2010,9 @@ func (a *Attributor) attributeMatch(n *parser.MatchNode) {
 
 func (a *Attributor) attributeMatchPattern(pattern *parser.MatchPatternNode, subjectType types.Type) {
 	if pattern == nil {
+		return
+	}
+	if types.HasError(subjectType) {
 		return
 	}
 	switch pattern.Kind {

@@ -146,6 +146,12 @@ func (v *Validator) validateNode(node parser.Node) {
 			if n.Args[i].Type != nil {
 				parameterNode = n.Args[i].Type
 			}
+			if types.HasError(param) {
+				if n.Args[i].Default != nil {
+					v.validateExpr(n.Args[i].Default)
+				}
+				continue
+			}
 			if hasVoidValue(param) {
 				v.errorf(parameterNode, "function parameter cannot have type void")
 			}
@@ -177,7 +183,9 @@ func (v *Validator) validateNode(node parser.Node) {
 			}
 			arg.Default = v.validateExprWithExpected(arg.Default, param)
 		}
-		if ret := n.Symbol.Signature.ReturnType; ret != nil && !types.IsComplete(ret) {
+		if ret := n.Symbol.Signature.ReturnType; ret != nil && types.HasError(ret) {
+			// The type resolver already reported the primary error.
+		} else if ret != nil && !types.IsComplete(ret) {
 			v.errorf(n, "function return cannot have incomplete type %v", ret)
 		} else if usesCABI && ret != nil && types.HasTraitPointer(ret) {
 			v.errorf(n, "trait pointers cannot cross the c ABI")
@@ -186,12 +194,13 @@ func (v *Validator) validateNode(node parser.Node) {
 		} else if _, array := types.Underlying(ret).(types.ArrayType); usesCABI && ret != nil && array {
 			v.errorf(n, "arrays cannot be returned directly through the c ABI; return a struct containing the array")
 		}
-		if ret := n.Symbol.Signature.ReturnType; ret != nil && !ret.Equals(types.PrimitiveVoid) {
+		returnTypeErroneous := types.HasError(n.Symbol.Signature.ReturnType)
+		if ret := n.Symbol.Signature.ReturnType; ret != nil && !returnTypeErroneous && !ret.Equals(types.PrimitiveVoid) {
 			if _, multiple := ret.(types.MultipleReturnType); !multiple && hasVoidValue(ret) {
 				v.errorf(n, "function return cannot have void as a value type")
 			}
 		}
-		if multiple, ok := n.Symbol.Signature.ReturnType.(types.MultipleReturnType); ok {
+		if multiple, ok := n.Symbol.Signature.ReturnType.(types.MultipleReturnType); ok && !returnTypeErroneous {
 			if usesCABI {
 				v.errorf(n, "multiple return values are not supported by the c ABI; use abi \"qk\"")
 			}
@@ -214,7 +223,7 @@ func (v *Validator) validateNode(node parser.Node) {
 			} else {
 				v.validateNode(n.Body)
 				returnType := n.Symbol.Signature.ReturnType
-				_, invalidReturnType := returnType.(types.ErrorType)
+				invalidReturnType := types.HasError(returnType)
 				if returnType != nil &&
 					!returnType.Equals(types.PrimitiveVoid) &&
 					!invalidReturnType &&
@@ -256,10 +265,10 @@ func (v *Validator) validateNode(node parser.Node) {
 		if n.Comptime && !isGenericComptimeExpression(n.Value) {
 			v.errorf(n, "comptime generic initializer must be a constant integer expression")
 		}
-		if n.Symbol.Type != nil && !types.IsComplete(n.Symbol.Type) {
+		if n.Symbol.Type != nil && !types.HasError(n.Symbol.Type) && !types.IsComplete(n.Symbol.Type) {
 			v.errorf(n, "cannot declare a value of incomplete type %v", n.Symbol.Type)
 		}
-		if n.Attributes.Get(attributes.AttributeTypeForeign) != nil && types.HasTaggedUnion(n.Symbol.Type) {
+		if n.Attributes.Get(attributes.AttributeTypeForeign) != nil && !types.HasError(n.Symbol.Type) && types.HasTaggedUnion(n.Symbol.Type) {
 			v.errorf(n, "tagged unions cannot cross a foreign boundary; expose an explicitly tagged union through @reprof(...) instead")
 		}
 		if v.currentFunction != nil {
@@ -304,6 +313,9 @@ func (v *Validator) validateNode(node parser.Node) {
 		if len(n.GenericParameters) != 0 {
 			return
 		}
+		if types.HasError(n.Symbol.TypeInfo) {
+			return
+		}
 		underlying := types.Underlying(n.Symbol.TypeInfo)
 		if n.Transparent && types.IsOpaque(n.Symbol.TypeInfo) {
 			v.errorf(n, "opaque type %q cannot be a transparent alias", n.Name)
@@ -329,6 +341,9 @@ func (v *Validator) validateNode(node parser.Node) {
 
 func (v *Validator) validateStatement(node parser.Node) {
 	v.validateNode(node)
+	if expression, ok := node.(parser.ExpressionNode); ok && types.HasError(expression.GetType()) {
+		return
+	}
 
 	switch n := node.(type) {
 	case *parser.FunctionCallNode:
@@ -406,14 +421,25 @@ func (v *Validator) finaliseDeclaration(n *parser.DeclarationNode) {
 			n.Symbol.Type = types.ErrorType{}
 			return
 		}
-		declared := v.analyser.resolveTypeNode(n.TypeNode)
+		declared := n.Symbol.Type
+		if declared == nil {
+			declared = v.analyser.resolveTypeNode(n.TypeNode)
+		}
 		noInit.SetType(declared)
 		n.Symbol.Type = declared
 		return
 	}
 
 	if n.TypeNode != nil {
-		declared := v.analyser.resolveTypeNode(n.TypeNode)
+		declared := n.Symbol.Type
+		if declared == nil {
+			declared = v.analyser.resolveTypeNode(n.TypeNode)
+		}
+		if types.HasError(declared) {
+			v.validateExpr(n.Value)
+			n.Symbol.Type = types.ErrorType{}
+			return
+		}
 		if hasVoidValue(declared) {
 			v.errorf(n, "declaration cannot have type void")
 			v.validateExpr(n.Value)
@@ -457,6 +483,9 @@ func (v *Validator) finaliseDeclaration(n *parser.DeclarationNode) {
 func (v *Validator) validateAssignment(n *parser.AssignmentNode) {
 	if len(n.Assignees) > 0 {
 		v.validateValueExpr(n.Value)
+		if types.HasError(n.Value.GetType()) {
+			return
+		}
 		result, ok := n.Value.GetType().(types.MultipleReturnType)
 		if !ok {
 			v.errorf(n, "multiple assignment requires a multiple-result expression")
@@ -497,11 +526,23 @@ func (v *Validator) validateAssignment(n *parser.AssignmentNode) {
 	v.validateExpr(n.Assignee)
 
 	lhsType := n.Assignee.GetType()
+	if types.HasError(lhsType) {
+		v.validateExpr(n.Value)
+		return
+	}
 	n.Value = v.validateExprWithExpected(n.Value, lhsType)
 }
 
 func (v *Validator) validateMultiDeclaration(n *parser.MultiDeclarationNode) {
 	v.validateValueExpr(n.Value)
+	if types.HasError(n.Value.GetType()) {
+		for _, symbol := range n.Symbols {
+			if symbol != nil {
+				symbol.Type = types.ErrorType{}
+			}
+		}
+		return
+	}
 	result, ok := n.Value.GetType().(types.MultipleReturnType)
 	if !ok {
 		v.errorf(n, "multiple declaration requires a multiple-result expression")
@@ -525,6 +566,10 @@ func (v *Validator) validateLValue(expr parser.ExpressionNode) bool {
 func (v *Validator) validateMutablePlace(expr parser.ExpressionNode, reference bool) bool {
 	switch e := expr.(type) {
 	case *parser.IdentifierNode:
+		v.validateExpr(e)
+		if types.HasError(e.GetType()) {
+			return false
+		}
 		if !e.GetSymbol().Mutable {
 			if reference {
 				v.errorf(e, "cannot take mutable reference of immutable variable")
@@ -533,8 +578,6 @@ func (v *Validator) validateMutablePlace(expr parser.ExpressionNode, reference b
 			}
 			return false
 		}
-		v.validateExpr(e)
-
 	case *parser.UnaryOpNode:
 		if e.Op != parser.UnaryOpDereference {
 			v.errorf(expr, "invalid assignment target")
@@ -576,6 +619,9 @@ func (v *Validator) validateMutableAccessPath(expr parser.ExpressionNode, requir
 	switch e := expr.(type) {
 	case *parser.IdentifierNode:
 		v.validateExpr(e)
+		if types.HasError(e.GetType()) {
+			return false
+		}
 		if !requireMutableRoot || e.Symbol == nil {
 			return true
 		}
@@ -610,6 +656,9 @@ func (v *Validator) validateMutableAccessPath(expr parser.ExpressionNode, requir
 			return v.validateMutableAccessPath(e.ResolvedIdentifier, requireMutableRoot, reference)
 		}
 		if !v.validateMutableAccessPath(e.Subject, requireMutableRoot, reference) {
+			return false
+		}
+		if types.HasError(e.Subject.GetType()) {
 			return false
 		}
 		if pointer, ok := types.Underlying(e.Subject.GetType()).(types.PointerType); ok {
@@ -665,6 +714,9 @@ func (v *Validator) validateMutableAccessPath(expr parser.ExpressionNode, requir
 
 	case *parser.FunctionCallNode:
 		v.validateExpr(e)
+		if types.HasError(e.GetType()) {
+			return false
+		}
 		switch types.Underlying(e.GetType()).(type) {
 		case types.PointerType, types.SliceType:
 			return true
@@ -675,6 +727,9 @@ func (v *Validator) validateMutableAccessPath(expr parser.ExpressionNode, requir
 		// Casts and pointer arithmetic may also produce a capability. Their
 		// validation prevents immutable-to-mutable upgrades.
 		v.validateExpr(expr)
+		if types.HasError(expr.GetType()) {
+			return false
+		}
 		switch types.Underlying(expr.GetType()).(type) {
 		case types.PointerType, types.SliceType:
 			return true
@@ -711,7 +766,7 @@ func (v *Validator) validateMutablePointerBoundary(node parser.Node, pointer typ
 
 func (v *Validator) validateIf(n *parser.IfNode) {
 	v.validateExpr(n.IfBranch.Condition)
-	if !n.IfBranch.Condition.GetType().Equals(types.PrimitiveBool) {
+	if !types.HasError(n.IfBranch.Condition.GetType()) && !n.IfBranch.Condition.GetType().Equals(types.PrimitiveBool) {
 		v.errorf(n, "if condition must be bool")
 	}
 
@@ -719,7 +774,7 @@ func (v *Validator) validateIf(n *parser.IfNode) {
 
 	for _, elif := range n.ElseIfBranches {
 		v.validateExpr(elif.Condition)
-		if !elif.Condition.GetType().Equals(types.PrimitiveBool) {
+		if !types.HasError(elif.Condition.GetType()) && !elif.Condition.GetType().Equals(types.PrimitiveBool) {
 			v.errorf(n, "elseif condition must be bool")
 		}
 		v.validateNode(elif.Node)
@@ -756,7 +811,11 @@ func (v *Validator) validateExpressionBlock(n *parser.BlockNode, expected types.
 	if expected != nil {
 		result = v.validateExprWithExpected(result, expected)
 		n.Body[len(n.Body)-1] = result
-		n.SetType(expected)
+		if types.HasError(result.GetType()) {
+			n.SetType(types.ErrorType{})
+		} else {
+			n.SetType(expected)
+		}
 	} else {
 		if !v.validateValueExpr(result) {
 			n.SetType(types.ErrorType{})
@@ -768,7 +827,8 @@ func (v *Validator) validateExpressionBlock(n *parser.BlockNode, expected types.
 
 func (v *Validator) validateIfExpression(n *parser.IfNode, expected types.Type) {
 	v.validateExpr(n.IfBranch.Condition)
-	if !n.IfBranch.Condition.GetType().Equals(types.PrimitiveBool) {
+	poisoned := types.HasError(n.IfBranch.Condition.GetType())
+	if !poisoned && !n.IfBranch.Condition.GetType().Equals(types.PrimitiveBool) {
 		v.errorf(n, "if expression condition must be bool")
 	}
 
@@ -782,7 +842,8 @@ func (v *Validator) validateIfExpression(n *parser.IfNode, expected types.Type) 
 	validateBranch(n.IfBranch.Node)
 	for _, branch := range n.ElseIfBranches {
 		v.validateExpr(branch.Condition)
-		if !branch.Condition.GetType().Equals(types.PrimitiveBool) {
+		poisoned = poisoned || types.HasError(branch.Condition.GetType())
+		if !types.HasError(branch.Condition.GetType()) && !branch.Condition.GetType().Equals(types.PrimitiveBool) {
 			v.errorf(n, "elseif condition must be bool")
 		}
 		validateBranch(branch.Node)
@@ -792,8 +853,8 @@ func (v *Validator) validateIfExpression(n *parser.IfNode, expected types.Type) 
 	} else {
 		validateBranch(n.ElseBranch)
 	}
-	if expected != nil {
-		n.SetType(expected)
+	if poisoned {
+		n.SetType(types.ErrorType{})
 		return
 	}
 	branches := []*parser.BlockNode{n.IfBranch.Node}
@@ -802,29 +863,32 @@ func (v *Validator) validateIfExpression(n *parser.IfNode, expected types.Type) 
 	}
 	branches = append(branches, n.ElseBranch)
 	for _, branch := range branches {
-		if branch != nil {
-			if _, erroneous := branch.GetType().(types.ErrorType); erroneous {
-				n.SetType(types.ErrorType{})
-				return
-			}
+		if branch != nil && types.HasError(branch.GetType()) {
+			n.SetType(types.ErrorType{})
+			return
 		}
+	}
+	if expected != nil {
+		n.SetType(expected)
 	}
 }
 
 func (v *Validator) validateMatch(n *parser.MatchNode, expected types.Type) {
 	v.validateValueExpr(n.Subject)
 	subjectType := n.Subject.GetType()
+	poisoned := types.HasError(subjectType)
 	covered := map[string]bool{}
 	wildcard := false
 	for i := range n.Arms {
 		arm := &n.Arms[i]
 		v.validateMatchPattern(arm.Pattern, subjectType)
-		if wildcard || v.matchPatternFullyCovered(arm.Pattern, covered) {
+		if !poisoned && (wildcard || v.matchPatternFullyCovered(arm.Pattern, covered)) {
 			v.errorf(arm.Pattern, "match arm is unreachable because an earlier arm already covers its pattern")
 		}
 		if arm.Guard != nil {
 			v.validateExpr(arm.Guard)
-			if !arm.Guard.GetType().Equals(types.PrimitiveBool) {
+			poisoned = poisoned || types.HasError(arm.Guard.GetType())
+			if !types.HasError(arm.Guard.GetType()) && !arm.Guard.GetType().Equals(types.PrimitiveBool) {
 				v.errorf(arm.Guard, "match arm guard must be bool")
 			}
 		} else {
@@ -841,6 +905,7 @@ func (v *Validator) validateMatch(n *parser.MatchNode, expected types.Type) {
 		} else {
 			v.validateStatement(arm.Body)
 		}
+		poisoned = poisoned || types.HasError(arm.Body.GetType())
 		for _, binding := range matchPatternBindings(arm.Pattern) {
 			v.warnIfUnused(binding.Symbol, binding.Loc, shared.WarningUnusedVariable, "match binding")
 		}
@@ -848,11 +913,13 @@ func (v *Validator) validateMatch(n *parser.MatchNode, expected types.Type) {
 	if n.Binding != nil {
 		v.warnIfUnused(n.Binding, n.BindingLoc, shared.WarningUnusedVariable, "match subject binding")
 	}
-	if !v.matchIsExhaustive(subjectType, covered, wildcard) {
+	if !poisoned && !v.matchIsExhaustive(subjectType, covered, wildcard) {
 		v.errorf(n, "match is not exhaustive; add the missing cases or a '_' arm")
 	}
 	if !n.Expression {
 		n.SetType(types.PrimitiveVoid)
+	} else if poisoned {
+		n.SetType(types.ErrorType{})
 	} else if expected != nil {
 		n.SetType(expected)
 	}
@@ -860,6 +927,9 @@ func (v *Validator) validateMatch(n *parser.MatchNode, expected types.Type) {
 
 func (v *Validator) validateMatchPattern(pattern *parser.MatchPatternNode, subjectType types.Type) {
 	if pattern == nil {
+		return
+	}
+	if types.HasError(subjectType) {
 		return
 	}
 	switch pattern.Kind {
@@ -993,7 +1063,7 @@ func (v *Validator) validateFor(n *parser.ForNode) {
 			v.errorf(n.ExprsOrStmts[0], "for loop condition must be an expression")
 		} else {
 			v.validateExpr(condition)
-			if !condition.GetType().Equals(types.PrimitiveBool) {
+			if !types.HasError(condition.GetType()) && !condition.GetType().Equals(types.PrimitiveBool) {
 				v.errorf(condition, "for loop condition must be bool")
 			}
 		}
@@ -1004,7 +1074,7 @@ func (v *Validator) validateFor(n *parser.ForNode) {
 			v.errorf(n.ExprsOrStmts[1], "for loop condition must be an expression")
 		} else {
 			v.validateExpr(condition)
-			if !condition.GetType().Equals(types.PrimitiveBool) {
+			if !types.HasError(condition.GetType()) && !condition.GetType().Equals(types.PrimitiveBool) {
 				v.errorf(condition, "for loop condition must be bool")
 			}
 		}
@@ -1020,6 +1090,13 @@ func (v *Validator) validateFor(n *parser.ForNode) {
 func (v *Validator) validateRangeFor(n *parser.RangeForNode) {
 	v.validateExpr(n.Start)
 	v.validateExpr(n.End)
+	if anyErrorExpression(n.Start, n.End) {
+		if n.Symbol != nil {
+			n.Symbol.Type = types.ErrorType{}
+		}
+		v.validateNode(n.Body)
+		return
+	}
 
 	boundType := types.PromoteNumeric(n.Start.GetType(), n.End.GetType())
 	if !types.IsInteger(boundType) {
@@ -1043,6 +1120,16 @@ func (v *Validator) validateRangeFor(n *parser.RangeForNode) {
 
 func (v *Validator) validateForEach(n *parser.ForEachNode) {
 	v.validateExpr(n.Iterable)
+	if types.HasError(n.Iterable.GetType()) {
+		if n.Symbol != nil {
+			n.Symbol.Type = types.ErrorType{}
+		}
+		if n.IndexSymbol != nil {
+			n.IndexSymbol.Type = types.ErrorType{}
+		}
+		v.validateNode(n.Body)
+		return
+	}
 	var element types.Type
 	iterableType := types.Underlying(n.Iterable.GetType())
 	switch iterable := iterableType.(type) {
@@ -1138,7 +1225,7 @@ func (v *Validator) validateReturn(n *parser.ControlKeywordNode) {
 func (v *Validator) validateExpr(node parser.ExpressionNode) {
 	if lambda, ok := node.(*parser.LambdaNode); ok {
 		v.prepareLambda(lambda, nil)
-		if _, invalid := lambda.GetType().(types.ErrorType); invalid {
+		if types.HasError(lambda.GetType()) {
 			return
 		}
 		if lambda.Function != nil && !lambda.Validated {
@@ -1147,7 +1234,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		}
 		return
 	}
-	if _, ok := node.GetType().(types.ErrorType); ok {
+	if types.HasError(node.GetType()) {
 		return
 	}
 
@@ -1177,6 +1264,10 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			for i := range n.Args {
 				n.Args[i] = v.validateExprWithExpected(n.Args[i], variant.Fields[i].R)
 			}
+			if anyErrorExpression(n.Args...) {
+				n.SetType(types.ErrorType{})
+				return
+			}
 			n.SetType(n.TaggedUnionType)
 			return
 		}
@@ -1191,6 +1282,10 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			variadicElement = n.Symbol.Signature.VariadicElement
 		} else {
 			v.validateExpr(n.Callee)
+			if types.HasError(n.Callee.GetType()) {
+				n.SetType(types.ErrorType{})
+				return
+			}
 			ptr, ok := types.Underlying(n.Callee.GetType()).(types.PointerType)
 			if !ok {
 				v.errorf(n, "expression of type %s is not callable", n.Callee.GetType())
@@ -1268,6 +1363,10 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			paramType := params[i]
 			n.Args[i] = v.validateExprWithExpected(arg, paramType)
 		}
+		if anyErrorExpression(n.Args...) {
+			n.SetType(types.ErrorType{})
+			return
+		}
 		if n.Symbol != nil && n.Symbol.Signature != nil &&
 			n.Symbol.Attributes.Get(attributes.AttributeTypeForeign) == nil {
 			fixedCount := len(n.Symbol.Signature.Parameters)
@@ -1342,6 +1441,10 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			n.Operand = v.validateExprWithExpected(n.Operand, targetType)
 		} else {
 			v.validateExpr(n.Operand)
+		}
+		if types.HasError(n.Operand.GetType()) || types.HasError(targetType) {
+			n.SetType(types.ErrorType{})
+			return
 		}
 		if n.StaticTraitView != nil {
 			v.validateStaticTraitAssertion(n)
@@ -1447,12 +1550,16 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 
 	case *parser.ReprNode:
 		v.validateExpr(n.Operand)
+		if types.HasError(n.Operand.GetType()) {
+			n.SetType(types.ErrorType{})
+			return
+		}
 
 	case *parser.UnaryOpNode:
 		v.validateExpr(n.Operand)
 
 		operandType := n.Operand.GetType()
-		if _, erroneous := operandType.(types.ErrorType); erroneous {
+		if types.HasError(operandType) {
 			n.SetType(types.ErrorType{})
 			return
 		}
@@ -1527,11 +1634,11 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 
 		t1 := n.Operand1.GetType()
 		t2 := n.Operand2.GetType()
-		if _, erroneous := t1.(types.ErrorType); erroneous {
+		if types.HasError(t1) {
 			n.SetType(types.ErrorType{})
 			return
 		}
-		if _, erroneous := t2.(types.ErrorType); erroneous {
+		if types.HasError(t2) {
 			n.SetType(types.ErrorType{})
 			return
 		}
@@ -1575,7 +1682,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			}
 
 			common := types.PromoteNumeric(t1, t2)
-			if _, isError := common.(types.ErrorType); isError {
+			if types.HasError(common) {
 				v.errorf(n, "incompatible types for arithmetic: %v and %v", t1, t2)
 				break
 			}
@@ -1615,7 +1722,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 				break
 			}
 			common := types.PromoteNumeric(t1, t2)
-			if _, isError := common.(types.ErrorType); isError {
+			if types.HasError(common) {
 				v.errorf(n, "incompatible integer types for bitwise operation: %v and %v", t1, t2)
 				break
 			}
@@ -1630,7 +1737,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 
 			if types.IsNumeric(t1) && types.IsNumeric(t2) {
 				common := types.PromoteNumeric(t1, t2)
-				if _, isError := common.(types.ErrorType); isError {
+				if types.HasError(common) {
 					v.errorf(n, "incompatible types for comparison: %v and %v", t1, t2)
 					break
 				}
@@ -1668,6 +1775,10 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 	case *parser.IndexExprNode:
 		v.validateExpr(n.Subject)
 		v.validateExpr(n.Index)
+		if anyErrorExpression(n.Subject, n.Index) {
+			n.SetType(types.ErrorType{})
+			return
+		}
 
 		indexType := n.Index.GetType()
 		if !types.IsInteger(indexType) {
@@ -1709,6 +1820,10 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			} else {
 				n.End = v.validateExprWithExpected(n.End, types.PrimitiveUsz)
 			}
+		}
+		if anyErrorExpression(n.Subject, n.Start, n.End) {
+			n.SetType(types.ErrorType{})
+			return
 		}
 
 		subjectType := types.Underlying(n.Subject.GetType())
@@ -1767,6 +1882,13 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		if n.TaggedUnionType != nil {
 			return
 		}
+		if n.ResolvedIdentifier != nil && n.ResolvedIdentifier.Symbol != nil &&
+			n.ResolvedIdentifier.Symbol.Kind == symbols.SymbolKindVariable &&
+			types.HasError(n.ResolvedIdentifier.Symbol.Type) {
+			n.ResolvedIdentifier.SetType(types.ErrorType{})
+			n.SetType(types.ErrorType{})
+			return
+		}
 		if n.MethodSymbol != nil && n.MethodSymbol.Template {
 			v.errorf(n, "generic method %q requires type arguments when used as a value", n.Field.Name)
 			return
@@ -1775,6 +1897,10 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			return
 		}
 		v.validateExpr(n.Subject)
+		if types.HasError(n.Subject.GetType()) {
+			n.SetType(types.ErrorType{})
+			return
+		}
 		subjectType := types.Underlying(n.Subject.GetType())
 		if ptr, ok := subjectType.(types.PointerType); ok {
 			subjectType = types.Underlying(ptr.Base)
@@ -1833,6 +1959,21 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		v.validateMatch(n, nil)
 
 	case *parser.SliceLiteralNode:
+		for _, element := range n.Elements {
+			v.validateValueExpr(element)
+			if types.HasError(element.GetType()) {
+				n.SetType(types.ErrorType{})
+				return
+			}
+		}
+		if n.RepeatValue != nil {
+			v.validateValueExpr(n.RepeatValue)
+			v.validateExpr(n.RepeatAmount)
+			if anyErrorExpression(n.RepeatValue, n.RepeatAmount) {
+				n.SetType(types.ErrorType{})
+				return
+			}
+		}
 		v.errorf(n, "cannot infer whether sequence literal is an array or slice; add a type annotation")
 		if n.RepeatValue != nil {
 			if _, noInit := n.RepeatValue.(*parser.NoInitializerNode); noInit {
@@ -1859,7 +2000,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 				common = el.GetType()
 			} else {
 				common = types.CommonType(common, el.GetType())
-				if _, isErr := common.(types.ErrorType); isErr {
+				if types.HasError(common) {
 					v.errorf(n, "slice element type mismatch")
 					return
 				}
@@ -1888,6 +2029,10 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		fields := make([]shared.Pair[string, types.Type], 0, len(n.Fields))
 		for i, field := range n.Fields {
 			v.validateValueExpr(field.R)
+			if types.HasError(field.R.GetType()) {
+				n.SetType(types.ErrorType{})
+				return
+			}
 			n.Fields[i].R = field.R
 			fields = append(fields, shared.Pair[string, types.Type]{
 				L: field.L,
@@ -1918,6 +2063,10 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		v.errorf(n, "'---' is only valid as a declaration initializer, a struct field initializer, or the final struct initializer entry")
 
 	case *parser.SizeOfNode:
+		if types.HasError(n.OperandType) {
+			n.SetType(types.ErrorType{})
+			return
+		}
 		if types.Underlying(n.OperandType).Equals(types.PrimitiveVoid) {
 			v.errorf(n, "@sizeof requires an object type, got void")
 		} else if !types.IsComplete(n.OperandType) {
@@ -1926,6 +2075,10 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 
 	case *parser.SizeOfExprNode:
 		v.validateExpr(n.Operand)
+		if types.HasError(n.Operand.GetType()) || types.HasError(n.OperandType) {
+			n.SetType(types.ErrorType{})
+			return
+		}
 		if types.Underlying(n.OperandType).Equals(types.PrimitiveVoid) {
 			v.errorf(n, "@sizeof requires an object expression, got void")
 		} else if !types.IsComplete(n.OperandType) {
@@ -1933,6 +2086,10 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		}
 
 	case *parser.AlignOfNode:
+		if types.HasError(n.OperandType) {
+			n.SetType(types.ErrorType{})
+			return
+		}
 		if !types.IsComplete(n.OperandType) {
 			v.errorf(n, "@alignof requires a complete type, got %v", n.OperandType)
 			break
@@ -1947,6 +2104,10 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		}
 
 	case *parser.OffsetOfNode:
+		if types.HasError(n.OperandType) {
+			n.SetType(types.ErrorType{})
+			return
+		}
 		operand := types.Underlying(n.OperandType)
 		switch operand.(type) {
 		case types.StructType, types.UnionType:
@@ -1990,10 +2151,13 @@ func specializationConstant(expr parser.ExpressionNode) (symbols.SpecializationC
 }
 
 func (v *Validator) validateInlineAsm(n *parser.InlineAsmNode) {
+	poisoned := false
 	seenClobbers := make(map[string]struct{}, len(n.Clobbers))
 	for i := range n.Outputs {
 		output := &n.Outputs[i]
-		if !validInlineAsmType(output.Type) {
+		if types.HasError(output.Type) {
+			poisoned = true
+		} else if !validInlineAsmType(output.Type) {
 			v.errorf(n, "@asm output %d has unsupported type %v; use an integer, float, pointer, enum, or flags type", i+1, output.Type)
 		}
 		if output.Constraint == "" || output.Constraint[0] != '=' {
@@ -2006,6 +2170,10 @@ func (v *Validator) validateInlineAsm(n *parser.InlineAsmNode) {
 		input := &n.Inputs[i]
 		v.validateExpr(input.Value)
 		inputType := input.Value.GetType()
+		if types.HasError(inputType) {
+			poisoned = true
+			continue
+		}
 		if !validInlineAsmType(inputType) {
 			v.errorf(input.Value, "@asm input %d has unsupported type %v; use an integer, float, pointer, enum, or flags value", i+1, inputType)
 		}
@@ -2017,6 +2185,9 @@ func (v *Validator) validateInlineAsm(n *parser.InlineAsmNode) {
 		} else if input.Constraint[0] == '=' || input.Constraint[0] == '~' || strings.Contains(input.Constraint, ",") {
 			v.errorf(n, "invalid @asm input %d constraint %q", i+1, input.Constraint)
 		}
+	}
+	if poisoned {
+		n.SetType(types.ErrorType{})
 	}
 	for _, clobber := range n.Clobbers {
 		if clobber == "" || strings.ContainsAny(clobber, "{},") {
@@ -2046,6 +2217,10 @@ func validInlineAsmType(t types.Type) bool {
 func (v *Validator) validateStaticTraitAssertion(node *parser.CastNode) {
 	view := node.StaticTraitView
 	source := node.Operand.GetType()
+	if types.HasError(source) || types.HasError(view.Trait) {
+		node.SetType(types.ErrorType{})
+		return
+	}
 	pointer, _ := types.Underlying(source).(types.PointerType)
 	_, _, sourceIsPointer, _ := methodOwnerIdentity(source)
 
@@ -2092,6 +2267,9 @@ func (v *Validator) validateStaticTraitAssertion(node *parser.CastNode) {
 }
 
 func (v *Validator) validatePointerArithmeticBase(node parser.Node, base types.Type) {
+	if types.HasError(base) {
+		return
+	}
 	underlying := types.Underlying(base)
 	if underlying.Equals(types.PrimitiveVoid) {
 		v.errorf(node, "cannot perform arithmetic on void pointer")
@@ -2135,6 +2313,9 @@ func hasOffsetField(operand types.Type, name string) bool {
 }
 
 func (v *Validator) validateReferenceTarget(node *parser.UnaryOpNode, target parser.ExpressionNode, mutable bool) bool {
+	if target != nil && types.HasError(target.GetType()) {
+		return false
+	}
 	if identifier := comptimeIdentifier(target); identifier != nil && identifier.Symbol != nil && identifier.Symbol.InlineComptime {
 		v.errorf(node, "cannot take reference of untyped compile-time value %q", identifier.Name)
 		return false
@@ -2249,6 +2430,9 @@ func (v *Validator) requireExpressionValue(node parser.ExpressionNode) bool {
 	if node == nil || node.GetType() == nil {
 		return false
 	}
+	if types.HasError(node.GetType()) {
+		return false
+	}
 	if hasVoidValue(node.GetType()) {
 		v.errorf(node, "void expression cannot be used as a value")
 		return false
@@ -2262,6 +2446,11 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 			v.requireExpressionValue(result)
 		}
 	}()
+	if types.HasError(expected) {
+		v.validateExpr(node)
+		node.SetType(types.ErrorType{})
+		return node
+	}
 	if lambda, ok := node.(*parser.LambdaNode); ok {
 		v.prepareLambda(lambda, expected)
 		v.validateExpr(lambda)
@@ -2271,10 +2460,8 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 	if identifier := comptimeIdentifier(node); identifier != nil && identifier.Symbol != nil &&
 		identifier.Symbol.InlineComptime && types.IsUntyped(node.GetType()) && expected != nil &&
 		!types.IsUntyped(expected) && node.GetType().CanCoerceTo(expected) {
-		if _, erroneous := expected.(types.ErrorType); !erroneous {
-			setComptimeReferenceType(node, expected)
-			return node
-		}
+		setComptimeReferenceType(node, expected)
+		return node
 	}
 
 	if call, ok := node.(*parser.FunctionCallNode); ok {
@@ -2371,6 +2558,10 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 		if (types.IsNumeric(expected) && n.Op == parser.UnaryOpNegate) ||
 			((types.IsInteger(expected) || isFlagsType(expected)) && n.Op == parser.UnaryOpBitwiseNot) {
 			n.Operand = v.validateExprWithExpected(n.Operand, expected)
+			if types.HasError(n.Operand.GetType()) {
+				n.SetType(types.ErrorType{})
+				return n
+			}
 			n.SetType(expected)
 			return n
 		}
@@ -2382,6 +2573,10 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 			} else {
 				n.Operand2 = v.validateExprWithExpected(n.Operand2, expected)
 			}
+			if anyErrorExpression(n.Operand1, n.Operand2) {
+				n.SetType(types.ErrorType{})
+				return n
+			}
 			n.SetType(expected)
 			return n
 		}
@@ -2391,6 +2586,10 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 			(isArithmeticOperator(n.Op) || isBitwiseOperator(n.Op)) {
 			n.Operand1 = v.validateExprWithExpected(n.Operand1, expected)
 			n.Operand2 = v.validateExprWithExpected(n.Operand2, expected)
+			if anyErrorExpression(n.Operand1, n.Operand2) {
+				n.SetType(types.ErrorType{})
+				return n
+			}
 			n.SetType(expected)
 			return n
 		}
@@ -2425,7 +2624,7 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 	v.validateExpr(node)
 
 	got := node.GetType()
-	if _, erroneous := got.(types.ErrorType); erroneous {
+	if types.HasError(got) {
 		return node
 	}
 	if sourceArray, ok := types.Underlying(got).(types.ArrayType); ok {
@@ -2501,6 +2700,9 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 
 func (v *Validator) prepareLambda(n *parser.LambdaNode, expected types.Type) {
 	if n.Attributed {
+		if types.HasError(n.GetType()) {
+			return
+		}
 		if context, ok := expectedLambdaFunction(expected); ok && n.Function != nil &&
 			n.Function.Symbol != nil && len(context.Parameters) == len(n.Args) &&
 			context.TypedVariadic == n.Function.Symbol.Signature.TypedVariadic {
@@ -2519,6 +2721,10 @@ func (v *Validator) prepareLambda(n *parser.LambdaNode, expected types.Type) {
 }
 
 func (v *Validator) completeGenericCall(call *parser.FunctionCallNode, expected types.Type) bool {
+	if anyErrorExpression(call.Args...) {
+		call.SetType(types.ErrorType{})
+		return false
+	}
 	if call.Symbol == nil || call.Symbol.TemplateSymbol == nil {
 		return true
 	}
@@ -2634,6 +2840,10 @@ func isArithmeticOperator(op parser.BinaryOpKind) bool {
 }
 
 func (v *Validator) validateSliceLiteralWithExpected(n *parser.SliceLiteralNode, expected types.Type) {
+	if types.HasError(expected) {
+		n.SetType(types.ErrorType{})
+		return
+	}
 	underlying := types.Underlying(expected)
 	var elementType types.Type
 	expectedLength := -1
@@ -2648,10 +2858,6 @@ func (v *Validator) validateSliceLiteralWithExpected(n *parser.SliceLiteralNode,
 		return
 	}
 	if n.RepeatValue != nil {
-		size := -1
-		if amount, ok := staticIntegerValue(n.RepeatAmount); ok && amount.IsInt64() {
-			size = int(amount.Int64())
-		}
 		if noInit, ok := n.RepeatValue.(*parser.NoInitializerNode); ok {
 			if expectedLength < 0 {
 				v.errorf(n, "uninitialized repeated literal requires an array type")
@@ -2661,6 +2867,14 @@ func (v *Validator) validateSliceLiteralWithExpected(n *parser.SliceLiteralNode,
 			n.RepeatValue = v.validateExprWithExpected(n.RepeatValue, elementType)
 		}
 		n.RepeatAmount = v.validateExprWithExpected(n.RepeatAmount, types.PrimitiveUsz)
+		if anyErrorExpression(n.RepeatValue, n.RepeatAmount) {
+			n.SetType(types.ErrorType{})
+			return
+		}
+		size := -1
+		if amount, ok := staticIntegerValue(n.RepeatAmount); ok && amount.IsInt64() {
+			size = int(amount.Int64())
+		}
 		if expectedLength >= 0 {
 			if size < 0 {
 				v.errorf(n, "array repetition count must be a compile-time integer")
@@ -2678,6 +2892,10 @@ func (v *Validator) validateSliceLiteralWithExpected(n *parser.SliceLiteralNode,
 
 	for i, element := range n.Elements {
 		n.Elements[i] = v.validateExprWithExpected(element, elementType)
+	}
+	if anyErrorExpression(n.Elements...) {
+		n.SetType(types.ErrorType{})
+		return
 	}
 
 	n.SetType(expected)
@@ -2751,6 +2969,10 @@ func staticIntegerValue(expr parser.ExpressionNode) (*big.Int, bool) {
 }
 
 func (v *Validator) validateStructLiteralWithExpected(n *parser.StructLiteralNode, expected types.Type) {
+	if types.HasError(expected) {
+		n.SetType(types.ErrorType{})
+		return
+	}
 	if flagType, ok := types.Underlying(expected).(types.FlagsType); ok {
 		if n.NoInitRemaining {
 			v.errorf(n, "flags literals cannot use '---'")
@@ -2799,6 +3021,10 @@ func (v *Validator) validateStructLiteralWithExpected(n *parser.StructLiteralNod
 				} else {
 					n.Fields[0].R = v.validateExprWithExpected(field.R, unionField.R)
 				}
+				if types.HasError(n.Fields[0].R.GetType()) {
+					n.SetType(types.ErrorType{})
+					return
+				}
 				n.SetType(expected)
 				return
 			}
@@ -2833,6 +3059,7 @@ func (v *Validator) validateStructLiteralWithExpected(n *parser.StructLiteralNod
 	}
 
 	seen := make(map[string]struct{}, len(n.Fields))
+	poisoned := false
 	for i, field := range n.Fields {
 		expectedFieldType, exists := fieldTypes[field.L]
 		if !exists {
@@ -2850,6 +3077,7 @@ func (v *Validator) validateStructLiteralWithExpected(n *parser.StructLiteralNod
 			noInit.SetType(expectedFieldType)
 		} else {
 			n.Fields[i].R = v.validateExprWithExpected(field.R, expectedFieldType)
+			poisoned = poisoned || types.HasError(n.Fields[i].R.GetType())
 		}
 	}
 
@@ -2879,5 +3107,9 @@ func (v *Validator) validateStructLiteralWithExpected(n *parser.StructLiteralNod
 		v.errorf(n, "missing fields in struct literal: %v", strings.Join(missingFields, ", "))
 	}
 
-	n.SetType(expected)
+	if poisoned {
+		n.SetType(types.ErrorType{})
+	} else {
+		n.SetType(expected)
+	}
 }

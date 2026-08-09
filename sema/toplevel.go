@@ -193,6 +193,9 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 		a.errorf(n, "cannot attach method to unknown or imported type %q", n.MethodOwner)
 		return
 	}
+	if types.HasError(ownerType) {
+		return
+	}
 
 	previousBindings := a.typeParameterBindings
 	methodParameterNodes := n.GenericParameters
@@ -270,6 +273,9 @@ func (a *Analyser) collectPatternMethodSignature(n *parser.FunctionDefNode) {
 	}
 
 	ownerType := a.resolveTypeNode(n.MethodOwnerType)
+	if types.HasError(ownerType) {
+		return
+	}
 	ownerParameters := methodOwnerTypeParameters(ownerType)
 	if len(ownerParameters) > len(genericParameters) {
 		a.errorf(n, "method owner type %v uses undeclared generic parameters", ownerType)

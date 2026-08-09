@@ -1426,6 +1426,117 @@ func HasUntyped(t Type) bool {
 	return false
 }
 
+// HasError reports whether semantic failure has poisoned any part of a type.
+// Composite types containing ErrorType are erroneous as a whole and must not
+// participate in follow-on compatibility diagnostics.
+func HasError(t Type) bool {
+	return hasError(t, make(map[string]bool), make(map[*AliasRef]bool))
+}
+
+func hasError(t Type, defined map[string]bool, aliases map[*AliasRef]bool) bool {
+	if t == nil {
+		return false
+	}
+	switch t := t.(type) {
+	case ErrorType:
+		return true
+	case DefinedType:
+		key := Identity(t)
+		if defined[key] {
+			return false
+		}
+		defined[key] = true
+		for _, argument := range t.TypeArguments {
+			if hasError(argument, defined, aliases) {
+				return true
+			}
+		}
+		return hasError(t.Underlying, defined, aliases)
+	case *AliasRef:
+		if aliases[t] || t.Target == nil || *t.Target == nil {
+			return false
+		}
+		aliases[t] = true
+		return hasError(*t.Target, defined, aliases)
+	case SliceType:
+		return hasError(t.Base, defined, aliases)
+	case ArrayType:
+		return hasError(t.Base, defined, aliases)
+	case SequenceType:
+		return hasError(t.Base, defined, aliases)
+	case PointerType:
+		return hasError(t.Base, defined, aliases)
+	case TraitPointerType:
+		return hasError(t.Trait, defined, aliases)
+	case TypeParameter:
+		key := Identity(t)
+		if defined[key] {
+			return false
+		}
+		defined[key] = true
+		return hasError(t.Constraint, defined, aliases)
+	case StructType:
+		for _, field := range t.Fields {
+			if hasError(field.R, defined, aliases) {
+				return true
+			}
+		}
+		if t.TaggedUnion != nil {
+			if hasError(t.TaggedUnion.Tag, defined, aliases) {
+				return true
+			}
+			for _, variant := range t.TaggedUnion.Variants {
+				for _, field := range variant.Fields {
+					if hasError(field.R, defined, aliases) {
+						return true
+					}
+				}
+			}
+		}
+	case UnionType:
+		for _, field := range t.Fields {
+			if hasError(field.R, defined, aliases) {
+				return true
+			}
+		}
+	case FunctionType:
+		for _, parameter := range t.Parameters {
+			if hasError(parameter, defined, aliases) {
+				return true
+			}
+		}
+		return hasError(t.ReturnType, defined, aliases)
+	case MultipleReturnType:
+		for _, item := range t.Types {
+			if hasError(item, defined, aliases) {
+				return true
+			}
+		}
+	case TraitType:
+		key := Identity(t)
+		if defined[key] {
+			return false
+		}
+		defined[key] = true
+		for _, method := range t.Methods {
+			for _, parameter := range method.GenericParameters {
+				if hasError(parameter.Constraint, defined, aliases) {
+					return true
+				}
+			}
+			for _, parameter := range method.Parameters {
+				if hasError(parameter, defined, aliases) {
+					return true
+				}
+			}
+			if hasError(method.ReturnType, defined, aliases) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func HasTraitPointer(t Type) bool {
 	switch t := Underlying(t).(type) {
 	case TraitPointerType:
