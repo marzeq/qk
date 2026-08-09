@@ -33,6 +33,13 @@ pub let clock_t = type
     || OS == .DragonFly { std.ctypes.int }
     else { std.ctypes.long }
 
+when OS != .Windows {
+  pub let Timespec = type struct {
+    seconds: time_t,
+    nanoseconds: std.ctypes.long,
+  }
+}
+
 // -----------------------------------------------------------------------------
 // stdio
 // -----------------------------------------------------------------------------
@@ -252,6 +259,18 @@ when OS == .Windows {
 }
 
 pub let clock(): clock_t @foreign
+
+when OS != .Windows {
+  pub let clock_gettime(
+    clock_id: std.ctypes.int,
+    value: *mut Timespec,
+  ): std.ctypes.int @foreign
+
+  pub let nanosleep(
+    duration: *Timespec,
+    remaining: *mut Timespec,
+  ): std.ctypes.int @foreign
+}
 
 pub let srand(seed: std.ctypes.unsigned_int): void @foreign
 pub let rand(): std.ctypes.int @foreign

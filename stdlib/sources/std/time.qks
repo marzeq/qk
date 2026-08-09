@@ -1,0 +1,234 @@
+module std.time
+
+pub let HasTime = comptime TargetHasLibc
+
+when HasTime {
+import std.ctypes
+import std.error
+import std.libc
+
+pub let NanosecondsPerMicrosecond: u64 = 1000
+pub let NanosecondsPerMillisecond: u64 = 1000000
+pub let NanosecondsPerSecond: u64 = 1000000000
+pub let NanosecondsPerMinute: u64 = 60000000000
+pub let NanosecondsPerHour: u64 = 3600000000000
+
+pub let Duration = type struct {
+  nanoseconds: u64,
+}
+
+pub let Timestamp = type struct {
+  seconds: i64,
+  nanosecond: u32,
+}
+
+// Instant is opaque clock state. Values are meaningful only when compared
+// with other instants produced by this module in the same process.
+pub let Instant = type struct {
+  ticks: u64,
+  frequency: u64,
+}
+
+pub let Duration.zero(): Duration = .{ nanoseconds=0 }
+
+pub let Duration.from_nanoseconds(value: u64): Duration = .{
+  nanoseconds=value,
+}
+
+let duration_from_units(value: u64, scale: u64): (Duration, bool) {
+  if value != 0 && scale > (~0.(u64)) / value {
+    return Duration.zero(), false
+  }
+  return .{ nanoseconds=value * scale }, true
+}
+
+pub let Duration.from_microseconds(value: u64): (Duration, bool) =
+  duration_from_units(value, NanosecondsPerMicrosecond)
+
+pub let Duration.from_milliseconds(value: u64): (Duration, bool) =
+  duration_from_units(value, NanosecondsPerMillisecond)
+
+pub let Duration.from_seconds(value: u64): (Duration, bool) =
+  duration_from_units(value, NanosecondsPerSecond)
+
+pub let Duration.from_minutes(value: u64): (Duration, bool) =
+  duration_from_units(value, NanosecondsPerMinute)
+
+pub let Duration.from_hours(value: u64): (Duration, bool) =
+  duration_from_units(value, NanosecondsPerHour)
+
+pub let Duration.as_nanoseconds(self): u64 = self.nanoseconds
+
+pub let Duration.as_microseconds(self): u64 =
+  self.nanoseconds / NanosecondsPerMicrosecond
+
+pub let Duration.as_milliseconds(self): u64 =
+  self.nanoseconds / NanosecondsPerMillisecond
+
+pub let Duration.as_seconds(self): u64 =
+  self.nanoseconds / NanosecondsPerSecond
+
+pub let Duration.subsecond_nanoseconds(self): u32 =
+  (self.nanoseconds % NanosecondsPerSecond).(u32)
+
+pub let Duration.add(self, other: Duration): (Duration, bool) {
+  if other.nanoseconds > (~0.(u64)) - self.nanoseconds {
+    return Duration.zero(), false
+  }
+  return .{ nanoseconds=self.nanoseconds + other.nanoseconds }, true
+}
+
+pub let Duration.subtract(self, other: Duration): (Duration, bool) {
+  if other.nanoseconds > self.nanoseconds { return Duration.zero(), false }
+  return .{ nanoseconds=self.nanoseconds - other.nanoseconds }, true
+}
+
+when OS == .Windows {
+  let FileTime = type struct {
+    low: u32,
+    high: u32,
+  }
+
+  let query_performance_counter(value: *mut i64): i32
+    @foreign(symbol "QueryPerformanceCounter")
+  let query_performance_frequency(value: *mut i64): i32
+    @foreign(symbol "QueryPerformanceFrequency")
+  let get_system_time(value: *mut FileTime): void
+    @foreign(symbol "GetSystemTimePreciseAsFileTime")
+  let sleep_milliseconds(milliseconds: u32): void
+    @foreign(symbol "Sleep")
+} else {
+  let MonotonicClock: std.ctypes.int =
+    when OS == .Linux || OS == .WASI { 1 }
+    else when OS == .MacOS { 6 }
+    else when OS == .FreeBSD || OS == .DragonFly { 4 }
+    else when OS == .OpenBSD || OS == .NetBSD { 3 }
+    else { @compiler_error("Unsupported monotonic clock") }
+}
+
+pub let Timestamp.now(): (Timestamp, std.error.Error) {
+  when OS == .Windows {
+    let mut file_time: FileTime = .{ low=0, high=0 }
+    get_system_time(file_time.&mut)
+    let intervals = (file_time.high.(u64) << 32) | file_time.low.(u64)
+    let UnixEpochIntervals: u64 = 116444736000000000
+    if intervals < UnixEpochIntervals {
+      return .{ seconds=0, nanosecond=0 }, std.error.Error.out_of_range()
+    }
+    let unix_intervals = intervals - UnixEpochIntervals
+    return .{
+      seconds=(unix_intervals / 10000000).(i64),
+      nanosecond=((unix_intervals % 10000000) * 100).(u32),
+    }, std.error.Error.none()
+  } else {
+    let mut value: std.libc.Timespec = .{ seconds=0, nanoseconds=0 }
+    if std.libc.clock_gettime(0, value.&mut) != 0 {
+      return .{ seconds=0, nanosecond=0 }, std.error.last_error()
+    }
+    if value.nanoseconds < 0 || value.nanoseconds >= NanosecondsPerSecond.(std.ctypes.long) {
+      return .{ seconds=0, nanosecond=0 }, std.error.Error.invalid_data()
+    }
+    return .{
+      seconds=value.seconds.(i64),
+      nanosecond=value.nanoseconds.(u32),
+    }, std.error.Error.none()
+  }
+}
+
+pub let Timestamp.unix_seconds(self): i64 = self.seconds
+
+pub let Timestamp.subsecond_nanoseconds(self): u32 = self.nanosecond
+
+pub let Instant.now(): (Instant, std.error.Error) {
+  when OS == .Windows {
+    let mut counter: i64 = 0
+    let mut frequency: i64 = 0
+    if query_performance_frequency(frequency.&mut) == 0 || frequency <= 0 {
+      return .{ ticks=0, frequency=0 }, std.error.Error.io_failed()
+    }
+    if query_performance_counter(counter.&mut) == 0 || counter < 0 {
+      return .{ ticks=0, frequency=0 }, std.error.Error.io_failed()
+    }
+    return .{
+      ticks=counter.(u64),
+      frequency=frequency.(u64),
+    }, std.error.Error.none()
+  } else {
+    let mut value: std.libc.Timespec = .{ seconds=0, nanoseconds=0 }
+    if std.libc.clock_gettime(MonotonicClock, value.&mut) != 0 {
+      return .{ ticks=0, frequency=0 }, std.error.last_error()
+    }
+    if value.seconds < 0 || value.nanoseconds < 0 ||
+      value.nanoseconds >= NanosecondsPerSecond.(std.ctypes.long) {
+      return .{ ticks=0, frequency=0 }, std.error.Error.invalid_data()
+    }
+    let seconds = value.seconds.(u64)
+    if seconds > (~0.(u64)) / NanosecondsPerSecond {
+      return .{ ticks=0, frequency=0 }, std.error.Error.out_of_range()
+    }
+    return .{
+      ticks=seconds * NanosecondsPerSecond + value.nanoseconds.(u64),
+      frequency=NanosecondsPerSecond,
+    }, std.error.Error.none()
+  }
+}
+
+pub let Instant.duration_since(self, earlier: Instant): (Duration, bool) {
+  if self.frequency == 0 || self.frequency != earlier.frequency ||
+    self.ticks < earlier.ticks {
+    return Duration.zero(), false
+  }
+  let difference = self.ticks - earlier.ticks
+  let seconds = difference / self.frequency
+  let remainder = difference % self.frequency
+  if seconds > (~0.(u64)) / NanosecondsPerSecond {
+    return Duration.zero(), false
+  }
+  let mut nanoseconds = seconds * NanosecondsPerSecond
+  // Clock frequencies on supported platforms are small enough for this
+  // product; retain an explicit guard for unusual Windows hardware clocks.
+  if remainder != 0 && NanosecondsPerSecond > (~0.(u64)) / remainder {
+    return Duration.zero(), false
+  }
+  nanoseconds += (remainder * NanosecondsPerSecond) / self.frequency
+  return .{ nanoseconds=nanoseconds }, true
+}
+
+pub let Instant.elapsed(self): (Duration, std.error.Error) {
+  let current, error = Instant.now()
+  if error.is_error() { return Duration.zero(), error }
+  let elapsed, valid = current.duration_since(self)
+  if !valid { return Duration.zero(), std.error.Error.invalid_data() }
+  return elapsed, std.error.Error.none()
+}
+
+pub let sleep(duration: Duration): std.error.Error {
+  when OS == .Windows {
+    let mut milliseconds = duration.nanoseconds / NanosecondsPerMillisecond
+    if duration.nanoseconds % NanosecondsPerMillisecond != 0 { milliseconds += 1 }
+    for milliseconds > 0 {
+      let chunk: u32 = if milliseconds > 4294967294 { 4294967294 } else { milliseconds.(u32) }
+      sleep_milliseconds(chunk)
+      milliseconds -= chunk.(u64)
+    }
+    return std.error.Error.none()
+  } else {
+    let seconds = duration.nanoseconds / NanosecondsPerSecond
+    let maximum_seconds: u64 = if @sizeof(std.libc.time_t) == 4 {
+      2147483647
+    } else {
+      9223372036854775807
+    }
+    if seconds > maximum_seconds { return std.error.Error.out_of_range() }
+    let requested: std.libc.Timespec = .{
+      seconds=seconds.(std.libc.time_t),
+      nanoseconds=(duration.nanoseconds % NanosecondsPerSecond).(std.ctypes.long),
+    }
+    let mut remaining: std.libc.Timespec = .{ seconds=0, nanoseconds=0 }
+    if std.libc.nanosleep(requested.&, remaining.&mut) != 0 {
+      return std.error.last_error()
+    }
+    return std.error.Error.none()
+  }
+}
+}
