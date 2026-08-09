@@ -49,24 +49,26 @@ pub let Random.range(*mut self, start: u64, end: u64): (u64, bool) {
 pub let Random.next_f64(*mut self): f64 =
   (self.next_u64() >> 11).(f64) * (1.0 / 9007199254740992.0)
 
-// Produces a value by filling its complete object representation with random
-// bytes. Values wider than u64 consume consecutive generator outputs. This is
-// a raw C-style operation: types with invalid bit patterns remain the caller's
-// responsibility.
-pub let Random.fill<T>(*mut self): T {
-  let mut result: T = ---
-  let bytes = result.&mut.(*mut u8)[0:@sizeof(T)]
-  let mut offset: usz = 0
-  for offset < @len(bytes) {
-    let value = self.next_u64()
-    let mut index: usz = 0
-    for index < 8 && offset < @len(bytes) {
-      bytes[offset] = (value >> (index.(u64) * 8)).(u8)
-      offset += 1
-      index += 1
+// Fills each element's complete object representation. T is inferred from the
+// mutable slice. Every nonzero-sized element consumes at least one generator
+// output; values wider than u64 consume as many consecutive outputs as their
+// size requires.
+// This is a raw C-style operation: types with invalid bit patterns remain the
+// caller's responsibility.
+pub let Random.fill<T>(*mut self, values: []mut T): void {
+  for let mut value_index: usz = 0; value_index < @len(values); value_index += 1 {
+    let bytes = values[value_index].&mut.(*mut u8)[0:@sizeof(T)]
+    let mut offset: usz = 0
+    for offset < @len(bytes) {
+      let value = self.next_u64()
+      let mut byte_index: usz = 0
+      for byte_index < 8 && offset < @len(bytes) {
+        bytes[offset] = (value >> (byte_index.(u64) * 8)).(u8)
+        offset += 1
+        byte_index += 1
+      }
     }
   }
-  return result
 }
 
 pub let Random.shuffle<T>(*mut self, values: []mut T): void {
