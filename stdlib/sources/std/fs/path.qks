@@ -183,19 +183,21 @@ let Path.join_path_one(self, right: *Path): (Path, bool) =
   self.join(right.to_str())
 
 pub let Path.join(self, right: ...str): (Path, bool) {
+  let mut s = self
   for r in right {
-    let mut result, success = self.join_one(r)
+    let mut result, success = s.join_one(r)
     if !success { return result, false }
-    self = result
+    s = result
   }
-  return self, true
+  return s, true
 }
 
 pub let Path.join_path(self, right: ...*Path): (Path, bool) {
+  let mut s = self
   for r in right {
-    let mut result, success = self.join_path_one(r)
+    let mut result, success = s.join_path_one(r)
     if !success { return result, false }
-    self = result
+    s = result
   }
-  return self, true
+  return s, true
 }
