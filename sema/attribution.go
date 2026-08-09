@@ -1305,6 +1305,12 @@ func genericExpressionOrigin(node parser.ExpressionNode) types.Type {
 		if n.Symbol != nil && n.Symbol.TemplateSymbol != nil {
 			origin := n.Symbol.TemplateSymbol.Signature.ReturnType
 			if types.HasTypeParameter(origin) {
+				// A concrete specialization has already classified its return type.
+				// Only dependent calls need to defer cast classification until the
+				// enclosing generic definition is specialized.
+				if !types.HasTypeParameter(n.Symbol.Signature.ReturnType) {
+					return nil
+				}
 				return origin
 			}
 		}
