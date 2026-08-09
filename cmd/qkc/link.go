@@ -2,7 +2,10 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
 	"reflect"
+	"runtime"
 	"strings"
 
 	"github.com/marzeq/qk/attributes"
@@ -222,7 +225,34 @@ func linkObjects(objFiles []string, moduleLinks []attributes.Link, roots []strin
 		return err
 	}
 
+	// ld64.lld does not implement Mach-O relocatable linking. Use Apple's
+	// linker on Darwin hosts for this one output mode while retaining embedded
+	// LLD for executable and shared-library links.
+	if config.outputType == OutputObject && targetIsApple(config.target) {
+		if runtime.GOOS != "darwin" {
+			return fmt.Errorf("Mach-O relocatable object output requires an Apple linker on the host")
+		}
+		return linkDarwinRelocatable(args, config.verbose)
+	}
+
 	return llvmbackend.Link(args, config.verbose)
+}
+
+func linkDarwinRelocatable(args []string, verbose bool) error {
+	clang, err := exec.LookPath("clang")
+	if err != nil {
+		return fmt.Errorf("find Clang for Mach-O relocatable link: %w", err)
+	}
+	if verbose {
+		fmt.Fprintf(os.Stderr, "> %s %s\n", clang, strings.Join(args, " "))
+	}
+	command := exec.Command(clang, args...)
+	command.Stdout = os.Stdout
+	command.Stderr = os.Stderr
+	if err := command.Run(); err != nil {
+		return fmt.Errorf("Apple relocatable linking failed: %w", err)
+	}
+	return nil
 }
 
 func moduleLinksContainLibc(moduleLinks []attributes.Link) bool {
@@ -254,13 +284,13 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots []str
 	default:
 		return nil, fmt.Errorf("unknown output type")
 	}
-	if config.outputType != OutputObject || !targetIsWebAssembly(config.target) {
+	if config.outputType != OutputObject || (!targetIsWebAssembly(config.target) && !targetIsApple(config.target)) {
 		args = append(args, deadStripLinkerFlag(config.target))
 		if config.outputType != OutputObject && config.outputType != OutputWebAssembly {
 			args = append(args, unusedDynamicLibrariesFlag(config.target))
 		}
 	}
-	if config.outputType == OutputObject && !targetIsWebAssembly(config.target) {
+	if config.outputType == OutputObject && !targetIsWebAssembly(config.target) && !targetIsApple(config.target) {
 		for _, root := range roots {
 			args = append(args, linkerUndefinedFlag(config.target, root))
 		}
@@ -302,6 +332,11 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots []str
 	for _, link := range moduleLinks {
 		switch link.Kind {
 		case attributes.LinkSystem:
+			// A Mach-O relocatable link cannot consume a dylib text stub. Keep
+			// libc references unresolved for the final executable or dylib link.
+			if config.outputType == OutputObject && targetIsApple(config.target) && (link.Value == "c" || link.Value == "System") {
+				continue
+			}
 			args = append(args, "-l"+link.Value)
 		case attributes.LinkPath:
 			args = append(args, link.Value)
