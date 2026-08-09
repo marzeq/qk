@@ -1452,6 +1452,10 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		v.validateExpr(n.Operand)
 
 		operandType := n.Operand.GetType()
+		if _, erroneous := operandType.(types.ErrorType); erroneous {
+			n.SetType(types.ErrorType{})
+			return
+		}
 
 		switch n.Op {
 
@@ -1523,6 +1527,14 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 
 		t1 := n.Operand1.GetType()
 		t2 := n.Operand2.GetType()
+		if _, erroneous := t1.(types.ErrorType); erroneous {
+			n.SetType(types.ErrorType{})
+			return
+		}
+		if _, erroneous := t2.(types.ErrorType); erroneous {
+			n.SetType(types.ErrorType{})
+			return
+		}
 
 		switch n.Op {
 
@@ -1898,6 +1910,9 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 	case *parser.IdentifierNode:
 		// Untyped compile-time integers remain untyped until a surrounding
 		// ordinary expression supplies a concrete type.
+		if n.Symbol != nil && !n.Symbol.InlineComptime && n.Symbol.Type != nil {
+			n.SetType(n.Symbol.Type)
+		}
 
 	case *parser.NoInitializerNode:
 		v.errorf(n, "'---' is only valid as a declaration initializer, a struct field initializer, or the final struct initializer entry")
@@ -2410,6 +2425,9 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 	v.validateExpr(node)
 
 	got := node.GetType()
+	if _, erroneous := got.(types.ErrorType); erroneous {
+		return node
+	}
 	if sourceArray, ok := types.Underlying(got).(types.ArrayType); ok {
 		if targetSlice, ok := types.Underlying(expected).(types.SliceType); ok && sourceArray.Base.Equals(targetSlice.Base) {
 			reference := &parser.UnaryOpNode{Operand: node, Loc: node.GetLoc()}
