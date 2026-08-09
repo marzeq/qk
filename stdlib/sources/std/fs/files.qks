@@ -173,7 +173,7 @@ pub let remove(path: str): std.os.Error {
 
 pub let Path.remove(self): std.os.Error = remove(self.to_str())
 
-pub let create_directory(path: str): std.os.Error {
+let create_directory_once(path: str, ok_if_exists: bool): std.os.Error {
   let mut lc = std.alloc.LibcAllocator.init()
   let allocator = lc.&mut.(*mut dyn std.alloc.Allocator)
   let c_path = path.to_cstr(allocator)
@@ -184,11 +184,33 @@ pub let create_directory(path: str): std.os.Error {
   else { status = std.libc.mkdir(c_path, 493) }
   let error = if status == 0 { std.os.Error.none() } else { std.os.last_error() }
   allocator.free_bytes(c_path, @len(path) + 1, @alignof(u8))
+  if error.is_error() && ok_if_exists && path_is_directory(path) {
+    return std.os.Error.none()
+  }
   return error
 }
 
-pub let Path.create_directory(self): std.os.Error =
-  create_directory(self.to_str())
+pub let create_directory(
+  path: str,
+  ok_if_exists: bool = false,
+  recursive: bool = false,
+): std.os.Error {
+  if recursive {
+    let parent = dirname(path)
+    if !parent.eq(path) {
+      let error = create_directory(parent, true, true)
+      if error.is_error() { return error }
+    }
+  }
+  return create_directory_once(path, ok_if_exists)
+}
+
+pub let Path.create_directory(
+  self,
+  ok_if_exists: bool = false,
+  recursive: bool = false,
+): std.os.Error =
+  create_directory(self.to_str(), ok_if_exists, recursive)
 
 pub let remove_directory(path: str): std.os.Error {
   let mut lc = std.alloc.LibcAllocator.init()
