@@ -91,11 +91,10 @@ func (a *Analyser) collectPlainFunctionSignature(n *parser.FunctionDefNode) {
 		}
 		defer func() { a.typeParameterBindings = previousBindings }()
 	}
-	paramTypes := make([]types.Type, len(n.Args))
+	paramTypes := a.resolveFunctionParameterTypes(n.Args)
 	requiredParameters := len(n.Args)
 
 	for i, arg := range n.Args {
-		paramTypes[i] = a.resolveTypeNode(arg.Type)
 		if arg.Default != nil && requiredParameters == len(n.Args) {
 			requiredParameters = i
 		}
@@ -220,10 +219,9 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 		a.errorf(n, "method %q already defined on type %q", n.Name, n.MethodOwner)
 		return
 	}
-	paramTypes := make([]types.Type, len(n.Args))
+	paramTypes := a.resolveFunctionParameterTypes(n.Args)
 	requiredParameters := len(n.Args)
 	for i, arg := range n.Args {
-		paramTypes[i] = a.resolveTypeNode(arg.Type)
 		if arg.Default != nil && requiredParameters == len(n.Args) {
 			requiredParameters = i
 		}
@@ -292,10 +290,9 @@ func (a *Analyser) collectPatternMethodSignature(n *parser.FunctionDefNode) {
 		return
 	}
 
-	paramTypes := make([]types.Type, len(n.Args))
+	paramTypes := a.resolveFunctionParameterTypes(n.Args)
 	requiredParameters := len(n.Args)
 	for i, arg := range n.Args {
-		paramTypes[i] = a.resolveTypeNode(arg.Type)
 		if arg.Default != nil && requiredParameters == len(n.Args) {
 			requiredParameters = i
 		}
@@ -352,6 +349,27 @@ func (a *Analyser) collectPatternMethodSignature(n *parser.FunctionDefNode) {
 			specializations: make(map[string]*parser.FunctionDefNode),
 		}
 	}
+}
+
+func (a *Analyser) resolveFunctionParameterTypes(args []*parser.FunctionNodeArg) []types.Type {
+	result := make([]types.Type, len(args))
+	var previousNode parser.TypeNode
+	var previousType types.Type
+	for i, arg := range args {
+		if arg.Type == nil {
+			previousNode = nil
+			previousType = nil
+			continue
+		}
+		if previousNode != nil && arg.Type.GetLoc() == previousNode.GetLoc() {
+			result[i] = previousType
+			continue
+		}
+		result[i] = a.resolveTypeNode(arg.Type)
+		previousNode = arg.Type
+		previousType = result[i]
+	}
+	return result
 }
 
 func (a *Analyser) classifyPatternMethodOwner(n *parser.FunctionDefNode, ownerType types.Type) (string, string, bool, bool) {

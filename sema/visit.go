@@ -325,14 +325,12 @@ func (a *Analyser) visitExpression(expr parser.ExpressionNode) {
 }
 
 func (a *Analyser) visitLambda(n *parser.LambdaNode) {
-	parameterTypes := make([]types.Type, len(n.Args))
+	parameterTypes := a.resolveFunctionParameterTypes(n.Args)
 	allTyped := true
-	for i, arg := range n.Args {
+	for _, arg := range n.Args {
 		if arg.Type == nil {
 			allTyped = false
-			continue
 		}
-		parameterTypes[i] = a.resolveTypeNode(arg.Type)
 	}
 	a.lambdaCounter++
 	name := fmt.Sprintf("__lambda_%d", a.lambdaCounter)
