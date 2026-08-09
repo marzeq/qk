@@ -693,6 +693,9 @@ func (p *Parser) ParseMulDiv() (ExpressionNode, error) {
 
 func (p *Parser) ParseTerm() (ExpressionNode, error) {
 	beginLoc := p.CurrLoc()
+	if p.Match(tokeniser.TokenPipe, tokeniser.TokenLogicalOr) {
+		return p.ParseLambdaExpression()
+	}
 	if p.Match(tokeniser.TokenDot) && p.Next().Type == tokeniser.TokenOpenCurly {
 		p.Inc()
 		return p.ParseStructLiteral(nil)
@@ -895,6 +898,90 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 	}
 
 	return nil, shared.NewError(p.CurrLoc(), "unexpected token %s", p.Peek())
+}
+
+func (p *Parser) ParseLambdaExpression() (*LambdaNode, error) {
+	beginLoc := p.CurrLoc()
+	var args []*FunctionNodeArg
+	typedVariadic := false
+
+	if p.Match(tokeniser.TokenLogicalOr) {
+		p.Inc()
+	} else {
+		p.Inc() // opening '|'
+		for {
+			for p.Match(tokeniser.TokenNewline) {
+				p.Inc()
+			}
+			if p.Match(tokeniser.TokenPipe) {
+				p.Inc()
+				break
+			}
+			name, ok := p.ExpectGet(tokeniser.TokenIdentifier)
+			if !ok {
+				return nil, shared.NewError(p.PrevLoc(), "expected lambda parameter name or '|'")
+			}
+			arg := &FunctionNodeArg{Name: name.Value, Loc: name.Loc}
+			if p.Match(tokeniser.TokenColon) {
+				p.Inc()
+				isTypedVariadic := p.Match(tokeniser.Token3Dots)
+				if isTypedVariadic {
+					p.Inc()
+				}
+				typeNode, err := p.ParseType()
+				if err != nil {
+					return nil, err
+				}
+				if isTypedVariadic {
+					typeNode = &SliceTypeNode{ElementType: typeNode, Loc: typeNode.GetLoc()}
+					typedVariadic = true
+				}
+				arg.Type = typeNode
+			}
+			if p.Match(tokeniser.TokenEquals) {
+				return nil, shared.NewError(p.CurrLoc(), "lambda parameters cannot have default values")
+			}
+			args = append(args, arg)
+			if typedVariadic {
+				if p.Match(tokeniser.TokenComma) {
+					return nil, shared.NewError(p.CurrLoc(), "typed variadic parameter must be last")
+				}
+				if !p.Expect(tokeniser.TokenPipe) {
+					return nil, shared.NewError(p.PrevLoc(), "expected '|' after lambda parameters")
+				}
+				break
+			}
+			if p.Match(tokeniser.TokenComma) {
+				p.Inc()
+				continue
+			}
+			if !p.Expect(tokeniser.TokenPipe) {
+				return nil, shared.NewError(p.PrevLoc(), "expected ',' or '|' after lambda parameter")
+			}
+			break
+		}
+	}
+
+	for p.Match(tokeniser.TokenNewline) {
+		p.Inc()
+	}
+	if !p.Expect(tokeniser.TokenFatArrow) {
+		return nil, shared.NewError(p.PrevLoc(), "expected '=>' after lambda parameters")
+	}
+	for p.Match(tokeniser.TokenNewline) {
+		p.Inc()
+	}
+	var body ExpressionNode
+	var err error
+	if p.Match(tokeniser.TokenOpenCurly) {
+		body, err = p.ParseBlockExpression()
+	} else {
+		body, err = p.ParseExpression()
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &LambdaNode{Args: args, Body: body, TypedVariadic: typedVariadic, Loc: p.SpanFrom(beginLoc)}, nil
 }
 
 func (p *Parser) ParseEmbedExpression() (*EmbedNode, error) {

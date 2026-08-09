@@ -370,6 +370,10 @@ func (a *Analyser) specializeGenericFunction(template *symbols.Symbol, arguments
 		return a.instantiateType(t, substitutions, use)
 	}, mapSymbol, func(node parser.Node) {
 		a.instantiateSemanticNode(node)
+		if lambda, ok := node.(*parser.LambdaNode); ok && lambda.Function != nil && lambda.Function.Symbol != nil {
+			lambda.Function.Symbol.Name += "__" + instanceSymbol.Name
+			lambda.Function.Name = lambda.Function.Symbol.Name
+		}
 	}).(*parser.FunctionDefNode)
 	cloned.GenericParameters = nil
 	cloned.MethodOwnerGenericParameters = nil

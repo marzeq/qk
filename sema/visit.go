@@ -160,6 +160,9 @@ func (a *Analyser) visitLocalDeclaration(n *parser.DeclarationNode) {
 		a.visitExpression(n.Value)
 	}
 	a.current.Symbols[sym.Name] = sym
+	if len(a.lambdaOwnedSymbols) != 0 {
+		a.lambdaOwnedSymbols[len(a.lambdaOwnedSymbols)-1][sym] = true
+	}
 	n.Symbol = sym
 }
 
@@ -180,11 +183,16 @@ func (a *Analyser) visitMultiDeclaration(n *parser.MultiDeclarationNode) {
 		sym.Mutable = n.Mutable
 		n.Symbols[i] = sym
 		a.current.Symbols[name] = sym
+		if len(a.lambdaOwnedSymbols) != 0 {
+			a.lambdaOwnedSymbols[len(a.lambdaOwnedSymbols)-1][sym] = true
+		}
 	}
 }
 
 func (a *Analyser) visitExpression(expr parser.ExpressionNode) {
 	switch e := expr.(type) {
+	case *parser.LambdaNode:
+		a.visitLambda(e)
 
 	case *parser.IdentifierNode:
 		a.resolveIdentifier(e)
@@ -313,6 +321,58 @@ func (a *Analyser) visitExpression(expr parser.ExpressionNode) {
 
 	default:
 		panic(fmt.Sprintf("unsupported expression node type %T", e))
+	}
+}
+
+func (a *Analyser) visitLambda(n *parser.LambdaNode) {
+	parameterTypes := make([]types.Type, len(n.Args))
+	allTyped := true
+	for i, arg := range n.Args {
+		if arg.Type == nil {
+			allTyped = false
+			continue
+		}
+		parameterTypes[i] = a.resolveTypeNode(arg.Type)
+	}
+	a.lambdaCounter++
+	name := fmt.Sprintf("__lambda_%d", a.lambdaCounter)
+	if module := a.modules[a.currentMod]; module != nil {
+		for module.Scope.Symbols[name] != nil {
+			a.lambdaCounter++
+			name = fmt.Sprintf("__lambda_%d", a.lambdaCounter)
+		}
+	}
+	signature := &symbols.FunctionSignature{
+		Parameters: parameterTypes, RequiredParameters: len(parameterTypes), TypedVariadic: n.TypedVariadic,
+	}
+	if n.TypedVariadic && len(parameterTypes) != 0 {
+		signature.VariadicElement = types.Underlying(parameterTypes[len(parameterTypes)-1]).(types.SliceType).Base
+	}
+	symbol := symbols.NewFunction(name, signature)
+	symbol.DefinitionModule = a.currentMod
+	definition := &parser.FunctionDefNode{
+		Name: name, Args: n.Args, Body: n.Body, ExpressionBody: true,
+		TypedVariadic: n.TypedVariadic, Loc: n.Loc, Symbol: symbol,
+	}
+	n.Function = definition
+	a.functionDefinitions[symbol] = &functionDefinitionInfo{node: definition, module: a.currentMod}
+
+	previous := a.current
+	a.current = symbols.NewScope(previous)
+	a.lambdaOwnedSymbols = append(a.lambdaOwnedSymbols, make(map[*symbols.Symbol]bool))
+	for i, arg := range n.Args {
+		param := symbols.NewVariable(arg.Name, parameterTypes[i])
+		param.Mutable = arg.Mutable
+		if a.defineSymbol(param, arg) {
+			arg.Symbol = param
+		}
+	}
+	a.visitExpression(n.Body)
+	a.lambdaOwnedSymbols = a.lambdaOwnedSymbols[:len(a.lambdaOwnedSymbols)-1]
+	a.current = previous
+
+	if !allTyped {
+		n.SetType(types.ErrorType{})
 	}
 }
 

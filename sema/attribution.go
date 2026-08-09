@@ -281,6 +281,9 @@ func (a *Attributor) attributeNode(node parser.Node) {
 
 func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 	switch n := node.(type) {
+	case *parser.LambdaNode:
+		a.attributeLambda(n, nil, false)
+
 	case *parser.IdentifierNode:
 		if n.Symbol != nil && n.Symbol.TemplateSymbol != nil && !a.templatesOnly && !hasTypeParameters(n.Symbol.TypeArguments) {
 			if specialization := a.attributeGenericSpecialization(n.Symbol.TemplateSymbol, n.Symbol.TypeArguments, n); specialization != nil {
@@ -1038,6 +1041,111 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 	if node.GetType() == nil {
 		panic("expression without type")
 	}
+}
+
+func expectedLambdaFunction(expected types.Type) (types.FunctionType, bool) {
+	pointer, ok := types.Underlying(expected).(types.PointerType)
+	if !ok {
+		return types.FunctionType{}, false
+	}
+	function, ok := types.Underlying(pointer.Base).(types.FunctionType)
+	return function, ok
+}
+
+func (a *Attributor) attributeLambda(n *parser.LambdaNode, expected types.Type, requireComplete bool) {
+	if n.Attributed || n.Function == nil || n.Function.Symbol == nil {
+		return
+	}
+	signature := n.Function.Symbol.Signature
+	context, hasContext := expectedLambdaFunction(expected)
+	if !hasContext {
+		for _, parameter := range signature.Parameters {
+			if parameter == nil {
+				// Contextual typing is applied by validation at the containing
+				// declaration, assignment, return, or call site.
+				if !requireComplete {
+					return
+				}
+				break
+			}
+		}
+	}
+	if hasContext && len(context.Parameters) != len(n.Args) {
+		a.errorf(n, "lambda has %d parameters, but contextual function type has %d", len(n.Args), len(context.Parameters))
+		hasContext = false
+	}
+	if hasContext && n.TypedVariadic && !context.TypedVariadic {
+		a.errorf(n, "typed variadic lambda requires a typed variadic contextual function type")
+		hasContext = false
+	}
+	if hasContext && !n.TypedVariadic && context.TypedVariadic {
+		n.TypedVariadic = true
+		n.Function.TypedVariadic = true
+		signature.TypedVariadic = true
+	}
+
+	missing := false
+	for i, arg := range n.Args {
+		if signature.Parameters[i] == nil {
+			if hasContext {
+				signature.Parameters[i] = context.Parameters[i]
+			} else {
+				a.errorf(arg, "cannot infer type of lambda parameter %q; add a type annotation", arg.Name)
+				signature.Parameters[i] = types.ErrorType{}
+				missing = true
+			}
+		}
+		if arg.Symbol != nil {
+			arg.Symbol.Type = signature.Parameters[i]
+		}
+	}
+	if signature.TypedVariadic && len(signature.Parameters) != 0 {
+		if slice, ok := types.Underlying(signature.Parameters[len(signature.Parameters)-1]).(types.SliceType); ok {
+			signature.VariadicElement = slice.Base
+		} else {
+			a.errorf(n.Args[len(n.Args)-1], "typed variadic lambda parameter must have a slice type")
+			missing = true
+		}
+	}
+	if hasContext {
+		signature.ReturnType = context.ReturnType
+	}
+
+	a.attributeExpr(n.Body)
+	if signature.ReturnType == nil {
+		var candidates []returnTypeCandidate
+		for _, ret := range collectFunctionReturnNodesFromNode(n.Body) {
+			if ret.ReturnValue == nil {
+				candidates = append(candidates, returnTypeCandidate{node: ret, ty: types.PrimitiveVoid})
+			} else {
+				candidates = append(candidates, returnTypeCandidate{node: ret, ty: ret.ReturnValue.GetType()})
+			}
+		}
+		if parser.NodeFallsThrough(n.Body) {
+			candidates = append(candidates, returnTypeCandidate{node: n, ty: n.Body.GetType()})
+		}
+		signature.ReturnType = a.mergeReturnTypes(candidates)
+		if types.HasUntyped(signature.ReturnType) {
+			if !hasContext && !requireComplete {
+				signature.ReturnType = nil
+				n.SetType(types.ErrorType{})
+				return
+			}
+			a.errorf(n, "cannot infer lambda return type from untyped numeric value; provide a contextual function type or cast")
+			signature.ReturnType = types.ErrorType{}
+			missing = true
+		}
+	}
+	functionType := types.FunctionType{
+		Parameters: signature.Parameters, ReturnType: signature.ReturnType,
+		TypedVariadic: signature.TypedVariadic, VariadicElement: signature.VariadicElement,
+	}
+	if missing {
+		n.SetType(types.ErrorType{})
+	} else {
+		n.SetType(types.PointerType{Base: functionType})
+	}
+	n.Attributed = true
 }
 
 func mutableArrayPlace(expr parser.ExpressionNode) bool {

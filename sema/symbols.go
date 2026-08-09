@@ -12,5 +12,8 @@ func (a *Analyser) defineSymbol(sym *symbols.Symbol, node parser.Node) bool {
 	}
 
 	a.current.Symbols[sym.Name] = sym
+	if sym.Kind == symbols.SymbolKindVariable && len(a.lambdaOwnedSymbols) != 0 {
+		a.lambdaOwnedSymbols[len(a.lambdaOwnedSymbols)-1][sym] = true
+	}
 	return true
 }

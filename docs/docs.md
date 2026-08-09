@@ -319,7 +319,7 @@ let description = if temperature < 0 {
 }
 ```
 
-The final expression in each branch is its value. There is no semicolon after that final expression.
+The final expression in each branch is its value.
 
 ## Blocks as expressions
 
@@ -389,7 +389,7 @@ A `void` function may use a bare `return`. Calls returning `void` can be stateme
 
 ## `defer`
 
-`defer` schedules a call or block for the end of the current function. Deferred actions run in last-in, first-out order, including when the function returns early:
+`defer` schedules a call or block for the end of the current scope. Deferred actions run in last-in, first-out order, including when the function returns early:
 
 ```qk
 let mut file, error = std.io.FileReader.open_checked(path)
@@ -506,6 +506,26 @@ let result = operation(2, 3)
 ```
 
 Function pointers can be passed and stored like other pointer values. Their complete signatures, including typed variadics, must match.
+
+## Lambda expressions
+
+A non-capturing lambda is an anonymous function value written with `|...| =>`:
+
+```qk
+let increment: *(i32): i32 = |value| => value + 1
+let multiply = |left: i32, right: i32| => {
+  left * right
+}
+```
+
+Parameter annotations may be omitted when an expected function-pointer type supplies them, such as in an annotated declaration, argument, assignment, or return. Otherwise every parameter needs a type annotation. A lambda has no default parameters and cannot refer to local variables or parameters from an enclosing function; module globals and named functions remain available.
+
+Typed variadic lambdas use the same `...T` parameter and slice-backed calling convention as named functions:
+
+```qk
+let sum_values = |values: ...i32| => sum(values)
+let contextual: *(...i32): i32 = |values| => sum(values)
+```
 
 # Types
 

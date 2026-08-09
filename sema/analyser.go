@@ -31,6 +31,8 @@ type Analyser struct {
 	genericAliases                map[*symbols.Symbol]*genericAliasInfo
 	traitDefaults                 map[string][]*symbols.Symbol
 	definitionTypeBindings        map[*symbols.Symbol]map[string]types.Type
+	lambdaCounter                 int
+	lambdaOwnedSymbols            []map[*symbols.Symbol]bool
 }
 
 func NewAnalyser() *Analyser {

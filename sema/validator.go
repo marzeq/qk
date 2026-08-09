@@ -142,8 +142,12 @@ func (v *Validator) validateNode(node parser.Node) {
 
 		seenDefault := false
 		for i, param := range n.Symbol.Signature.Parameters {
+			parameterNode := parser.Node(n.Args[i])
+			if n.Args[i].Type != nil {
+				parameterNode = n.Args[i].Type
+			}
 			if hasVoidValue(param) {
-				v.errorf(n.Args[i].Type, "function parameter cannot have type void")
+				v.errorf(parameterNode, "function parameter cannot have type void")
 			}
 			if usesCABI && types.HasTraitPointer(param) {
 				v.errorf(n.Args[i].Type, "trait pointers cannot cross the c ABI")
@@ -155,7 +159,7 @@ func (v *Validator) validateNode(node parser.Node) {
 				v.errorf(n.Args[i].Type, "arrays cannot be direct c ABI parameters; pass a pointer or wrap the array in a struct")
 			}
 			if !types.IsComplete(param) {
-				v.errorf(n.Args[i].Type, "function parameter cannot have incomplete type %v", param)
+				v.errorf(parameterNode, "function parameter cannot have incomplete type %v", param)
 			}
 			arg := n.Args[i]
 			if n.Symbol.Signature.TypedVariadic && arg.Default != nil {
@@ -1132,6 +1136,17 @@ func (v *Validator) validateReturn(n *parser.ControlKeywordNode) {
 }
 
 func (v *Validator) validateExpr(node parser.ExpressionNode) {
+	if lambda, ok := node.(*parser.LambdaNode); ok {
+		v.prepareLambda(lambda, nil)
+		if _, invalid := lambda.GetType().(types.ErrorType); invalid {
+			return
+		}
+		if lambda.Function != nil && !lambda.Validated {
+			lambda.Validated = true
+			v.validateNode(lambda.Function)
+		}
+		return
+	}
 	if _, ok := node.GetType().(types.ErrorType); ok {
 		return
 	}
@@ -2232,6 +2247,11 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 			v.requireExpressionValue(result)
 		}
 	}()
+	if lambda, ok := node.(*parser.LambdaNode); ok {
+		v.prepareLambda(lambda, expected)
+		v.validateExpr(lambda)
+		return lambda
+	}
 
 	if identifier := comptimeIdentifier(node); identifier != nil && identifier.Symbol != nil &&
 		identifier.Symbol.InlineComptime && types.IsUntyped(node.GetType()) && expected != nil &&
@@ -2459,6 +2479,25 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 	}
 
 	return node
+}
+
+func (v *Validator) prepareLambda(n *parser.LambdaNode, expected types.Type) {
+	if n.Attributed {
+		if context, ok := expectedLambdaFunction(expected); ok && n.Function != nil &&
+			n.Function.Symbol != nil && len(context.Parameters) == len(n.Args) &&
+			context.TypedVariadic == n.Function.Symbol.Signature.TypedVariadic {
+			signature := n.Function.Symbol.Signature
+			signature.ReturnType = context.ReturnType
+			n.SetType(types.PointerType{Base: types.FunctionType{
+				Parameters: signature.Parameters, ReturnType: signature.ReturnType,
+				TypedVariadic: signature.TypedVariadic, VariadicElement: signature.VariadicElement,
+			}})
+		}
+		return
+	}
+	attributor := v.analyser.NewAttributor()
+	attributor.attributeLambda(n, expected, true)
+	v.errors = append(v.errors, attributor.Errors()...)
 }
 
 func (v *Validator) completeGenericCall(call *parser.FunctionCallNode, expected types.Type) bool {

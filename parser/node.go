@@ -399,6 +399,24 @@ type FunctionCallNode struct {
 	TaggedUnionTemplate *symbols.Symbol
 }
 
+// LambdaNode is a non-capturing anonymous function expression. Function is
+// populated during semantic analysis and reuses the ordinary function
+// pipeline once the optional contextual parameter types have been resolved.
+type LambdaNode struct {
+	Args          []*FunctionNodeArg
+	Body          ExpressionNode
+	TypedVariadic bool
+	Loc           shared.Location
+	Type          types.Type
+	Function      *FunctionDefNode
+	Attributed    bool
+	Validated     bool
+}
+
+func (n LambdaNode) GetLoc() shared.Location { return n.Loc }
+func (n *LambdaNode) SetType(t types.Type)   { n.Type = t }
+func (n *LambdaNode) GetType() types.Type    { return n.Type }
+
 // InlineAsmNode describes one LLVM-style inline assembly expression. Output
 // constraints precede input constraints in the constraint string assembled by
 // the backend, matching LLVM's operand numbering rules.

@@ -56,6 +56,8 @@ type Generator struct {
 	initializingGlobal          bool
 	specializedVariadicElements map[*symbols.Symbol][]ir.Operand
 	specializedConstants        map[*symbols.Symbol]symbols.SpecializationConstant
+	lambdaFunctions             []*parser.FunctionDefNode
+	queuedLambdas               map[*symbols.Symbol]bool
 }
 
 type dynamicGlobalInitializer struct {
@@ -87,6 +89,8 @@ func (g *Generator) GenerateRoots(roots []*parser.RootNode) *ir.Module {
 	g.Module = &ir.Module{}
 	g.globals = make(map[*symbols.Symbol]string)
 	g.dynamicGlobals = nil
+	g.lambdaFunctions = nil
+	g.queuedLambdas = make(map[*symbols.Symbol]bool)
 
 	for _, root := range roots {
 		for _, node := range root.Body {
@@ -131,6 +135,10 @@ func (g *Generator) GenerateRoots(roots []*parser.RootNode) *ir.Module {
 
 	if len(g.dynamicGlobals) > 0 || len(g.DependencyInitializers) > 0 {
 		g.generateModuleInitializer()
+	}
+
+	for i := 0; i < len(g.lambdaFunctions); i++ {
+		g.GenerateFunction(g.lambdaFunctions[i])
 	}
 
 	return g.Module
@@ -1622,6 +1630,16 @@ func (g *Generator) forEachElementPointer(
 
 func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
 	switch n := expr.(type) {
+	case *parser.LambdaNode:
+		if n.Function == nil || n.Function.Symbol == nil {
+			panic("unresolved lambda reached IR generation")
+		}
+		if !g.queuedLambdas[n.Function.Symbol] {
+			g.queuedLambdas[n.Function.Symbol] = true
+			g.lambdaFunctions = append(g.lambdaFunctions, n.Function)
+		}
+		name := g.mangleFunctionName(g.ModuleName, n.Function.Symbol.Name)
+		return ir.FunctionConstOperand(name, n.GetType())
 	case *parser.IntegerLiteralNode:
 		if types.IsFloat(n.GetType()) {
 			return ir.FloatConstOperand(n.Value, n.GetType())

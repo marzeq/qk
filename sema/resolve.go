@@ -27,6 +27,7 @@ func (a *Analyser) resolveIdentifier(n *parser.IdentifierNode) (*symbols.Symbol,
 		resolved, ok := a.resolveGenericIdentifier(n, sym)
 		if ok {
 			resolved.Referenced = true
+			a.rejectLambdaCapture(n, resolved)
 		}
 		return resolved, ok
 	}
@@ -59,6 +60,22 @@ func (a *Analyser) resolveIdentifier(n *parser.IdentifierNode) (*symbols.Symbol,
 		resolved.Referenced = true
 	}
 	return resolved, ok
+}
+
+func (a *Analyser) rejectLambdaCapture(n *parser.IdentifierNode, sym *symbols.Symbol) {
+	if len(a.lambdaOwnedSymbols) == 0 || sym == nil || sym.Kind != symbols.SymbolKindVariable {
+		return
+	}
+	owned := a.lambdaOwnedSymbols[len(a.lambdaOwnedSymbols)-1]
+	if owned[sym] {
+		return
+	}
+	if module := a.modules[a.currentMod]; module != nil {
+		if global, ok := module.Scope.Symbols[sym.Name]; ok && global == sym {
+			return
+		}
+	}
+	a.errorf(n, "lambda cannot capture local variable %q", sym.Name)
 }
 
 func (a *Analyser) resolveGenericIdentifier(n *parser.IdentifierNode, sym *symbols.Symbol) (*symbols.Symbol, bool) {

@@ -139,6 +139,12 @@ func (w *debugWalker) walkExpr(expr parser.ExpressionNode) {
 	w.checkType(expr.GetType())
 
 	switch n := expr.(type) {
+	case *parser.LambdaNode:
+		if n.Function == nil {
+			w.errors = append(w.errors, "lambda has no generated function")
+		} else {
+			w.walkNode(n.Function)
+		}
 
 	case *parser.IdentifierNode:
 
