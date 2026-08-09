@@ -179,6 +179,25 @@ entry:
 @__qk_panic_prefix = private constant [7 x i8] c"panic: "
 @__qk_panic_newline = private constant [1 x i8] c"\0A"
 
+define hidden void @__qk_assert(i1 %%condition, { ptr, %[1]s } %%message) {
+entry:
+  br i1 %%condition, label %%passed, label %%failed
+
+failed:
+  %%data = extractvalue { ptr, %[1]s } %%message, 0
+  %%length = extractvalue { ptr, %[1]s } %%message, 1
+  %%prefix = call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},{rsi},{rdx},~{rcx},~{r11},~{memory}"(i64 1, i64 2, ptr @__qk_assert_prefix, %[1]s 18)
+  %%written = call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},{rsi},{rdx},~{rcx},~{r11},~{memory}"(i64 1, i64 2, ptr %%data, %[1]s %%length)
+  %%newline = call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},{rsi},{rdx},~{rcx},~{r11},~{memory}"(i64 1, i64 2, ptr @__qk_panic_newline, %[1]s 1)
+  %%exit = call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
+  unreachable
+
+passed:
+  ret void
+}
+
+@__qk_assert_prefix = private constant [18 x i8] c"assertion failed: "
+
 `, usz)
 	} else {
 		if executable && userMain != "" {

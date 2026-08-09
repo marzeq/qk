@@ -1137,9 +1137,11 @@ let alignment = @alignof(Header)
 
 These builtins are intentionally unavailable for auto-tagged unions. Mutable pointer views are also rejected because raw mutation could violate the relationship between tag and payload.
 
-## `panic`
+## `panic` and `assert`
 
 `panic(message)` is a built-in terminating function that accepts `str`. The compiler always links a small runtime implementation, including for `-nolibc` builds.
+
+`assert(condition, message)` accepts a `bool` and a `str`. It returns normally when the condition is true; otherwise it prints `assertion failed: ` followed by the message and terminates the process.
 
 # Compile-time selection
 
@@ -1205,6 +1207,12 @@ when PointerBits != 32 && PointerBits != 64 {
 ```
 
 Unselected directives have no effect. This makes the directive useful for rejecting unsupported target configurations.
+
+`@comptime_assert(condition, "message")` evaluates its condition during the same expansion phase. A false condition stops compilation with `comptime assertion failed: ` followed by the message, while a true assertion is removed before parsing:
+
+```qk
+@comptime_assert(PointerBits == 64, "this package requires a 64-bit target")
+```
 
 # Attributes and foreign interfaces
 

@@ -84,8 +84,16 @@ func (e *expander) expand() ([]tokeniser.Token, error) {
 			e.scopes = e.scopes[:len(e.scopes)-1]
 		}
 		if tok.Type == tokeniser.TokenAt && e.pos+1 < len(e.tokens) &&
-			e.tokens[e.pos+1].Type == tokeniser.TokenIdentifier && e.tokens[e.pos+1].Value == "compiler_error" {
-			return nil, e.compilerError()
+			e.tokens[e.pos+1].Type == tokeniser.TokenIdentifier {
+			switch e.tokens[e.pos+1].Value {
+			case "compiler_error":
+				return nil, e.compilerError()
+			case "comptime_assert":
+				if err := e.comptimeAssert(); err != nil {
+					return nil, err
+				}
+				continue
+			}
 		}
 		if tok.Type == tokeniser.TokenKeyword {
 			switch tok.Value {
@@ -336,6 +344,81 @@ func (e *expander) compilerError() error {
 		return shared.NewError(directive.Loc, "expected ')' after '@compiler_error' message")
 	}
 	return shared.NewError(directive.Loc, "%s", message)
+}
+
+func (e *expander) comptimeAssert() error {
+	directive := e.tokens[e.pos]
+	directive.Loc = directive.Loc.WithEnd(e.tokens[e.pos+1].Loc)
+	e.pos += 2
+	if e.pos >= len(e.tokens) || e.tokens[e.pos].Type != tokeniser.TokenOpenParen {
+		return shared.NewError(directive.Loc, "expected '(' after '@comptime_assert'")
+	}
+	e.pos++
+	conditionStart := e.pos
+	parenDepth, squareDepth, curlyDepth := 0, 0, 0
+	for e.pos < len(e.tokens) {
+		tok := e.tokens[e.pos]
+		switch tok.Type {
+		case tokeniser.TokenOpenParen:
+			parenDepth++
+		case tokeniser.TokenCloseParen:
+			if parenDepth == 0 && squareDepth == 0 && curlyDepth == 0 {
+				return shared.NewError(directive.Loc, "expected ',' after '@comptime_assert' condition")
+			}
+			parenDepth--
+		case tokeniser.TokenOpenSquare:
+			squareDepth++
+		case tokeniser.TokenCloseSquare:
+			squareDepth--
+		case tokeniser.TokenOpenCurly:
+			curlyDepth++
+		case tokeniser.TokenCloseCurly:
+			curlyDepth--
+		case tokeniser.TokenComma:
+			if parenDepth == 0 && squareDepth == 0 && curlyDepth == 0 {
+				conditionTokens := e.tokens[conditionStart:e.pos]
+				condition, err := parseCondition(conditionTokens, directive.Loc)
+				if err != nil {
+					return err
+				}
+				value, err := evaluate(condition, e.target, nil)
+				if err != nil {
+					return err
+				}
+				if value.kind != valueBool {
+					return shared.NewError(condition.GetLoc(), "compile-time assertion condition must be boolean")
+				}
+
+				e.pos++
+				for e.pos < len(e.tokens) && e.tokens[e.pos].Type == tokeniser.TokenNewline {
+					e.pos++
+				}
+				if e.pos >= len(e.tokens) || e.tokens[e.pos].Type != tokeniser.TokenString {
+					return shared.NewError(directive.Loc, "expected a string message in '@comptime_assert'")
+				}
+				message := e.tokens[e.pos].Value
+				e.pos++
+				for e.pos < len(e.tokens) && e.tokens[e.pos].Type == tokeniser.TokenNewline {
+					e.pos++
+				}
+				if e.pos >= len(e.tokens) || e.tokens[e.pos].Type != tokeniser.TokenCloseParen {
+					return shared.NewError(directive.Loc, "expected ')' after '@comptime_assert' message")
+				}
+				e.pos++
+				if !value.boolean {
+					return shared.NewError(directive.Loc, "comptime assertion failed: %s", message)
+				}
+				return nil
+			}
+		case tokeniser.TokenEof:
+			return shared.NewError(directive.Loc, "expected ',' after '@comptime_assert' condition")
+		}
+		if parenDepth < 0 || squareDepth < 0 || curlyDepth < 0 {
+			return shared.NewError(tok.Loc, "unbalanced delimiter in compile-time assertion")
+		}
+		e.pos++
+	}
+	return shared.NewError(directive.Loc, "expected ',' after '@comptime_assert' condition")
 }
 
 func (e *expander) expandWhen() ([]tokeniser.Token, error) {

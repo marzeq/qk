@@ -154,7 +154,7 @@ pub let join(
   return result, true
 }
 
-pub let Path.join(self, right: str): (Path, bool) {
+let Path.join_one(self, right: str): (Path, bool) {
   if is_absolute(right) {
     return Path.from_str(self.bytes.allocator, right)
   }
@@ -179,5 +179,23 @@ pub let Path.join(self, right: str): (Path, bool) {
   return result, true
 }
 
-pub let Path.join_path(self, right: *Path): (Path, bool) =
+let Path.join_path_one(self, right: *Path): (Path, bool) =
   self.join(right.to_str())
+
+pub let Path.join(self, right: ...str): (Path, bool) {
+  for r in right {
+    let mut result, success = self.join_one(r)
+    if !success { return result, false }
+    self = result
+  }
+  return self, true
+}
+
+pub let Path.join_path(self, right: ...*Path): (Path, bool) {
+  for r in right {
+    let mut result, success = self.join_path_one(r)
+    if !success { return result, false }
+    self = result
+  }
+  return self, true
+}

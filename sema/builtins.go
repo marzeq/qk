@@ -41,4 +41,9 @@ func (a *Analyser) predefineBuiltins() {
 	})
 	panicSymbol.Attributes = attributes.Attributes{attributes.AttributeNoReturn{}}
 	a.universe.Define(panicSymbol)
+	a.universe.Define(symbols.NewFunction("assert", &symbols.FunctionSignature{
+		Parameters:         []types.Type{types.PrimitiveBool, types.StrType()},
+		RequiredParameters: 2,
+		ReturnType:         types.PrimitiveVoid,
+	}))
 }

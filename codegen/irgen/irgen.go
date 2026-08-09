@@ -3134,6 +3134,8 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 	if node.TraitCall {
 		return g.generateTraitCall(node)
 	}
+	runtimeBuiltin := node.Symbol != nil && node.Symbol.DefinitionModule == "" &&
+		(node.Symbol.Name == "panic" || node.Symbol.Name == "assert")
 	var callee *ir.Operand
 	if node.Symbol == nil {
 		value := g.GenerateExpr(node.Callee)
@@ -3148,7 +3150,7 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 		hasSpecializedArity && len(node.Args)-node.TypedVariadicStart == specializedArity
 	constants := map[int]symbols.SpecializationConstant(nil)
 	constantWrapper := false
-	if node.Symbol != nil {
+	if node.Symbol != nil && !runtimeBuiltin {
 		constants = selectedSpecializationConstants(node.Symbol.Signature)
 		constantWrapper = len(constants) != 0 && g.callMatchesSpecialization(node, constants)
 		if !node.Symbol.Signature.TypedVariadic && len(node.Args) != len(node.Symbol.Signature.Parameters) {
@@ -3215,8 +3217,8 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 	}
 	if node.Symbol != nil {
 		name = node.Symbol.Name
-		if node.Symbol.Name == "panic" {
-			name = "__qk_panic"
+		if runtimeBuiltin {
+			name = "__qk_" + node.Symbol.Name
 		}
 
 		foreignAttr := node.Symbol.Attributes.Get(attributes.AttributeTypeForeign)
@@ -3227,7 +3229,7 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 
 		if export, ok := node.Symbol.Attributes.Get(attributes.AttributeTypeExport).(attributes.FunctionAttributeExport); ok {
 			name = export.As
-		} else if foreignAttr == nil && node.Symbol.Name != "panic" {
+		} else if foreignAttr == nil && !runtimeBuiltin {
 			callModule := g.ModuleName
 			if node.Symbol.DefinitionModule != "" {
 				callModule = node.Symbol.DefinitionModule
@@ -3294,8 +3296,8 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 			}
 		}
 	}
-	if node.Symbol != nil && node.Symbol.Name == "panic" {
-		g.addExternForCall("__qk_panic", callSig, "", true)
+	if runtimeBuiltin {
+		g.addExternForCall("__qk_"+node.Symbol.Name, callSig, "", true)
 	}
 
 	if node.GetType().Equals(types.PrimitiveVoid) {
