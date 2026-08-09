@@ -25,24 +25,27 @@ pub let Random.next_u32(*mut self): u32 = (self.next_u64() >> 32).(u32)
 
 pub let Random.next_bool(*mut self): bool = (self.next_u64() & (1 << 63)) != 0
 
-// Returns a uniformly distributed value in [0, upper). False is returned for
-// an empty range.
-pub let Random.less_than(*mut self, upper: u64): (u64, bool) {
-  if upper == 0 { return 0, false }
+// Returns a uniformly distributed value in [0, upper).
+pub let Random.less_than(*mut self, upper: u64): u64 {
+  if upper == 0 { return 0 }
   let threshold = ((~upper) + 1) % upper
   for {
     let value = self.next_u64()
-    if value >= threshold { return value % upper, true }
+    if value >= threshold { return value % upper }
   }
-  return 0, false
+  return 0
 }
 
 // Returns a uniformly distributed value in the half-open range [start, end).
-pub let Random.range(*mut self, start: u64, end: u64): (u64, bool) {
-  if end <= start { return 0, false }
-  let offset, success = self.less_than(end - start)
-  if !success { return 0, false }
-  return start + offset, true
+// If start >= end, the values are swapped.
+pub let Random.range(*mut self, mut start: u64, mut end: u64): u64 {
+  if start >= end {
+    let tmp = start
+    start = end
+    end = tmp
+  }
+  let offset = self.less_than(end - start)
+  return start + offset
 }
 
 // Returns a value in [0, 1) using 53 random significand bits.
@@ -74,7 +77,7 @@ pub let Random.fill<T>(*mut self, values: []mut T): void {
 pub let Random.shuffle<T>(*mut self, values: []mut T): void {
   let mut remaining = @len(values)
   for remaining > 1 {
-    let index, _ = self.less_than(remaining.(u64))
+    let index = self.less_than(remaining.(u64))
     remaining -= 1
     values.swap(remaining, index.(usz))
   }
