@@ -1,41 +1,55 @@
 module std.io
 
+import std.error
 import std.strings
 
 pub let Format = type trait {
-  let format(self, writer: *mut dyn Writer): void
+  let format(self, writer: *mut dyn Writer): std.error.Error
 }
 
-let write_byte(writer: *mut dyn Writer, byte: u8): void {
+let write_bytes(writer: *mut dyn Writer, bytes: []u8): std.error.Error {
+  let _, error = write_all(writer, bytes)
+  return error
+}
+
+let write_byte(writer: *mut dyn Writer, byte: u8): std.error.Error {
   let bytes: [1]u8 = [byte]
-  write_all(writer, bytes[:])
+  return write_bytes(writer, bytes[:])
 }
 
-let write_unsigned_decimal(writer: *mut dyn Writer, value: u64): void {
+let write_unsigned_decimal(
+  writer: *mut dyn Writer,
+  value: u64,
+): std.error.Error {
   let mut buffer: [20]u8 = ---
   let mut cursor = @len(buffer)
   let mut remaining = value
-
   for true {
     cursor -= 1
     buffer[cursor] = '0' + (remaining % 10).(u8)
     remaining /= 10
     if remaining == 0 { break }
   }
-
-  write_all(writer, buffer[cursor:])
+  return write_bytes(writer, buffer[cursor:])
 }
 
-let write_signed_decimal(writer: *mut dyn Writer, value: i64): void {
+let write_signed_decimal(
+  writer: *mut dyn Writer,
+  value: i64,
+): std.error.Error {
   if value < 0 {
-    write_byte(writer, '-')
-    write_unsigned_decimal(writer, (~value).(u64) + 1)
-  } else {
-    write_unsigned_decimal(writer, value.(u64))
+    let error = write_byte(writer, '-')
+    if error.is_error() { return error }
+    return write_unsigned_decimal(writer, (~value).(u64) + 1)
   }
+  return write_unsigned_decimal(writer, value.(u64))
 }
 
-let write_fraction(writer: *mut dyn Writer, value: u64, digits: usz): void {
+let write_fraction(
+  writer: *mut dyn Writer,
+  value: u64,
+  digits: usz,
+): std.error.Error {
   let mut buffer: [6]u8 = ['0'; 6]
   let mut cursor = digits
   let mut remaining = value
@@ -47,33 +61,25 @@ let write_fraction(writer: *mut dyn Writer, value: u64, digits: usz): void {
 
   let mut end = digits
   for end > 0 && buffer[end - 1] == '0' { end -= 1 }
-  if end > 0 {
-    write_byte(writer, '.')
-    write_all(writer, buffer[0:end])
-  }
+  if end == 0 { return std.error.Error.none() }
+  let error = write_byte(writer, '.')
+  if error.is_error() { return error }
+  return write_bytes(writer, buffer[0:end])
 }
 
 // Portable, allocation-free general formatting with up to six fractional
 // digits. Scientific notation is used outside [1e-4, 1e6).
-let write_f64_general(writer: *mut dyn Writer, value: f64): void {
-  if value != value {
-    write_all(writer, "nan".([]u8))
-    return
-  }
+let write_f64_general(writer: *mut dyn Writer, value: f64): std.error.Error {
+  if value != value { return write_bytes(writer, "nan".([]u8)) }
 
   let mut magnitude = value
   if magnitude < 0.0 {
-    write_byte(writer, '-')
+    let error = write_byte(writer, '-')
+    if error.is_error() { return error }
     magnitude = -magnitude
   }
-  if magnitude == 0.0 {
-    write_byte(writer, '0')
-    return
-  }
-  if magnitude / 2.0 == magnitude {
-    write_all(writer, "inf".([]u8))
-    return
-  }
+  if magnitude == 0.0 { return write_byte(writer, '0') }
+  if magnitude / 2.0 == magnitude { return write_bytes(writer, "inf".([]u8)) }
 
   let scientific = magnitude >= 1000000.0 || magnitude < 0.0001
   if scientific {
@@ -89,88 +95,83 @@ let write_f64_general(writer: *mut dyn Writer, value: f64): void {
 
     let rounded = (magnitude * 100000.0 + 0.5).(u64)
     let normalized = if rounded == 1000000 { 100000 } else { rounded }
-    write_unsigned_decimal(writer, normalized / 100000)
-    write_fraction(writer, normalized % 100000, 5)
-    write_byte(writer, 'e')
+    let mut error = write_unsigned_decimal(writer, normalized / 100000)
+    if error.is_error() { return error }
+    error = write_fraction(writer, normalized % 100000, 5)
+    if error.is_error() { return error }
+    error = write_byte(writer, 'e')
+    if error.is_error() { return error }
     if rounded == 1000000 { exponent += 1 }
     if exponent < 0 {
-      write_byte(writer, '-')
-      write_unsigned_decimal(writer, (-exponent).(u64))
-    } else {
-      write_byte(writer, '+')
-      write_unsigned_decimal(writer, exponent.(u64))
+      error = write_byte(writer, '-')
+      if error.is_error() { return error }
+      return write_unsigned_decimal(writer, (-exponent).(u64))
     }
-    return
+    error = write_byte(writer, '+')
+    if error.is_error() { return error }
+    return write_unsigned_decimal(writer, exponent.(u64))
   }
 
   let rounded = (magnitude * 1000000.0 + 0.5).(u64)
-  write_unsigned_decimal(writer, rounded / 1000000)
-  write_fraction(writer, rounded % 1000000, 6)
+  let error = write_unsigned_decimal(writer, rounded / 1000000)
+  if error.is_error() { return error }
+  return write_fraction(writer, rounded % 1000000, 6)
 }
 
-// Default float formatting is a trimmed %.6f: values that round to six
-// fractional zeroes print as 0, and redundant trailing zeroes are omitted.
-let write_f64_fixed(writer: *mut dyn Writer, value: f64): void {
-  if value != value {
-    write_all(writer, "nan".([]u8))
-    return
-  }
+let write_f64_fixed(writer: *mut dyn Writer, value: f64): std.error.Error {
+  if value != value { return write_bytes(writer, "nan".([]u8)) }
 
   let magnitude = if value < 0.0 { -value } else { value }
   if magnitude / 2.0 == magnitude && magnitude != 0.0 {
-    if value < 0.0 { write_byte(writer, '-') }
-    write_all(writer, "inf".([]u8))
-    return
+    if value < 0.0 {
+      let error = write_byte(writer, '-')
+      if error.is_error() { return error }
+    }
+    return write_bytes(writer, "inf".([]u8))
   }
-
-  // The decimal helper below uses a u64 accumulator. Preserve useful output
-  // for larger finite numbers by falling back to general notation.
-  if magnitude >= 18446744073709.0 {
-    write_f64_general(writer, value)
-    return
-  }
+  if magnitude >= 18446744073709.0 { return write_f64_general(writer, value) }
 
   let rounded = (magnitude * 1000000.0 + 0.5).(u64)
-  if rounded == 0 {
-    write_byte(writer, '0')
-    return
+  if rounded == 0 { return write_byte(writer, '0') }
+  if value < 0.0 {
+    let error = write_byte(writer, '-')
+    if error.is_error() { return error }
   }
-  if value < 0.0 { write_byte(writer, '-') }
-  write_unsigned_decimal(writer, rounded / 1000000)
-  write_fraction(writer, rounded % 1000000, 6)
+  let error = write_unsigned_decimal(writer, rounded / 1000000)
+  if error.is_error() { return error }
+  return write_fraction(writer, rounded % 1000000, 6)
 }
 
-let i8.format(self, writer: *mut dyn Writer): void { write_signed_decimal(writer, self.(i64)) }
-let i16.format(self, writer: *mut dyn Writer): void { write_signed_decimal(writer, self.(i64)) }
-let i32.format(self, writer: *mut dyn Writer): void { write_signed_decimal(writer, self.(i64)) }
-let i64.format(self, writer: *mut dyn Writer): void { write_signed_decimal(writer, self) }
-let isz.format(self, writer: *mut dyn Writer): void { write_signed_decimal(writer, self.(i64)) }
+let i8.format(self, writer: *mut dyn Writer): std.error.Error = write_signed_decimal(writer, self.(i64))
+let i16.format(self, writer: *mut dyn Writer): std.error.Error = write_signed_decimal(writer, self.(i64))
+let i32.format(self, writer: *mut dyn Writer): std.error.Error = write_signed_decimal(writer, self.(i64))
+let i64.format(self, writer: *mut dyn Writer): std.error.Error = write_signed_decimal(writer, self)
+let isz.format(self, writer: *mut dyn Writer): std.error.Error = write_signed_decimal(writer, self.(i64))
 
-let u8.format(self, writer: *mut dyn Writer): void { write_unsigned_decimal(writer, self.(u64)) }
-let u16.format(self, writer: *mut dyn Writer): void { write_unsigned_decimal(writer, self.(u64)) }
-let u32.format(self, writer: *mut dyn Writer): void { write_unsigned_decimal(writer, self.(u64)) }
-let u64.format(self, writer: *mut dyn Writer): void { write_unsigned_decimal(writer, self) }
-let usz.format(self, writer: *mut dyn Writer): void { write_unsigned_decimal(writer, self.(u64)) }
+let u8.format(self, writer: *mut dyn Writer): std.error.Error = write_unsigned_decimal(writer, self.(u64))
+let u16.format(self, writer: *mut dyn Writer): std.error.Error = write_unsigned_decimal(writer, self.(u64))
+let u32.format(self, writer: *mut dyn Writer): std.error.Error = write_unsigned_decimal(writer, self.(u64))
+let u64.format(self, writer: *mut dyn Writer): std.error.Error = write_unsigned_decimal(writer, self)
+let usz.format(self, writer: *mut dyn Writer): std.error.Error = write_unsigned_decimal(writer, self.(u64))
 
-let f32.format(self, writer: *mut dyn Writer): void { write_f64_fixed(writer, self.(f64)) }
-let f64.format(self, writer: *mut dyn Writer): void { write_f64_fixed(writer, self) }
+let f32.format(self, writer: *mut dyn Writer): std.error.Error = write_f64_fixed(writer, self.(f64))
+let f64.format(self, writer: *mut dyn Writer): std.error.Error = write_f64_fixed(writer, self)
 
-let bool.format(self, writer: *mut dyn Writer): void {
-  if self { write_all(writer, "true".([]u8)) }
-  else { write_all(writer, "false".([]u8)) }
-}
+let bool.format(self, writer: *mut dyn Writer): std.error.Error =
+  if self { write_bytes(writer, "true".([]u8)) }
+  else { write_bytes(writer, "false".([]u8)) }
 
-let str.format(self, writer: *mut dyn Writer): void { write_all(writer, self.([]u8)) }
+let str.format(self, writer: *mut dyn Writer): std.error.Error =
+  write_bytes(writer, self.([]u8))
 
-let cstr.format(self, writer: *mut dyn Writer): void {
+let cstr.format(self, writer: *mut dyn Writer): std.error.Error {
+  if self == nil { return write_bytes(writer, "nil".([]u8)) }
   let mut length: usz = 0
   for self[length] != '\0' { length += 1 }
-  write_all(writer, self[0:length])
+  return write_bytes(writer, self[0:length])
 }
 
 pub let (std.strings.StringBuilder).format(
   self,
   writer: *mut dyn Writer,
-): void {
-  write_all(writer, self.as_str().([]u8))
-}
+): std.error.Error = write_bytes(writer, self.as_str().([]u8))

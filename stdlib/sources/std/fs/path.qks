@@ -13,21 +13,26 @@ pub let Path.init(allocator: *mut dyn std.alloc.Allocator): Path = .{
   bytes=std.collections.DynamicArray<u8>.init(allocator),
 }
 
+pub let Path.with_capacity(
+  allocator: *mut dyn std.alloc.Allocator,
+  capacity: usz,
+): (Path, bool) {
+  let bytes, success = std.collections.DynamicArray<u8>.with_capacity(
+    allocator,
+    capacity,
+  )
+  return .{ bytes=bytes }, success
+}
+
 pub let Path.from_str(
   allocator: *mut dyn std.alloc.Allocator,
   value: str,
 ): (Path, bool) {
-  let mut result = Path.init(allocator)
-  if !result.bytes.ensure_capacity(@len(value)) {
-    return result, false
-  }
-  
-  for let mut index: usz = 0; index < @len(value); index += 1 {
-    result.bytes.ptr[index] = value[index]
-  }
-
-  result.bytes.count = @len(value)
-  return result, true
+  let bytes, success = std.collections.DynamicArray<u8>.from_slice(
+    allocator,
+    value.([]u8),
+  )
+  return .{ bytes=bytes }, success
 }
 
 pub let Path.from_cstr(
@@ -38,34 +43,15 @@ pub let Path.from_cstr(
   return Path.from_str(allocator, value.to_str())
 }
 
-pub let Path.from_string_builder(
-  value: *std.strings.StringBuilder,
-): (Path, bool) {
-  return Path.from_str(value.allocator, value.as_str())
-}
+pub let Path.from_builder(value: *std.strings.StringBuilder): (Path, bool) =
+  Path.from_str(value.allocator, value.as_str())
 
-pub let Path.from_builder(
-  value: *std.strings.StringBuilder,
-): (Path, bool) = Path.from_string_builder(value)
+pub let Path.as_str(self): str = self.bytes.as_slice().(str)
 
-pub let Path.to_str(self): str = self.bytes.as_slice().(str)
+pub let Path.duplicate(self): (Path, bool) =
+  Path.from_str(self.bytes.allocator, self.as_str())
 
-pub let Path.to_string_builder(self): (std.strings.StringBuilder, bool) {
-  let mut result = std.strings.StringBuilder.init(self.bytes.allocator)
-  let value = self.to_str()
-  if result.write(value.([]u8)) != @len(value) {
-    result.deinit()
-    return std.strings.StringBuilder.init(self.bytes.allocator), false
-  }
-  return result, true
-}
-
-pub let Path.to_str_builder(self): (std.strings.StringBuilder, bool) =
-  self.to_string_builder()
-
-pub let Path.deinit(*mut self): void {
-  self.bytes.deinit()
-}
+pub let Path.deinit(*mut self): void { self.bytes.deinit() }
 
 when OS == .Windows {
   pub let Separator: u8 = '\\'
@@ -89,7 +75,7 @@ pub let is_absolute(path: str): bool {
   }
 }
 
-pub let Path.is_absolute(self): bool = is_absolute(self.to_str())
+pub let Path.is_absolute(self): bool = is_absolute(self.as_str())
 
 pub let basename(path: str): str {
   let mut end = @len(path)
@@ -99,7 +85,7 @@ pub let basename(path: str): str {
   return path[start:end]
 }
 
-pub let Path.basename(self): str = basename(self.to_str())
+pub let Path.basename(self): str = basename(self.as_str())
 
 pub let dirname(path: str): str {
   let mut end = @len(path)
@@ -110,7 +96,7 @@ pub let dirname(path: str): str {
   return path[0:end]
 }
 
-pub let Path.dirname(self): str = dirname(self.to_str())
+pub let Path.dirname(self): str = dirname(self.as_str())
 
 pub let extension(path: str): str {
   let name = basename(path)
@@ -125,79 +111,35 @@ pub let extension(path: str): str {
   return ""
 }
 
-pub let Path.extension(self): str = extension(self.to_str())
+pub let Path.extension(self): str = extension(self.as_str())
 
-pub let join(
-  allocator: *mut dyn std.alloc.Allocator,
-  left: str,
-  right: str,
-): (std.strings.StringBuilder, bool) {
-  let mut result = std.strings.StringBuilder.init(allocator)
+let Path.push_one(*mut self, right: str): bool {
   if is_absolute(right) {
-    return result, result.write(right.([]u8)) == @len(right)
+    self.bytes.clear()
+    return self.bytes.append_slice(right.([]u8))
   }
-  if result.write(left.([]u8)) != @len(left) {
-    result.deinit()
-    return std.strings.StringBuilder.init(allocator), false
+  if self.bytes.count > 0 && !is_separator(self.bytes.ptr[self.bytes.count - 1]) {
+    if !self.bytes.append(Separator) { return false }
   }
-  if @len(left) > 0 && !is_separator(left[@len(left) - 1]) {
-    let separator: [1]u8 = [Separator]
-    if result.write(separator[:]) != 1 {
-      result.deinit()
-      return std.strings.StringBuilder.init(allocator), false
-    }
-  }
-  if result.write(right.([]u8)) != @len(right) {
-    result.deinit()
-    return std.strings.StringBuilder.init(allocator), false
-  }
-  return result, true
+  return self.bytes.append_slice(right.([]u8))
 }
 
-let Path.join_one(self, right: str): (Path, bool) {
-  if is_absolute(right) {
-    return Path.from_str(self.bytes.allocator, right)
+// Appends path components in place without taking ownership of their storage.
+pub let Path.push(*mut self, right: ...str): bool {
+  for component in right {
+    if !self.push_one(component) { return false }
   }
-
-  let mut result, success = Path.from_str(self.bytes.allocator, self.to_str())
-  if !success { return result, false }
-  let left = self.to_str()
-  if @len(left) > 0 && !is_separator(left[@len(left) - 1]) {
-    if !result.bytes.append(Separator) {
-      result.deinit()
-      return Path.init(self.bytes.allocator), false
-    }
-  }
-  let mut index: usz = 0
-  for index < @len(right) {
-    if !result.bytes.append(right[index]) {
-      result.deinit()
-      return Path.init(self.bytes.allocator), false
-    }
-    index += 1
-  }
-  return result, true
+  return true
 }
 
-let Path.join_path_one(self, right: *Path): (Path, bool) =
-  self.join(right.to_str())
-
+// Returns an independently owned path; the receiver remains owned by the
+// caller and must still be deinitialized normally.
 pub let Path.join(self, right: ...str): (Path, bool) {
-  let mut s = self
-  for r in right {
-    let mut result, success = s.join_one(r)
-    if !success { return result, false }
-    s = result
+  let mut result, success = self.duplicate()
+  if !success { return result, false }
+  if !result.push(right...) {
+    result.deinit()
+    return Path.init(self.bytes.allocator), false
   }
-  return s, true
-}
-
-pub let Path.join_path(self, right: ...*Path): (Path, bool) {
-  let mut s = self
-  for r in right {
-    let mut result, success = s.join_path_one(r)
-    if !success { return result, false }
-    s = result
-  }
-  return s, true
+  return result, true
 }

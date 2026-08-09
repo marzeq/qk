@@ -1,6 +1,7 @@
 module std.strings
 
 import std.alloc
+import std.error
 
 pub let StringBuilder = type struct {
   allocator: *mut dyn std.alloc.Allocator,
@@ -94,21 +95,21 @@ pub let replace(
 ): (StringBuilder, bool) {
   let mut result = StringBuilder.init(allocator)
   if @len(needle) == 0 {
-    return result, result.write(value.([]u8)) == @len(value)
+    return result, result.append(value.([]u8))
   }
 
   let mut remaining = value
   for true {
     let index, found = remaining.find(needle)
     if !found {
-      if result.write(remaining.([]u8)) != @len(remaining) {
+      if !result.append(remaining.([]u8)) {
         result.deinit()
         return StringBuilder.init(allocator), false
       }
       return result, true
     }
 
-    if result.write(remaining[0:index].([]u8)) != index || result.write(replacement.([]u8)) != @len(replacement) {
+    if !result.append(remaining[0:index].([]u8)) || !result.append(replacement.([]u8)) {
       result.deinit()
       return StringBuilder.init(allocator), false
     }
@@ -163,15 +164,15 @@ pub let StringBuilder.ensure_capacity(
   return true
 }
 
-pub let StringBuilder.write(*mut self, bytes: []u8): usz {
+pub let StringBuilder.append(*mut self, bytes: []u8): bool {
   if @len(bytes) == 0 {
-    return 0
+    return true
   }
   if @len(bytes) > (~0.(usz)) - self.count {
-    return 0
+    return false
   }
   if !self.ensure_capacity(self.count + @len(bytes)) {
-    return 0
+    return false
   }
 
   let mut index: usz = 0
@@ -180,10 +181,21 @@ pub let StringBuilder.write(*mut self, bytes: []u8): usz {
     index += 1
   }
   self.count += @len(bytes)
-  return @len(bytes)
+  return true
 }
 
-pub let StringBuilder.read(*mut self, buffer: []mut u8): usz {
+pub let StringBuilder.write(
+  *mut self,
+  bytes: []u8,
+): (usz, std.error.Error) {
+  if !self.append(bytes) { return 0, std.error.Error.out_of_memory() }
+  return @len(bytes), std.error.Error.none()
+}
+
+pub let StringBuilder.read(
+  *mut self,
+  buffer: []mut u8,
+): (usz, std.error.Error) {
   let remaining = self.count - self.read_offset
   let count = if @len(buffer) < remaining { @len(buffer) } else { remaining }
 
@@ -193,7 +205,7 @@ pub let StringBuilder.read(*mut self, buffer: []mut u8): usz {
     index += 1
   }
   self.read_offset += count
-  return count
+  return count, std.error.Error.none()
 }
 
 pub let StringBuilder.reset_reader(*mut self): void {

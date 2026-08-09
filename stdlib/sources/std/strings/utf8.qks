@@ -1,0 +1,149 @@
+module std.strings
+
+// A validated, immutable, non-owning UTF-8 view. The referenced bytes must
+// remain alive and unchanged while the view is used.
+pub let Utf8String = type struct {
+  bytes: []u8,
+}
+
+pub let Utf8Iterator = type struct {
+  value: Utf8String,
+  offset: usz,
+}
+
+let decode_at(bytes: []u8, offset: usz): (u32, usz, bool) {
+  if offset >= @len(bytes) { return 0, 0, false }
+  let first = bytes[offset]
+  if first < 0x80 { return first.(u32), 1, true }
+
+  if first >= 0xc2 && first <= 0xdf {
+    if offset + 1 >= @len(bytes) { return 0, 0, false }
+    let second = bytes[offset + 1]
+    if second < 0x80 || second > 0xbf { return 0, 0, false }
+    return (((first & 0x1f).(u32)) << 6) | (second & 0x3f).(u32), 2, true
+  }
+
+  if first >= 0xe0 && first <= 0xef {
+    if offset + 2 >= @len(bytes) { return 0, 0, false }
+    let second = bytes[offset + 1]
+    let third = bytes[offset + 2]
+    if second < 0x80 || second > 0xbf || third < 0x80 || third > 0xbf {
+      return 0, 0, false
+    }
+    if first == 0xe0 && second < 0xa0 { return 0, 0, false }
+    if first == 0xed && second > 0x9f { return 0, 0, false }
+    let value = ((first & 0x0f).(u32) << 12) |
+      ((second & 0x3f).(u32) << 6) |
+      (third & 0x3f).(u32)
+    return value, 3, true
+  }
+
+  if first >= 0xf0 && first <= 0xf4 {
+    if offset + 3 >= @len(bytes) { return 0, 0, false }
+    let second = bytes[offset + 1]
+    let third = bytes[offset + 2]
+    let fourth = bytes[offset + 3]
+    if second < 0x80 || second > 0xbf ||
+      third < 0x80 || third > 0xbf ||
+      fourth < 0x80 || fourth > 0xbf {
+      return 0, 0, false
+    }
+    if first == 0xf0 && second < 0x90 { return 0, 0, false }
+    if first == 0xf4 && second > 0x8f { return 0, 0, false }
+    let value = ((first & 0x07).(u32) << 18) |
+      ((second & 0x3f).(u32) << 12) |
+      ((third & 0x3f).(u32) << 6) |
+      (fourth & 0x3f).(u32)
+    return value, 4, true
+  }
+
+  return 0, 0, false
+}
+
+pub let Utf8String.from_bytes(bytes: []u8): (Utf8String, bool) {
+  let mut offset: usz = 0
+  for offset < @len(bytes) {
+    let _, width, valid = decode_at(bytes, offset)
+    if !valid { return .{ bytes=[] }, false }
+    offset += width
+  }
+  return .{ bytes=bytes }, true
+}
+
+pub let Utf8String.from_str(value: str): (Utf8String, bool) =
+  Utf8String.from_bytes(value.([]u8))
+
+pub let Utf8String.as_bytes(self): []u8 = self.bytes
+
+pub let Utf8String.as_str(self): str = self.bytes.(str)
+
+pub let Utf8String.byte_length(self): usz = @len(self.bytes)
+
+pub let Utf8String.is_empty(self): bool = @len(self.bytes) == 0
+
+pub let Utf8String.length(self): usz {
+  let mut count: usz = 0
+  let mut offset: usz = 0
+  for offset < @len(self.bytes) {
+    let _, width, _ = decode_at(self.bytes, offset)
+    offset += width
+    count += 1
+  }
+  return count
+}
+
+pub let Utf8String.get(self, index: usz): (u32, bool) {
+  let mut current: usz = 0
+  let mut offset: usz = 0
+  for offset < @len(self.bytes) {
+    let value, width, _ = decode_at(self.bytes, offset)
+    if current == index { return value, true }
+    offset += width
+    current += 1
+  }
+  return 0, false
+}
+
+pub let Utf8String.slice(
+  self,
+  start: usz,
+  end: usz,
+): (Utf8String, bool) {
+  if start > end { return .{ bytes=[] }, false }
+  let mut current: usz = 0
+  let mut offset: usz = 0
+  let mut byte_start: usz = 0
+  let mut found_start = start == 0
+  for offset < @len(self.bytes) {
+    if current == start {
+      byte_start = offset
+      found_start = true
+    }
+    if current == end {
+      return .{ bytes=self.bytes[byte_start:offset] }, found_start
+    }
+    let _, width, _ = decode_at(self.bytes, offset)
+    offset += width
+    current += 1
+  }
+  if current == start {
+    byte_start = offset
+    found_start = true
+  }
+  if current == end && found_start {
+    return .{ bytes=self.bytes[byte_start:offset] }, true
+  }
+  return .{ bytes=[] }, false
+}
+
+pub let Utf8String.iterator(self): Utf8Iterator = .{
+  value=self,
+  offset=0,
+}
+
+pub let Utf8Iterator.next(*mut self): (u32, bool) {
+  if self.offset >= @len(self.value.bytes) { return 0, false }
+  let value, width, _ = decode_at(self.value.bytes, self.offset)
+  self.offset += width
+  return value, true
+}

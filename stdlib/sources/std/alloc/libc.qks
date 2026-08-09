@@ -1,7 +1,5 @@
 module std.alloc
 
-when TargetHasLibc {
-
 import std.libc
 
 let LibcAllocationHeader = type struct {
@@ -159,5 +157,3 @@ pub let LibcAllocator.resize<T>(
 }
 
 pub let LibcAllocator.allocator(*mut self): *mut dyn Allocator = self
-
-}

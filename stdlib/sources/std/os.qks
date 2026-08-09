@@ -5,6 +5,7 @@ pub let mut env: [][2]str = ---
 
 when TargetHasEnvironment {
   import std.alloc
+  import std.error
   import std.strings
 
   let environment_name_matches(entry: [2]str, name: str): bool {
@@ -18,71 +19,28 @@ when TargetHasEnvironment {
   }
 
   // Returns a borrowed view into the environment captured at process startup.
-  pub let environment_variable(name: str): (str, bool) {
+  pub let getenv(name: str): (str, bool) {
     for entry in env {
       if environment_name_matches(entry, name) { return entry[1], true }
     }
     return "", false
   }
 
-  pub let getenv(name: str): (str, bool) = environment_variable(name)
-
   // Copies an environment variable into allocator-owned storage.
-  // found is false both when the variable is absent and when allocation fails.
-  pub let environment_variable_owned(
-    allocator: *mut dyn std.alloc.Allocator,
-    name: str,
-  ): (std.strings.StringBuilder, bool) {
-    let value, found = environment_variable(name)
-    let mut result = std.strings.StringBuilder.init(allocator)
-    if !found { return result, false }
-    if result.write(value.([]u8)) != @len(value) {
-      result.deinit()
-      return std.strings.StringBuilder.init(allocator), false
-    }
-    return result, true
-  }
-
   pub let getenv_owned(
     allocator: *mut dyn std.alloc.Allocator,
     name: str,
-  ): (std.strings.StringBuilder, bool) =
-    environment_variable_owned(allocator, name)
-}
-
-pub let Error = type struct {
-  code: i32,
-}
-
-pub let Error.none(): Error = .{ code=0 }
-
-pub let Error.out_of_memory(): Error = .{ code=-1 }
-
-pub let Error.invalid_handle(): Error = .{ code=-2 }
-
-pub let Error.no_progress(): Error = .{ code=-3 }
-
-pub let Error.is_none(self): bool = self.code == 0
-
-pub let Error.is_error(self): bool = self.code != 0
-
-when TargetHasLibc {
-  import std.libc
-
-  // The returned view points to platform-owned storage and should be consumed
-  // before requesting another error message.
-  pub let Error.message(self): str {
-    if self.code == 0 { return "no error" }
-    if self.code == -1 { return "out of memory" }
-    if self.code == -2 { return "invalid handle" }
-    if self.code == -3 { return "operation made no progress" }
-    let message = std.libc.strerror(self.code)
-    let mut length: usz = 0
-    for message[length] != '\0' { length += 1 }
-    return message[0:length].(str)
+  ): (std.strings.StringBuilder, std.error.Error) {
+    let value, found = getenv(name)
+    let mut result = std.strings.StringBuilder.init(allocator)
+    if !found { return result, std.error.Error.not_found() }
+    if !result.append(value.([]u8)) {
+      result.deinit()
+      return std.strings.StringBuilder.init(allocator), std.error.Error.out_of_memory()
+    }
+    return result, std.error.Error.none()
   }
 
-  pub let last_error(): Error = .{ code=std.libc.errno_location().* }
 }
 
 when TargetHasProcessExit {

@@ -1,0 +1,71 @@
+module std.random
+
+// Small deterministic generator suitable for simulation, randomized
+// algorithms, and tests. It is not a cryptographic random-number generator.
+pub let Random = type struct {
+  state: u64,
+}
+
+pub let Random.init(seed: u64): Random = .{
+  state=if seed == 0 { 0x9e3779b97f4a7c15 } else { seed },
+}
+
+// xorshift64*: a compact generator with a period of 2^64 - 1.
+pub let Random.next_u64(*mut self): u64 {
+  let mut value = self.state
+  value ^= value >> 12
+  value ^= value << 25
+  value ^= value >> 27
+  self.state = value
+  return value * 0x2545f4914f6cdd1d
+}
+
+pub let Random.next_u32(*mut self): u32 = (self.next_u64() >> 32).(u32)
+
+pub let Random.next_bool(*mut self): bool = (self.next_u64() & 1) != 0
+
+// Returns a uniformly distributed value in [0, upper). False is returned for
+// an empty range.
+pub let Random.less_than(*mut self, upper: u64): (u64, bool) {
+  if upper == 0 { return 0, false }
+  let threshold = ((~upper) + 1) % upper
+  for true {
+    let value = self.next_u64()
+    if value >= threshold { return value % upper, true }
+  }
+  return 0, false
+}
+
+// Returns a uniformly distributed value in the half-open range [start, end).
+pub let Random.range(*mut self, start: u64, end: u64): (u64, bool) {
+  if end <= start { return 0, false }
+  let offset, success = self.less_than(end - start)
+  if !success { return 0, false }
+  return start + offset, true
+}
+
+// Returns a value in [0, 1) using 53 random significand bits.
+pub let Random.next_f64(*mut self): f64 =
+  (self.next_u64() >> 11).(f64) * (1.0 / 9007199254740992.0)
+
+pub let Random.fill(*mut self, bytes: []mut u8): void {
+  let mut offset: usz = 0
+  for offset < @len(bytes) {
+    let value = self.next_u64()
+    let mut index: usz = 0
+    for index < 8 && offset < @len(bytes) {
+      bytes[offset] = (value >> (index.(u64) * 8)).(u8)
+      offset += 1
+      index += 1
+    }
+  }
+}
+
+pub let Random.shuffle<T>(*mut self, values: []mut T): void {
+  let mut remaining = @len(values)
+  for remaining > 1 {
+    let index, _ = self.less_than(remaining.(u64))
+    remaining -= 1
+    values.swap(remaining, index.(usz))
+  }
+}

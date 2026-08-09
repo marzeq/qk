@@ -18,6 +18,27 @@ pub let (DynamicArray<T>).init<T>(allocator: *mut dyn std.alloc.Allocator): Dyna
   }
 }
 
+pub let (DynamicArray<T>).with_capacity<T>(
+  allocator: *mut dyn std.alloc.Allocator,
+  capacity: usz,
+): (DynamicArray<T>, bool) {
+  let mut result = DynamicArray<T>.init(allocator)
+  let success = result.ensure_capacity(capacity)
+  return result, success
+}
+
+pub let (DynamicArray<T>).from_slice<T>(
+  allocator: *mut dyn std.alloc.Allocator,
+  values: []T,
+): (DynamicArray<T>, bool) {
+  let mut result = DynamicArray<T>.init(allocator)
+  if !result.append_slice(values) {
+    result.deinit()
+    return DynamicArray<T>.init(allocator), false
+  }
+  return result, true
+}
+
 // Ensure that the array can hold at least minimum_capacity elements without
 // another allocation. Existing elements are preserved when the allocation is
 // moved.
@@ -93,6 +114,22 @@ pub let (DynamicArray<T>).append<T>(*mut self, value: T): bool {
   return true
 }
 
+// Source must not alias this array's backing allocation because growing the
+// destination may move it.
+pub let (DynamicArray<T>).append_slice<T>(
+  *mut self,
+  values: []T,
+): bool {
+  if !self.reserve(@len(values)) { return false }
+  let mut index: usz = 0
+  for index < @len(values) {
+    self.ptr[self.count + index] = values[index]
+    index += 1
+  }
+  self.count += @len(values)
+  return true
+}
+
 // Insert one element before index. Inserting at count appends the value.
 pub let (DynamicArray<T>).insert<T>(
   *mut self,
@@ -117,6 +154,29 @@ pub let (DynamicArray<T>).insert<T>(
   return true
 }
 
+// Source must not alias this array's backing allocation.
+pub let (DynamicArray<T>).insert_slice<T>(
+  *mut self,
+  index: usz,
+  values: []T,
+): bool {
+  if index > self.count {
+    panic("dynamic array insert index out of bounds")
+  }
+  if !self.reserve(@len(values)) { return false }
+
+  let mut cursor = self.count
+  for cursor > index {
+    cursor -= 1
+    self.ptr[cursor + @len(values)] = self.ptr[cursor]
+  }
+  for let mut value_index: usz = 0; value_index < @len(values); value_index += 1 {
+    self.ptr[index + value_index] = values[value_index]
+  }
+  self.count += @len(values)
+  return true
+}
+
 // Remove and return the final element.
 pub let (DynamicArray<T>).pop<T>(*mut self): T {
   if self.count == 0 {
@@ -125,6 +185,15 @@ pub let (DynamicArray<T>).pop<T>(*mut self): T {
 
   self.count -= 1
   return self.ptr[self.count]
+}
+
+pub let (DynamicArray<T>).try_pop<T>(*mut self): (T, bool) {
+  if self.count == 0 {
+    let result: T = ---
+    return result, false
+  }
+  self.count -= 1
+  return self.ptr[self.count], true
 }
 
 // Remove index while retaining the order of the remaining elements.
@@ -166,6 +235,62 @@ pub let (DynamicArray<T>).get<T>(self, index: usz): T {
 
   return self.ptr[index]
 }
+
+pub let (DynamicArray<T>).get_checked<T>(self, index: usz): (T, bool) {
+  if index >= self.count {
+    let result: T = ---
+    return result, false
+  }
+  return self.ptr[index], true
+}
+
+pub let (DynamicArray<T>).first<T>(self): (T, bool) = self.get_checked(0)
+
+pub let (DynamicArray<T>).last<T>(self): (T, bool) {
+  if self.count == 0 {
+    let result: T = ---
+    return result, false
+  }
+  return self.ptr[self.count - 1], true
+}
+
+pub let (DynamicArray<T>).length<T>(self): usz = self.count
+
+pub let (DynamicArray<T>).is_empty<T>(self): bool = self.count == 0
+
+pub let (DynamicArray<T>).truncate<T>(*mut self, length: usz): void {
+  if length < self.count { self.count = length }
+}
+
+pub let (DynamicArray<T>).remove_range<T>(
+  *mut self,
+  start: usz,
+  end: usz,
+): void {
+  if start > end || end > self.count {
+    panic("dynamic array remove range out of bounds")
+  }
+  let removed = end - start
+  let mut cursor = start
+  for cursor + removed < self.count {
+    self.ptr[cursor] = self.ptr[cursor + removed]
+    cursor += 1
+  }
+  self.count -= removed
+}
+
+pub let (DynamicArray<T>).shrink_to_fit<T>(*mut self): bool {
+  if self.count == self.capacity { return true }
+  let memory = self.ptr[0:self.capacity]
+  let resized, success = std.alloc.resize<T>(self.allocator, memory, self.count)
+  if !success { return false }
+  self.ptr = resized.(*mut T)
+  self.capacity = self.count
+  return true
+}
+
+pub let (DynamicArray<T>).duplicate<T>(self): (DynamicArray<T>, bool) =
+  DynamicArray<T>.from_slice(self.allocator, self.as_slice())
 
 // Remove every element without releasing the backing allocation.
 pub let (DynamicArray<T>).clear<T>(*mut self): void {

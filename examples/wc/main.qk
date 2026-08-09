@@ -1,6 +1,7 @@
 module main
 
 import (
+  std.error
   std.fs
   std.io
   std.os
@@ -22,13 +23,14 @@ let is_whitespace(byte: u8): bool =
   byte == ' ' || byte == '\t' || byte == '\n' ||
   byte == '\r' || byte == '\v' || byte == '\f'
 
-let count(reader: *mut dyn std.io.Reader): Counts {
+let count(reader: *mut dyn std.io.Reader): (Counts, std.error.Error) {
   let mut result: Counts = .{ lines=0, words=0, bytes=0 }
   let mut in_word = false
   let mut buffer: [4096]u8 = ---
 
   for true {
-    let read = reader.read(buffer[:])
+    let read, error = reader.read(buffer[:])
+    if error.is_error() { return result, error }
     if read == 0 { break }
 
     result.bytes += read
@@ -44,7 +46,7 @@ let count(reader: *mut dyn std.io.Reader): Counts {
     }
   }
 
-  return result
+  return result, std.error.Error.none()
 }
 
 let add(total: *mut Counts, counts: Counts): void {
@@ -162,7 +164,11 @@ let main() {
   let width = output_width(first_file)
 
   if first_file == @len(std.os.args) {
-    let counts = count(std.io.stdin.&mut.(*mut dyn std.io.Reader))
+    let counts, error = count(std.io.stdin.&mut.(*mut dyn std.io.Reader))
+    if error.is_error() {
+      std.io.eprintln("wc: stdin: {}", error.message())
+      std.os.exit(1)
+    }
     print_counts(counts, options, "", false, width)
     return
   }
@@ -174,21 +180,31 @@ let main() {
   for index in first_file..@len(std.os.args) {
     let path = std.os.args[index]
     if path.eq("-") {
-      let counts = count(std.io.stdin.&mut.(*mut dyn std.io.Reader))
+      let counts, error = count(std.io.stdin.&mut.(*mut dyn std.io.Reader))
+      if error.is_error() {
+        std.io.eprintln("wc: stdin: {}", error.message())
+        failed = true
+        continue
+      }
       print_counts(counts, options, path, true, width)
       add(total.&mut, counts)
       continue
     }
 
-    let mut file, error = std.io.FileReader.open_checked(path)
+    let mut file, error = std.io.FileReader.open(path)
     if error.is_error() {
       std.io.eprintln("wc: {}: {}", path, error.message())
       failed = true
       continue
     }
 
-    let counts = count(file.&mut.(*mut dyn std.io.Reader))
-    let close_error = file.close_checked()
+    let counts, read_error = count(file.&mut.(*mut dyn std.io.Reader))
+    let close_error = file.close()
+    if read_error.is_error() {
+      std.io.eprintln("wc: {}: {}", path, read_error.message())
+      failed = true
+      continue
+    }
     if close_error.is_error() {
       std.io.eprintln("wc: {}: {}", path, close_error.message())
       failed = true
