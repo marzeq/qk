@@ -921,11 +921,37 @@ func (p *Parser) ParseLambdaExpression() (*LambdaNode, error) {
 			if !ok {
 				return nil, shared.NewError(p.PrevLoc(), "expected lambda parameter name or '|'")
 			}
-			arg := &FunctionNodeArg{Name: name.Value, Loc: name.Loc}
+			group := []*FunctionNodeArg{{Name: name.Value, Loc: name.Loc}}
+			if p.Match(tokeniser.TokenEquals) {
+				return nil, shared.NewError(p.CurrLoc(), "lambda parameters cannot have default values")
+			}
+			for !p.Match(tokeniser.TokenColon, tokeniser.TokenPipe) {
+				if !p.Expect(tokeniser.TokenComma) {
+					return nil, shared.NewError(p.PrevLoc(), "expected ':', ',' or '|' after lambda parameter")
+				}
+				for p.Match(tokeniser.TokenNewline) {
+					p.Inc()
+				}
+				if p.Match(tokeniser.TokenPipe) {
+					break
+				}
+				name, ok = p.ExpectGet(tokeniser.TokenIdentifier)
+				if !ok {
+					return nil, shared.NewError(p.PrevLoc(), "expected lambda parameter name")
+				}
+				group = append(group, &FunctionNodeArg{Name: name.Value, Loc: name.Loc})
+				if p.Match(tokeniser.TokenEquals) {
+					return nil, shared.NewError(p.CurrLoc(), "lambda parameters cannot have default values")
+				}
+			}
+
 			if p.Match(tokeniser.TokenColon) {
 				p.Inc()
 				isTypedVariadic := p.Match(tokeniser.Token3Dots)
 				if isTypedVariadic {
+					if len(group) != 1 {
+						return nil, shared.NewError(p.CurrLoc(), "typed variadic parameter cannot use a grouped declaration")
+					}
 					p.Inc()
 				}
 				typeNode, err := p.ParseType()
@@ -936,12 +962,14 @@ func (p *Parser) ParseLambdaExpression() (*LambdaNode, error) {
 					typeNode = &SliceTypeNode{ElementType: typeNode, Loc: typeNode.GetLoc()}
 					typedVariadic = true
 				}
-				arg.Type = typeNode
+				for _, arg := range group {
+					arg.Type = typeNode
+				}
 			}
 			if p.Match(tokeniser.TokenEquals) {
 				return nil, shared.NewError(p.CurrLoc(), "lambda parameters cannot have default values")
 			}
-			args = append(args, arg)
+			args = append(args, group...)
 			if typedVariadic {
 				if p.Match(tokeniser.TokenComma) {
 					return nil, shared.NewError(p.CurrLoc(), "typed variadic parameter must be last")

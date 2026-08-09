@@ -513,7 +513,7 @@ A non-capturing lambda is an anonymous function value written with `|...| =>`:
 
 ```qk
 let increment: *(i32): i32 = |value| => value + 1
-let multiply = |left: i32, right: i32| => {
+let multiply = |left, right: i32| => {
   left * right
 }
 ```
