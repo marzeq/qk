@@ -95,6 +95,25 @@ jobs:
       actions: read
       contents: write
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Configure primary repository access
+        env:
+          PRIMARY_GIT_SSH_KEY: ${{ secrets.PRIMARY_GIT_SSH_KEY }}
+        run: |
+          if [[ -z "$PRIMARY_GIT_SSH_KEY" ]]; then
+            echo "PRIMARY_GIT_SSH_KEY is not configured" >&2
+            exit 1
+          fi
+          key_file="$RUNNER_TEMP/primary_git_key"
+          known_hosts_file="$RUNNER_TEMP/primary_git_known_hosts"
+          install -m 600 /dev/null "$key_file"
+          printf '%s\n' "$PRIMARY_GIT_SSH_KEY" > "$key_file"
+          printf '%s\n' 'git.marzeq.foo ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPxWUKlEvL387Pa9OF9bFWiDHSI45QXWxHrejac2QpPe' > "$known_hosts_file"
+          echo "GIT_SSH_COMMAND=ssh -i $key_file -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$known_hosts_file" >> "$GITHUB_ENV"
+          git remote add primary git@git.marzeq.foo:marzeq/qk.git
+
       - name: Download release archives
         uses: actions/download-artifact@v7
         with:
@@ -102,16 +121,42 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - name: Publish tag through primary mirror
+        run: |
+          git tag "$NIGHTLY_VERSION" "$GITHUB_SHA"
+          git push primary "refs/tags/$NIGHTLY_VERSION"
+
+      - name: Wait for mirrored GitHub tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for attempt in {1..12}; do
+            if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$NIGHTLY_VERSION" >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "tag $NIGHTLY_VERSION was not mirrored to GitHub within 60 seconds" >&2
+          exit 1
+
       - name: Publish prerelease
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$NIGHTLY_VERSION" dist/*.tar.gz \
             --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
             --title "QK $NIGHTLY_VERSION" \
             --notes "Automated build of $GITHUB_SHA from $(date -u +'%Y-%m-%d %H:%M UTC')." \
-            --prerelease
+            --prerelease \
+            --verify-tag
+
+      - name: Remove primary tag after publication failure
+        if: ${{ failure() }}
+        run: |
+          if git remote get-url primary >/dev/null 2>&1 &&
+            git ls-remote --exit-code --tags primary "refs/tags/$NIGHTLY_VERSION" >/dev/null 2>&1; then
+            git push primary --delete "refs/tags/$NIGHTLY_VERSION"
+          fi
 
       - name: Keep the latest three nightly releases
         env:
@@ -125,5 +170,11 @@ jobs:
               --jq 'map(select(.isDraft == false and (.tagName | startswith("nightly-")))) | sort_by(.createdAt) | reverse | .[3:] | .[].tagName'
           )
           for tag in "${stale_tags[@]}"; do
-            gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
+            if git ls-remote --exit-code --tags primary "refs/tags/$tag" >/dev/null 2>&1; then
+              git push primary --delete "refs/tags/$tag"
+            fi
+            gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes
+            if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" >/dev/null 2>&1; then
+              gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$tag"
+            fi
           done
