@@ -4,7 +4,7 @@ import std.io
 
 let Base = comptime 6
 let Product = comptime Base * 7
-let Bits = comptime PointerBits
+let Bits: usz = comptime PointerBits
 
 when ReleaseMode == .Release {
   let mode(): str = "release"
