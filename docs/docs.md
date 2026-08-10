@@ -1308,7 +1308,8 @@ The compiler checkout and release layout contain a top-level `libs` directory.
 `go run ./cmd/qkc` discovers it from the QK checkout, while an installed
 `<root>/bin/qkc` loads `<root>/libs`. `QK_LIB_DIR` overrides this lookup.
 Because the Go tool installs executables but not repository data, use
-`scripts/install.sh` rather than plain `go install` for a complete installation.
+`scripts/dev_install.sh` rather than plain `go install` for a complete
+development installation under `~/.local/share/qk`.
 
 The standard library is an implicit dependency of ordinary modules unless `-nostdlib` is used. Its submodules use explicit imports internally to keep the dependency graph acyclic.
 

@@ -17,10 +17,11 @@ For a relocatable installation containing both the compiler and its QK
 libraries, use:
 
 ```bash
-scripts/install.sh /desired/install/root
+scripts/dev_install.sh
 ```
 
-This creates `bin/qkc` and `libs/` beneath the selected root. Plain
+This installs the development release under `~/.local/share/qk/{bin,libs}` and
+creates `~/.local/bin/qkc` as a symlink to the installed compiler. Plain
 `go install ./cmd/qkc` installs only the executable because the Go tool has no
 mechanism for installing repository data files.
 
