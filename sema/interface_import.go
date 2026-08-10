@@ -24,6 +24,7 @@ func (a *Analyser) DeclareModuleInterface(iface ModuleInterface) error {
 	a.importsByModule[iface.Name] = make(map[string]bool)
 	a.aliasesByModule[iface.Name] = make(map[string]*aliasInfo)
 	for _, encoded := range iface.Symbols {
+		encoded.Public = true
 		symbol, err := decodeInterfaceSymbol(encoded, iface.Name)
 		if err != nil {
 			return fmt.Errorf("decode %s.%s: %w", iface.Name, encoded.Name, err)
@@ -32,7 +33,12 @@ func (a *Analyser) DeclareModuleInterface(iface ModuleInterface) error {
 			return err
 		}
 	}
-	for _, encoded := range iface.Methods {
+	methods := append([]InterfaceSymbol(nil), iface.Methods...)
+	for i := range methods {
+		methods[i].Public = true
+	}
+	methods = append(methods, iface.WitnessMethods...)
+	for _, encoded := range methods {
 		method, err := decodeInterfaceSymbol(encoded, iface.Name)
 		if err != nil {
 			return fmt.Errorf("decode method %s.%s: %w", iface.Name, encoded.Name, err)
@@ -74,7 +80,7 @@ func decodeInterfaceSymbol(encoded InterfaceSymbol, module string) (*symbols.Sym
 		return nil, err
 	}
 	symbol := &symbols.Symbol{
-		Name: encoded.Name, Kind: kind, Public: true, Mutable: encoded.Mutable,
+		Name: encoded.Name, Kind: kind, Public: encoded.Public, Mutable: encoded.Mutable,
 		Comptime: encoded.Comptime, InlineComptime: encoded.InlineComptime,
 		ComptimeInteger: encoded.ComptimeInteger, DefinitionModule: module,
 		Method: encoded.Method, StaticMethod: encoded.StaticMethod,

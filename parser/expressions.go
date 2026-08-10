@@ -73,6 +73,13 @@ func (p *Parser) ParseSizeOfExpression() (ExpressionNode, error) {
 	}
 
 	switch node := node.(type) {
+	case *NamedTypeNode:
+		// A bare name can denote either a type or a value. Semantic resolution
+		// chooses the visible binding without evaluating the value expression.
+		return &SizeOfNode{
+			Operand: node, Expression: &IdentifierNode{Name: node.Name, Module: node.ModName, Loc: node.Loc},
+			Loc: p.SpanFrom(beginLoc),
+		}, nil
 	case TypeNode:
 		return &SizeOfNode{
 			Operand: node,

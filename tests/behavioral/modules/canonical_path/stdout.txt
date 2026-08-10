@@ -1,0 +1,1 @@
+package directory "<CASE>/dependency" must declare module "dependency", found "wrong"

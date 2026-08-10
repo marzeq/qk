@@ -1,1 +1,0 @@
-panic: loop control keyword outside a loop.*

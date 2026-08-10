@@ -1,0 +1,9 @@
+Error: <CASE>/main.qk:8:17
+   6 | let main() {
+   7 |   let empty = Empty.{}
+   8 |   let invalid = empty.(Runnable)
+     |                 ^^^^^^^^^^^^^^^^
+   9 |   let _ = invalid
+  10 | }
+
+type ..Empty does not conform to ..Runnable

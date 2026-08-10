@@ -246,6 +246,9 @@ func (w *debugWalker) walkExpr(expr parser.ExpressionNode) {
 		}
 
 	case *parser.SizeOfNode:
+		if n.Expression != nil {
+			w.walkExpr(n.Expression)
+		}
 		w.checkType(n.Type)
 
 	case *parser.SizeOfExprNode:

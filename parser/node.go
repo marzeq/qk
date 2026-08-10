@@ -643,6 +643,7 @@ func (n *CastNode) GetType() types.Type    { return n.Type }
 
 type SizeOfNode struct {
 	Operand     TypeNode
+	Expression  ExpressionNode
 	OperandType types.Type
 	Loc         shared.Location
 	Type        types.Type

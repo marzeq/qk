@@ -10,6 +10,7 @@ import (
 	"github.com/marzeq/qk/parser"
 	"github.com/marzeq/qk/shared"
 	"github.com/marzeq/qk/symbols"
+	"github.com/marzeq/qk/tokeniser"
 	"github.com/marzeq/qk/types"
 )
 
@@ -18,6 +19,7 @@ type Validator struct {
 	currentFunction               *symbols.Symbol
 	currentFunctionParameters     map[*symbols.Symbol]int
 	currentTypedVariadicParameter *symbols.Symbol
+	loopDepth                     int
 	errors                        []error
 	warnings                      []error
 	validatingTemplate            bool
@@ -118,7 +120,9 @@ func (v *Validator) validateNode(node parser.Node) {
 		prev := v.currentFunction
 		prevFunctionParameters := v.currentFunctionParameters
 		prevTypedVariadicParameter := v.currentTypedVariadicParameter
+		prevLoopDepth := v.loopDepth
 		v.currentFunction = n.Symbol
+		v.loopDepth = 0
 		v.currentFunctionParameters = make(map[*symbols.Symbol]int, len(n.Args))
 		for i, argument := range n.Args {
 			v.currentFunctionParameters[argument.Symbol] = i
@@ -244,6 +248,7 @@ func (v *Validator) validateNode(node parser.Node) {
 		v.currentFunction = prev
 		v.currentFunctionParameters = prevFunctionParameters
 		v.currentTypedVariadicParameter = prevTypedVariadicParameter
+		v.loopDepth = prevLoopDepth
 
 	case *parser.BlockNode:
 		for _, stmt := range n.Body {
@@ -299,7 +304,11 @@ func (v *Validator) validateNode(node parser.Node) {
 		v.validateForEach(n)
 
 	case *parser.ControlKeywordNode:
-		if n.ReturnValue != nil {
+		if n.Keyword == tokeniser.KeywordBreak || n.Keyword == tokeniser.KeywordContinue {
+			if v.loopDepth == 0 {
+				v.errorf(n, "%s is only valid inside a loop", n.Keyword)
+			}
+		} else if n.ReturnValue != nil {
 			v.validateReturn(n)
 		}
 
@@ -1084,7 +1093,7 @@ func (v *Validator) validateFor(n *parser.ForNode) {
 		return
 	}
 
-	v.validateNode(n.Body)
+	v.validateLoopBody(n.Body)
 }
 
 func (v *Validator) validateRangeFor(n *parser.RangeForNode) {
@@ -1094,7 +1103,7 @@ func (v *Validator) validateRangeFor(n *parser.RangeForNode) {
 		if n.Symbol != nil {
 			n.Symbol.Type = types.ErrorType{}
 		}
-		v.validateNode(n.Body)
+		v.validateLoopBody(n.Body)
 		return
 	}
 
@@ -1107,7 +1116,7 @@ func (v *Validator) validateRangeFor(n *parser.RangeForNode) {
 		n.Symbol.Type = types.PrimitiveUsz
 	}
 
-	v.validateNode(n.Body)
+	v.validateLoopBody(n.Body)
 	v.warnIfUnused(n.Symbol, n.NameLoc, shared.WarningUnusedVariable, "variable")
 
 	iteratorType := types.PrimitiveUsz
@@ -1127,7 +1136,7 @@ func (v *Validator) validateForEach(n *parser.ForEachNode) {
 		if n.IndexSymbol != nil {
 			n.IndexSymbol.Type = types.ErrorType{}
 		}
-		v.validateNode(n.Body)
+		v.validateLoopBody(n.Body)
 		return
 	}
 	var element types.Type
@@ -1178,7 +1187,7 @@ func (v *Validator) validateForEach(n *parser.ForEachNode) {
 	if n.IndexSymbol != nil {
 		n.IndexSymbol.Type = types.PrimitiveUsz
 	}
-	v.validateNode(n.Body)
+	v.validateLoopBody(n.Body)
 	if len(n.Destructure) != 0 {
 		for i := range n.Destructure {
 			binding := &n.Destructure[i]
@@ -1190,6 +1199,12 @@ func (v *Validator) validateForEach(n *parser.ForEachNode) {
 	if n.IndexName != "" {
 		v.warnIfUnused(n.IndexSymbol, n.IndexNameLoc, shared.WarningUnusedVariable, "variable")
 	}
+}
+
+func (v *Validator) validateLoopBody(body *parser.BlockNode) {
+	v.loopDepth++
+	v.validateNode(body)
+	v.loopDepth--
 }
 
 func (v *Validator) validateReturn(n *parser.ControlKeywordNode) {
@@ -2063,6 +2078,9 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		v.errorf(n, "'---' is only valid as a declaration initializer, a struct field initializer, or the final struct initializer entry")
 
 	case *parser.SizeOfNode:
+		if n.Expression != nil {
+			v.validateExpr(n.Expression)
+		}
 		if types.HasError(n.OperandType) {
 			n.SetType(types.ErrorType{})
 			return
@@ -2264,6 +2282,10 @@ func (v *Validator) validateStaticTraitAssertion(node *parser.CastNode) {
 	methods, conforms := v.analyser.structuralConformance(probe, target, node)
 	node.AssertionMatches = conforms
 	node.TraitMethods = methods
+	if !conforms {
+		v.errorf(node, "type %v does not conform to %v", concrete, view.Trait)
+		node.SetType(types.ErrorType{})
+	}
 }
 
 func (v *Validator) validatePointerArithmeticBase(node parser.Node, base types.Type) {
@@ -2395,6 +2417,63 @@ func (v *Validator) createCast(node parser.ExpressionNode, target types.Type) pa
 		Operand: node,
 		Type:    target,
 	}
+}
+
+func integerLiteralFits(text string, target types.Type) bool {
+	primitive, ok := types.Underlying(target).(types.PrimitiveType)
+	if !ok {
+		return true
+	}
+	bits := 0
+	switch primitive {
+	case types.PrimitiveI8, types.PrimitiveU8:
+		bits = 8
+	case types.PrimitiveI16, types.PrimitiveU16:
+		bits = 16
+	case types.PrimitiveI32, types.PrimitiveU32:
+		bits = 32
+	case types.PrimitiveI64, types.PrimitiveU64, types.PrimitiveIsz, types.PrimitiveUsz:
+		bits = 64
+	default:
+		return true
+	}
+	value, ok := new(big.Int).SetString(text, 10)
+	if !ok {
+		return false
+	}
+	if types.IsUnsigned(primitive) {
+		return value.Sign() >= 0 && value.BitLen() <= bits
+	}
+	limit := new(big.Int).Lsh(big.NewInt(1), uint(bits-1))
+	minimum := new(big.Int).Neg(new(big.Int).Set(limit))
+	maximum := new(big.Int).Sub(limit, big.NewInt(1))
+	return value.Cmp(minimum) >= 0 && value.Cmp(maximum) <= 0
+}
+
+func negativeIntegerLiteralFits(text string, target types.Type) bool {
+	primitive, ok := types.Underlying(target).(types.PrimitiveType)
+	if !ok || !types.IsSigned(primitive) {
+		return false
+	}
+	bits := 0
+	switch primitive {
+	case types.PrimitiveI8:
+		bits = 8
+	case types.PrimitiveI16:
+		bits = 16
+	case types.PrimitiveI32:
+		bits = 32
+	case types.PrimitiveI64, types.PrimitiveIsz:
+		bits = 64
+	default:
+		return false
+	}
+	value, ok := new(big.Int).SetString(text, 10)
+	if !ok || value.Sign() < 0 {
+		return false
+	}
+	limit := new(big.Int).Lsh(big.NewInt(1), uint(bits-1))
+	return value.Cmp(limit) <= 0
 }
 
 func (v *Validator) validateValueExpr(node parser.ExpressionNode) bool {
@@ -2544,6 +2623,11 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 		return n
 	case *parser.IntegerLiteralNode:
 		if types.IsNumeric(expected) {
+			if types.IsInteger(expected) && !integerLiteralFits(n.Value, expected) {
+				v.errorf(n, "integer literal %s is out of range for %v", n.Value, expected)
+				n.SetType(types.ErrorType{})
+				return n
+			}
 			n.SetType(expected)
 			return n
 		}
@@ -2557,6 +2641,16 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 	case *parser.UnaryOpNode:
 		if (types.IsNumeric(expected) && n.Op == parser.UnaryOpNegate) ||
 			((types.IsInteger(expected) || isFlagsType(expected)) && n.Op == parser.UnaryOpBitwiseNot) {
+			if literal, ok := n.Operand.(*parser.IntegerLiteralNode); ok && n.Op == parser.UnaryOpNegate && types.IsInteger(expected) {
+				if !negativeIntegerLiteralFits(literal.Value, expected) {
+					v.errorf(n, "integer literal -%s is out of range for %v", literal.Value, expected)
+					n.SetType(types.ErrorType{})
+					return n
+				}
+				literal.SetType(expected)
+				n.SetType(expected)
+				return n
+			}
 			n.Operand = v.validateExprWithExpected(n.Operand, expected)
 			if types.HasError(n.Operand.GetType()) {
 				n.SetType(types.ErrorType{})
@@ -2626,6 +2720,18 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 	got := node.GetType()
 	if types.HasError(got) {
 		return node
+	}
+	// A value that already has the requested dynamic-trait representation must
+	// not be treated as a concrete value and borrowed into a second trait
+	// object. In particular, Any structurally accepts every pointer, including
+	// a pointer to the storage of an existing *dyn Any value.
+	if _, sourceIsTrait := traitPointer(got); sourceIsTrait {
+		if _, targetIsTrait := traitPointer(expected); targetIsTrait && got.CanCoerceTo(expected) {
+			if got.Equals(expected) {
+				return node
+			}
+			return v.createCast(node, expected)
+		}
 	}
 	if sourceArray, ok := types.Underlying(got).(types.ArrayType); ok {
 		if targetSlice, ok := types.Underlying(expected).(types.SliceType); ok && sourceArray.Base.Equals(targetSlice.Base) {

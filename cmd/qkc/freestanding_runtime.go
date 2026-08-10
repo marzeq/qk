@@ -9,7 +9,7 @@ import (
 
 func buildFreestandingRuntime(
 	targetTriple string,
-	linksLibc, executable bool,
+	linksLibc, executable, initializeStdlibProcessState bool,
 	mainInitializer, userMain string,
 ) (string, error) {
 	pointerBits, ok := qktarget.PointerBits(qktarget.EffectiveTriple(targetTriple))
@@ -23,8 +23,48 @@ func buildFreestandingRuntime(
 	target := strings.ToLower(qktarget.EffectiveTriple(targetTriple))
 	linuxX8664 := strings.Contains(target, "linux") && (qktarget.Arch(targetTriple) == "x86_64" || qktarget.Arch(targetTriple) == "amd64")
 	libcFreeHosted := !linksLibc && executable && linuxX8664
+	if executable && userMain != "" && !initializeStdlibProcessState {
+		initializerDeclaration := ""
+		initializerCall := ""
+		if mainInitializer != "" {
+			initializerDeclaration = fmt.Sprintf("declare hidden void @%s()\n", mainInitializer)
+			initializerCall = fmt.Sprintf("  call void @%s()\n", mainInitializer)
+		}
+		if libcFreeHosted {
+			fmt.Fprintf(&out, `declare hidden void @%[1]s()
+%[2]s
+module asm ".text"
+module asm ".globl _start"
+module asm ".type _start,@function"
+module asm "_start:"
+module asm "movq %%rsp, %%rdi"
+module asm "andq $-16, %%rsp"
+module asm "subq $8, %%rsp"
+module asm "jmp __qk_start"
+module asm ".size _start, .-_start"
+
+define hidden void @__qk_start(ptr %%stack) noreturn nounwind {
+entry:
+%[3]s  call void @%[1]s()
+  %%exit = call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i32 0)
+  unreachable
+}
+
+`, userMain, initializerDeclaration, initializerCall)
+		} else {
+			fmt.Fprintf(&out, `declare hidden void @%[1]s()
+%[2]s
+define i32 @main(i32 %%argc, ptr %%argv, ptr %%envp) {
+entry:
+%[3]s  call void @%[1]s()
+  ret i32 0
+}
+
+`, userMain, initializerDeclaration, initializerCall)
+		}
+	}
 	if libcFreeHosted && linuxX8664 {
-		if executable && userMain != "" {
+		if executable && userMain != "" && initializeStdlibProcessState {
 			initializerDeclaration := ""
 			initializerCall := ""
 			if mainInitializer != "" {
@@ -200,7 +240,7 @@ passed:
 
 `, usz)
 	} else {
-		if executable && userMain != "" {
+		if executable && userMain != "" && initializeStdlibProcessState {
 			fmt.Fprintf(&out, "declare hidden void @%s()\n", userMain)
 			initializerCall := ""
 			if mainInitializer != "" {

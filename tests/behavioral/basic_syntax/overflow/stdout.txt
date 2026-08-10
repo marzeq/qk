@@ -1,0 +1,9 @@
+Error: <CASE>/main.qk:4:19
+   2 | 
+   3 | let main() {
+   4 |   let value: u8 = 256
+     |                   ^^^
+   5 |   let _ = value
+   6 | }
+
+integer literal 256 is out of range for u8

@@ -3807,6 +3807,9 @@ func (g *Generator) emitBinaryOperation(op parser.BinaryOpKind, left, right ir.O
 	case parser.BinaryOpMultiply:
 		g.Emit(ir.Mul{Dest: dst, Left: left, Right: right})
 	case parser.BinaryOpDivide:
+		if types.IsInteger(resultType) {
+			g.emitIntegerZeroCheck(right, "integer division by zero")
+		}
 		g.Emit(ir.Div{Dest: dst, Left: left, Right: right})
 	case parser.BinaryOpEqual:
 		g.Emit(ir.CmpEq{Dest: dst, Left: left, Right: right})
@@ -3821,6 +3824,9 @@ func (g *Generator) emitBinaryOperation(op parser.BinaryOpKind, left, right ir.O
 	case parser.BinaryOpGreaterEqual:
 		g.Emit(ir.CmpGe{Dest: dst, Left: left, Right: right})
 	case parser.BinaryOpModulo:
+		if types.IsInteger(resultType) {
+			g.emitIntegerZeroCheck(right, "integer modulo by zero")
+		}
 		g.Emit(ir.Mod{Dest: dst, Left: left, Right: right})
 	case parser.BinaryOpLogicalAnd:
 		g.Emit(ir.LogicalAnd{Dest: dst, Left: left, Right: right})
@@ -3841,6 +3847,17 @@ func (g *Generator) emitBinaryOperation(op parser.BinaryOpKind, left, right ir.O
 	}
 
 	return ir.ValueOperand(dst, resultType)
+}
+
+func (g *Generator) emitIntegerZeroCheck(divisor ir.Operand, message string) {
+	isZero := g.currentFunction.NewValueOfType(types.PrimitiveBool)
+	g.Emit(ir.CmpEq{Dest: isZero, Left: divisor, Right: ir.IntConstOperand("0", divisor.Type)})
+	panicBlock := g.currentFunction.NewBlock("integer.zero.panic")
+	validBlock := g.currentFunction.NewBlock("integer.zero.valid")
+	g.Emit(ir.Branch{Cond: ir.ValueOperand(isZero, types.PrimitiveBool), Then: panicBlock.ID, Else: validBlock.ID})
+	g.currentBlock = panicBlock
+	g.emitRuntimePanic(message)
+	g.currentBlock = validBlock
 }
 
 func (g *Generator) generateShortCircuitExpr(node *parser.BinaryOpNode) ir.Operand {

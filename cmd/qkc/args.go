@@ -73,6 +73,7 @@ type Args struct {
 	static       bool
 	release      bool
 	stdlibPath   string
+	noStdlib     bool
 	noEmit       bool
 	target       string
 	sysroot      string
@@ -316,6 +317,10 @@ func (p *argumentParser) parseCurrent() error {
 		p.args.release = true
 		p.index++
 
+	case tok == "-nostdlib":
+		p.args.noStdlib = true
+		p.index++
+
 	case tok == "-stdlib":
 		value, err := p.nextValue(tok)
 		if err != nil {
@@ -519,6 +524,9 @@ func finaliseArgs(args *Args) error {
 		args.sysroot = abs
 	}
 	if args.stdlibPath != "" {
+		if args.noStdlib {
+			return fmt.Errorf("-nostdlib and -stdlib cannot be used together")
+		}
 		info, err := os.Stat(args.stdlibPath)
 		if err != nil || !info.IsDir() {
 			return fmt.Errorf("standard-library path is not a directory: %s", args.stdlibPath)

@@ -1,0 +1,9 @@
+Error: <CASE>/main.qk:4:3
+   2 | 
+   3 | let main() {
+   4 |   break
+     |   ^^^^^
+   5 | }
+   6 | 
+
+break is only valid inside a loop

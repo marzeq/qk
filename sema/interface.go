@@ -18,6 +18,7 @@ type ModuleInterface struct {
 	TrustedStandardLibrary bool                    `json:"trusted_standard_library,omitempty"`
 	Symbols                []InterfaceSymbol       `json:"symbols,omitempty"`
 	Methods                []InterfaceSymbol       `json:"methods,omitempty"`
+	WitnessMethods         []InterfaceSymbol       `json:"witness_methods,omitempty"`
 	TraitDefaults          []InterfaceTraitDefault `json:"trait_defaults,omitempty"`
 }
 
@@ -30,6 +31,7 @@ type InterfaceTraitDefault struct {
 
 type InterfaceSymbol struct {
 	Name               string                   `json:"name"`
+	Public             bool                     `json:"public,omitempty"`
 	Kind               string                   `json:"kind"`
 	Type               string                   `json:"type,omitempty"`
 	TypeInfo           *InterfaceType           `json:"type_info,omitempty"`
@@ -138,7 +140,7 @@ func (a *Analyser) ModuleInterfaces() map[string]ModuleInterface {
 		}
 		for ownerKey, methods := range a.methods {
 			for lookupName, method := range methods {
-				if method.Public && method.DefinitionModule == path {
+				if method.DefinitionModule == path {
 					encoded := interfaceSymbol(method)
 					encoded.MethodLookupName = lookupName
 					if encoded.MethodOwnerModule == "" {
@@ -146,16 +148,24 @@ func (a *Analyser) ModuleInterfaces() map[string]ModuleInterface {
 							encoded.MethodOwnerModule, encoded.MethodOwnerName = ownerKey[:split], ownerKey[split+1:]
 						}
 					}
-					iface.Methods = append(iface.Methods, encoded)
+					if method.Public {
+						iface.Methods = append(iface.Methods, encoded)
+					} else {
+						iface.WitnessMethods = append(iface.WitnessMethods, encoded)
+					}
 				}
 			}
 		}
 		for lookupName, method := range a.structuralMethods {
 			for _, candidate := range method {
-				if candidate.Public && candidate.DefinitionModule == path {
+				if candidate.DefinitionModule == path {
 					encoded := interfaceSymbol(candidate)
 					encoded.MethodLookupName = lookupName
-					iface.Methods = append(iface.Methods, encoded)
+					if candidate.Public {
+						iface.Methods = append(iface.Methods, encoded)
+					} else {
+						iface.WitnessMethods = append(iface.WitnessMethods, encoded)
+					}
 				}
 			}
 		}
@@ -176,6 +186,7 @@ func (a *Analyser) ModuleInterfaces() map[string]ModuleInterface {
 		}
 		sort.Slice(iface.Symbols, func(i, j int) bool { return iface.Symbols[i].Name < iface.Symbols[j].Name })
 		sort.Slice(iface.Methods, func(i, j int) bool { return iface.Methods[i].Name < iface.Methods[j].Name })
+		sort.Slice(iface.WitnessMethods, func(i, j int) bool { return iface.WitnessMethods[i].Name < iface.WitnessMethods[j].Name })
 		sort.Slice(iface.TraitDefaults, func(i, j int) bool {
 			if iface.TraitDefaults[i].TraitName != iface.TraitDefaults[j].TraitName {
 				return iface.TraitDefaults[i].TraitName < iface.TraitDefaults[j].TraitName
@@ -190,6 +201,7 @@ func (a *Analyser) ModuleInterfaces() map[string]ModuleInterface {
 func interfaceSymbol(symbol *symbols.Symbol) InterfaceSymbol {
 	out := InterfaceSymbol{
 		Name:               symbol.Name,
+		Public:             symbol.Public,
 		Kind:               symbolKindName(symbol.Kind),
 		RequiredParameters: 0,
 		Variadic:           symbol.Signature != nil && symbol.Signature.Variadic,

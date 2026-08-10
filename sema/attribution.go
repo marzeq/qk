@@ -1102,7 +1102,17 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		n.SetType(repr)
 
 	case *parser.SizeOfNode:
-		n.OperandType = a.analyser.resolveTypeNode(n.Operand)
+		if n.Expression != nil {
+			a.attributeExpr(n.Expression)
+			if types.HasError(n.Expression.GetType()) {
+				n.SetType(types.ErrorType{})
+				n.OperandType = types.ErrorType{}
+				break
+			}
+			n.OperandType = n.Expression.GetType()
+		} else {
+			n.OperandType = a.analyser.resolveTypeNode(n.Operand)
+		}
 		if types.HasError(n.OperandType) {
 			n.SetType(types.ErrorType{})
 			break

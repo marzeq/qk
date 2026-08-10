@@ -36,7 +36,7 @@ func runIncrementalFrontend(
 	verbose, debug bool,
 ) (*incrementalFrontendResult, error) {
 	sourceHashes := qkmSourceHashes(sources, sourcePackages)
-	graphModules, origins, err := sourceModuleGraph(sources, sourcePackages, config)
+	graphModules, origins, err := sourceModuleGraph(sources, sourcePackages, config, args.noStdlib)
 	if err != nil {
 		return nil, err
 	}
@@ -119,7 +119,7 @@ func runIncrementalFrontend(
 		if info == nil {
 			return nil, fmt.Errorf("module %q has no source", name)
 		}
-		if name != "std" && !strings.HasPrefix(name, "std.") && !containsString(info.Imports, "std") {
+		if !args.noStdlib && name != "std" && !strings.HasPrefix(name, "std.") && !containsString(info.Imports, "std") {
 			info.Imports = append(info.Imports, "std")
 		}
 		analyser.DeclareModule(info.Root, name, info.TrustedStandardLibrary)
@@ -164,7 +164,7 @@ func runIncrementalFrontend(
 	return result, nil
 }
 
-func sourceModuleGraph(sources, sourcePackages map[string]string, config comptime.Config) (map[string]*loader.ModuleInfo, map[string][]string, error) {
+func sourceModuleGraph(sources, sourcePackages map[string]string, config comptime.Config, noStdlib bool) (map[string]*loader.ModuleInfo, map[string][]string, error) {
 	modules := make(map[string]*loader.ModuleInfo)
 	origins := make(map[string][]string)
 	paths := make([]string, 0, len(sources))
@@ -204,7 +204,7 @@ func sourceModuleGraph(sources, sourcePackages map[string]string, config comptim
 		origins[name] = append(origins[name], origin)
 	}
 	for name, module := range modules {
-		if name != "std" && !strings.HasPrefix(name, "std.") && !containsString(module.Imports, "std") {
+		if !noStdlib && name != "std" && !strings.HasPrefix(name, "std.") && !containsString(module.Imports, "std") {
 			module.Imports = append(module.Imports, "std")
 		}
 	}

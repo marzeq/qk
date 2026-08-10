@@ -48,7 +48,9 @@ func main() {
 	embeddedStdlibSources, err := stdlib.ReadSources()
 	check(err)
 	selectedStdlibSources := embeddedStdlibSources
-	if args.stdlibPath != "" {
+	if args.noStdlib {
+		selectedStdlibSources = map[string]string{}
+	} else if args.stdlibPath != "" {
 		stdlibFiles, err := collectSourceFiles([]string{args.stdlibPath}, nil)
 		check(err)
 		if len(stdlibFiles) == 0 {
@@ -160,6 +162,7 @@ func main() {
 		args.target,
 		linksLibc,
 		args.outputType == OutputExecutable,
+		!args.noStdlib,
 		mainInitializer,
 		userMain,
 	)

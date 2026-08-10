@@ -185,6 +185,12 @@ func discoverSourcePackages(primaryPath, rootDir, selectedFile string, searchRoo
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("loading %s: %w", packageDir, err)
 		}
+		if pkg.Name == "main" {
+			return nil, nil, nil, fmt.Errorf("imported package %q cannot declare module main", path)
+		}
+		if pkg.Name != path {
+			return nil, nil, nil, fmt.Errorf("package directory %q must declare module %q, found %q", packageDir, path, pkg.Name)
+		}
 		packages = append(packages, pkg)
 		queue = append(queue, pkg.Imports...)
 	}

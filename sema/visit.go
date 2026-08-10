@@ -277,7 +277,27 @@ func (a *Analyser) visitExpression(expr parser.ExpressionNode) {
 		a.visitExpression(e.Operand)
 
 	case *parser.SizeOfNode:
-		a.resolveTypeNode(e.Operand)
+		if e.Operand != nil && e.Expression != nil {
+			identifier := e.Expression.(*parser.IdentifierNode)
+			var symbol *symbols.Symbol
+			var ok bool
+			if identifier.Module == "" {
+				symbol, ok = a.current.Resolve(identifier.Name)
+			} else if module, found := a.current.Resolve(identifier.Module); found && module.Kind == symbols.SymbolKindModule {
+				symbol, ok = module.Module.Scope.Resolve(identifier.Name)
+			}
+			if ok && symbol.Kind != symbols.SymbolKindType {
+				a.visitExpression(e.Expression)
+				e.Operand = nil
+				break
+			}
+			e.Expression = nil
+		}
+		if e.Operand != nil {
+			a.resolveTypeNode(e.Operand)
+		} else if e.Expression != nil {
+			a.visitExpression(e.Expression)
+		}
 
 	case *parser.SizeOfExprNode:
 		a.visitExpression(e.Operand)

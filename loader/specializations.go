@@ -26,7 +26,7 @@ func ExtractGenericSpecializations(modules map[string]*ir.Module, templates map[
 	byName := make(map[string]ir.GenericTemplate)
 	methodTargets := make(map[string]string)
 	for _, iface := range interfaces {
-		for _, method := range iface.Methods {
+		for _, method := range append(append([]sema.InterfaceSymbol(nil), iface.Methods...), iface.WitnessMethods...) {
 			methodTargets[method.MethodOwnerModule+"\x00"+method.MethodOwnerName+"\x00"+method.MethodLookupName] =
 				irgen.MangleFunctionName(iface.Name, method.Name)
 		}
@@ -157,6 +157,11 @@ func ExtractGenericSpecializations(modules map[string]*ir.Module, templates map[
 		}
 		for _, function := range functions {
 			function.Name = renames[function.Name]
+			// Specializations live in their own object and are referenced by the
+			// source modules that requested them, including specializations of
+			// otherwise-private templates.
+			function.Linkage = ir.LinkageExternal
+			function.Visibility = ir.VisibilityHidden
 			removed[function.Name] = true
 			for _, block := range function.Blocks {
 				for index, instruction := range block.Instr {
@@ -216,39 +221,34 @@ func addSpecializationImports(modules map[string]*ir.Module, specializations *ir
 	for _, function := range specializations.Functions {
 		defined[function.Name] = true
 	}
+	addFunction := func(module *ir.Module, name string, signature ir.FunctionSignature) {
+		if name == "" || !defined[name] {
+			return
+		}
+		for _, external := range module.Externs {
+			if external.Name == name {
+				return
+			}
+		}
+		for _, function := range module.Functions {
+			if function.Name == name {
+				return
+			}
+		}
+		module.AddExtern(ir.ExternDecl{Name: name, Signature: signature, Visibility: ir.VisibilityHidden})
+	}
 	var visitOperand func(*ir.Module, *ir.Operand)
 	visitOperand = func(module *ir.Module, operand *ir.Operand) {
 		if operand == nil {
 			return
 		}
 		if operand.Kind == ir.OperandFunctionConst && defined[operand.FunctionName] {
-			alreadyAvailable := false
-			for _, external := range module.Externs {
-				if external.Name == operand.FunctionName {
-					alreadyAvailable = true
-					break
-				}
+			pointer, ok := types.Underlying(operand.Type).(types.PointerType)
+			if !ok {
+				return
 			}
-			if !alreadyAvailable {
-				for _, function := range module.Functions {
-					if function.Name == operand.FunctionName {
-						alreadyAvailable = true
-						break
-					}
-				}
-			}
-			if !alreadyAvailable {
-				pointer, ok := types.Underlying(operand.Type).(types.PointerType)
-				if !ok {
-					return
-				}
-				if function, ok := types.Underlying(pointer.Base).(types.FunctionType); ok {
-					module.AddExtern(ir.ExternDecl{
-						Name:       operand.FunctionName,
-						Signature:  ir.FunctionSignature{ParamTypes: function.Parameters, ReturnType: function.ReturnType, Variadic: function.TypedVariadic},
-						Visibility: ir.VisibilityHidden,
-					})
-				}
+			if function, ok := types.Underlying(pointer.Base).(types.FunctionType); ok {
+				addFunction(module, operand.FunctionName, ir.FunctionSignature{ParamTypes: function.Parameters, ReturnType: function.ReturnType, Variadic: function.TypedVariadic})
 			}
 		}
 		for index := range operand.Fields {
@@ -260,6 +260,22 @@ func addSpecializationImports(modules map[string]*ir.Module, specializations *ir
 	for _, module := range modules {
 		for index := range module.Globals {
 			visitOperand(module, &module.Globals[index].Value)
+		}
+		for _, function := range module.Functions {
+			for _, block := range function.Blocks {
+				for _, instruction := range block.Instr {
+					call, ok := instruction.(ir.Call)
+					if !ok {
+						continue
+					}
+					name := call.Name
+					if call.Callee != nil && call.Callee.Kind == ir.OperandFunctionConst {
+						name = call.Callee.FunctionName
+						visitOperand(module, call.Callee)
+					}
+					addFunction(module, name, call.Signature)
+				}
+			}
 		}
 	}
 }
