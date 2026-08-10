@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -105,7 +106,6 @@ func TestBehavioral(t *testing.T) {
 	}
 
 	for _, caseName := range cases {
-		caseName := caseName
 		t.Run(caseName, func(t *testing.T) {
 			spec := readSpec(t, filepath.Join(fixturesRoot, filepath.FromSlash(caseName)))
 			if !spec.Serial && spec.Mode != "cache-sequence" {
@@ -514,12 +514,7 @@ func matches(value string, allowed []string) bool {
 }
 
 func contains(values []string, wanted string) bool {
-	for _, value := range values {
-		if value == wanted {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(values, wanted)
 }
 
 func executableSuffix() string {
@@ -532,11 +527,8 @@ func executableSuffix() string {
 func lineDiff(expected, actual string) string {
 	expectedLines := strings.Split(expected, "\n")
 	actualLines := strings.Split(actual, "\n")
-	limit := len(expectedLines)
-	if len(actualLines) > limit {
-		limit = len(actualLines)
-	}
-	for index := 0; index < limit; index++ {
+	limit := max(len(actualLines), len(expectedLines))
+	for index := range limit {
 		var want, got string
 		if index < len(expectedLines) {
 			want = expectedLines[index]

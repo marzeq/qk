@@ -48,9 +48,11 @@ func main() {
 	embeddedStdlibSources, err := stdlib.ReadSources()
 	check(err)
 	selectedStdlibSources := embeddedStdlibSources
+	stdlibSourceRoot := "<stdlib>"
 	if args.noStdlib {
 		selectedStdlibSources = map[string]string{}
 	} else if args.stdlibPath != "" {
+		stdlibSourceRoot = args.stdlibPath
 		stdlibFiles, err := collectSourceFiles([]string{args.stdlibPath}, nil)
 		check(err)
 		if len(stdlibFiles) == 0 {
@@ -63,7 +65,7 @@ func main() {
 			selectedStdlibSources[file] = string(data)
 		}
 	}
-	stdlibPackagePaths, availablePackages, err := virtualSourcePackagePaths(selectedStdlibSources)
+	stdlibPackagePaths, availablePackages, err := stdlib.SourcePackagePaths(selectedStdlibSources, stdlibSourceRoot)
 	check(err)
 	discovered, compileTimeSources, sourcePackagePaths, err := discoverSourcePackages(
 		args.mainModule, args.baseDir, args.file, searchPaths, availablePackages,

@@ -12,7 +12,7 @@ import (
 
 // ParseTrustedSources runs the normal QK frontend over trusted standard-library
 // source text and returns module fragments ready for the compilation pipeline.
-func ParseTrustedSources(sources map[string]string, config comptime.Config) ([]*loader.PartialModuleInfo, error) {
+func ParseTrustedSources(sources, packagePaths map[string]string, config comptime.Config) ([]*loader.PartialModuleInfo, error) {
 	origins := make([]string, 0, len(sources))
 	for origin := range sources {
 		origins = append(origins, origin)
@@ -38,6 +38,7 @@ func ParseTrustedSources(sources map[string]string, config comptime.Config) ([]*
 		if err != nil {
 			return nil, err
 		}
+		info.Path = packagePaths[origin]
 		partials = append(partials, info)
 	}
 	return partials, nil
@@ -45,13 +46,13 @@ func ParseTrustedSources(sources map[string]string, config comptime.Config) ([]*
 
 // Check typechecks trusted standard-library sources without generating IR or
 // native output. All semantic diagnostics are returned together.
-func Check(sources map[string]string, config comptime.Config) []error {
-	values, err := comptime.ResolveModuleBindings(sources, config)
+func check(sources, packagePaths map[string]string, config comptime.Config) []error {
+	values, err := comptime.ResolvePackageBindings(sources, packagePaths, config)
 	if err != nil {
 		return []error{err}
 	}
 	config.ModuleBindings = values
-	partials, err := ParseTrustedSources(sources, config)
+	partials, err := ParseTrustedSources(sources, packagePaths, config)
 	if err != nil {
 		return []error{err}
 	}
@@ -70,6 +71,22 @@ func Check(sources map[string]string, config comptime.Config) []error {
 	analyser := sema.NewAnalyser()
 	errs, _ := loader.RunSemanticPipeline(modules, analyser, order, false, false)
 	return errs
+}
+
+// Check typechecks trusted sources whose map keys are stable embedded origins.
+// Callers supplying a directory override should use CheckAtRoot.
+func Check(sources map[string]string, config comptime.Config) []error {
+	return CheckAtRoot(sources, "<stdlib>", config)
+}
+
+// CheckAtRoot validates directory-derived package identities and typechecks a
+// trusted standard-library source tree.
+func CheckAtRoot(sources map[string]string, root string, config comptime.Config) []error {
+	packagePaths, _, err := SourcePackagePaths(sources, root)
+	if err != nil {
+		return []error{err}
+	}
+	return check(sources, packagePaths, config)
 }
 
 // CheckEmbedded typechecks the standard library embedded in this build.

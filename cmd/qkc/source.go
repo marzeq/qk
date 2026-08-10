@@ -197,27 +197,6 @@ func discoverSourcePackages(primaryPath, rootDir, selectedFile string, searchRoo
 	return packages, sources, sourcePackages, nil
 }
 
-func virtualSourcePackagePaths(sources map[string]string) (map[string]string, map[string]bool, error) {
-	paths := make(map[string]string, len(sources))
-	available := map[string]bool{}
-	for origin, source := range sources {
-		tokens, err := tokeniser.NewTokeniser(source, origin).Tokenise()
-		if err != nil {
-			return nil, nil, err
-		}
-		header, err := parser.ScanSourceHeader(tokens)
-		if err != nil {
-			return nil, nil, err
-		}
-		if header.Module == "" {
-			return nil, nil, fmt.Errorf("%s: module declaration is missing or empty", origin)
-		}
-		paths[origin] = header.Module
-		available[header.Module] = true
-	}
-	return paths, available, nil
-}
-
 func collectSourceFiles(paths []string, exclude []string) ([]string, error) {
 	seen := map[string]struct{}{}
 	excluded := map[string]struct{}{}
