@@ -74,6 +74,14 @@ func (a *Analyser) errorf(node parser.Node, format string, args ...any) {
 }
 
 func (a *Analyser) AnalyseModule(root *parser.RootNode, path string, trustedStandardLibrary bool) {
+	a.DeclareModule(root, path, trustedStandardLibrary)
+	a.AnalyseModuleBody(root, path)
+}
+
+// DeclareModule builds the module-level semantic interface without visiting
+// implementation bodies. Keeping this phase explicit is what allows imported
+// interfaces to eventually come from .qkm files instead of source ASTs.
+func (a *Analyser) DeclareModule(root *parser.RootNode, path string, trustedStandardLibrary bool) {
 	a.modulePaths[root] = path
 	// Aliases are module-local; method tables remain available so later modules
 	// can resolve methods exported by their imports.
@@ -102,5 +110,20 @@ func (a *Analyser) AnalyseModule(root *parser.RootNode, path string, trustedStan
 	}
 
 	a.collectTopLevel(root)
+}
+
+// AnalyseModuleBody resolves one implementation against the interfaces
+// declared so far. Dependencies must have been declared first.
+func (a *Analyser) AnalyseModuleBody(root *parser.RootNode, path string) {
+	mod := a.modules[path]
+	if mod == nil {
+		return
+	}
+	a.current = mod.Scope
+	a.currentMod = path
+	a.currentTrustedStandardLibrary = mod.TrustedStandardLibrary
+	a.currentImports = a.importsByModule[path]
+	a.currentRoot = root
+	a.aliases = a.aliasesByModule[path]
 	a.resolveBodies(root)
 }

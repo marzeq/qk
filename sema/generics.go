@@ -51,7 +51,7 @@ func specializationKey(arguments []types.Type) string {
 	return strings.Join(parts, ",")
 }
 
-func specializationName(module, name string, arguments []types.Type) string {
+func SpecializationName(module, name string, arguments []types.Type) string {
 	identity := genericOwner(module, name) + "<" + specializationKey(arguments) + ">"
 	return name + "$" + fmt.Sprintf("%x", sha256.Sum256([]byte(identity)))
 }
@@ -327,7 +327,7 @@ func (a *Analyser) specializeGenericValue(template *symbols.Symbol, arguments []
 	}
 	clone := parser.CloneSyntax(info.node).(*parser.DeclarationNode)
 	clone.GenericParameters = nil
-	clone.Name = specializationName(info.module, template.Name, arguments)
+	clone.Name = SpecializationName(info.module, template.Name, arguments)
 	info.specializations[key] = clone
 	info.root.Body = append(info.root.Body, clone)
 	bindings := typeArgumentBindings(template.GenericParameters, arguments)
@@ -362,7 +362,7 @@ func (a *Analyser) specializeGenericFunction(template *symbols.Symbol, arguments
 		return existing
 	}
 	substitutions := typeSubstitutionBindings(template.GenericParameters, arguments)
-	name := specializationName(info.module, template.Name, arguments)
+	name := SpecializationName(info.module, template.Name, arguments)
 	instanceSymbol := a.substituteSymbol(template, substitutions, use)
 	instanceSymbol.Name = name
 	instanceSymbol.Template = false
@@ -398,6 +398,27 @@ func (a *Analyser) specializeGenericFunction(template *symbols.Symbol, arguments
 	*instance = *cloned
 	info.root.Body = append(info.root.Body, instance)
 	return instance
+}
+
+// specializeGenericFunctionSymbol keeps source-free cached templates symbolic:
+// their concrete body is instantiated later from QKM IR rather than by cloning
+// a parser tree that is intentionally not present.
+func (a *Analyser) specializeGenericFunctionSymbol(template *symbols.Symbol, arguments []types.Type, use parser.Node) *symbols.Symbol {
+	if a.genericFunctions[template] == nil {
+		checkFrom := 0
+		if template.TraitDefault {
+			checkFrom = 1
+		}
+		if !a.checkGenericArgumentsFrom(use, template.GenericParameters, arguments, checkFrom) {
+			return nil
+		}
+		return dependentGenericFunctionSymbol(template, arguments)
+	}
+	instance := a.specializeGenericFunction(template, arguments, use)
+	if instance == nil {
+		return nil
+	}
+	return instance.Symbol
 }
 
 func (a *Analyser) instantiateSemanticNode(node parser.Node) {

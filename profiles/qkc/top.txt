@@ -1,0 +1,48 @@
+File: qkc-profile
+Type: cpu
+Time: 2026-08-10 13:28:51 CEST
+Duration: 10.11s, Total samples = 3.93s (38.89%)
+Showing nodes accounting for 3.68s, 93.64% of 3.93s total
+Dropped 108 nodes (cum <= 0.02s)
+Showing top 40 nodes out of 226
+      flat  flat%   sum%        cum   cum%
+     0.85s 21.63% 21.63%      0.85s 21.63%  runtime.madvise
+     0.49s 12.47% 34.10%      0.49s 12.47%  runtime.pthread_cond_wait
+     0.35s  8.91% 43.00%      0.35s  8.91%  runtime.pthread_cond_signal
+     0.29s  7.38% 50.38%      0.29s  7.38%  runtime.pthread_kill
+     0.22s  5.60% 55.98%      0.22s  5.60%  internal/runtime/atomic.(*UnsafePointer).StoreNoWB (inline)
+     0.20s  5.09% 61.07%      0.20s  5.09%  runtime.usleep
+     0.19s  4.83% 65.90%      0.41s 10.43%  runtime.(*spanSet).push
+     0.16s  4.07% 69.97%      0.16s  4.07%  runtime.memclrNoHeapPointers
+     0.14s  3.56% 73.54%      0.14s  3.56%  runtime.kevent
+     0.10s  2.54% 76.08%      0.11s  2.80%  github.com/marzeq/qk/comptime.(*expander).isExtentReference
+     0.07s  1.78% 77.86%      0.07s  1.78%  runtime.mmap
+     0.07s  1.78% 79.64%      0.17s  4.33%  runtime.scanObjectsSmall
+     0.07s  1.78% 81.42%      0.09s  2.29%  runtime.tryDeferToSpanScan
+     0.06s  1.53% 82.95%      0.06s  1.53%  runtime.(*mspan).init
+     0.05s  1.27% 84.22%      0.05s  1.27%  runtime.memmove
+     0.04s  1.02% 85.24%      0.38s  9.67%  runtime.mallocgcSmallScanNoHeader
+     0.03s  0.76% 86.01%      0.03s  0.76%  github.com/marzeq/qk/sema.(*Analyser).collectPatternMethodSignature
+     0.03s  0.76% 86.77%      0.03s  0.76%  runtime.bulkBarrierPreWrite
+     0.03s  0.76% 87.53%      0.03s  0.76%  runtime.getitab
+     0.03s  0.76% 88.30%      0.03s  0.76%  runtime.pthread_cond_timedwait_relative_np
+     0.02s  0.51% 88.80%      0.02s  0.51%  github.com/marzeq/qk/codegen/irgen.(*Generator).Emit (inline)
+     0.02s  0.51% 89.31%      0.02s  0.51%  github.com/marzeq/qk/parser.(*Parser).Match
+     0.02s  0.51% 89.82%      0.15s  3.82%  github.com/marzeq/qk/tokeniser.(*Tokeniser).AddToken
+     0.02s  0.51% 90.33%      0.02s  0.51%  runtime.(*_panic).nextDefer
+     0.02s  0.51% 90.84%      0.06s  1.53%  runtime.concatstrings
+     0.02s  0.51% 91.35%      0.03s  0.76%  runtime.scanObject
+     0.02s  0.51% 91.86%      0.02s  0.51%  runtime.typePointers.next
+     0.01s  0.25% 92.11%      0.02s  0.51%  fmt.(*pp).doPrintf
+     0.01s  0.25% 92.37%      0.02s  0.51%  github.com/marzeq/qk/codegen/irgen.(*Generator).generateSliceLiteralExpr
+     0.01s  0.25% 92.62%      0.02s  0.51%  github.com/marzeq/qk/codegen/irgen.(*Generator).generateTraitConversion
+     0.01s  0.25% 92.88%      0.14s  3.56%  github.com/marzeq/qk/sema.(*Validator).validateExpr
+     0.01s  0.25% 93.13%      0.64s 16.28%  runtime.findRunnable
+     0.01s  0.25% 93.38%      0.26s  6.62%  runtime.gcBgMarkWorker
+     0.01s  0.25% 93.64%      0.06s  1.53%  runtime.mallocgcSmallNoscan
+         0     0% 93.64%      0.09s  2.29%  fmt.Fprintf
+         0     0% 93.64%      0.02s  0.51%  fmt.Sprintf
+         0     0% 93.64%      0.15s  3.82%  github.com/marzeq/qk/codegen/irgen.(*Generator).Generate
+         0     0% 93.64%      0.10s  2.54%  github.com/marzeq/qk/codegen/irgen.(*Generator).GenerateExpr
+         0     0% 93.64%      0.15s  3.82%  github.com/marzeq/qk/codegen/irgen.(*Generator).GenerateFunction
+         0     0% 93.64%      0.10s  2.54%  github.com/marzeq/qk/codegen/irgen.(*Generator).GenerateNode

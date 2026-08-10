@@ -6,9 +6,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/pprof"
 	"slices"
-	"strings"
 
+	"github.com/marzeq/qk/attributes"
 	"github.com/marzeq/qk/comptime"
 	"github.com/marzeq/qk/ir"
 	"github.com/marzeq/qk/loader"
@@ -22,8 +23,18 @@ import (
 func main() {
 	args, err := parseArgs()
 	check(err)
-	cleanupModuleObjectCache(args.verbose)
-
+	if args.cpuProfile != "" {
+		profile, err := os.Create(args.cpuProfile)
+		check(err)
+		if err := pprof.StartCPUProfile(profile); err != nil {
+			_ = profile.Close()
+			check(err)
+		}
+		defer func() {
+			pprof.StopCPUProfile()
+			check(profile.Close())
+		}()
+	}
 	searchPaths := buildSearchPaths(args.packageRoot, args.packagePaths)
 	releaseMode := comptime.ReleaseModeDebug
 	if args.release {
@@ -58,46 +69,6 @@ func main() {
 	check(err)
 	maps.Copy(compileTimeSources, selectedStdlibSources)
 	maps.Copy(sourcePackagePaths, stdlibPackagePaths)
-	comptimeConfig.ModuleBindings, err = comptime.ResolvePackageBindings(compileTimeSources, sourcePackagePaths, comptimeConfig)
-	check(err)
-
-	var partials []*loader.PartialModuleInfo
-	discoveredByPath := make(map[string]*sourcePackage, len(discovered))
-	for _, pkg := range discovered {
-		discoveredByPath[pkg.Path] = pkg
-	}
-	pending := []*sourcePackage{discovered[0]}
-	parsedPackages := map[string]bool{}
-	for len(pending) != 0 {
-		pkg := pending[0]
-		pending = pending[1:]
-		if parsedPackages[pkg.Path] {
-			continue
-		}
-		parsedPackages[pkg.Path] = true
-		for _, file := range pkg.Files {
-			config := comptimeConfig
-			config.PackagePath = pkg.Path
-			ast, err := parseSource(file, compileTimeSources[file], config)
-			check(err)
-			info, err := loader.CollectModuleInfo(ast, false)
-			check(err)
-			info.Path = pkg.Path
-			partials = append(partials, info)
-			for _, imported := range info.Imports {
-				if dependency := discoveredByPath[imported]; dependency != nil {
-					pending = append(pending, dependency)
-				}
-			}
-		}
-	}
-	stdlibPartials, err := stdlib.ParseTrustedSources(selectedStdlibSources, comptimeConfig)
-	check(err)
-	partials = append(partials, stdlibPartials...)
-
-	if args.verbose && args.debug {
-		fmt.Println("parsed and collected modules")
-	}
 	if args.run && discovered[0].Name != "main" {
 		fatal("cannot run package %q: package must declare module main", discovered[0].Name)
 	}
@@ -108,34 +79,30 @@ func main() {
 	if args.outputType == OutputExecutable && discovered[0].Name != "main" {
 		fatal("cannot build executable from package %q: package must declare module main", discovered[0].Name)
 	}
-
-	modules, err := loader.BuildModules(partials)
+	qkmInputs, qkmErr := makeQKMInputs(args, compileTimeSources, sourcePackagePaths)
+	var cachedQKM *qkmFile
+	if qkmErr == nil && !args.dumpIR {
+		cachedQKM, _ = loadQKM(qkmInputs)
+		if cachedQKM != nil {
+			if args.verbose {
+				fmt.Printf("used cached QK modules from %s\n", qkmInputs.Path)
+			}
+			check(runCachedQKM(cachedQKM, qkmInputs, args))
+			return
+		}
+	}
+	comptimeConfig.ModuleBindings, err = comptime.ResolvePackageBindings(compileTimeSources, sourcePackagePaths, comptimeConfig)
 	check(err)
-	for name, module := range modules {
-		if name != "std" && !strings.HasPrefix(name, "std.") && !slices.Contains(module.Imports, "std") {
-			module.Imports = append(module.Imports, "std")
-		}
+	qkmInputs = withQKMComptimeVariant(qkmInputs, comptime.BindingsFingerprint(comptimeConfig.ModuleBindings))
+	frontend, err := runIncrementalFrontend(args, comptimeConfig, compileTimeSources, sourcePackagePaths, qkmInputs, args.verbose, args.debug)
+	check(err)
+	modules, partials, order := frontend.modules, frontend.partials, frontend.order
+	irModules, genericTemplates := frontend.irModules, frontend.templates
+	for _, warning := range frontend.cachedWarnings {
+		fmt.Println(warning)
 	}
-
-	analyser := sema.NewAnalyser()
-
-	order, errs := loader.ComputeModuleOrder(modules, args.mainModule)
-	checkErrs(errs)
-	for _, path := range order {
-		module := modules[path]
-		if path == args.mainModule || module.TrustedStandardLibrary {
-			continue
-		}
-		if module.Name == "main" {
-			fatal("package %q declares module main; command packages cannot be imported", path)
-		}
-		if module.Name != path {
-			fatal("package %q must declare module %q, found %q", path, path, module.Name)
-		}
-	}
-
-	var warnings []error
-	errs, warnings = loader.RunSemanticPipeline(modules, analyser, order, args.verbose, args.debug)
+	var warnings = frontend.warnings
+	var cachedWarningText []string
 	for _, warning := range warnings {
 		mode := args.warningMode
 		if diagnostic, ok := warning.(shared.Error); ok {
@@ -145,28 +112,37 @@ func main() {
 		}
 		switch mode {
 		case WarningModeShow:
-			fmt.Println(warning)
+			text := warning.Error()
+			cachedWarningText = append(cachedWarningText, text)
+			fmt.Println(text)
 		case WarningModeError:
 			if diagnostic, ok := warning.(shared.Error); ok {
-				errs = append(errs, diagnostic.AsError())
+				check(diagnostic.AsError())
 			} else {
-				errs = append(errs, warning)
+				check(warning)
 			}
 		}
 	}
-	checkErrs(errs)
-
-	if args.verbose && args.debug {
-		fmt.Println("semantic analysis completed successfully")
+	specializationIR, err := loader.ExtractGenericSpecializations(irModules, genericTemplates, frontend.interfaces)
+	check(err)
+	if len(specializationIR.Functions) != 0 {
+		irModules[loader.SpecializationModule] = specializationIR
+		order = append(order, loader.SpecializationModule)
 	}
-
-	irModules, errs := loader.GenerateIRModules(modules, args.mainModule, order, args.verbose, args.debug)
-	checkErrs(errs)
-	moduleLinks := linksForUsedForeignSymbols(partials, irModules, args.outputType == OutputObject)
+	moduleLinks := frontend.moduleLinks
+	for _, link := range linksForUsedForeignSymbols(partials, irModules, args.outputType == OutputObject) {
+		if !slices.Contains(moduleLinks, link) {
+			moduleLinks = append(moduleLinks, link)
+		}
+	}
 	linksLibc := moduleLinksContainLibc(moduleLinks)
 
 	llvmOutputs := make(map[string]string, len(irModules))
 	for _, moduleName := range order {
+		if cachedModule := frontend.cachedModules[moduleName]; cachedModule != nil {
+			llvmOutputs[moduleName] = cachedModule.LLVM
+			continue
+		}
 		llvmOutputs[moduleName] = buildLLVMModule(
 			irModules[moduleName],
 			moduleName,
@@ -238,6 +214,74 @@ func main() {
 		fatal("main function not found in primary package")
 	}
 
+	var linkRoots []string
+	if args.outputType == OutputObject || args.outputType == OutputWebAssembly {
+		for _, moduleName := range order {
+			for _, fn := range irModules[moduleName].Functions {
+				if fn.Linkage == ir.LinkageExternal && fn.Visibility == ir.VisibilityDefault {
+					linkRoots = append(linkRoots, fn.Name)
+				}
+			}
+			for _, global := range irModules[moduleName].Globals {
+				if global.Linkage == ir.LinkageExternal && global.Visibility == ir.VisibilityDefault {
+					linkRoots = append(linkRoots, global.Name)
+				}
+			}
+		}
+	}
+
+	moduleInterfaces := frontend.interfaces
+	moduleSourceHashes := qkmSourceHashes(compileTimeSources, sourcePackagePaths)
+	activeQKM := &qkmFile{
+		Primary: args.mainModule, Order: append([]string(nil), order...),
+		Modules: make(map[string]*qkmModule, len(order)), RuntimeLLVM: freestandingRuntime,
+		Links: append([]attributes.Link(nil), moduleLinks...), LinkRoots: append([]string(nil), linkRoots...),
+		Interfaces: moduleInterfaces, InterfaceHashes: qkmInterfaceHashes(moduleInterfaces), Warnings: cachedWarningText,
+	}
+	activeQKM.RuntimeObjects = findQKMRuntimeObjects(qkmInputs, freestandingRuntime)
+	for _, moduleName := range order {
+		encodedTemplates, encodeErr := encodeQKMTemplates(genericTemplates[moduleName])
+		check(encodeErr)
+		encodedIR, encodeErr := encodeQKMIR(irModules[moduleName])
+		check(encodeErr)
+		var imports []string
+		var links []attributes.Link
+		var objects map[string][]byte
+		if module := modules[moduleName]; module != nil {
+			imports = append([]string(nil), module.Imports...)
+			links = append([]attributes.Link(nil), module.Links...)
+		} else if cachedModule := frontend.cachedModules[moduleName]; cachedModule != nil {
+			imports = append([]string(nil), cachedModule.Imports...)
+			links = append([]attributes.Link(nil), cachedModule.Links...)
+			objects = cachedModule.Objects
+		}
+		if objects == nil {
+			objects = findQKMImplementationObjects(qkmInputs, moduleName, llvmOutputs[moduleName])
+		}
+		importInterfaces := make(map[string]string, len(imports))
+		for _, imported := range imports {
+			importInterfaces[imported] = activeQKM.InterfaceHashes[imported]
+		}
+		iface, hasInterface := moduleInterfaces[moduleName]
+		var interfacePtr *sema.ModuleInterface
+		if hasInterface {
+			interfaceCopy := iface
+			interfacePtr = &interfaceCopy
+		}
+		activeQKM.Modules[moduleName] = &qkmModule{
+			SourceHash: moduleSourceHashes[moduleName], Imports: imports,
+			ImportInterfaces: importInterfaces, Interface: interfacePtr,
+			Templates: encodedTemplates, IR: encodedIR, LLVM: llvmOutputs[moduleName], Links: links, Objects: objects,
+		}
+	}
+	if qkmErr == nil {
+		if err := storeQKM(qkmInputs, activeQKM); err == nil {
+			pruneOldQKMFiles(qkmInputs.Path)
+		} else if args.verbose {
+			fmt.Fprintf(os.Stderr, "warning: failed to write QK module cache: %v\n", err)
+		}
+	}
+
 	if args.noEmit {
 		if args.dumpAsm {
 			for _, moduleName := range order {
@@ -263,6 +307,8 @@ func main() {
 
 	var buildDirs []string
 	var objFiles []string
+	objectKey := qkmObjectKey(args)
+	qkmObjectsChanged := false
 	for _, moduleName := range order {
 		buildDir, err := emitLLVMFile(llvmOutputs[moduleName])
 		check(err)
@@ -283,8 +329,18 @@ func main() {
 			check(err)
 		}
 
-		objFile, err := compileLLVMModule(buildDir, moduleName, llvmOutputs[moduleName], args)
-		check(err)
+		objFile := filepath.Join(buildDir, "module.o")
+		if materializeQKMObject(activeQKM.Modules[moduleName], objectKey, objFile) {
+			if args.verbose {
+				fmt.Printf("used cached object for module %s\n", moduleName)
+			}
+		} else {
+			objFile, err = compileLLVMModule(buildDir, moduleName, llvmOutputs[moduleName], args)
+			check(err)
+			if rememberQKMObject(activeQKM.Modules[moduleName], objectKey, objFile) == nil {
+				qkmObjectsChanged = true
+			}
+		}
 		objFiles = append(objFiles, objFile)
 	}
 	if freestandingRuntime != "" {
@@ -298,9 +354,28 @@ func main() {
 			check(emitAssemblyFile(buildDir, args))
 			check(dumpAssemblyFile(buildDir))
 		}
-		objFile, err := compileLLVMModule(buildDir, "freestanding runtime", freestandingRuntime, args)
-		check(err)
+		objFile := filepath.Join(buildDir, "module.o")
+		if data := activeQKM.RuntimeObjects[objectKey]; len(data) != 0 && os.WriteFile(objFile, data, 0o644) == nil {
+			if args.verbose {
+				fmt.Println("used cached object for freestanding runtime")
+			}
+		} else {
+			objFile, err = compileLLVMModule(buildDir, "freestanding runtime", freestandingRuntime, args)
+			check(err)
+			if data, readErr := os.ReadFile(objFile); readErr == nil {
+				if activeQKM.RuntimeObjects == nil {
+					activeQKM.RuntimeObjects = make(map[string][]byte)
+				}
+				activeQKM.RuntimeObjects[objectKey] = data
+				qkmObjectsChanged = true
+			}
+		}
 		objFiles = append(objFiles, objFile)
+	}
+	if qkmObjectsChanged && qkmErr == nil {
+		if err := storeQKM(qkmInputs, activeQKM); err != nil && args.verbose {
+			fmt.Fprintf(os.Stderr, "warning: failed to update QK module cache: %v\n", err)
+		}
 	}
 
 	stat, err := os.Stat(args.output)
@@ -321,21 +396,6 @@ func main() {
 		}
 	}
 
-	var linkRoots []string
-	if args.outputType == OutputObject || args.outputType == OutputWebAssembly {
-		for _, moduleName := range order {
-			for _, fn := range irModules[moduleName].Functions {
-				if fn.Linkage == ir.LinkageExternal && fn.Visibility == ir.VisibilityDefault {
-					linkRoots = append(linkRoots, fn.Name)
-				}
-			}
-			for _, global := range irModules[moduleName].Globals {
-				if global.Linkage == ir.LinkageExternal && global.Visibility == ir.VisibilityDefault {
-					linkRoots = append(linkRoots, global.Name)
-				}
-			}
-		}
-	}
 	err = linkObjects(objFiles, moduleLinks, linkRoots, args)
 	check(err)
 

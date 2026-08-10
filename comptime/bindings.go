@@ -1,6 +1,8 @@
 package comptime
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"sort"
 	"strings"
 
@@ -8,6 +10,35 @@ import (
 	"github.com/marzeq/qk/shared"
 	"github.com/marzeq/qk/tokeniser"
 )
+
+// BindingsFingerprint identifies every resolved value that can affect a when
+// expansion, including non-exported bindings that do not appear in a semantic
+// module interface.
+func BindingsFingerprint(bindings map[string]Value) string {
+	keys := make([]string, 0, len(bindings))
+	for key := range bindings {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	hash := sha256.New()
+	for _, key := range keys {
+		value := bindings[key]
+		hash.Write([]byte(key))
+		hash.Write([]byte{0, byte(value.kind)})
+		switch value.kind {
+		case valueBool:
+			if value.boolean {
+				hash.Write([]byte{1})
+			} else {
+				hash.Write([]byte{0})
+			}
+		case valueInteger:
+			hash.Write([]byte(value.integer.String()))
+		}
+		hash.Write([]byte{0})
+	}
+	return hex.EncodeToString(hash.Sum(nil))
+}
 
 type moduleBindingDeclaration struct {
 	module string

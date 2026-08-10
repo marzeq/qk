@@ -1,8 +1,10 @@
 package ir
 
 import (
+	"fmt"
 	"github.com/marzeq/qk/attributes"
 	"github.com/marzeq/qk/types"
+	"reflect"
 )
 
 type ValueID uint32
@@ -26,8 +28,9 @@ const (
 )
 
 type Operand struct {
-	Kind OperandKind
-	Type types.Type
+	Kind    OperandKind
+	Type    types.Type
+	Generic *GenericReference
 
 	Value ValueID
 
@@ -201,6 +204,15 @@ type Module struct {
 	ExternGlobals []ExternGlobal
 	Initializer   string
 	Entry         string
+}
+
+// GenericTemplate is target-independent, attributed QK IR. Parameters remain
+// symbolic until a specialization unit substitutes concrete arguments.
+type GenericTemplate struct {
+	Module     string
+	Name       string
+	Parameters []types.TypeParameter
+	Functions  []*Function
 }
 
 func (m *Module) AddFunction(fn *Function) {
@@ -508,14 +520,105 @@ type ElementAddress struct {
 func (ElementAddress) isInstr() {}
 
 type Call struct {
-	Dest      ValueID
-	Name      string
-	Callee    *Operand
-	Args      []Operand
-	Signature FunctionSignature
+	Dest        ValueID
+	Name        string
+	Callee      *Operand
+	Args        []Operand
+	Signature   FunctionSignature
+	Generic     *GenericReference
+	Requirement *TraitRequirementReference
 }
 
 func (Call) isInstr() {}
+
+type GenericReference struct {
+	Module        string
+	Name          string
+	TypeArguments []types.Type
+}
+
+type TraitRequirementReference struct {
+	Name         string
+	ReceiverType types.Type
+}
+
+// InstantiateGenericTemplate deep-copies symbolic IR and substitutes its type
+// parameters. Generic call references remain explicit for recursive scheduling.
+func InstantiateGenericTemplate(template GenericTemplate, arguments []types.Type) ([]*Function, error) {
+	if len(arguments) != len(template.Parameters) {
+		return nil, fmt.Errorf("template %s.%s expects %d type arguments, got %d", template.Module, template.Name, len(template.Parameters), len(arguments))
+	}
+	bindings := make(map[string]types.Type, len(arguments))
+	for index, parameter := range template.Parameters {
+		bindings[parameter.Key()] = arguments[index]
+	}
+	cloned := cloneIRWithTypes(reflect.ValueOf(template.Functions), bindings)
+	if !cloned.IsValid() || cloned.IsNil() {
+		return nil, fmt.Errorf("template %s.%s has no body", template.Module, template.Name)
+	}
+	return cloned.Interface().([]*Function), nil
+}
+
+var irTypeReflection = reflect.TypeFor[types.Type]()
+
+func cloneIRWithTypes(value reflect.Value, bindings map[string]types.Type) reflect.Value {
+	if !value.IsValid() {
+		return reflect.Value{}
+	}
+	if value.Type() == irTypeReflection {
+		if value.IsNil() {
+			return reflect.Zero(value.Type())
+		}
+		replaced := types.SubstituteParameters(value.Interface().(types.Type), bindings)
+		return reflect.ValueOf(replaced)
+	}
+	switch value.Kind() {
+	case reflect.Interface:
+		if value.IsNil() {
+			return reflect.Zero(value.Type())
+		}
+		item := cloneIRWithTypes(value.Elem(), bindings)
+		result := reflect.New(value.Type()).Elem()
+		result.Set(item)
+		return result
+	case reflect.Pointer:
+		if value.IsNil() {
+			return reflect.Zero(value.Type())
+		}
+		result := reflect.New(value.Type().Elem())
+		result.Elem().Set(cloneIRWithTypes(value.Elem(), bindings))
+		return result
+	case reflect.Struct:
+		result := reflect.New(value.Type()).Elem()
+		for index := 0; index < value.NumField(); index++ {
+			if result.Field(index).CanSet() && value.Type().Field(index).IsExported() {
+				result.Field(index).Set(cloneIRWithTypes(value.Field(index), bindings))
+			}
+		}
+		return result
+	case reflect.Slice:
+		if value.IsNil() {
+			return reflect.Zero(value.Type())
+		}
+		result := reflect.MakeSlice(value.Type(), value.Len(), value.Len())
+		for index := 0; index < value.Len(); index++ {
+			result.Index(index).Set(cloneIRWithTypes(value.Index(index), bindings))
+		}
+		return result
+	case reflect.Map:
+		if value.IsNil() {
+			return reflect.Zero(value.Type())
+		}
+		result := reflect.MakeMapWithSize(value.Type(), value.Len())
+		iterator := value.MapRange()
+		for iterator.Next() {
+			result.SetMapIndex(iterator.Key(), cloneIRWithTypes(iterator.Value(), bindings))
+		}
+		return result
+	default:
+		return value
+	}
+}
 
 type InlineAsm struct {
 	Dest        ValueID

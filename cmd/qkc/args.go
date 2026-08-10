@@ -86,6 +86,7 @@ type Args struct {
 	libs         []string
 	libraryPaths []string
 	run          bool
+	cpuProfile   string
 }
 
 func parseOptLevel(level string) (OptimisationLevel, error) {
@@ -284,6 +285,13 @@ func (p *argumentParser) parseCurrent() error {
 		p.args.noEmit = true
 		p.index++
 
+	case tok == "-cpuprofile":
+		value, err := p.nextValue(tok)
+		if err != nil {
+			return err
+		}
+		p.args.cpuProfile = value
+
 	case tok == "-dump-ir":
 		p.args.dumpIR = true
 		p.index++
@@ -449,6 +457,7 @@ func printUsage() {
 	fmt.Println("  -Xlink <args>      Additional arguments for the native link")
 	fmt.Println("  -L <path>          Add library search path (can specify multiple times)")
 	fmt.Println("  -no-emit           Do not emit any output files, just check for errors")
+	fmt.Println("  -cpuprofile <file> Write a Go CPU profile for the compiler process")
 }
 
 func printVersion() {

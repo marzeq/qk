@@ -1,0 +1,59 @@
+File: qkc-profile
+Type: cpu
+Time: 2026-08-10 13:28:51 CEST
+Duration: 10.11s, Total samples = 1.13s (11.18%)
+Active filters:
+   focus=github.com/marzeq/qk|main.main
+Showing nodes accounting for 0.64s, 56.64% of 1.13s total
+Showing top 50 nodes out of 233
+      flat  flat%   sum%        cum   cum%
+         0     0%     0%      1.13s   100%  main.main
+         0     0%     0%      1.13s   100%  runtime.main
+         0     0%     0%      0.58s 51.33%  runtime.mallocgc
+         0     0%     0%      0.54s 47.79%  github.com/marzeq/qk/stdlib.ParseTrustedSources
+         0     0%     0%      0.45s 39.82%  runtime.(*mcache).nextFree
+         0     0%     0%      0.45s 39.82%  runtime.(*mcache).refill
+     0.04s  3.54%  3.54%      0.38s 33.63%  runtime.mallocgcSmallScanNoHeader
+         0     0%  3.54%      0.32s 28.32%  runtime.growslice
+         0     0%  3.54%      0.31s 27.43%  runtime.(*mcentral).uncacheSpan
+     0.14s 12.39% 15.93%      0.31s 27.43%  runtime.(*spanSet).push
+         0     0% 15.93%      0.27s 23.89%  github.com/marzeq/qk/loader.RunSemanticPipeline
+         0     0% 15.93%      0.22s 19.47%  github.com/marzeq/qk/parser.(*Parser).Parse
+         0     0% 15.93%      0.22s 19.47%  github.com/marzeq/qk/parser.(*Parser).parseTopLevel
+         0     0% 15.93%      0.21s 18.58%  github.com/marzeq/qk/parser.(*Parser).ParseStatement
+         0     0% 15.93%      0.20s 17.70%  github.com/marzeq/qk/sema.(*Validator).ValidateModule
+         0     0% 15.93%      0.20s 17.70%  github.com/marzeq/qk/sema.(*Validator).validateNode
+         0     0% 15.93%      0.19s 16.81%  github.com/marzeq/qk/parser.(*Parser).ParseFunctionDefinition
+         0     0% 15.93%      0.18s 15.93%  github.com/marzeq/qk/loader.GenerateIRModules
+         0     0% 15.93%      0.18s 15.93%  github.com/marzeq/qk/parser.(*Parser).ParseBlock (inline)
+         0     0% 15.93%      0.18s 15.93%  github.com/marzeq/qk/parser.(*Parser).parseBlock
+         0     0% 15.93%      0.17s 15.04%  github.com/marzeq/qk/comptime.Expand
+         0     0% 15.93%      0.17s 15.04%  github.com/marzeq/qk/sema.(*Validator).validateStatement
+     0.17s 15.04% 30.97%      0.17s 15.04%  internal/runtime/atomic.(*UnsafePointer).StoreNoWB (inline)
+         0     0% 30.97%      0.16s 14.16%  github.com/marzeq/qk/comptime.(*expander).expand
+         0     0% 30.97%      0.16s 14.16%  github.com/marzeq/qk/tokeniser.(*Tokeniser).Tokenise
+     0.16s 14.16% 45.13%      0.16s 14.16%  runtime.memclrNoHeapPointers
+         0     0% 45.13%      0.15s 13.27%  github.com/marzeq/qk/codegen/irgen.(*Generator).Generate (inline)
+         0     0% 45.13%      0.15s 13.27%  github.com/marzeq/qk/codegen/irgen.(*Generator).GenerateFunction
+         0     0% 45.13%      0.15s 13.27%  github.com/marzeq/qk/codegen/irgen.(*Generator).GenerateRoots
+     0.02s  1.77% 46.90%      0.15s 13.27%  github.com/marzeq/qk/tokeniser.(*Tokeniser).AddToken
+     0.01s  0.88% 47.79%      0.14s 12.39%  github.com/marzeq/qk/sema.(*Validator).validateExpr
+         0     0% 47.79%      0.14s 12.39%  internal/runtime/atomic.(*Pointer[go.shape.struct { runtime.spanSetBlockHeader2; runtime.spans [512]runtime.atomicMSpanPointer }]).StoreNoWB (inline)
+         0     0% 47.79%      0.14s 12.39%  runtime.(*mcentral).cacheSpan
+         0     0% 47.79%      0.14s 12.39%  runtime.(*mcentral).grow
+         0     0% 47.79%      0.14s 12.39%  runtime.newobject
+         0     0% 47.79%      0.13s 11.50%  github.com/marzeq/qk/parser.(*Parser).ParseExpression (inline)
+         0     0% 47.79%      0.13s 11.50%  github.com/marzeq/qk/parser.(*Parser).ParseLogicalAnd
+         0     0% 47.79%      0.13s 11.50%  github.com/marzeq/qk/parser.(*Parser).ParseLogicalOr
+         0     0% 47.79%      0.12s 10.62%  github.com/marzeq/qk/codegen/irgen.(*Generator).generateFunctionBody
+         0     0% 47.79%      0.12s 10.62%  github.com/marzeq/qk/parser.(*Parser).ParseBitwiseAnd
+         0     0% 47.79%      0.12s 10.62%  github.com/marzeq/qk/parser.(*Parser).ParseBitwiseOr (inline)
+         0     0% 47.79%      0.12s 10.62%  github.com/marzeq/qk/parser.(*Parser).ParseBitwiseXor
+         0     0% 47.79%      0.12s 10.62%  github.com/marzeq/qk/parser.(*Parser).ParseComparison
+         0     0% 47.79%      0.12s 10.62%  github.com/marzeq/qk/parser.(*Parser).ParseShift
+         0     0% 47.79%      0.12s 10.62%  github.com/marzeq/qk/parser.(*Parser).parseLeftAssociative
+         0     0% 47.79%      0.12s 10.62%  runtime.convT
+         0     0% 47.79%      0.11s  9.73%  github.com/marzeq/qk/codegen/llvm.(*Emitter).EmitFunction
+         0     0% 47.79%      0.11s  9.73%  github.com/marzeq/qk/codegen/llvm.(*Emitter).EmitModule
+     0.10s  8.85% 56.64%      0.11s  9.73%  github.com/marzeq/qk/comptime.(*expander).isExtentReference
+         0     0% 56.64%      0.11s  9.73%  github.com/marzeq/qk/parser.(*Parser).ParseAddSub

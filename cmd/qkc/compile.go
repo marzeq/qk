@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/marzeq/qk/codegen/llvm"
 	"github.com/marzeq/qk/codegen/llvmbackend"
@@ -42,18 +41,6 @@ func emitLLVMFile(output string) (string, error) {
 
 func compileLLVMModule(buildDir, moduleName, llvmOutput string, args *Args) (string, error) {
 	objPath := filepath.Join(buildDir, "module.o")
-	cachePath := moduleObjectCachePath(llvmOutput, args)
-	if cached, err := os.ReadFile(cachePath); err == nil {
-		if err := os.WriteFile(objPath, cached, 0o644); err == nil {
-			now := time.Now()
-			_ = os.Chtimes(cachePath, now, now)
-			if args.verbose {
-				fmt.Printf("used cached module %s\n", moduleName)
-			}
-			return objPath, nil
-		}
-	}
-
 	if args.verbose {
 		fmt.Printf("> libLLVM emit object %s\n", objPath)
 	}
@@ -67,7 +54,6 @@ func compileLLVMModule(buildDir, moduleName, llvmOutput string, args *Args) (str
 	if err != nil {
 		return "", err
 	}
-	storeModuleObject(cachePath, objPath)
 
 	return objPath, nil
 }

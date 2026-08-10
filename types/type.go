@@ -15,6 +15,175 @@ type Type interface {
 	String() string
 }
 
+// DetachForSerialization returns an equivalent type graph without runtime-only
+// recursive AliasRef target pointers. Stable module/name references are enough
+// to reconnect aliases when a module interface is loaded.
+func DetachForSerialization(value Type) Type {
+	if value == nil {
+		return nil
+	}
+	switch value := value.(type) {
+	case *AliasRef:
+		return &AliasRef{Module: value.Module, Name: value.Name}
+	case TypeParameter:
+		value.Constraint = DetachForSerialization(value.Constraint)
+		return value
+	case DefinedType:
+		value.Underlying = DetachForSerialization(value.Underlying)
+		value.TypeArguments = detachTypes(value.TypeArguments)
+		return value
+	case PointerType:
+		value.Base = DetachForSerialization(value.Base)
+		return value
+	case SliceType:
+		value.Base = DetachForSerialization(value.Base)
+		return value
+	case ArrayType:
+		value.Base = DetachForSerialization(value.Base)
+		return value
+	case SequenceType:
+		value.Base = DetachForSerialization(value.Base)
+		return value
+	case StructType:
+		value.Fields = detachFields(value.Fields)
+		if value.TaggedUnion != nil {
+			info := *value.TaggedUnion
+			info.Tag = DetachForSerialization(info.Tag)
+			info.Variants = append([]TaggedUnionVariant(nil), info.Variants...)
+			for index := range info.Variants {
+				info.Variants[index].Fields = detachFields(info.Variants[index].Fields)
+			}
+			value.TaggedUnion = &info
+		}
+		return value
+	case UnionType:
+		value.Fields = detachFields(value.Fields)
+		return value
+	case TraitType:
+		value.Methods = append([]TraitMethod(nil), value.Methods...)
+		for index := range value.Methods {
+			value.Methods[index].Parameters = detachTypes(value.Methods[index].Parameters)
+			value.Methods[index].ReturnType = DetachForSerialization(value.Methods[index].ReturnType)
+			value.Methods[index].GenericParameters = append([]TypeParameter(nil), value.Methods[index].GenericParameters...)
+			for parameter := range value.Methods[index].GenericParameters {
+				constraint := value.Methods[index].GenericParameters[parameter].Constraint
+				value.Methods[index].GenericParameters[parameter].Constraint = DetachForSerialization(constraint)
+			}
+		}
+		return value
+	case TraitPointerType:
+		value.Trait = DetachForSerialization(value.Trait).(TraitType)
+		return value
+	case FunctionType:
+		value.Parameters = detachTypes(value.Parameters)
+		value.ReturnType = DetachForSerialization(value.ReturnType)
+		value.VariadicElement = DetachForSerialization(value.VariadicElement)
+		return value
+	case MultipleReturnType:
+		value.Types = detachTypes(value.Types)
+		return value
+	default:
+		return value
+	}
+}
+
+// SubstituteParameters replaces declaration-scoped generic parameters in a
+// detached type graph. Bindings are keyed by TypeParameter.Key().
+func SubstituteParameters(value Type, bindings map[string]Type) Type {
+	if value == nil {
+		return nil
+	}
+	if parameter, ok := value.(TypeParameter); ok {
+		if replacement := bindings[parameter.Key()]; replacement != nil {
+			return replacement
+		}
+		parameter.Constraint = SubstituteParameters(parameter.Constraint, bindings)
+		return parameter
+	}
+	detached := DetachForSerialization(value)
+	switch value := detached.(type) {
+	case DefinedType:
+		value.Underlying = SubstituteParameters(value.Underlying, bindings)
+		value.TypeArguments = substituteTypes(value.TypeArguments, bindings)
+		return value
+	case PointerType:
+		value.Base = SubstituteParameters(value.Base, bindings)
+		return value
+	case SliceType:
+		value.Base = SubstituteParameters(value.Base, bindings)
+		return value
+	case ArrayType:
+		value.Base = SubstituteParameters(value.Base, bindings)
+		return value
+	case SequenceType:
+		value.Base = SubstituteParameters(value.Base, bindings)
+		return value
+	case StructType:
+		value.Fields = substituteFields(value.Fields, bindings)
+		if value.TaggedUnion != nil {
+			value.TaggedUnion.Tag = SubstituteParameters(value.TaggedUnion.Tag, bindings)
+			for index := range value.TaggedUnion.Variants {
+				value.TaggedUnion.Variants[index].Fields = substituteFields(value.TaggedUnion.Variants[index].Fields, bindings)
+			}
+		}
+		return value
+	case UnionType:
+		value.Fields = substituteFields(value.Fields, bindings)
+		return value
+	case TraitType:
+		for index := range value.Methods {
+			value.Methods[index].Parameters = substituteTypes(value.Methods[index].Parameters, bindings)
+			value.Methods[index].ReturnType = SubstituteParameters(value.Methods[index].ReturnType, bindings)
+		}
+		return value
+	case TraitPointerType:
+		value.Trait = SubstituteParameters(value.Trait, bindings).(TraitType)
+		return value
+	case FunctionType:
+		value.Parameters = substituteTypes(value.Parameters, bindings)
+		value.ReturnType = SubstituteParameters(value.ReturnType, bindings)
+		value.VariadicElement = SubstituteParameters(value.VariadicElement, bindings)
+		return value
+	case MultipleReturnType:
+		value.Types = substituteTypes(value.Types, bindings)
+		return value
+	default:
+		return value
+	}
+}
+
+func substituteTypes(values []Type, bindings map[string]Type) []Type {
+	result := make([]Type, len(values))
+	for index, value := range values {
+		result[index] = SubstituteParameters(value, bindings)
+	}
+	return result
+}
+
+func substituteFields(values []shared.Pair[string, Type], bindings map[string]Type) []shared.Pair[string, Type] {
+	result := append([]shared.Pair[string, Type](nil), values...)
+	for index := range result {
+		result[index].R = SubstituteParameters(result[index].R, bindings)
+	}
+	return result
+}
+
+func detachTypes(values []Type) []Type {
+	result := make([]Type, len(values))
+	for index, value := range values {
+		result[index] = DetachForSerialization(value)
+	}
+	return result
+}
+
+func detachFields(values []shared.Pair[string, Type]) []shared.Pair[string, Type] {
+	result := append([]shared.Pair[string, Type](nil), values...)
+	for index := range result {
+		result[index].R = DetachForSerialization(result[index].R)
+	}
+	return result
+}
+
 // SelfType is the implementing type of the immediately enclosing trait. It
 // remains symbolic until a structural-conformance check selects a concrete
 // candidate.

@@ -12,6 +12,7 @@ git config core.hooksPath .githooks # if you plan to contribute
 go generate ./stdlib # typecheck the embedded QK standard library
 go build ./cmd/qkc   # or run 'go run ./cmd/qkc' directly
 ```
+
 ## Supported platforms
 
 ### For the compiler itself

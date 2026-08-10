@@ -58,6 +58,7 @@ type Generator struct {
 	specializedConstants        map[*symbols.Symbol]symbols.SpecializationConstant
 	lambdaFunctions             []*parser.FunctionDefNode
 	queuedLambdas               map[*symbols.Symbol]bool
+	templateMode                bool
 }
 
 type dynamicGlobalInitializer struct {
@@ -431,10 +432,36 @@ func (g *Generator) GenerateFunction(fn *parser.FunctionDefNode) {
 	g.deferScopes = nil
 
 	g.generateDefaultWrappers(fn, name)
+	if g.templateMode {
+		return
+	}
 	g.generateTypedVariadicWrappers(fn, name)
 	if !fn.Symbol.Signature.TypedVariadic {
 		g.generateConstantWrapper(fn, name)
 	}
+}
+
+// GenerateGenericTemplate lowers an attributed generic body into symbolic QK
+// IR. Type parameters deliberately remain in the result and are substituted
+// before target lowering.
+func (g *Generator) GenerateGenericTemplate(fn *parser.FunctionDefNode) []*ir.Function {
+	if fn == nil || !fn.IsGeneric() {
+		return nil
+	}
+	if g.Module == nil {
+		g.Module = &ir.Module{}
+	}
+	if g.globals == nil {
+		g.globals = make(map[*symbols.Symbol]string)
+	}
+	if g.queuedLambdas == nil {
+		g.queuedLambdas = make(map[*symbols.Symbol]bool)
+	}
+	before := len(g.Module.Functions)
+	g.templateMode = true
+	g.GenerateFunction(fn)
+	g.templateMode = false
+	return append([]*ir.Function(nil), g.Module.Functions[before:]...)
 }
 
 func (g *Generator) generateFunctionBody(fn *parser.FunctionDefNode) {
@@ -2236,7 +2263,14 @@ func (g *Generator) ensureTraitVTable(node *parser.CastNode, trait types.TraitTy
 		if req.Receiver == types.TraitReceiverValue {
 			fnName = g.generateValueReceiverTraitThunk(name, i, node.ConcreteType, fnName, method, req)
 		}
-		values = append(values, ir.FunctionConstOperand(fnName, fnType))
+		functionOperand := ir.FunctionConstOperand(fnName, fnType)
+		if method.TemplateSymbol != nil {
+			functionOperand.Generic = &ir.GenericReference{
+				Module: method.TemplateSymbol.DefinitionModule, Name: method.TemplateSymbol.Name,
+				TypeArguments: append([]types.Type(nil), method.TypeArguments...),
+			}
+		}
+		values = append(values, functionOperand)
 		if methodModule != g.ModuleName && req.Receiver != types.TraitReceiverValue {
 			g.addExternForCall(fnName, ir.FunctionSignature{ParamTypes: method.Signature.Parameters, ReturnType: method.Signature.ReturnType}, "", true)
 		}
@@ -3299,13 +3333,40 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 	if runtimeBuiltin {
 		g.addExternForCall("__qk_"+node.Symbol.Name, callSig, "", true)
 	}
+	var genericReference *ir.GenericReference
+	var requirementReference *ir.TraitRequirementReference
+	genericSymbol := node.Symbol
+	if genericSymbol == nil {
+		if member, ok := node.Callee.(*parser.FieldAccessNode); ok {
+			genericSymbol = member.MethodSymbol
+		}
+	}
+	if genericSymbol != nil && genericSymbol.TemplateSymbol != nil {
+		template := genericSymbol.TemplateSymbol
+		genericReference = &ir.GenericReference{
+			Module: template.DefinitionModule, Name: template.Name,
+			TypeArguments: append([]types.Type(nil), genericSymbol.TypeArguments...),
+		}
+	} else if genericSymbol != nil && genericSymbol.Template {
+		genericReference = &ir.GenericReference{Module: genericSymbol.DefinitionModule, Name: genericSymbol.Name}
+		for _, parameter := range genericSymbol.GenericParameters {
+			genericReference.TypeArguments = append(genericReference.TypeArguments, parameter)
+		}
+	}
+	if genericSymbol != nil && genericSymbol.TraitRequirement && len(genericSymbol.Signature.Parameters) != 0 {
+		requirementReference = &ir.TraitRequirementReference{
+			Name: genericSymbol.Name, ReceiverType: genericSymbol.Signature.Parameters[0],
+		}
+	}
 
 	if node.GetType().Equals(types.PrimitiveVoid) {
 		g.Emit(ir.Call{
-			Name:      name,
-			Callee:    callee,
-			Args:      args,
-			Signature: callSig,
+			Name:        name,
+			Callee:      callee,
+			Args:        args,
+			Signature:   callSig,
+			Generic:     genericReference,
+			Requirement: requirementReference,
 		})
 		if node.Symbol != nil && node.Symbol.Name == "panic" {
 			g.Emit(ir.Unreachable{})
@@ -3314,7 +3375,7 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 	}
 
 	dst := g.currentFunction.NewValueOfType(node.GetType())
-	g.Emit(ir.Call{Dest: dst, Name: name, Callee: callee, Args: args, Signature: callSig})
+	g.Emit(ir.Call{Dest: dst, Name: name, Callee: callee, Args: args, Signature: callSig, Generic: genericReference, Requirement: requirementReference})
 	return ir.ValueOperand(dst, node.GetType())
 }
 
@@ -3421,6 +3482,10 @@ func (g *Generator) promoteVariadicArgs(args []ir.Operand, sig ir.FunctionSignat
 }
 
 func (g *Generator) mangleFunctionName(moduleName, fnName string) string {
+	return MangleFunctionName(moduleName, fnName)
+}
+
+func MangleFunctionName(moduleName, fnName string) string {
 	mod := encodeModuleName(moduleName)
 	fn := sanitizeName(fnName)
 	if mod == "" {

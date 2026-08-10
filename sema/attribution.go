@@ -578,6 +578,15 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 				} else {
 					n.SetType(types.ErrorType{})
 				}
+			} else if a.analyser.genericFunctions[template] == nil {
+				if a.analyser.checkGenericArguments(n, template.GenericParameters, arguments) {
+					n.Symbol = dependentGenericFunctionSymbol(template, arguments)
+					if n.Name != nil {
+						n.Name.Symbol = n.Symbol
+					}
+				} else {
+					n.SetType(types.ErrorType{})
+				}
 			} else if specialization := a.attributeGenericSpecialization(template, arguments, n); specialization != nil {
 				n.Symbol = specialization.Symbol
 				if n.Name != nil {
@@ -1395,12 +1404,12 @@ func (a *Attributor) attributeMethodValue(n *parser.FieldAccessNode) bool {
 			}
 			method = dependentGenericFunctionSymbol(method, arguments)
 		} else {
-			specialization := a.analyser.specializeGenericFunction(method, arguments, n)
-			if specialization == nil {
+			symbol := a.analyser.specializeGenericFunctionSymbol(method, arguments, n)
+			if symbol == nil {
 				n.SetType(types.ErrorType{})
 				return true
 			}
-			method = specialization.Symbol
+			method = symbol
 		}
 	}
 	ret := method.Signature.ReturnType
@@ -1534,12 +1543,12 @@ func (a *Attributor) attributeMethodCall(n *parser.FunctionCallNode) bool {
 			}
 			method = dependentGenericFunctionSymbol(method, arguments)
 		} else {
-			specialization := a.analyser.specializeGenericFunction(method, arguments, n)
-			if specialization == nil {
+			symbol := a.analyser.specializeGenericFunctionSymbol(method, arguments, n)
+			if symbol == nil {
 				n.SetType(types.ErrorType{})
 				return true
 			}
-			method = specialization.Symbol
+			method = symbol
 		}
 	}
 	receiver := member.Subject
@@ -1785,12 +1794,12 @@ func (a *Attributor) attributeStaticTraitMethodCall(
 			}
 			method = dependentGenericFunctionSymbol(method, arguments)
 		} else {
-			specialization := a.analyser.specializeGenericFunction(method, arguments, call)
-			if specialization == nil {
+			symbol := a.analyser.specializeGenericFunctionSymbol(method, arguments, call)
+			if symbol == nil {
 				call.SetType(types.ErrorType{})
 				return true
 			}
-			method = specialization.Symbol
+			method = symbol
 		}
 	}
 

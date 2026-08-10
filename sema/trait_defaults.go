@@ -106,11 +106,12 @@ func (a *Analyser) defaultTraitMethod(trait types.TraitType, slot int, concrete 
 	}
 	template := defaults[slot]
 	if len(template.GenericParameters) == 1 {
-		instance := a.specializeGenericFunction(template, []types.Type{concrete}, at)
-		if instance == nil {
-			return nil
+		arguments := []types.Type{concrete}
+		result := a.specializeGenericFunctionSymbol(template, arguments, at)
+		if result != nil && a.genericFunctions[template] == nil {
+			result.Name = SpecializationName(template.DefinitionModule, template.Name, arguments)
 		}
-		return instance.Symbol
+		return result
 	}
 
 	result := *template
