@@ -1,0 +1,128 @@
+name: Nightly releases
+
+on:
+  schedule:
+    - cron: "17 2,14 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-release
+  cancel-in-progress: false
+
+env:
+  NIGHTLY_VERSION: nightly-${{ github.run_id }}-${{ github.run_attempt }}
+
+jobs:
+  linux:
+    name: Package Linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install LLVM 22 development packages
+        run: |
+          wget -q https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 22
+          sudo apt-get install --yes clang-22 llvm-22-dev libclang-22-dev liblld-22-dev
+          echo "/usr/lib/llvm-22/bin" >> "$GITHUB_PATH"
+          echo "CGO_CXXFLAGS=-I/usr/lib/llvm-22/include" >> "$GITHUB_ENV"
+          echo "CGO_LDFLAGS=-L/usr/lib/llvm-22/lib" >> "$GITHUB_ENV"
+
+      - name: Build release archive
+        run: scripts/package-release-linux.sh "$NIGHTLY_VERSION" dist
+
+      - name: Upload Linux archive
+        uses: actions/upload-artifact@v7
+        with:
+          name: qk-${{ env.NIGHTLY_VERSION }}-linux
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  macos:
+    name: Package macOS
+    runs-on: macos-14
+    timeout-minutes: 60
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install LLVM and LLD
+        run: brew install llvm lld
+
+      - name: Build release archive
+        env:
+          LLVM_CONFIG: ${{ runner.temp }}/llvm-config
+        run: |
+          ln -s "$(brew --prefix llvm)/bin/llvm-config" "$LLVM_CONFIG"
+          scripts/package-release-macos.sh "$NIGHTLY_VERSION" dist
+
+      - name: Upload macOS archive
+        uses: actions/upload-artifact@v7
+        with:
+          name: qk-${{ env.NIGHTLY_VERSION }}-macos
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  publish:
+    name: Publish nightly release
+    needs: [linux, macos]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Download release archives
+        uses: actions/download-artifact@v7
+        with:
+          pattern: qk-${{ env.NIGHTLY_VERSION }}-*
+          path: dist
+          merge-multiple: true
+
+      - name: Publish prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$NIGHTLY_VERSION" dist/*.tar.gz \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "QK $NIGHTLY_VERSION" \
+            --notes "Automated build of $GITHUB_SHA from $(date -u +'%Y-%m-%d %H:%M UTC')." \
+            --prerelease
+
+      - name: Keep the latest three nightly releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mapfile -t stale_tags < <(
+            gh release list \
+              --repo "$GITHUB_REPOSITORY" \
+              --limit 100 \
+              --json tagName,createdAt,isDraft \
+              --jq 'map(select(.isDraft == false and (.tagName | startswith("nightly-")))) | sort_by(.createdAt) | reverse | .[3:] | .[].tagName'
+          )
+          for tag in "${stale_tags[@]}"; do
+            gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
+          done
