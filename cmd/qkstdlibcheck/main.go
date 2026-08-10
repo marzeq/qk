@@ -12,9 +12,10 @@ import (
 func main() {
 	targetTriple := flag.String("target", "", "target triple used for compile-time selection")
 	release := flag.Bool("release", false, "select the .Release compile-time mode")
+	libraryRoot := flag.String("libs", "libs", "library source root")
 	flag.Parse()
 	if flag.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: qkstdlibcheck [-target triple] [-nolibc] [-release]")
+		fmt.Fprintln(os.Stderr, "usage: qkstdlibcheck [-target triple] [-release] [-libs directory]")
 		os.Exit(2)
 	}
 
@@ -22,7 +23,7 @@ func main() {
 	if *release {
 		releaseMode = comptime.ReleaseModeRelease
 	}
-	errs := stdlib.CheckEmbedded(comptime.Config{
+	errs := stdlib.CheckRoot(*libraryRoot, comptime.Config{
 		TargetTriple:   *targetTriple,
 		CheckingStdlib: true,
 		ReleaseMode:    releaseMode,

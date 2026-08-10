@@ -447,7 +447,7 @@ func printUsage() {
 	fmt.Println("  -warn-unused-parameter <show|off|error>  Override unused-parameter warnings")
 	fmt.Println("  -static            Link with static libraries")
 	fmt.Println("  -nolibc            Do not link against the C standard library")
-	fmt.Println("  -nostdlib          Do not load the embedded QK standard library")
+	fmt.Println("  -nostdlib          Do not load the installed QK library tree")
 	fmt.Println("  -release           Select .Release for the compile-time ReleaseMode value")
 	fmt.Println("  -stdlib <dir>      Trust and use an external QK standard-library source tree")
 	fmt.Println("  -I <dir>           Add a package search root (can be repeated)")

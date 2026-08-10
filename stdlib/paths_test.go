@@ -31,16 +31,17 @@ func TestSourcePackagePathsRejectModuleDirectoryMismatch(t *testing.T) {
 	}
 }
 
-func TestEmbeddedSourcesMatchDirectoryPackages(t *testing.T) {
-	sources, err := ReadSources()
+func TestLibrarySourcesMatchDirectoryPackages(t *testing.T) {
+	root := filepath.Join("..", "libs")
+	sources, err := ReadSources(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	paths, available, err := SourcePackagePaths(sources, "<stdlib>")
+	paths, available, err := SourcePackagePaths(sources, root)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(paths) != len(sources) || !available["std"] || !available["std.io"] {
-		t.Fatalf("incomplete embedded package mapping: %v", available)
+		t.Fatalf("incomplete library package mapping: %v", available)
 	}
 }

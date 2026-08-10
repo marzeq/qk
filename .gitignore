@@ -3,6 +3,8 @@ test
 *.o
 *.so
 *.a
+!libs/
+!libs/**/*.a
 /*.qk
 a.out
 /qkc

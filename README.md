@@ -9,9 +9,20 @@ git clone git@github.com:marzeq/qk.git
 cd qk
 git config core.hooksPath .githooks # if you plan to contribute
 
-go generate ./stdlib # typecheck the embedded QK standard library
+go generate ./stdlib # typecheck the QK library tree in ./libs
 go build ./cmd/qkc   # or run 'go run ./cmd/qkc' directly
 ```
+
+For a relocatable installation containing both the compiler and its QK
+libraries, use:
+
+```bash
+scripts/install.sh /desired/install/root
+```
+
+This creates `bin/qkc` and `libs/` beneath the selected root. Plain
+`go install ./cmd/qkc` installs only the executable because the Go tool has no
+mechanism for installing repository data files.
 
 ## Supported platforms
 

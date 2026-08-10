@@ -12,9 +12,14 @@ import (
 
 // SourcePackagePaths derives canonical package identities from source
 // directories and verifies that semantic module declarations agree. The root
-// is the directory containing the top-level std directory; for compiler-
-// embedded sources it is the stable virtual path "<stdlib>".
+// is the installed libs directory containing the top-level std and vendor
+// directories.
 func SourcePackagePaths(sources map[string]string, root string) (map[string]string, map[string]bool, error) {
+	absoluteRoot, err := filepath.Abs(root)
+	if err != nil {
+		return nil, nil, err
+	}
+	root = absoluteRoot
 	paths := make(map[string]string, len(sources))
 	available := make(map[string]bool)
 	origins := make([]string, 0, len(sources))
@@ -26,7 +31,7 @@ func SourcePackagePaths(sources map[string]string, root string) (map[string]stri
 		directory := filepath.Dir(origin)
 		relative, err := filepath.Rel(root, directory)
 		if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-			return nil, nil, fmt.Errorf("standard-library source %q is outside package root %q", origin, root)
+			return nil, nil, fmt.Errorf("library source %q is outside package root %q", origin, root)
 		}
 		packagePath := "."
 		if relative != "." {

@@ -26,7 +26,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-mkdir -p "$staging_directory/bin" "$staging_directory/lib" "$output_directory"
+mkdir -p "$staging_directory/bin" "$staging_directory/lib" "$staging_directory/libs" "$output_directory"
+cp -a libs/. "$staging_directory/libs/"
 
 release_ldflags='-Wl,--disable-new-dtags,-rpath,$ORIGIN/../lib'
 GOCACHE=${GOCACHE:-"${staging_parent}/go-build-cache"} \
@@ -72,6 +73,10 @@ for library in "${resolved_bundled_libraries[@]}"; do
 done
 
 "$staging_directory/bin/qkc" -h >/dev/null
+smoke_directory="$staging_parent/smoke"
+mkdir -p "$smoke_directory"
+printf 'module main\n\nlet main() { assert(true, "release libraries") }\n' >"$smoke_directory/main.qk"
+"$staging_directory/bin/qkc" build -no-emit "$smoke_directory"
 
 tar -C "$staging_parent" -czf "${output_directory}/${archive_name}.tar.gz" "$archive_name"
 echo "created ${output_directory}/${archive_name}.tar.gz"

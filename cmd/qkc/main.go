@@ -45,25 +45,25 @@ func main() {
 		Sysroot:      args.sysroot,
 		ReleaseMode:  releaseMode,
 	}
-	embeddedStdlibSources, err := stdlib.ReadSources()
-	check(err)
-	selectedStdlibSources := embeddedStdlibSources
-	stdlibSourceRoot := "<stdlib>"
+	selectedStdlibSources := map[string]string{}
+	stdlibSourceRoot := ""
 	if args.noStdlib {
-		selectedStdlibSources = map[string]string{}
+		// A genuinely library-free build must also work when no libs directory is
+		// installed beside qkc.
 	} else if args.stdlibPath != "" {
 		stdlibSourceRoot = args.stdlibPath
-		stdlibFiles, err := collectSourceFiles([]string{args.stdlibPath}, nil)
+		var err error
+		selectedStdlibSources, err = stdlib.ReadSources(args.stdlibPath)
 		check(err)
-		if len(stdlibFiles) == 0 {
+		if len(selectedStdlibSources) == 0 {
 			fatal("no standard-library source files found in %s", args.stdlibPath)
 		}
-		selectedStdlibSources = make(map[string]string, len(stdlibFiles))
-		for _, file := range stdlibFiles {
-			data, err := os.ReadFile(file)
-			check(err)
-			selectedStdlibSources[file] = string(data)
-		}
+	} else {
+		libraryRoot, err := resolveLibraryRoot()
+		check(err)
+		stdlibSourceRoot = libraryRoot
+		selectedStdlibSources, err = stdlib.ReadSources(libraryRoot)
+		check(err)
 	}
 	stdlibPackagePaths, availablePackages, err := stdlib.SourcePackagePaths(selectedStdlibSources, stdlibSourceRoot)
 	check(err)

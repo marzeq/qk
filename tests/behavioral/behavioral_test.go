@@ -287,7 +287,7 @@ func invoke(t *testing.T, workDir, cacheDir string, spec testSpec, mode string, 
 	// Diagnostics omit caret marker lines when rendered with ANSI colours.
 	// Force the compiler's plain format so snapshots are identical whether the
 	// parent go test command is attached to a terminal or captured by CI.
-	cmd.Env = append(cmd.Env, "NO_COLOR=1", "XDG_CACHE_HOME="+cacheDir)
+	cmd.Env = append(cmd.Env, "NO_COLOR=1", "XDG_CACHE_HOME="+cacheDir, "QK_LIB_DIR="+filepath.Join(repositoryRoot, "libs"))
 	if stdin, ok := optionalFile(filepath.Join(workDir, "stdin.txt")); ok {
 		cmd.Stdin = strings.NewReader(stdin)
 	}

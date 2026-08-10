@@ -2,6 +2,7 @@ package stdlib
 
 import (
 	"sort"
+	"strings"
 
 	"github.com/marzeq/qk/comptime"
 	"github.com/marzeq/qk/loader"
@@ -10,9 +11,10 @@ import (
 	"github.com/marzeq/qk/tokeniser"
 )
 
-// ParseTrustedSources runs the normal QK frontend over trusted standard-library
-// source text and returns module fragments ready for the compilation pipeline.
-func ParseTrustedSources(sources, packagePaths map[string]string, config comptime.Config) ([]*loader.PartialModuleInfo, error) {
+// ParseLibrarySources runs the normal QK frontend over installed library source
+// text. Only std and std.* receive trusted-standard-library privileges;
+// vendor modules remain ordinary QK code.
+func ParseLibrarySources(sources, packagePaths map[string]string, config comptime.Config) ([]*loader.PartialModuleInfo, error) {
 	origins := make([]string, 0, len(sources))
 	for origin := range sources {
 		origins = append(origins, origin)
@@ -34,11 +36,13 @@ func ParseTrustedSources(sources, packagePaths map[string]string, config comptim
 		if err != nil {
 			return nil, err
 		}
-		info, err := loader.CollectModuleInfo(root, true)
+		packagePath := packagePaths[origin]
+		trusted := packagePath == "std" || strings.HasPrefix(packagePath, "std.")
+		info, err := loader.CollectModuleInfo(root, trusted)
 		if err != nil {
 			return nil, err
 		}
-		info.Path = packagePaths[origin]
+		info.Path = packagePath
 		partials = append(partials, info)
 	}
 	return partials, nil
@@ -52,7 +56,7 @@ func check(sources, packagePaths map[string]string, config comptime.Config) []er
 		return []error{err}
 	}
 	config.ModuleBindings = values
-	partials, err := ParseTrustedSources(sources, packagePaths, config)
+	partials, err := ParseLibrarySources(sources, packagePaths, config)
 	if err != nil {
 		return []error{err}
 	}
@@ -73,14 +77,8 @@ func check(sources, packagePaths map[string]string, config comptime.Config) []er
 	return errs
 }
 
-// Check typechecks trusted sources whose map keys are stable embedded origins.
-// Callers supplying a directory override should use CheckAtRoot.
-func Check(sources map[string]string, config comptime.Config) []error {
-	return CheckAtRoot(sources, "<stdlib>", config)
-}
-
 // CheckAtRoot validates directory-derived package identities and typechecks a
-// trusted standard-library source tree.
+// library source tree.
 func CheckAtRoot(sources map[string]string, root string, config comptime.Config) []error {
 	packagePaths, _, err := SourcePackagePaths(sources, root)
 	if err != nil {
@@ -89,11 +87,11 @@ func CheckAtRoot(sources map[string]string, root string, config comptime.Config)
 	return check(sources, packagePaths, config)
 }
 
-// CheckEmbedded typechecks the standard library embedded in this build.
-func CheckEmbedded(config comptime.Config) []error {
-	sources, err := ReadSources()
+// CheckRoot loads and typechecks an installed library tree.
+func CheckRoot(root string, config comptime.Config) []error {
+	sources, err := ReadSources(root)
 	if err != nil {
 		return []error{err}
 	}
-	return Check(sources, config)
+	return CheckAtRoot(sources, root, config)
 }

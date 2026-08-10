@@ -1302,7 +1302,13 @@ An import path maps directly to a subdirectory of an ordered package root. The p
 
 When the selected package lies beneath the invocation directory, that invocation directory is the project root. Otherwise the selected package directory becomes its own root.
 
-The `std` and `std.*` names are reserved for the embedded standard library or a trusted `-stdlib` development override. Ordinary source packages cannot declare them.
+The `std` and `std.*` names are reserved for the installed standard library or a trusted `-stdlib` development override. Ordinary source packages cannot declare them.
+
+The compiler checkout and release layout contain a top-level `libs` directory.
+`go run ./cmd/qkc` discovers it from the QK checkout, while an installed
+`<root>/bin/qkc` loads `<root>/libs`. `QK_LIB_DIR` overrides this lookup.
+Because the Go tool installs executables but not repository data, use
+`scripts/install.sh` rather than plain `go install` for a complete installation.
 
 The standard library is an implicit dependency of ordinary modules unless `-nostdlib` is used. Its submodules use explicit imports internally to keep the dependency graph acyclic.
 
@@ -1312,7 +1318,7 @@ Passing one `.qk` file to `build` or `run` creates a synthetic primary package f
 
 # Diagnostics and warnings
 
-QK reports source ranges with line context throughout tokenisation, parsing, semantic analysis, and code generation. Embedded standard-library diagnostics use virtual source origins but retain the same source context.
+QK reports source ranges with line context throughout tokenisation, parsing, semantic analysis, and code generation. Installed library diagnostics use their source paths and retain the same source context.
 
 The compiler warns about unreferenced local variables, loop bindings, and parameters after it has analysed the complete function. Prefixing a name with `_` does not suppress a warning; use the exact discard name `_` when no binding is wanted.
 
@@ -1368,7 +1374,7 @@ Use `-no-emit` to perform compilation checks without producing output. `-dump-ir
 
 `-nolibc` removes the hosted C runtime while retaining the QK standard-library portions that do not require it. Linux x86-64 freestanding executables use QK's own `_start`, exit by syscall, leave `std.os.args` empty, and provide the memory primitives LLVM may introduce.
 
-Other freestanding executable targets are currently rejected until they have target-specific startup support. `-nostdlib` is separate: it omits QK's embedded library sources altogether.
+Other freestanding executable targets are currently rejected until they have target-specific startup support. `-nostdlib` is separate: it omits QK's installed library sources altogether.
 
 Cross-linking requires suitable CRT objects, libraries, and usually a sysroot for the selected target. QK uses its in-process Clang driver and LLD integration; it does not invoke Clang, LLVM, or a linker subprocess.
 
@@ -1380,7 +1386,7 @@ Cache hits refresh their modification time. Objects unused for 30 days are remov
 
 # Standard library tour
 
-The embedded standard library is divided into small `std` packages. Features that do not require libc remain available under `-nolibc`; hosted streams, files, and the libc allocator are selected out when libc is absent.
+The installed standard library is divided into small `std` packages. Features that do not require libc remain available under `-nolibc`; hosted streams, files, and the libc allocator are selected out when libc is absent.
 
 ## Core methods
 
