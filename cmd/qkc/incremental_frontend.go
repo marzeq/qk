@@ -22,6 +22,7 @@ type incrementalFrontendResult struct {
 	templates       map[string][]ir.GenericTemplate
 	interfaces      map[string]sema.ModuleInterface
 	interfaceHashes map[string]string
+	comptimeHashes  map[string]string
 	cachedModules   map[string]*qkmModule
 	moduleLinks     []attributes.Link
 	warnings        []error
@@ -45,17 +46,22 @@ func runIncrementalFrontend(
 		return nil, errs[0]
 	}
 	candidates := findQKMModuleCandidates(inputs, sourceHashes)
+	comptimeHashes := make(map[string]string, len(graphModules))
+	for name, module := range graphModules {
+		comptimeHashes[name] = comptime.PackageBindingsFingerprint(config.ModuleBindings, name, module.Imports)
+	}
 	result := &incrementalFrontendResult{
 		modules: make(map[string]*loader.ModuleInfo), irModules: make(map[string]*ir.Module),
 		templates: make(map[string][]ir.GenericTemplate), interfaces: make(map[string]sema.ModuleInterface),
-		interfaceHashes: make(map[string]string), cachedModules: make(map[string]*qkmModule), order: order,
+		interfaceHashes: make(map[string]string), comptimeHashes: comptimeHashes,
+		cachedModules: make(map[string]*qkmModule), order: order,
 	}
 	analyser := sema.NewAnalyser()
 	seenLinks := make(map[attributes.Link]bool)
 	rebuilt := make(map[string]bool)
 	var sourceOrder []string
 	for _, name := range order {
-		candidate := matchingQKMModule(candidates[name], result.interfaceHashes)
+		candidate := matchingQKMModule(candidates[name], result.interfaceHashes, comptimeHashes[name])
 		for _, imported := range graphModules[name].Imports {
 			if rebuilt[imported] {
 				candidate = nil

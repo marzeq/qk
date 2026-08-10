@@ -115,24 +115,15 @@ func TestQKMSourceHashesArePerModule(t *testing.T) {
 }
 
 func TestQKMModuleVariantRequiresMatchingDependencyInterfaces(t *testing.T) {
-	candidate := &qkmModule{ImportInterfaces: map[string]string{"dep": "interface-a"}}
-	if matchingQKMModule([]*qkmModule{candidate}, map[string]string{"dep": "interface-b"}) != nil {
+	candidate := &qkmModule{ComptimeHash: "bindings-a", ImportInterfaces: map[string]string{"dep": "interface-a"}}
+	if matchingQKMModule([]*qkmModule{candidate}, map[string]string{"dep": "interface-b"}, "bindings-a") != nil {
 		t.Fatal("module variant was reused with a different dependency interface")
 	}
-	if matchingQKMModule([]*qkmModule{candidate}, map[string]string{"dep": "interface-a"}) != candidate {
+	if matchingQKMModule([]*qkmModule{candidate}, map[string]string{"dep": "interface-a"}, "bindings-b") != nil {
+		t.Fatal("module variant was reused with different scoped compile-time bindings")
+	}
+	if matchingQKMModule([]*qkmModule{candidate}, map[string]string{"dep": "interface-a"}, "bindings-a") != candidate {
 		t.Fatal("module variant was not reused with the same dependency interface")
-	}
-}
-
-func TestQKMComptimeFingerprintSelectsDifferentWhenVariant(t *testing.T) {
-	base := qkmInputs{VariantHash: "target-and-mode"}
-	first := withQKMComptimeVariant(base, "TargetHasLibc=true")
-	second := withQKMComptimeVariant(base, "TargetHasLibc=false")
-	if first.VariantHash == second.VariantHash {
-		t.Fatal("different compile-time bindings selected the same module variant")
-	}
-	if first.VariantHash != withQKMComptimeVariant(base, "TargetHasLibc=true").VariantHash {
-		t.Fatal("compile-time variant hashing is not deterministic")
 	}
 }
 

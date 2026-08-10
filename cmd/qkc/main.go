@@ -95,7 +95,6 @@ func main() {
 	}
 	comptimeConfig.ModuleBindings, err = comptime.ResolvePackageBindings(compileTimeSources, sourcePackagePaths, comptimeConfig)
 	check(err)
-	qkmInputs = withQKMComptimeVariant(qkmInputs, comptime.BindingsFingerprint(comptimeConfig.ModuleBindings))
 	frontend, err := runIncrementalFrontend(args, comptimeConfig, compileTimeSources, sourcePackagePaths, qkmInputs, args.verbose, args.debug)
 	check(err)
 	modules, partials, order := frontend.modules, frontend.partials, frontend.order
@@ -272,7 +271,7 @@ func main() {
 			interfacePtr = &interfaceCopy
 		}
 		activeQKM.Modules[moduleName] = &qkmModule{
-			SourceHash: moduleSourceHashes[moduleName], Imports: imports,
+			SourceHash: moduleSourceHashes[moduleName], ComptimeHash: frontend.comptimeHashes[moduleName], Imports: imports,
 			ImportInterfaces: importInterfaces, Interface: interfacePtr,
 			Templates: encodedTemplates, IR: encodedIR, LLVM: llvmOutputs[moduleName], Links: links, Objects: objects,
 		}

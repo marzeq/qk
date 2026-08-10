@@ -40,11 +40,39 @@ func BindingsFingerprint(bindings map[string]Value) string {
 	return hex.EncodeToString(hash.Sum(nil))
 }
 
+// PackageBindingsFingerprint identifies only the module-level values visible
+// while expanding one package: its own declarations and declarations from
+// directly imported packages. Unrelated application bindings must not
+// invalidate reusable dependency or standard-library modules.
+func PackageBindingsFingerprint(bindings map[string]Value, packagePath string, imports []string) string {
+	visible := make(map[string]Value)
+	addPackage := func(path string) {
+		prefix := path + "."
+		for key, value := range bindings {
+			name, ok := strings.CutPrefix(key, prefix)
+			if ok && !strings.Contains(name, ".") {
+				visible[key] = value
+			}
+		}
+	}
+	addPackage(packagePath)
+	for _, imported := range imports {
+		addPackage(imported)
+	}
+	return BindingsFingerprint(visible)
+}
+
 type moduleBindingDeclaration struct {
 	module string
 	name   string
 	expr   parser.ExpressionNode
 	loc    shared.Location
+	scope  *moduleBindingScope
+}
+
+type moduleBindingScope struct {
+	imports map[string]bool
+	aliases map[string]string
 }
 
 // ResolveModuleBindings resolves file-scope compile-time declarations in
@@ -62,6 +90,7 @@ func ResolvePackageBindings(sources map[string]string, packagePaths map[string]s
 	}
 	sort.Strings(origins)
 	declarations := map[string]moduleBindingDeclaration{}
+	moduleScopes := make(map[string]*moduleBindingScope)
 	for _, origin := range origins {
 		tokens, err := tokeniser.NewTokeniser(sources[origin], origin).Tokenise()
 		if err != nil {
@@ -71,11 +100,25 @@ func ResolvePackageBindings(sources map[string]string, packagePaths map[string]s
 		if module == "" {
 			module = tokenModule(tokens)
 		}
+		scope := moduleScopes[module]
+		if scope == nil {
+			scope = &moduleBindingScope{imports: make(map[string]bool), aliases: make(map[string]string)}
+			moduleScopes[module] = scope
+		}
+		if header, scanErr := parser.ScanSourceHeader(tokens); scanErr == nil {
+			for i, imported := range header.Imports {
+				scope.imports[imported] = true
+				if i < len(header.Aliases) && header.Aliases[i] != "" {
+					scope.aliases[header.Aliases[i]] = imported
+				}
+			}
+		}
 		for _, declaration := range topLevelCompileTimeDeclarations(tokens, module) {
 			key := module + "." + declaration.name
 			if previous, exists := declarations[key]; exists {
 				return nil, shared.NewError(declaration.loc, "duplicate compile-time binding %q; previously declared at %s", key, previous.loc)
 			}
+			declaration.scope = scope
 			declarations[key] = declaration
 		}
 	}
@@ -100,6 +143,28 @@ func ResolvePackageBindings(sources map[string]string, packagePaths map[string]s
 		value, err := evaluate(declaration.expr, target, func(name string, refLoc shared.Location) (Value, error) {
 			if !strings.Contains(name, ".") {
 				name = declaration.module + "." + name
+			} else {
+				resolved := ""
+				if strings.HasPrefix(name, declaration.module+".") && !strings.Contains(strings.TrimPrefix(name, declaration.module+"."), ".") {
+					resolved = name
+				}
+				for imported := range declaration.scope.imports {
+					if strings.HasPrefix(name, imported+".") && !strings.Contains(strings.TrimPrefix(name, imported+"."), ".") {
+						resolved = name
+						break
+					}
+				}
+				if resolved == "" {
+					if qualifier, binding, ok := strings.Cut(name, "."); ok {
+						if imported := declaration.scope.aliases[qualifier]; imported != "" && !strings.Contains(binding, ".") {
+							resolved = imported + "." + binding
+						}
+					}
+				}
+				if resolved == "" {
+					return Value{}, shared.NewError(refLoc, "compile-time value %q is not in scope", name)
+				}
+				name = resolved
 			}
 			return resolve(name, refLoc)
 		})

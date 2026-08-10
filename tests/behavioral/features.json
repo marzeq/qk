@@ -150,7 +150,7 @@
     },
     {
       "name": "warm manifest cache",
-      "positive": ["cache/warm_manifest", "cache/variants"],
+      "positive": ["cache/warm_manifest", "cache/variants", "cache/scoped_comptime"],
       "negativeNotApplicable": true
     }
   ]

@@ -41,30 +41,29 @@ func Expand(tokens []tokeniser.Token, config Config) ([]tokeniser.Token, error) 
 	target := targetFromConfig(config)
 	target.checkingStdlib = config.CheckingStdlib
 	target.releaseMode = config.ReleaseMode
-	target.bindings = cloneValues(config.ModuleBindings)
+	target.bindings = make(map[string]Value)
 	currentModule := config.PackagePath
 	if currentModule == "" {
 		currentModule = tokenModule(tokens)
 	}
-	if currentModule != "" {
+	addBindings := func(packagePath, qualifier string) {
+		prefix := packagePath + "."
 		for name, value := range config.ModuleBindings {
-			prefix := currentModule + "."
-			if strings.HasPrefix(name, prefix) && !strings.Contains(strings.TrimPrefix(name, prefix), ".") {
-				target.bindings[strings.TrimPrefix(name, prefix)] = value
+			bindingName, ok := strings.CutPrefix(name, prefix)
+			if !ok || strings.Contains(bindingName, ".") {
+				continue
 			}
+			target.bindings[qualifier+bindingName] = value
 		}
+	}
+	if currentModule != "" {
+		addBindings(currentModule, "")
 	}
 	if header, err := parser.ScanSourceHeader(tokens); err == nil {
 		for i, imported := range header.Imports {
-			if i >= len(header.Aliases) || header.Aliases[i] == "" {
-				continue
-			}
-			alias := header.Aliases[i]
-			prefix := imported + "."
-			for name, value := range config.ModuleBindings {
-				if strings.HasPrefix(name, prefix) && !strings.Contains(strings.TrimPrefix(name, prefix), ".") {
-					target.bindings[alias+"."+strings.TrimPrefix(name, prefix)] = value
-				}
+			addBindings(imported, imported+".")
+			if i < len(header.Aliases) && header.Aliases[i] != "" {
+				addBindings(imported, header.Aliases[i]+".")
 			}
 		}
 	}

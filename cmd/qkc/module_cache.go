@@ -25,7 +25,7 @@ import (
 )
 
 const qkmFormatVersion = 4
-const qkmFrontendABI = "qk-frontend-interface-v5"
+const qkmFrontendABI = "qk-frontend-interface-v6"
 const qkmBackendABI = "qk-libllvm-22-v1"
 
 // qkmFile is deliberately a compiler-owned format. Source-backed cache files
@@ -50,6 +50,7 @@ type qkmFile struct {
 
 type qkmModule struct {
 	SourceHash       string                `json:"source_hash,omitempty"`
+	ComptimeHash     string                `json:"comptime_hash,omitempty"`
 	Imports          []string              `json:"imports,omitempty"`
 	ImportInterfaces map[string]string     `json:"import_interfaces,omitempty"`
 	Interface        *sema.ModuleInterface `json:"interface,omitempty"`
@@ -193,12 +194,6 @@ type qkmInputs struct {
 	VariantHash string
 	Path        string
 	CacheRoot   string
-}
-
-func withQKMComptimeVariant(inputs qkmInputs, fingerprint string) qkmInputs {
-	digest := sha256.Sum256([]byte(inputs.VariantHash + "\x00" + fingerprint))
-	inputs.VariantHash = hex.EncodeToString(digest[:])
-	return inputs
 }
 
 func makeQKMInputs(args *Args, sources, sourcePackages map[string]string) (qkmInputs, error) {
@@ -384,8 +379,11 @@ func loadQKMPath(path string) (*qkmFile, bool) {
 	return &cached, true
 }
 
-func matchingQKMModule(candidates []*qkmModule, interfaceHashes map[string]string) *qkmModule {
+func matchingQKMModule(candidates []*qkmModule, interfaceHashes map[string]string, comptimeHash string) *qkmModule {
 	for _, candidate := range candidates {
+		if candidate.ComptimeHash != comptimeHash {
+			continue
+		}
 		matches := true
 		for imported, expected := range candidate.ImportInterfaces {
 			if interfaceHashes[imported] != expected {
