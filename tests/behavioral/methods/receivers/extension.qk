@@ -1,0 +1,5 @@
+module main
+
+let Counter.increment(*mut self): void {
+  self.value += 1
+}

@@ -1,0 +1,7 @@
+module main
+
+let make<T>(): T = ---
+
+let main() {
+  make()
+}

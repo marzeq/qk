@@ -1,0 +1,7 @@
+module main
+
+let main() {
+  let captured: i32 = 1
+  let closure = || => captured
+  let _ = closure
+}

@@ -1,0 +1,5 @@
+module main
+
+import external
+
+let main() { assert(external.answer() == 42, "search path") }

@@ -1,0 +1,6 @@
+module main
+
+let main() {
+  let value: u8 = 256
+  let _ = value
+}

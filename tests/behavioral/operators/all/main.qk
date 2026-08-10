@@ -1,0 +1,32 @@
+module main
+
+import std.io
+
+let main() {
+  let mut value: i32 = 10
+  value += 2
+  value *= 3
+  value -= 6
+  value /= 5
+  value %= 5
+  assert(value == 1, "arithmetic assignments")
+
+  let bits: u8 = ((0b1010 & 0b1100) | 1) ^ 8
+  assert(bits == 1 && (~bits) == 254, "bit operators")
+  let shifted: i32 = 1 << 4
+  let shifted_back: i32 = 16 >> 3
+  let precedence: i32 = 1 + 2 * 3
+  let parenthesized: i32 = (1 + 2) * 3
+  assert(shifted == 16 && shifted_back == 2, "shifts")
+  assert(precedence == 7 && parenthesized == 9, "precedence")
+
+  let mut effects: i32 = 0
+  let false_value = false && { effects += 1; true }
+  let true_value = true || { effects += 1; false }
+  assert(!false_value && true_value && effects == 0, "short circuit")
+  let negative: i32 = -5
+  let five: i32 = 5
+  let four: i32 = 4
+  assert(negative < 0 && five >= 5 && four != 3, "unary and comparisons")
+  std.io.println("operators ok")
+}

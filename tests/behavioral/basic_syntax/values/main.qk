@@ -1,0 +1,40 @@
+module main
+
+import std.io
+
+let main() {
+  let immutable: i32 = 5
+  let mut mutable: i32 = immutable
+  mutable += 7
+  let shadowed = mutable
+  let shadowed = shadowed + 1
+  let mut deferred: i32 = ---
+  deferred = shadowed
+
+  let signed: i8 = -8
+  let signed16: i16 = -16
+  let signed32: i32 = -32
+  let signed64: i64 = -64
+  let unsigned8: u8 = 8
+  let unsigned16: u16 = 16
+  let unsigned32: u32 = 32
+  let unsigned: u64 = 0xff
+  let native_signed: isz = -10
+  let native: usz = 0b1010
+  let octal: u16 = 0o52
+  let float32: f32 = 1.25
+  let decimal: f64 = 3.5
+  let text = "line\n"
+  let terminated: cstr = c"qk"
+  let character: u8 = '\t'
+
+  assert(deferred == 13, "mutable values and shadowing")
+  assert(signed == -8 && unsigned == 255 && native == 10, "integer literals")
+  assert(signed16 == -16 && signed32 == -32 && signed64 == -64, "signed widths")
+  assert(unsigned8 == 8 && unsigned16 == 16 && unsigned32 == 32, "unsigned widths")
+  assert(native_signed == -10 && octal == 42, "native and octal integers")
+  assert(float32 == 1.25 && decimal == 3.5, "floating-point literals")
+  assert(@len(text) == 5 && terminated[0] == 'q' && character == 9, "text literals")
+  let _ = immutable
+  std.io.println("values ok")
+}

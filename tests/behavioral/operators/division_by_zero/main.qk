@@ -1,0 +1,7 @@
+module main
+
+let main() {
+  let zero: i32 = 0
+  let value = 1 / zero
+  let _ = value
+}

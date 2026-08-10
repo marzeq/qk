@@ -1,0 +1,11 @@
+module main @link(system "c")
+
+let foreign_puts(text: cstr): i32 @foreign(symbol "puts")
+let exported(left: i32, right: i32): i32 @export(symbol "qk_add") = left + right
+let qk_export(value: i32): i32 @export(abi "qk", symbol "qk_identity") @inline = value
+let never(message: str): void @noreturn @noinline { panic(message) }
+
+let main() {
+  assert(exported(1, 2) == 3, "export")
+  if false { foreign_puts(c"unused") }
+}

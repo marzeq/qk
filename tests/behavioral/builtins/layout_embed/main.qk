@@ -1,0 +1,17 @@
+module main
+
+import std.io
+
+let Header = type struct @packed { kind: u8, length: u32 }
+
+let main() {
+  let header = Header.{ kind=1, length=4 }
+  let embedded = @embed("payload.txt")
+  let array: [3]u8 = [1, 2, 3]
+  assert(@sizeof(Header) == 5, "packed size")
+  assert(header.kind == 1 && header.length == 4, "packed value")
+  assert(@alignof(Header) == 1 && @offsetof(Header, length) == 1, "layout")
+  assert(@len(array) == 3 && @len(embedded) == 7, "length and embed")
+  assert(embedded[0] == 'e', "embedded contents")
+  std.io.println("builtins ok")
+}

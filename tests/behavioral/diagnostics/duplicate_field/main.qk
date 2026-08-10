@@ -1,0 +1,8 @@
+module main
+
+let Pair = type struct { first: i32, second: i32 }
+
+let main() {
+  let value = Pair.{ first=1, first=2, second=3 }
+  let _ = value
+}

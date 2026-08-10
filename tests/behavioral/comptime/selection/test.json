@@ -1,0 +1,4 @@
+{
+  "mode":"run-pass",
+  "stdoutRegex":true
+}

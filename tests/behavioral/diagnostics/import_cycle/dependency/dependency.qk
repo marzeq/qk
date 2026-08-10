@@ -1,0 +1,5 @@
+module dependency
+
+import main
+
+pub let call() { main.call() }

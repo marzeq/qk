@@ -1,0 +1,5 @@
+module main
+
+let value: i32 = 1 @inline
+
+let main() {}

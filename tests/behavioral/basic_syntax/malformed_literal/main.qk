@@ -1,0 +1,6 @@
+module main
+
+let main() {
+  let value: i32 = 0xGG
+  let _ = value
+}

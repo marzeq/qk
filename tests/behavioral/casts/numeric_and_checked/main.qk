@@ -1,0 +1,24 @@
+module main
+
+import std.io
+
+let Code = type u16
+
+let main() {
+  let small: u8 = 250
+  let wide: u64 = small
+  let narrow = wide.(u8)
+  let signed = narrow.(i16)
+  let floating = signed.(f64)
+  let integral = floating.(i32)
+  let code = integral.(Code)
+  let raw = code.(u16)
+  let values: [3]u8 = [1, 2, 3]
+  let slice: []u8 = values[:]
+  let copied, exact = slice.([3]u8)
+  let zero, mismatch = slice.([2]u8)
+  assert(wide == 250 && raw == 250, "numeric casts")
+  assert(copied[2] == 3 && exact, "checked slice cast")
+  assert(!mismatch && zero[0] == 0, "failed checked cast")
+  std.io.println("casts ok")
+}

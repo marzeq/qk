@@ -1,0 +1,3 @@
+module dependency
+
+let hidden() {}

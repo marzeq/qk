@@ -1,0 +1,11 @@
+Error: <CASE>/main.qk:8:17
+   6 |   let choice: Choice = .First
+   7 |   match choice {
+   8 |     .First => {}
+     |                 ^
+   9 |   }
+     | ^
+  10 | }
+  11 | 
+
+expected ',' after match arm

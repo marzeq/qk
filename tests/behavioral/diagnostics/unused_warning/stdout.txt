@@ -1,0 +1,9 @@
+Error: <CASE>/main.qk:3:22
+   1 | module main
+   2 | 
+   3 | let unused_parameter(value: i32) {}
+     |                      ^^^^^
+   4 | 
+   5 | let main() {
+
+unused function parameter "value"

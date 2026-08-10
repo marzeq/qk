@@ -1,0 +1,9 @@
+Error: <CASE>/main.qk:3:20
+   1 | module main
+   2 | 
+   3 | let make<T>(): T = ---
+     |                    ^^^
+   4 | 
+   5 | let main() {
+
+'---' is only valid as a declaration initializer, a struct field initializer, or the final struct initializer entry

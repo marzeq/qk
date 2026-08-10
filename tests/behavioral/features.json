@@ -1,0 +1,157 @@
+{
+  "features": [
+    {
+      "name": "bindings and literals",
+      "positive": ["basic_syntax/values"],
+      "negative": [
+        "basic_syntax/immutable_assignment",
+        "basic_syntax/overflow",
+        "basic_syntax/malformed_literal"
+      ]
+    },
+    {
+      "name": "operators",
+      "positive": ["operators/all"],
+      "negative": ["operators/division_by_zero"]
+    },
+    {
+      "name": "control flow",
+      "positive": ["control_flow/loops_and_defer"],
+      "negativeNotApplicable": true
+    },
+    {
+      "name": "functions",
+      "positive": ["functions/calls"],
+      "negativeNotApplicable": true
+    },
+    {
+      "name": "aggregate types",
+      "positive": ["types/aggregates"],
+      "negativeNotApplicable": true
+    },
+    {
+      "name": "methods and receivers",
+      "positive": ["methods/receivers"],
+      "negativeNotApplicable": true
+    },
+    {
+      "name": "generics",
+      "positive": ["generics/identity"],
+      "negativeNotApplicable": true
+    },
+    {
+      "name": "modules",
+      "positive": [
+        "modules/import",
+        "modules/explicit_file",
+        "modules/search_path",
+        "modules/nostdlib"
+      ],
+      "negative": [
+        "modules/missing",
+        "modules/canonical_path",
+        "modules/imported_main"
+      ]
+    },
+    {
+      "name": "traits and dispatch",
+      "positive": ["traits/dispatch"],
+      "negative": ["diagnostics/missing_trait_method"]
+    },
+    {
+      "name": "numeric and checked casts",
+      "positive": ["casts/numeric_and_checked"],
+      "negative": ["diagnostics/invalid_cast"]
+    },
+    {
+      "name": "layout and embed builtins",
+      "positive": ["builtins/layout_embed", "builtins/expression_size"],
+      "negativeNotApplicable": true
+    },
+    {
+      "name": "compile-time selection",
+      "positive": ["comptime/selection"],
+      "negative": ["diagnostics/comptime_error"]
+    },
+    {
+      "name": "name resolution diagnostics",
+      "positive": ["modules/import"],
+      "negative": ["diagnostics/unresolved", "diagnostics/private_name"]
+    },
+    {
+      "name": "non-capturing lambdas",
+      "positive": ["functions/calls"],
+      "negative": ["diagnostics/lambda_capture"]
+    },
+    {
+      "name": "syntax diagnostics",
+      "positive": ["basic_syntax/values"],
+      "negative": ["diagnostics/syntax"]
+    },
+    {
+      "name": "type mismatch diagnostics",
+      "positive": ["basic_syntax/values"],
+      "negative": ["diagnostics/type_mismatch"]
+    },
+    {
+      "name": "control-flow diagnostics",
+      "positive": ["control_flow/loops_and_defer"],
+      "negative": ["diagnostics/invalid_control_flow", "diagnostics/missing_return"]
+    },
+    {
+      "name": "match diagnostics",
+      "positive": ["types/aggregates"],
+      "negative": ["diagnostics/non_exhaustive_match"]
+    },
+    {
+      "name": "aggregate diagnostics",
+      "positive": ["types/aggregates"],
+      "negative": ["diagnostics/duplicate_field"]
+    },
+    {
+      "name": "generic inference diagnostics",
+      "positive": ["generics/identity"],
+      "negative": ["diagnostics/generic_inference"]
+    },
+    {
+      "name": "entry-point diagnostics",
+      "positive": ["basic_syntax/values"],
+      "negative": ["diagnostics/invalid_entry"]
+    },
+    {
+      "name": "module graph diagnostics",
+      "positive": ["modules/import"],
+      "negative": ["diagnostics/import_cycle"]
+    },
+    {
+      "name": "unused warning promotion",
+      "positive": ["diagnostics/warning_off", "diagnostics/warning_show"],
+      "negative": ["diagnostics/unused_warning"]
+    },
+    {
+      "name": "program arguments",
+      "positive": ["runtime/arguments", "runtime/environment"],
+      "negativeNotApplicable": true
+    },
+    {
+      "name": "standard-library core behavior",
+      "positive": ["stdlib/core"],
+      "negativeNotApplicable": true
+    },
+    {
+      "name": "attributes and foreign declarations",
+      "positive": ["ffi/declarations"],
+      "negative": ["diagnostics/invalid_attribute"]
+    },
+    {
+      "name": "runtime assertions",
+      "positive": ["basic_syntax/values"],
+      "negative": ["runtime/assert_failure"]
+    },
+    {
+      "name": "warm manifest cache",
+      "positive": ["cache/warm_manifest", "cache/variants"],
+      "negativeNotApplicable": true
+    }
+  ]
+}

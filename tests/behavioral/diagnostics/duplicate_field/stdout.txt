@@ -1,0 +1,9 @@
+Error: <CASE>/main.qk:6:15
+   4 | 
+   5 | let main() {
+   6 |   let value = Pair.{ first=1, first=2, second=3 }
+     |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   7 |   let _ = value
+   8 | }
+
+duplicate field "first" in struct literal

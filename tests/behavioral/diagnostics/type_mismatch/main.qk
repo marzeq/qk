@@ -1,0 +1,6 @@
+module main
+
+let main() {
+  let value: i32 = "wrong"
+  let _ = value
+}

@@ -1,0 +1,26 @@
+module main
+
+import std.io
+
+let factorial(value: i32): i32 = if value <= 1 { 1 } else { value * factorial(value - 1) }
+let choose(value: i32, fallback: i32 = 7): i32 = if value > 0 { value } else { fallback }
+let pair(value: i32): (i32, i32) {
+  return value, value * 2
+}
+let total(values: ...i32): i32 {
+  let mut result: i32 = 0
+  for value in values { result += value }
+  return result
+}
+let apply(function: *(i32): i32, value: i32): i32 = function(value)
+
+let main() {
+  let first, second = pair(4)
+  let function: *(i32): i32 = factorial
+  let lambda: *(i32): i32 = |value| => value + 1
+  assert(first == 4 && second == 8, "multiple results")
+  assert(choose(0) == 7 && choose(0, 9) == 9, "defaults")
+  assert(total() == 0 && total(1, 2, 3) == 6, "variadics")
+  assert(apply(function, 5) == 120 && apply(lambda, 3) == 4, "indirect calls")
+  std.io.println("functions ok")
+}

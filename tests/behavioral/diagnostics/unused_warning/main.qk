@@ -1,0 +1,8 @@
+module main
+
+let unused_parameter(value: i32) {}
+
+let main() {
+  let unused: i32 = 1
+  unused_parameter(2)
+}

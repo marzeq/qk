@@ -1,0 +1,9 @@
+Error: <CASE>/main.qk:4:20
+   2 | 
+   3 | let main() {
+   4 |   let value: i32 = "wrong"
+     |                    ^^^^^^^
+   5 |   let _ = value
+   6 | }
+
+cannot use str as i32

@@ -1,0 +1,9 @@
+module main
+
+import dependency dep
+import std.io
+
+let main() {
+  assert(dep.answer() == 42, "imported function")
+  std.io.println("modules ok")
+}

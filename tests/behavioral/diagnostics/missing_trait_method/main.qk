@@ -1,0 +1,10 @@
+module main
+
+let Runnable = type trait { let run(self): i32 }
+let Empty = type struct {}
+
+let main() {
+  let empty = Empty.{}
+  let invalid = empty.(Runnable)
+  let _ = invalid
+}

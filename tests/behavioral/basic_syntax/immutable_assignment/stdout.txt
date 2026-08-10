@@ -1,0 +1,9 @@
+Error: <CASE>/main.qk:5:3
+   3 | let main() {
+   4 |   let value: i32 = 1
+   5 |   value = 2
+     |   ^^^^^
+   6 | }
+   7 | 
+
+cannot assign to immutable symbol

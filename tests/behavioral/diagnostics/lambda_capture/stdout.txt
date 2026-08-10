@@ -1,0 +1,9 @@
+Error: <CASE>/main.qk:5:23
+   3 | let main() {
+   4 |   let captured: i32 = 1
+   5 |   let closure = || => captured
+     |                       ^^^^^^^^
+   6 |   let _ = closure
+   7 | }
+
+lambda cannot capture local variable "captured"

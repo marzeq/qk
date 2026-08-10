@@ -1,0 +1,33 @@
+module main
+
+import (
+  std.io
+  std.math
+  std.random
+  std.strings
+  std.time
+)
+
+let main() {
+  let text = "  hello world  "
+  assert(text.trim().eq("hello world"), "trim")
+  assert(text.contains("world") && text.starts_with("  he") && text.ends_with("d  "), "string search")
+  let index, found = text.find("hello")
+  assert(found && index == 2, "string find")
+
+  let mut values: [4]i32 = [1, 2, 3, 4]
+  let slice: []mut i32 = values[:]
+  slice.reverse()
+  assert(slice[0] == 4 && slice.contains(2), "slice utilities")
+
+  let mut random = std.random.Random.init(12345)
+  let sampled = random.range(10, 20)
+  assert(sampled >= 10 && sampled < 20, "random bounds")
+  assert(std.math.abs(-3.5) == 3.5, "math abs")
+  let root = std.math.sqrt(9.0)
+  assert(root > 2.999 && root < 3.001, "math approximation")
+
+  let duration, valid = std.time.Duration.from_milliseconds(5)
+  assert(valid && duration.as_nanoseconds() == 5000000, "duration conversion")
+  std.io.println("stdlib ok")
+}

@@ -1,0 +1,12 @@
+module main
+
+import (
+  std.io
+  std.os
+)
+
+let main() {
+  let value, found = std.os.getenv("QK_BEHAVIOR_VALUE")
+  assert(found && value.eq("available"), "environment lookup")
+  std.io.println("environment ok")
+}

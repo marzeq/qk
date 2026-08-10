@@ -1,0 +1,5 @@
+module main
+
+let main() {
+  let unused: i32 = 1
+}

@@ -1,0 +1,5 @@
+module main
+
+let main() {
+  assert(false, "intentional behavioral failure")
+}

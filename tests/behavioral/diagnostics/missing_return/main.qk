@@ -1,0 +1,7 @@
+module main
+
+let incomplete(value: bool): i32 {
+  if value { return 1 }
+}
+
+let main() {}

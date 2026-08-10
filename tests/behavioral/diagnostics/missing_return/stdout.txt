@@ -1,0 +1,13 @@
+Error: <CASE>/main.qk:3:34
+   1 | module main
+   2 | 
+   3 | let incomplete(value: bool): i32 {
+     |                                  ^
+   4 |   if value { return 1 }
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+   5 | }
+     | ^
+   6 | 
+   7 | let main() {}
+
+non-void function may fall through without returning a value

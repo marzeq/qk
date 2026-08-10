@@ -1,0 +1,3 @@
+module ignored.by.explicit.file
+
+let main() {}

@@ -1,0 +1,6 @@
+module main
+
+let main() {
+  let value: i32 = 1
+  assert(@sizeof(value) == 4, "expression size")
+}

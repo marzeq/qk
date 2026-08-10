@@ -1,0 +1,3 @@
+module main
+
+pub let value: i32 = 1

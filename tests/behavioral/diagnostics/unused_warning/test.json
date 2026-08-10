@@ -1,0 +1,4 @@
+{
+  "mode":"compile-fail",
+  "compilerArgs":["-warn", "error"]
+}

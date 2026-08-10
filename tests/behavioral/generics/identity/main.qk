@@ -1,0 +1,16 @@
+module main
+
+import std.io
+
+let Pair<T, U> = type struct { first: T, second: U }
+let identity<T>(value: T): T = value
+let Box<T> = type struct { value: T }
+
+let main() {
+  let number: i32 = identity(42)
+  let text = "generic"
+  let pair: Pair<i32, str> = .{ first=number, second=text }
+  let box: Box<i32> = .{ value=pair.first }
+  assert(box.value == 42 && pair.second.eq("generic"), "generic values")
+  std.io.println("generics ok")
+}

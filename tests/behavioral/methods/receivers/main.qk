@@ -1,0 +1,17 @@
+module main
+
+import std.io
+
+let Counter = type struct { value: i32 }
+
+let Counter.init(value: i32): Counter = .{ value=value }
+let Counter.get(self): i32 = self.value
+let Counter.read(*self): i32 = self.value
+
+let main() {
+  let mut counter = Counter.init(10)
+  counter.increment()
+  assert(counter.get() == 11, "value receiver")
+  assert(counter.read() == 11, "pointer receiver adjustment")
+  std.io.println("methods ok")
+}
