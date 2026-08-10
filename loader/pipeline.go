@@ -254,6 +254,15 @@ func GenerateModuleGenericTemplateIR(info *ModuleInfo) []ir.GenericTemplate {
 	return result
 }
 
+// PropagateSpecializationDemands carries constant-argument and fixed typed-
+// variadic demands through forwarding functions before their IR is generated.
+// The semantic validator records the forwarding relationships; this fixed-
+// point pass makes wrapper selection independent of module generation order.
+func PropagateSpecializationDemands(mods map[string]*ModuleInfo, order []string) {
+	propagateSpecializationConstants(mods, order)
+	propagateTypedVariadicArities(mods, order)
+}
+
 func GenerateGenericTemplateIR(mods map[string]*ModuleInfo, order []string) map[string][]ir.GenericTemplate {
 	result := make(map[string][]ir.GenericTemplate)
 	for _, name := range order {

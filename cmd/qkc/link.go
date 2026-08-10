@@ -20,53 +20,98 @@ import (
 // when a reachable function or initializer references a foreign declaration
 // from that same file. This keeps convenience binding files from eagerly
 // adding native libraries merely because their package was loaded.
-func linksForUsedForeignSymbols(partials []*loader.PartialModuleInfo, modules map[string]*ir.Module, rootAllExternal bool) []attributes.Link {
+func linksForUsedForeignSymbols(
+	partials []*loader.PartialModuleInfo,
+	cachedModules map[string]*qkmModule,
+	modules map[string]*ir.Module,
+	rootAllExternal bool,
+) []attributes.Link {
 	referenced := reachableNativeSymbols(modules, rootAllExternal)
 	var links []attributes.Link
 	seen := map[attributes.Link]bool{}
-	for _, partial := range partials {
-		path := partial.Path
-		if path == "" {
-			path = partial.Name
+	addProvider := func(provider qkmLinkProvider) {
+		used := false
+		for _, symbol := range provider.Symbols {
+			if referenced[symbol] {
+				used = true
+				break
+			}
 		}
-		if modules[path] == nil || len(partial.Links) == 0 || !fileProvidesReferencedForeign(partial.Root, referenced) {
-			continue
+		if !used {
+			return
 		}
-		for _, link := range partial.Links {
+		for _, link := range provider.Links {
 			if !seen[link] {
 				seen[link] = true
 				links = append(links, link)
 			}
 		}
 	}
+	for _, partial := range partials {
+		path := partial.Path
+		if path == "" {
+			path = partial.Name
+		}
+		if modules[path] == nil || len(partial.Links) == 0 {
+			continue
+		}
+		addProvider(qkmLinkProvider{Links: partial.Links, Symbols: fileForeignSymbols(partial.Root)})
+	}
+	for name, module := range cachedModules {
+		if modules[name] == nil {
+			continue
+		}
+		for _, provider := range module.LinkProviders {
+			addProvider(provider)
+		}
+	}
 	return links
 }
 
-func fileProvidesReferencedForeign(root *parser.RootNode, referenced map[string]bool) bool {
+func qkmLinkProviders(partials []*loader.PartialModuleInfo, module string) []qkmLinkProvider {
+	var providers []qkmLinkProvider
+	for _, partial := range partials {
+		path := partial.Path
+		if path == "" {
+			path = partial.Name
+		}
+		if path != module || len(partial.Links) == 0 {
+			continue
+		}
+		providers = append(providers, qkmLinkProvider{
+			Links:   append([]attributes.Link(nil), partial.Links...),
+			Symbols: fileForeignSymbols(partial.Root),
+		})
+	}
+	return providers
+}
+
+func fileForeignSymbols(root *parser.RootNode) []string {
+	seen := make(map[string]bool)
+	var result []string
 	for _, node := range root.Body {
+		var name string
+		var attrs attributes.Attributes
 		switch node := node.(type) {
 		case *parser.FunctionDefNode:
-			if foreignName(node.Name, node.Attributes, referenced) {
-				return true
-			}
+			name, attrs = node.Name, node.Attributes
 		case *parser.DeclarationNode:
-			if foreignName(node.Name, node.Attributes, referenced) {
-				return true
+			name, attrs = node.Name, node.Attributes
+		default:
+			continue
+		}
+		foreign, ok := attrs.Get(attributes.AttributeTypeForeign).(attributes.FunctionAttributeForeign)
+		if !ok {
+			continue
+		}
+		for _, symbol := range []string{name, foreign.From} {
+			if symbol != "" && !seen[symbol] {
+				seen[symbol] = true
+				result = append(result, symbol)
 			}
 		}
 	}
-	return false
-}
-
-func foreignName(name string, attrs attributes.Attributes, referenced map[string]bool) bool {
-	foreign, ok := attrs.Get(attributes.AttributeTypeForeign).(attributes.FunctionAttributeForeign)
-	if !ok {
-		return false
-	}
-	if referenced[name] {
-		return true
-	}
-	return foreign.From != "" && referenced[foreign.From]
+	return result
 }
 
 func reachableNativeSymbols(modules map[string]*ir.Module, rootAllExternal bool) map[string]bool {
@@ -262,6 +307,17 @@ func moduleLinksContainLibc(moduleLinks []attributes.Link) bool {
 		}
 	}
 	return false
+}
+
+func withoutLibcLinks(moduleLinks []attributes.Link) []attributes.Link {
+	result := make([]attributes.Link, 0, len(moduleLinks))
+	for _, link := range moduleLinks {
+		if link.Kind == attributes.LinkSystem && (link.Value == "c" || link.Value == "System") {
+			continue
+		}
+		result = append(result, link)
+	}
+	return result
 }
 
 func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots []string, config *Args) ([]string, error) {

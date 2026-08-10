@@ -25,7 +25,7 @@ import (
 )
 
 const qkmFormatVersion = 4
-const qkmFrontendABI = "qk-frontend-interface-v7"
+const qkmFrontendABI = "qk-frontend-interface-v8"
 const qkmBackendABI = "qk-libllvm-22-v1"
 
 // qkmFile is deliberately a compiler-owned format. Source-backed cache files
@@ -57,9 +57,14 @@ type qkmModule struct {
 	Templates        []byte                `json:"generic_templates,omitempty"`
 	IR               []byte                `json:"ir,omitempty"`
 	LLVM             string                `json:"llvm"`
-	Links            []attributes.Link     `json:"links,omitempty"`
+	LinkProviders    []qkmLinkProvider     `json:"link_providers,omitempty"`
 	Warnings         []string              `json:"warnings,omitempty"`
 	Objects          map[string][]byte     `json:"objects,omitempty"`
+}
+
+type qkmLinkProvider struct {
+	Links   []attributes.Link `json:"links"`
+	Symbols []string          `json:"symbols"`
 }
 
 var qkmGobRegistration sync.Once

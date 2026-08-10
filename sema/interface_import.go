@@ -107,10 +107,9 @@ func decodeInterfaceSymbol(encoded InterfaceSymbol, module string) (*symbols.Sym
 	symbol.Template = len(symbol.GenericParameters) != 0
 	if kind == symbols.SymbolKindFunction {
 		signature := &symbols.FunctionSignature{
-			RequiredParameters:           encoded.RequiredParameters,
-			Variadic:                     encoded.Variadic,
-			TypedVariadic:                encoded.TypedVariadic,
-			SuppressDemandSpecialization: true,
+			RequiredParameters: encoded.RequiredParameters,
+			Variadic:           encoded.Variadic,
+			TypedVariadic:      encoded.TypedVariadic,
 		}
 		for _, parameter := range encoded.ParameterTypes {
 			decoded, decodeErr := decodeInterfaceType(parameter)

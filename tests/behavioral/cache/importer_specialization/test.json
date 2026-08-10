@@ -7,17 +7,19 @@
       "stdout": ""
     },
     {
-      "name": "cached dependency uses stable call",
-      "compilerArgs": ["-v"],
+      "name": "cached dependency materializes specialization",
+      "compilerArgs": ["-v", "-o", "program"],
       "files": {
         "main.qk": "module main\n\nimport std.io\n\nlet main() {\n  std.io.println(\"Hello, World!\")\n}\n"
       },
-      "stdoutContains": ["used cached frontend for module std.io"]
+      "stdoutContains": ["used cached frontend for module std.io"],
+      "noDynamicLibraries": true
     },
     {
       "name": "warm specialized caller manifest",
-      "compilerArgs": ["-v"],
-      "stdoutContains": ["used cached QK modules from <CASE>/.cache/qk/modules/"]
+      "compilerArgs": ["-v", "-o", "program"],
+      "stdoutContains": ["used cached QK modules from <CASE>/.cache/qk/modules/"],
+      "noDynamicLibraries": true
     }
   ]
 }

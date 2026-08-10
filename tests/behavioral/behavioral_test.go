@@ -2,6 +2,7 @@ package behavioral_test
 
 import (
 	"bytes"
+	"debug/elf"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -44,15 +45,16 @@ type testSpec struct {
 }
 
 type sequenceStep struct {
-	Name              string            `json:"name"`
-	Mode              string            `json:"mode,omitempty"`
-	CompilerArgs      []string          `json:"compilerArgs,omitempty"`
-	Files             map[string]string `json:"files,omitempty"`
-	Stdout            *string           `json:"stdout,omitempty"`
-	Stderr            *string           `json:"stderr,omitempty"`
-	ExitCode          *int              `json:"exitCode,omitempty"`
-	StdoutContains    []string          `json:"stdoutContains,omitempty"`
-	StdoutNotContains []string          `json:"stdoutNotContains,omitempty"`
+	Name               string            `json:"name"`
+	Mode               string            `json:"mode,omitempty"`
+	CompilerArgs       []string          `json:"compilerArgs,omitempty"`
+	Files              map[string]string `json:"files,omitempty"`
+	Stdout             *string           `json:"stdout,omitempty"`
+	Stderr             *string           `json:"stderr,omitempty"`
+	ExitCode           *int              `json:"exitCode,omitempty"`
+	StdoutContains     []string          `json:"stdoutContains,omitempty"`
+	StdoutNotContains  []string          `json:"stdoutNotContains,omitempty"`
+	NoDynamicLibraries bool              `json:"noDynamicLibraries,omitempty"`
 }
 
 type featureManifest struct {
@@ -420,7 +422,29 @@ func runCacheSequence(t *testing.T, fixtureDir, workDir, cacheDir string, spec t
 					t.Errorf("stdout unexpectedly contains %q\n%s", text, stdout)
 				}
 			}
+			if step.NoDynamicLibraries && exitCode == 0 {
+				assertNoDynamicLibraries(t, filepath.Join(workDir, "program"))
+			}
 		})
+	}
+}
+
+func assertNoDynamicLibraries(t *testing.T, path string) {
+	t.Helper()
+	if runtime.GOOS != "linux" {
+		return
+	}
+	file, err := elf.Open(path)
+	if err != nil {
+		t.Fatalf("open output ELF %s: %v", path, err)
+	}
+	defer file.Close()
+	libraries, err := file.ImportedLibraries()
+	if err != nil {
+		t.Fatalf("read imported libraries from %s: %v", path, err)
+	}
+	if len(libraries) != 0 {
+		t.Errorf("output unexpectedly depends on dynamic libraries: %s", strings.Join(libraries, ", "))
 	}
 }
 

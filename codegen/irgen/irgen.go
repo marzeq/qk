@@ -558,9 +558,7 @@ func (g *Generator) generateDefaultWrappers(fn *parser.FunctionDefNode, targetNa
 }
 
 func (g *Generator) generateTypedVariadicWrappers(fn *parser.FunctionDefNode, targetName string) {
-	// Multiple clones can cost more than the generic body. Specialize only when
-	// whole-program analysis found one observed fixed arity.
-	if !fn.Symbol.Signature.TypedVariadic || len(fn.Symbol.Signature.TypedVariadicArities) != 1 {
+	if !fn.Symbol.Signature.TypedVariadic || len(fn.Symbol.Signature.TypedVariadicArities) == 0 {
 		return
 	}
 
@@ -833,14 +831,8 @@ func (g *Generator) typedVariadicWrapperName(targetName string, arity int) strin
 	return fmt.Sprintf("%s__variadic_%d", targetName, arity)
 }
 
-func typedVariadicSpecializedArity(signature *symbols.FunctionSignature) (int, bool) {
-	if signature == nil || len(signature.TypedVariadicArities) != 1 {
-		return 0, false
-	}
-	for arity := range signature.TypedVariadicArities {
-		return arity, true
-	}
-	return 0, false
+func hasTypedVariadicSpecialization(signature *symbols.FunctionSignature, arity int) bool {
+	return signature != nil && signature.TypedVariadicArities[arity]
 }
 
 func (g *Generator) emitFunctionParams(fn *parser.FunctionDefNode) {
@@ -3176,12 +3168,9 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 		callee = &value
 	}
 	args := make([]ir.Operand, 0, len(node.Args))
-	specializedArity, hasSpecializedArity := 0, false
-	if node.Symbol != nil {
-		specializedArity, hasSpecializedArity = typedVariadicSpecializedArity(node.Symbol.Signature)
-	}
+	callTypedVariadicArity := len(node.Args) - node.TypedVariadicStart
 	typedVariadicWrapper := node.TypedVariadic && !node.VariadicExpansion && node.Symbol != nil &&
-		hasSpecializedArity && len(node.Args)-node.TypedVariadicStart == specializedArity
+		hasTypedVariadicSpecialization(node.Symbol.Signature, callTypedVariadicArity)
 	constants := map[int]symbols.SpecializationConstant(nil)
 	constantWrapper := false
 	if node.Symbol != nil && !runtimeBuiltin {
@@ -3198,7 +3187,7 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 		len(node.Args) == node.TypedVariadicStart+1 {
 		if argument, ok := node.Args[node.TypedVariadicStart].(*parser.IdentifierNode); ok {
 			if elements, specialized := g.specializedVariadicElements[argument.Symbol]; specialized &&
-				hasSpecializedArity && len(elements) == specializedArity &&
+				hasTypedVariadicSpecialization(node.Symbol.Signature, len(elements)) &&
 				(len(constants) == 0 || constantWrapper) {
 				typedVariadicWrapper = true
 				flattenedTypedVariadic = true

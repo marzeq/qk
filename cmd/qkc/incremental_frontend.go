@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/marzeq/qk/attributes"
+	"github.com/marzeq/qk/codegen/irgen"
 	"github.com/marzeq/qk/comptime"
 	"github.com/marzeq/qk/ir"
 	"github.com/marzeq/qk/loader"
@@ -24,7 +24,6 @@ type incrementalFrontendResult struct {
 	interfaceHashes map[string]string
 	comptimeHashes  map[string]string
 	cachedModules   map[string]*qkmModule
-	moduleLinks     []attributes.Link
 	warnings        []error
 	cachedWarnings  []string
 }
@@ -34,6 +33,7 @@ func runIncrementalFrontend(
 	config comptime.Config,
 	sources, sourcePackages map[string]string,
 	inputs qkmInputs,
+	forcedRebuild map[string]bool,
 	verbose, debug bool,
 ) (*incrementalFrontendResult, error) {
 	sourceHashes := qkmSourceHashes(sources, sourcePackages)
@@ -57,11 +57,13 @@ func runIncrementalFrontend(
 		cachedModules: make(map[string]*qkmModule), order: order,
 	}
 	analyser := sema.NewAnalyser()
-	seenLinks := make(map[attributes.Link]bool)
 	rebuilt := make(map[string]bool)
 	var sourceOrder []string
 	for _, name := range order {
 		candidate := matchingQKMModule(candidates[name], result.interfaceHashes, comptimeHashes[name])
+		if forcedRebuild[name] {
+			candidate = nil
+		}
 		for _, imported := range graphModules[name].Imports {
 			if rebuilt[imported] {
 				candidate = nil
@@ -89,12 +91,6 @@ func runIncrementalFrontend(
 			result.interfaceHashes[name] = interfaceHash(*candidate.Interface)
 			result.cachedModules[name] = candidate
 			result.cachedWarnings = append(result.cachedWarnings, candidate.Warnings...)
-			for _, link := range candidate.Links {
-				if !seenLinks[link] {
-					seenLinks[link] = true
-					result.moduleLinks = append(result.moduleLinks, link)
-				}
-			}
 			if verbose {
 				fmt.Printf("used cached frontend for module %s\n", name)
 			}
@@ -145,6 +141,7 @@ func runIncrementalFrontend(
 	} else {
 		result.warnings = append(result.warnings, warnings...)
 	}
+	loader.PropagateSpecializationDemands(result.modules, sourceOrder)
 	allInterfaces := analyser.ModuleInterfaces()
 	for _, name := range sourceOrder {
 		info := result.modules[name]
@@ -160,14 +157,57 @@ func runIncrementalFrontend(
 		iface := allInterfaces[name]
 		result.interfaces[name] = iface
 		result.interfaceHashes[name] = interfaceHash(iface)
-		for _, link := range info.Links {
-			if !seenLinks[link] {
-				seenLinks[link] = true
-				result.moduleLinks = append(result.moduleLinks, link)
+	}
+	return result, nil
+}
+
+// Cached source-free interfaces can receive new constant and typed-variadic
+// specialization demands while their stored implementation IR remains fixed.
+// Detect calls whose QK-owned target is absent from that IR so the defining
+// module can be rebuilt with the newly collected demand.
+func missingCachedImplementationModules(result *incrementalFrontendResult) []string {
+	defined := make(map[string]bool)
+	for _, module := range result.irModules {
+		for _, function := range module.Functions {
+			defined[function.Name] = true
+		}
+	}
+	prefixes := make(map[string]string, len(result.cachedModules))
+	for name := range result.cachedModules {
+		prefixes[name] = irgen.MangleFunctionName(name, "")
+	}
+	missing := make(map[string]bool)
+	for _, module := range result.irModules {
+		for _, function := range module.Functions {
+			for _, block := range function.Blocks {
+				for _, instruction := range block.Instr {
+					call, ok := instruction.(ir.Call)
+					if !ok || call.Generic != nil || call.Requirement != nil {
+						continue
+					}
+					name := call.Name
+					if call.Callee != nil && call.Callee.Kind == ir.OperandFunctionConst {
+						name = call.Callee.FunctionName
+					}
+					if name == "" || defined[name] {
+						continue
+					}
+					for moduleName, prefix := range prefixes {
+						if strings.HasPrefix(name, prefix) {
+							missing[moduleName] = true
+							break
+						}
+					}
+				}
 			}
 		}
 	}
-	return result, nil
+	resultNames := make([]string, 0, len(missing))
+	for name := range missing {
+		resultNames = append(resultNames, name)
+	}
+	sort.Strings(resultNames)
+	return resultNames
 }
 
 func sourceModuleGraph(sources, sourcePackages map[string]string, config comptime.Config, noStdlib bool) (map[string]*loader.ModuleInfo, map[string][]string, error) {

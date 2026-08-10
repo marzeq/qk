@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime/pprof"
-	"slices"
+	"strings"
 
 	"github.com/marzeq/qk/attributes"
 	"github.com/marzeq/qk/comptime"
@@ -97,9 +97,34 @@ func main() {
 	}
 	comptimeConfig.ModuleBindings, err = comptime.ResolvePackageBindings(compileTimeSources, sourcePackagePaths, comptimeConfig)
 	check(err)
-	frontend, err := runIncrementalFrontend(args, comptimeConfig, compileTimeSources, sourcePackagePaths, qkmInputs, args.verbose, args.debug)
-	check(err)
-	modules, partials, order := frontend.modules, frontend.partials, frontend.order
+	forcedRebuild := make(map[string]bool)
+	var frontend *incrementalFrontendResult
+	for {
+		frontend, err = runIncrementalFrontend(
+			args, comptimeConfig, compileTimeSources, sourcePackagePaths, qkmInputs,
+			forcedRebuild, args.verbose, args.debug,
+		)
+		check(err)
+		missing := missingCachedImplementationModules(frontend)
+		changed := false
+		for _, module := range missing {
+			if forcedRebuild[module] {
+				continue
+			}
+			forcedRebuild[module] = true
+			changed = true
+			if args.verbose {
+				fmt.Printf("rebuilding cached frontend for module %s to materialize requested specialization\n", module)
+			}
+		}
+		if !changed {
+			if len(missing) != 0 {
+				fatal("cached implementation remains incomplete after rebuilding modules: %s", strings.Join(missing, ", "))
+			}
+			break
+		}
+	}
+	modules, order := frontend.modules, frontend.order
 	irModules, genericTemplates := frontend.irModules, frontend.templates
 	for _, warning := range frontend.cachedWarnings {
 		fmt.Println(warning)
@@ -132,11 +157,17 @@ func main() {
 		irModules[loader.SpecializationModule] = specializationIR
 		order = append(order, loader.SpecializationModule)
 	}
-	moduleLinks := frontend.moduleLinks
-	for _, link := range linksForUsedForeignSymbols(partials, irModules, args.outputType == OutputObject) {
-		if !slices.Contains(moduleLinks, link) {
-			moduleLinks = append(moduleLinks, link)
-		}
+	requestedModuleLinks := linksForUsedForeignSymbols(
+		frontend.partials, frontend.cachedModules, irModules, args.outputType == OutputObject,
+	)
+	probeLibcFreeLink := args.outputType == OutputExecutable && targetIsLinuxX8664(args.target) &&
+		moduleLinksContainLibc(requestedModuleLinks)
+	moduleLinks := requestedModuleLinks
+	if probeLibcFreeLink {
+		// IR reachability is intentionally conservative around vtables and
+		// constant-specialized branches. Let the final section-GC link prove
+		// whether libc is actually needed before committing to the hosted CRT.
+		moduleLinks = withoutLibcLinks(requestedModuleLinks)
 	}
 	linksLibc := moduleLinksContainLibc(moduleLinks)
 
@@ -249,14 +280,14 @@ func main() {
 		encodedIR, encodeErr := encodeQKMIR(irModules[moduleName])
 		check(encodeErr)
 		var imports []string
-		var links []attributes.Link
+		var linkProviders []qkmLinkProvider
 		var objects map[string][]byte
 		if module := modules[moduleName]; module != nil {
 			imports = append([]string(nil), module.Imports...)
-			links = append([]attributes.Link(nil), module.Links...)
+			linkProviders = qkmLinkProviders(frontend.partials, moduleName)
 		} else if cachedModule := frontend.cachedModules[moduleName]; cachedModule != nil {
 			imports = append([]string(nil), cachedModule.Imports...)
-			links = append([]attributes.Link(nil), cachedModule.Links...)
+			linkProviders = append([]qkmLinkProvider(nil), cachedModule.LinkProviders...)
 			objects = cachedModule.Objects
 		}
 		if objects == nil {
@@ -275,7 +306,7 @@ func main() {
 		activeQKM.Modules[moduleName] = &qkmModule{
 			SourceHash: moduleSourceHashes[moduleName], ComptimeHash: frontend.comptimeHashes[moduleName], Imports: imports,
 			ImportInterfaces: importInterfaces, Interface: interfacePtr,
-			Templates: encodedTemplates, IR: encodedIR, LLVM: llvmOutputs[moduleName], Links: links, Objects: objects,
+			Templates: encodedTemplates, IR: encodedIR, LLVM: llvmOutputs[moduleName], LinkProviders: linkProviders, Objects: objects,
 		}
 	}
 	if qkmErr == nil {
@@ -401,6 +432,45 @@ func main() {
 	}
 
 	err = linkObjects(objFiles, moduleLinks, linkRoots, args)
+	if err != nil && probeLibcFreeLink {
+		if args.verbose {
+			fmt.Printf("libc-free link retained live libc references; retrying with the hosted runtime: %v\n", err)
+		}
+		hostedRuntime, runtimeErr := buildFreestandingRuntime(
+			args.target, true, true, !args.noStdlib, mainInitializer, userMain,
+		)
+		check(runtimeErr)
+		buildDir, runtimeErr := emitLLVMFile(hostedRuntime)
+		check(runtimeErr)
+		buildDirs = append(buildDirs, buildDir)
+		if !args.keepBuildDir {
+			defer os.RemoveAll(buildDir)
+		}
+		if args.dumpAsm {
+			check(emitAssemblyFile(buildDir, args))
+			check(dumpAssemblyFile(buildDir))
+		}
+		runtimeObject, runtimeErr := compileLLVMModule(buildDir, "hosted runtime", hostedRuntime, args)
+		check(runtimeErr)
+		if len(objFiles) == 0 {
+			fatal("hosted runtime retry has no runtime object to replace")
+		}
+		objFiles[len(objFiles)-1] = runtimeObject
+		moduleLinks = requestedModuleLinks
+		activeQKM.RuntimeLLVM = hostedRuntime
+		activeQKM.RuntimeObjects = make(map[string][]byte)
+		if data, readErr := os.ReadFile(runtimeObject); readErr == nil {
+			activeQKM.RuntimeObjects[objectKey] = data
+		}
+		activeQKM.Links = append([]attributes.Link(nil), moduleLinks...)
+		_ = os.Remove(args.output)
+		err = linkObjects(objFiles, moduleLinks, linkRoots, args)
+		if err == nil && qkmErr == nil {
+			if storeErr := storeQKM(qkmInputs, activeQKM); storeErr != nil && args.verbose {
+				fmt.Fprintf(os.Stderr, "warning: failed to update QK module cache after hosted link: %v\n", storeErr)
+			}
+		}
+	}
 	check(err)
 
 	if args.keepBuildDir {
