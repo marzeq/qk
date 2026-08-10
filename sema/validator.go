@@ -1383,7 +1383,8 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			return
 		}
 		if n.Symbol != nil && n.Symbol.Signature != nil &&
-			n.Symbol.Attributes.Get(attributes.AttributeTypeForeign) == nil {
+			n.Symbol.Attributes.Get(attributes.AttributeTypeForeign) == nil &&
+			!n.Symbol.Signature.SuppressDemandSpecialization {
 			fixedCount := len(n.Symbol.Signature.Parameters)
 			if n.Symbol.Signature.TypedVariadic {
 				fixedCount--
@@ -1423,12 +1424,14 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			n.TypedVariadic = true
 			n.TypedVariadicStart = len(params) - 1
 			n.TypedVariadicSlice = params[len(params)-1]
-			if n.Symbol != nil && n.Symbol.Attributes.Get(attributes.AttributeTypeForeign) == nil && !n.VariadicExpansion {
+			if n.Symbol != nil && n.Symbol.Attributes.Get(attributes.AttributeTypeForeign) == nil &&
+				!n.Symbol.Signature.SuppressDemandSpecialization && !n.VariadicExpansion {
 				if n.Symbol.Signature.TypedVariadicArities == nil {
 					n.Symbol.Signature.TypedVariadicArities = make(map[int]bool)
 				}
 				n.Symbol.Signature.TypedVariadicArities[len(n.Args)-n.TypedVariadicStart] = true
 			} else if n.Symbol != nil && n.Symbol.Attributes.Get(attributes.AttributeTypeForeign) == nil &&
+				!n.Symbol.Signature.SuppressDemandSpecialization &&
 				n.VariadicExpansion && v.currentTypedVariadicParameter != nil {
 				if argument, ok := n.Args[n.TypedVariadicStart].(*parser.IdentifierNode); ok &&
 					argument.Symbol == v.currentTypedVariadicParameter {

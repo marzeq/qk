@@ -1,0 +1,23 @@
+{
+  "mode": "cache-sequence",
+  "cacheSequence": [
+    {
+      "name": "cache unspecialized dependency",
+      "compilerArgs": ["-v"],
+      "stdout": ""
+    },
+    {
+      "name": "cached dependency uses stable call",
+      "compilerArgs": ["-v"],
+      "files": {
+        "main.qk": "module main\n\nimport std.io\n\nlet main() {\n  std.io.println(\"Hello, World!\")\n}\n"
+      },
+      "stdoutContains": ["used cached frontend for module std.io"]
+    },
+    {
+      "name": "warm specialized caller manifest",
+      "compilerArgs": ["-v"],
+      "stdoutContains": ["used cached QK modules from <CASE>/.cache/qk/modules/"]
+    }
+  ]
+}

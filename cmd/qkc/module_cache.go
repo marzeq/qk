@@ -25,7 +25,7 @@ import (
 )
 
 const qkmFormatVersion = 4
-const qkmFrontendABI = "qk-frontend-interface-v6"
+const qkmFrontendABI = "qk-frontend-interface-v7"
 const qkmBackendABI = "qk-libllvm-22-v1"
 
 // qkmFile is deliberately a compiler-owned format. Source-backed cache files

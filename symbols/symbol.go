@@ -63,6 +63,10 @@ type FunctionSignature struct {
 	Variadic           bool
 	TypedVariadic      bool
 	VariadicElement    types.Type
+	// SuppressDemandSpecialization is set for source-free cached interfaces.
+	// Their implementation IR cannot materialize new importer-demanded constant
+	// or fixed-arity wrappers, so callers must use the stable base entry point.
+	SuppressDemandSpecialization bool
 	// TypedVariadicArities records fixed direct-call tail lengths. Forwards
 	// connects functions that pass their complete variadic slice onward.
 	TypedVariadicArities  map[int]bool
