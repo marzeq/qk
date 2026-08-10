@@ -1,6 +1,6 @@
 module main
 
 let main() {
-  let value: i32 = true.(i32)
+  let value: i32 = "wrong".(i32)
   let _ = value
 }
