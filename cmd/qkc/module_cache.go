@@ -48,6 +48,8 @@ type qkmFile struct {
 }
 
 type qkmModule struct {
+	Module           string                `json:"module"`
+	VariantHash      string                `json:"variant_hash"`
 	SourceHash       string                `json:"source_hash,omitempty"`
 	ComptimeHash     string                `json:"comptime_hash,omitempty"`
 	Imports          []string              `json:"imports,omitempty"`
@@ -61,6 +63,7 @@ type qkmModule struct {
 	Objects          map[string][]byte     `json:"objects,omitempty"`
 	cacheRef         string
 	cacheDirty       bool
+	cacheModTime     int64
 }
 
 type qkmLinkProvider struct {
@@ -200,6 +203,7 @@ type qkmInputs struct {
 	VariantHash string
 	Path        string
 	CacheRoot   string
+	BuildRoot   string
 }
 
 func makeQKMInputs(args *Args, sources, sourcePackages map[string]string) (qkmInputs, error) {
@@ -264,9 +268,10 @@ func makeQKMInputs(args *Args, sources, sourcePackages map[string]string) (qkmIn
 		name = "root"
 	}
 	root := filepath.Join(cacheHome, "modules")
+	buildRoot := filepath.Join(cacheHome, "builds")
 	return qkmInputs{
-		Hash: key, VariantHash: hex.EncodeToString(variant.Sum(nil)), CacheRoot: root,
-		Path: filepath.Join(root, name, key+".qkm"),
+		Hash: key, VariantHash: hex.EncodeToString(variant.Sum(nil)), CacheRoot: root, BuildRoot: buildRoot,
+		Path: filepath.Join(buildRoot, name, key+".qkb"),
 	}, nil
 }
 
@@ -335,37 +340,23 @@ func loadQKM(inputs qkmInputs) (*qkmFile, bool) {
 // their imported interface hashes are validated later in dependency order.
 func findQKMModuleCandidates(inputs qkmInputs, sourceHashes map[string]string) map[string][]*qkmModule {
 	result := make(map[string][]*qkmModule)
-	seenRefs := make(map[string]bool)
-	_ = filepath.WalkDir(inputs.CacheRoot, func(path string, entry os.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".qkm" || path == inputs.Path {
-			return nil
-		}
-		cached, ok := loadQKMManifestPath(path)
-		if !ok || cached.VariantHash != inputs.VariantHash {
-			return nil
-		}
-		cacheRoot := filepath.Dir(filepath.Dir(path))
-		for name, sourceHash := range sourceHashes {
-			ref := cached.ModuleRefs[name]
-			if ref != "" {
-				key := name + "\x00" + ref
-				if seenRefs[key] {
-					continue
-				}
-				seenRefs[key] = true
+	for name, sourceHash := range sourceHashes {
+		_ = filepath.WalkDir(qkmModuleDir(inputs.CacheRoot, name), func(path string, entry os.DirEntry, err error) error {
+			if err != nil || entry.IsDir() || filepath.Ext(entry.Name()) != ".qkm" {
+				return nil
 			}
-			module, _ := loadQKMManifestModule(cached, cacheRoot, name)
+			module, ok := loadQKMModulePath(path)
+			if !ok || module.Module != name || module.VariantHash != inputs.VariantHash {
+				return nil
+			}
 			if module == nil || module.SourceHash == "" || module.SourceHash != sourceHash ||
 				module.Interface == nil || len(module.IR) == 0 || module.LLVM == "" {
-				continue
+				return nil
 			}
 			result[name] = append(result[name], module)
-		}
-		return nil
-	})
+			return nil
+		})
+	}
 	return result
 }
 
@@ -388,21 +379,13 @@ func loadQKMManifestPath(path string) (*qkmFile, bool) {
 	return &cached, true
 }
 
-func loadQKMManifestModule(cached *qkmFile, cacheRoot, name string) (*qkmModule, bool) {
-	if ref := cached.ModuleRefs[name]; ref != "" {
-		return loadQKMModule(cacheRoot, ref)
-	}
-	module := cached.Modules[name]
-	return module, module != nil
-}
-
 func hydrateQKMModules(cached *qkmFile, cacheRoot string) bool {
 	if len(cached.ModuleRefs) == 0 {
 		return len(cached.Modules) != 0
 	}
 	modules := make(map[string]*qkmModule, len(cached.ModuleRefs))
 	for name, ref := range cached.ModuleRefs {
-		module, ok := loadQKMModule(cacheRoot, ref)
+		module, ok := loadQKMModule(cacheRoot, name, ref)
 		if !ok {
 			return false
 		}
@@ -412,19 +395,32 @@ func hydrateQKMModules(cached *qkmFile, cacheRoot string) bool {
 	return len(modules) != 0
 }
 
-func qkmModulePath(cacheRoot, ref string) string {
-	prefix := ref
-	if len(prefix) > 2 {
-		prefix = prefix[:2]
+func qkmModuleDir(cacheRoot, module string) string {
+	digest := sha256.Sum256([]byte(module))
+	name := strings.NewReplacer("/", "_", "\\", "_", ":", "_").Replace(module)
+	if name == "" || name == "." {
+		name = "root"
 	}
-	return filepath.Join(cacheRoot, ".shared", prefix, ref+".qmm")
+	return filepath.Join(cacheRoot, name+"-"+hex.EncodeToString(digest[:6]))
 }
 
-func loadQKMModule(cacheRoot, ref string) (*qkmModule, bool) {
+func qkmModulePath(cacheRoot, module, ref string) string {
+	return filepath.Join(qkmModuleDir(cacheRoot, module), ref+".qkm")
+}
+
+func loadQKMModule(cacheRoot, module, ref string) (*qkmModule, bool) {
 	if decoded, err := hex.DecodeString(ref); err != nil || len(decoded) != sha256.Size {
 		return nil, false
 	}
-	file, err := os.Open(qkmModulePath(cacheRoot, ref))
+	loaded, ok := loadQKMModulePath(qkmModulePath(cacheRoot, module, ref))
+	if !ok || loaded.cacheRef != ref || loaded.Module != module {
+		return nil, false
+	}
+	return loaded, true
+}
+
+func loadQKMModulePath(path string) (*qkmModule, bool) {
+	file, err := os.Open(path)
 	if err != nil {
 		return nil, false
 	}
@@ -439,7 +435,8 @@ func loadQKMModule(cacheRoot, ref string) (*qkmModule, bool) {
 		return nil, false
 	}
 	digest := sha256.Sum256(encoded)
-	if hex.EncodeToString(digest[:]) != ref {
+	ref := hex.EncodeToString(digest[:])
+	if strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)) != ref {
 		return nil, false
 	}
 	var module qkmModule
@@ -447,10 +444,14 @@ func loadQKMModule(cacheRoot, ref string) (*qkmModule, bool) {
 		return nil, false
 	}
 	module.cacheRef = ref
+	if info, err := file.Stat(); err == nil {
+		module.cacheModTime = info.ModTime().UnixNano()
+	}
 	return &module, true
 }
 
 func matchingQKMModule(candidates []*qkmModule, interfaceHashes map[string]string, comptimeHash string) *qkmModule {
+	var newest *qkmModule
 	for _, candidate := range candidates {
 		if candidate.ComptimeHash != comptimeHash {
 			continue
@@ -462,11 +463,11 @@ func matchingQKMModule(candidates []*qkmModule, interfaceHashes map[string]strin
 				break
 			}
 		}
-		if matches {
-			return candidate
+		if matches && (newest == nil || candidate.cacheModTime > newest.cacheModTime) {
+			newest = candidate
 		}
 	}
-	return nil
+	return newest
 }
 
 func findQKMImplementationObjects(inputs qkmInputs, moduleName, llvm string) map[string][]byte {
@@ -474,25 +475,17 @@ func findQKMImplementationObjects(inputs qkmInputs, moduleName, llvm string) map
 		return nil
 	}
 	var result map[string][]byte
-	seenRefs := make(map[string]bool)
-	_ = filepath.WalkDir(inputs.CacheRoot, func(path string, entry os.DirEntry, err error) error {
+	_ = filepath.WalkDir(qkmModuleDir(inputs.CacheRoot, moduleName), func(path string, entry os.DirEntry, err error) error {
 		if err != nil || result != nil {
 			return nil
 		}
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".qkm" || path == inputs.Path {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".qkm" {
 			return nil
 		}
-		cached, ok := loadQKMManifestPath(path)
-		if !ok || cached.VariantHash != inputs.VariantHash {
+		module, ok := loadQKMModulePath(path)
+		if !ok || module.Module != moduleName || module.VariantHash != inputs.VariantHash {
 			return nil
 		}
-		if ref := cached.ModuleRefs[moduleName]; ref != "" {
-			if seenRefs[ref] {
-				return nil
-			}
-			seenRefs[ref] = true
-		}
-		module, _ := loadQKMManifestModule(cached, filepath.Dir(filepath.Dir(path)), moduleName)
 		if module != nil && module.LLVM == llvm && len(module.Objects) != 0 {
 			result = module.Objects
 		}
@@ -506,11 +499,11 @@ func findQKMRuntimeObjects(inputs qkmInputs, llvm string) map[string][]byte {
 		return nil
 	}
 	var result map[string][]byte
-	_ = filepath.WalkDir(inputs.CacheRoot, func(path string, entry os.DirEntry, err error) error {
+	_ = filepath.WalkDir(inputs.BuildRoot, func(path string, entry os.DirEntry, err error) error {
 		if err != nil || result != nil {
 			return nil
 		}
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".qkm" || path == inputs.Path {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".qkb" || path == inputs.Path {
 			return nil
 		}
 		cached, ok := loadQKMManifestPath(path)
@@ -552,7 +545,7 @@ func storeQKM(inputs qkmInputs, cached *qkmFile) error {
 	cached.FrontendABI = qkmFrontendABI
 	cached.InputHash = inputs.Hash
 	cached.VariantHash = inputs.VariantHash
-	refs, err := storeQKMModules(inputs.CacheRoot, cached.Modules)
+	refs, err := storeQKMModules(inputs, cached.Modules)
 	if err != nil {
 		return err
 	}
@@ -560,7 +553,7 @@ func storeQKM(inputs qkmInputs, cached *qkmFile) error {
 	if err := os.MkdirAll(filepath.Dir(inputs.Path), 0o755); err != nil {
 		return err
 	}
-	temporary, err := os.CreateTemp(filepath.Dir(inputs.Path), "module-*.qkm")
+	temporary, err := os.CreateTemp(filepath.Dir(inputs.Path), "build-*.qkb")
 	if err != nil {
 		return err
 	}
@@ -592,11 +585,13 @@ func storeQKM(inputs qkmInputs, cached *qkmFile) error {
 	return os.Rename(temporaryPath, inputs.Path)
 }
 
-func storeQKMModules(cacheRoot string, modules map[string]*qkmModule) (map[string]string, error) {
+func storeQKMModules(inputs qkmInputs, modules map[string]*qkmModule) (map[string]string, error) {
 	refs := make(map[string]string, len(modules))
 	for name, module := range modules {
+		module.Module = name
+		module.VariantHash = inputs.VariantHash
 		if module.cacheRef != "" && !module.cacheDirty {
-			if _, err := os.Stat(qkmModulePath(cacheRoot, module.cacheRef)); err == nil {
+			if _, err := os.Stat(qkmModulePath(inputs.CacheRoot, name, module.cacheRef)); err == nil {
 				refs[name] = module.cacheRef
 				continue
 			}
@@ -608,10 +603,13 @@ func storeQKMModules(cacheRoot string, modules map[string]*qkmModule) (map[strin
 		digest := sha256.Sum256(encoded)
 		ref := hex.EncodeToString(digest[:])
 		refs[name] = ref
-		path := qkmModulePath(cacheRoot, ref)
+		path := qkmModulePath(inputs.CacheRoot, name, ref)
 		if _, err := os.Stat(path); err == nil {
 			module.cacheRef = ref
 			module.cacheDirty = false
+			if info, statErr := os.Stat(path); statErr == nil {
+				module.cacheModTime = info.ModTime().UnixNano()
+			}
 			continue
 		} else if !os.IsNotExist(err) {
 			return nil, err
@@ -619,7 +617,7 @@ func storeQKMModules(cacheRoot string, modules map[string]*qkmModule) (map[strin
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return nil, err
 		}
-		temporary, err := os.CreateTemp(filepath.Dir(path), "module-*.qmm")
+		temporary, err := os.CreateTemp(filepath.Dir(path), "module-*.qkm")
 		if err != nil {
 			return nil, err
 		}
@@ -646,6 +644,9 @@ func storeQKMModules(cacheRoot string, modules map[string]*qkmModule) (map[strin
 		}
 		module.cacheRef = ref
 		module.cacheDirty = false
+		if info, err := os.Stat(path); err == nil {
+			module.cacheModTime = info.ModTime().UnixNano()
+		}
 	}
 	return refs, nil
 }
@@ -742,7 +743,7 @@ func pruneOldQKMFiles(cachePath string) {
 	}
 	var files []entryInfo
 	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".qkm" {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".qkb" {
 			continue
 		}
 		info, err := entry.Info()

@@ -83,7 +83,8 @@ func decodeInterfaceSymbol(encoded InterfaceSymbol, module string) (*symbols.Sym
 		Name: encoded.Name, Kind: kind, Public: encoded.Public, Mutable: encoded.Mutable,
 		Comptime: encoded.Comptime, InlineComptime: encoded.InlineComptime,
 		ComptimeInteger: encoded.ComptimeInteger, DefinitionModule: module,
-		Method: encoded.Method, StaticMethod: encoded.StaticMethod,
+		SourceFree: true,
+		Method:     encoded.Method, StaticMethod: encoded.StaticMethod,
 		MethodReceiver: decodeReceiver(encoded.MethodReceiver),
 	}
 	symbol.Type, err = decodeInterfaceType(encoded.TypeInfo)

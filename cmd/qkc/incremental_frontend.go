@@ -169,7 +169,9 @@ func missingCachedImplementationModules(result *incrementalFrontendResult) []str
 	defined := make(map[string]bool)
 	for _, module := range result.irModules {
 		for _, function := range module.Functions {
-			defined[function.Name] = true
+			if len(function.Blocks) != 0 {
+				defined[function.Name] = true
+			}
 		}
 	}
 	prefixes := make(map[string]string, len(result.cachedModules))

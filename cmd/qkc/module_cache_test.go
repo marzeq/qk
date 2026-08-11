@@ -33,14 +33,14 @@ func TestQKMRoundTrip(t *testing.T) {
 	}
 	got, ok := loadQKM(inputs)
 	if !ok {
-		t.Fatal("stored .qkm was not loadable")
+		t.Fatal("stored build manifest was not loadable")
 	}
 	if got.Primary != want.Primary || got.Modules["app"].LLVM != "; app" ||
 		!bytes.Equal(got.Modules["std"].Objects["target"], []byte{1, 2, 3}) {
 		t.Fatalf("unexpected round trip: %#v", got)
 	}
-	if filepath.Ext(inputs.Path) != ".qkm" {
-		t.Fatalf("cache path %q is not a .qkm", inputs.Path)
+	if filepath.Ext(inputs.Path) != ".qkb" {
+		t.Fatalf("build cache path %q is not a .qkb", inputs.Path)
 	}
 	manifest := readQKMManifest(t, inputs.Path)
 	if len(manifest.Modules) != 0 || len(manifest.ModuleRefs) != len(want.Modules) {
@@ -86,7 +86,7 @@ func TestQKMModulesAreSharedBetweenProjectManifests(t *testing.T) {
 	if firstManifest.ModuleRefs["std"] == "" || firstManifest.ModuleRefs["std"] != secondManifest.ModuleRefs["std"] {
 		t.Fatalf("stdlib module was not shared: %q != %q", firstManifest.ModuleRefs["std"], secondManifest.ModuleRefs["std"])
 	}
-	entries, err := filepath.Glob(filepath.Join(first.CacheRoot, ".shared", "*", "*.qmm"))
+	entries, err := filepath.Glob(filepath.Join(qkmModuleDir(first.CacheRoot, "std"), "*.qkm"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,12 +120,15 @@ func TestQKMCandidateSearchLoadsOnlyRequestedModules(t *testing.T) {
 		t.Fatal(err)
 	}
 	manifest := readQKMManifest(t, storedInputs.Path)
-	if err := os.WriteFile(qkmModulePath(storedInputs.CacheRoot, manifest.ModuleRefs["."]), []byte("corrupt"), 0o644); err != nil {
+	if err := os.WriteFile(qkmModulePath(storedInputs.CacheRoot, ".", manifest.ModuleRefs["."]), []byte("corrupt"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(storedInputs.Path); err != nil {
 		t.Fatal(err)
 	}
 	candidates := findQKMModuleCandidates(searchedInputs, map[string]string{"std": "stdlib-source"})
 	if len(candidates["std"]) != 1 {
-		t.Fatalf("corrupt unrelated module prevented stdlib candidate discovery: %#v", candidates)
+		t.Fatalf("stdlib candidate depended on a build manifest or unrelated module: %#v", candidates)
 	}
 }
 
@@ -232,6 +235,15 @@ func TestQKMModuleVariantRequiresMatchingDependencyInterfaces(t *testing.T) {
 	}
 }
 
+func TestQKMModuleVariantPrefersNewestCompatibleImplementation(t *testing.T) {
+	older := &qkmModule{ComptimeHash: "bindings", ImportInterfaces: map[string]string{"dep": "interface"}, cacheModTime: 1}
+	newer := &qkmModule{ComptimeHash: "bindings", ImportInterfaces: map[string]string{"dep": "interface"}, cacheModTime: 2}
+	got := matchingQKMModule([]*qkmModule{newer, older}, map[string]string{"dep": "interface"}, "bindings")
+	if got != newer {
+		t.Fatalf("selected stale compatible module implementation: %#v", got)
+	}
+}
+
 func TestCorruptQKMFallsBackToCompilation(t *testing.T) {
 	t.Setenv("QK_CACHE_DIR", t.TempDir())
 	inputs, err := makeQKMInputs(&Args{mainModule: "app"}, map[string]string{"x": "source"}, map[string]string{"x": "app"})
@@ -245,7 +257,7 @@ func TestCorruptQKMFallsBackToCompilation(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, ok := loadQKM(inputs); ok {
-		t.Fatal("corrupt .qkm was accepted")
+		t.Fatal("corrupt build manifest was accepted")
 	}
 }
 
@@ -260,7 +272,7 @@ func TestCorruptQKMModuleFallsBackToCompilation(t *testing.T) {
 		t.Fatal(err)
 	}
 	manifest := readQKMManifest(t, inputs.Path)
-	if err := os.WriteFile(qkmModulePath(inputs.CacheRoot, manifest.ModuleRefs["app"]), []byte("not a module"), 0o644); err != nil {
+	if err := os.WriteFile(qkmModulePath(inputs.CacheRoot, "app", manifest.ModuleRefs["app"]), []byte("not a module"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := loadQKM(inputs); ok {

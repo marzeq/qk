@@ -9,7 +9,7 @@
     {
       "name": "warm",
       "compilerArgs": ["-v"],
-      "stdoutContains": ["used cached QK modules from <CASE>/.cache/qk/modules/"]
+      "stdoutContains": ["used cached QK modules from <CASE>/.cache/qk/builds/"]
     }
   ]
 }

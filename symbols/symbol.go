@@ -40,6 +40,7 @@ type Symbol struct {
 	MethodReceiver    types.TraitReceiverKind // receiver form declared by an attached method
 	MethodOwnerType   types.Type              // explicit structural owner pattern, when present
 	DefinitionModule  string                  // module that owns the function implementation
+	SourceFree        bool                    // binding came from a cached source-free module interface
 	TraitRequirement  bool
 	RequirementTrait  types.TraitType
 	RequirementSlot   int

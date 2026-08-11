@@ -18,7 +18,17 @@
     {
       "name": "warm specialized caller manifest",
       "compilerArgs": ["-v", "-o", "program"],
-      "stdoutContains": ["used cached QK modules from <CASE>/.cache/qk/modules/"],
+      "stdoutContains": ["used cached QK modules from <CASE>/.cache/qk/builds/"],
+      "noDynamicLibraries": true
+    },
+    {
+      "name": "edited caller reuses source-free dependency",
+      "compilerArgs": ["-v", "-o", "program"],
+      "files": {
+        "main.qk": "module main\n\nimport std.io\n\nlet main() {\n  std.io.println(\"Hello again!\")\n}\n"
+      },
+      "stdoutContains": ["used cached frontend for module std.io"],
+      "stdoutNotContains": ["rebuilding cached frontend for module std.io"],
       "noDynamicLibraries": true
     }
   ]

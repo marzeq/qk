@@ -1391,7 +1391,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			crossModule := v.currentFunction != nil &&
 				v.currentFunction.DefinitionModule != n.Symbol.DefinitionModule
 			for i := 0; i < len(n.Args) && i < fixedCount; i++ {
-				if constant, ok := specializationConstant(n.Args[i]); crossModule && ok {
+				if constant, ok := specializationConstant(n.Args[i]); crossModule && !n.Symbol.SourceFree && ok {
 					if n.Symbol.Signature.ConstantArguments == nil {
 						n.Symbol.Signature.ConstantArguments = make(map[int]map[string]symbols.SpecializationConstant)
 					}
