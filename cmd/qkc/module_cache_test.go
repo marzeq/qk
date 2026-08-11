@@ -130,6 +130,13 @@ func TestQKMCandidateSearchLoadsOnlyRequestedModules(t *testing.T) {
 	if len(candidates["std"]) != 1 {
 		t.Fatalf("stdlib candidate depended on a build manifest or unrelated module: %#v", candidates)
 	}
+	candidate := candidates["std"][0]
+	if candidate.cacheLoaded || candidate.Interface != nil || len(candidate.IR) != 0 {
+		t.Fatal("candidate discovery eagerly decoded the module payload")
+	}
+	if !hydrateQKMModule(candidate) || candidate.Interface == nil || len(candidate.IR) == 0 {
+		t.Fatal("selected candidate payload was not loadable")
+	}
 }
 
 func readQKMManifest(t *testing.T, path string) qkmFile {

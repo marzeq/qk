@@ -74,6 +74,11 @@ func runIncrementalFrontend(
 		// Exact whole-build hits bypass this path entirely, so this only affects
 		// builds where some input actually changed.
 		if name != args.mainModule && candidate != nil {
+			if !hydrateQKMModule(candidate) {
+				candidate = nil
+			}
+		}
+		if name != args.mainModule && candidate != nil {
 			if err := analyser.DeclareModuleInterface(*candidate.Interface); err != nil {
 				return nil, err
 			}

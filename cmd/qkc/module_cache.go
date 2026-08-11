@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/gob"
 	"encoding/hex"
 	"encoding/json"
@@ -24,12 +25,12 @@ import (
 	"github.com/marzeq/qk/types"
 )
 
-const qkmFormatVersion = 4
+const qkmFormatVersion = 5
 const qkmFrontendABI = "qk-frontend-interface-v8"
 const qkmBackendABI = "qk-libllvm-22-v1"
 
 // qkmFile is a compiler-owned whole-build manifest. Its module payloads live
-// in content-addressed qmm files so manifests from unrelated projects can
+// in content-addressed qkm files so manifests from unrelated projects can
 // reference the same dependency and standard-library data.
 type qkmFile struct {
 	Format         int                   `json:"format"`
@@ -64,6 +65,27 @@ type qkmModule struct {
 	cacheRef         string
 	cacheDirty       bool
 	cacheModTime     int64
+	cachePath        string
+	cacheLoaded      bool
+	cacheReusable    bool
+	cacheLLVMHash    string
+}
+
+const qkmModuleMagic = "QKMODULE5"
+const qkmMaxHeaderSize = 16 << 20
+
+// qkmModuleHeader contains everything required to reject an incompatible
+// candidate. The large frontend, LLVM, and object payload follows it in the
+// same .qkm file and is decoded only after this variant has been selected.
+type qkmModuleHeader struct {
+	Module           string            `json:"module"`
+	VariantHash      string            `json:"variant_hash"`
+	SourceHash       string            `json:"source_hash"`
+	ComptimeHash     string            `json:"comptime_hash"`
+	Imports          []string          `json:"imports,omitempty"`
+	ImportInterfaces map[string]string `json:"import_interfaces,omitempty"`
+	LLVMHash         string            `json:"llvm_hash,omitempty"`
+	Reusable         bool              `json:"reusable"`
 }
 
 type qkmLinkProvider struct {
@@ -349,8 +371,7 @@ func findQKMModuleCandidates(inputs qkmInputs, sourceHashes map[string]string) m
 			if !ok || module.Module != name || module.VariantHash != inputs.VariantHash {
 				return nil
 			}
-			if module == nil || module.SourceHash == "" || module.SourceHash != sourceHash ||
-				module.Interface == nil || len(module.IR) == 0 || module.LLVM == "" {
+			if module == nil || module.SourceHash == "" || module.SourceHash != sourceHash || !module.cacheReusable {
 				return nil
 			}
 			result[name] = append(result[name], module)
@@ -416,6 +437,9 @@ func loadQKMModule(cacheRoot, module, ref string) (*qkmModule, bool) {
 	if !ok || loaded.cacheRef != ref || loaded.Module != module {
 		return nil, false
 	}
+	if !hydrateQKMModule(loaded) {
+		return nil, false
+	}
 	return loaded, true
 }
 
@@ -425,29 +449,105 @@ func loadQKMModulePath(path string) (*qkmModule, bool) {
 		return nil, false
 	}
 	defer file.Close()
-	compressed, err := gzip.NewReader(file)
-	if err != nil {
+	header, ok := readQKMModuleHeader(file)
+	if !ok {
 		return nil, false
 	}
-	defer compressed.Close()
-	encoded, err := io.ReadAll(compressed)
-	if err != nil {
+	ref := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	if decoded, err := hex.DecodeString(ref); err != nil || len(decoded) != sha256.Size {
 		return nil, false
 	}
-	digest := sha256.Sum256(encoded)
-	ref := hex.EncodeToString(digest[:])
-	if strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)) != ref {
-		return nil, false
-	}
-	var module qkmModule
-	if json.Unmarshal(encoded, &module) != nil {
-		return nil, false
+	module := qkmModule{
+		Module: header.Module, VariantHash: header.VariantHash, SourceHash: header.SourceHash,
+		ComptimeHash: header.ComptimeHash, Imports: header.Imports, ImportInterfaces: header.ImportInterfaces,
 	}
 	module.cacheRef = ref
+	module.cachePath = path
+	module.cacheReusable = header.Reusable
+	module.cacheLLVMHash = header.LLVMHash
 	if info, err := file.Stat(); err == nil {
 		module.cacheModTime = info.ModTime().UnixNano()
 	}
 	return &module, true
+}
+
+func readQKMModuleHeader(reader io.Reader) (qkmModuleHeader, bool) {
+	var magic [len(qkmModuleMagic)]byte
+	if _, err := io.ReadFull(reader, magic[:]); err != nil || string(magic[:]) != qkmModuleMagic {
+		return qkmModuleHeader{}, false
+	}
+	var encodedSize [4]byte
+	if _, err := io.ReadFull(reader, encodedSize[:]); err != nil {
+		return qkmModuleHeader{}, false
+	}
+	size := binary.BigEndian.Uint32(encodedSize[:])
+	if size == 0 || size > qkmMaxHeaderSize {
+		return qkmModuleHeader{}, false
+	}
+	encoded := make([]byte, size)
+	if _, err := io.ReadFull(reader, encoded); err != nil {
+		return qkmModuleHeader{}, false
+	}
+	var header qkmModuleHeader
+	if json.Unmarshal(encoded, &header) != nil || header.Module == "" || header.VariantHash == "" {
+		return qkmModuleHeader{}, false
+	}
+	return header, true
+}
+
+func hydrateQKMModule(module *qkmModule) bool {
+	if module == nil {
+		return false
+	}
+	if module.cacheLoaded {
+		return true
+	}
+	file, err := os.Open(module.cachePath)
+	if err != nil {
+		return false
+	}
+	defer file.Close()
+	header, ok := readQKMModuleHeader(file)
+	if !ok {
+		return false
+	}
+	compressed, err := gzip.NewReader(file)
+	if err != nil {
+		return false
+	}
+	encoded, err := io.ReadAll(compressed)
+	if closeErr := compressed.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return false
+	}
+	digest := sha256.Sum256(encoded)
+	if hex.EncodeToString(digest[:]) != module.cacheRef {
+		return false
+	}
+	var loaded qkmModule
+	if json.Unmarshal(encoded, &loaded) != nil || !reflect.DeepEqual(qkmModuleHeaderFor(&loaded), header) {
+		return false
+	}
+	loaded.cacheRef = module.cacheRef
+	loaded.cacheModTime = module.cacheModTime
+	loaded.cachePath = module.cachePath
+	loaded.cacheLoaded = true
+	loaded.cacheReusable = header.Reusable
+	loaded.cacheLLVMHash = header.LLVMHash
+	*module = loaded
+	return true
+}
+
+func qkmModuleHeaderFor(module *qkmModule) qkmModuleHeader {
+	llvmDigest := sha256.Sum256([]byte(module.LLVM))
+	return qkmModuleHeader{
+		Module: module.Module, VariantHash: module.VariantHash, SourceHash: module.SourceHash,
+		ComptimeHash: module.ComptimeHash, Imports: module.Imports, ImportInterfaces: module.ImportInterfaces,
+		LLVMHash: hex.EncodeToString(llvmDigest[:]),
+		Reusable: module.Interface != nil && len(module.IR) != 0 && module.LLVM != "",
+	}
 }
 
 func matchingQKMModule(candidates []*qkmModule, interfaceHashes map[string]string, comptimeHash string) *qkmModule {
@@ -474,6 +574,8 @@ func findQKMImplementationObjects(inputs qkmInputs, moduleName, llvm string) map
 	if llvm == "" {
 		return nil
 	}
+	llvmDigest := sha256.Sum256([]byte(llvm))
+	llvmHash := hex.EncodeToString(llvmDigest[:])
 	var result map[string][]byte
 	_ = filepath.WalkDir(qkmModuleDir(inputs.CacheRoot, moduleName), func(path string, entry os.DirEntry, err error) error {
 		if err != nil || result != nil {
@@ -486,7 +588,7 @@ func findQKMImplementationObjects(inputs qkmInputs, moduleName, llvm string) map
 		if !ok || module.Module != moduleName || module.VariantHash != inputs.VariantHash {
 			return nil
 		}
-		if module != nil && module.LLVM == llvm && len(module.Objects) != 0 {
+		if module != nil && module.cacheLLVMHash == llvmHash && hydrateQKMModule(module) && module.LLVM == llvm && len(module.Objects) != 0 {
 			result = module.Objects
 		}
 		return nil
@@ -604,14 +706,19 @@ func storeQKMModules(inputs qkmInputs, modules map[string]*qkmModule) (map[strin
 		ref := hex.EncodeToString(digest[:])
 		refs[name] = ref
 		path := qkmModulePath(inputs.CacheRoot, name, ref)
-		if _, err := os.Stat(path); err == nil {
+		if existing, ok := loadQKMModulePath(path); ok && existing.cacheRef == ref {
 			module.cacheRef = ref
 			module.cacheDirty = false
+			module.cachePath = path
+			module.cacheLoaded = true
+			header := qkmModuleHeaderFor(module)
+			module.cacheReusable = header.Reusable
+			module.cacheLLVMHash = header.LLVMHash
 			if info, statErr := os.Stat(path); statErr == nil {
 				module.cacheModTime = info.ModTime().UnixNano()
 			}
 			continue
-		} else if !os.IsNotExist(err) {
+		} else if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			return nil, err
 		}
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -622,6 +729,26 @@ func storeQKMModules(inputs qkmInputs, modules map[string]*qkmModule) (map[strin
 			return nil, err
 		}
 		temporaryPath := temporary.Name()
+		header, err := json.Marshal(qkmModuleHeaderFor(module))
+		if err != nil {
+			_ = temporary.Close()
+			_ = os.Remove(temporaryPath)
+			return nil, err
+		}
+		var headerSize [4]byte
+		binary.BigEndian.PutUint32(headerSize[:], uint32(len(header)))
+		_, writeHeaderErr := io.WriteString(temporary, qkmModuleMagic)
+		if writeHeaderErr == nil {
+			_, writeHeaderErr = temporary.Write(headerSize[:])
+			if writeHeaderErr == nil {
+				_, writeHeaderErr = temporary.Write(header)
+			}
+		}
+		if writeHeaderErr != nil {
+			_ = temporary.Close()
+			_ = os.Remove(temporaryPath)
+			return nil, writeHeaderErr
+		}
 		compressed := gzip.NewWriter(temporary)
 		_, writeErr := compressed.Write(encoded)
 		closeGzipErr := compressed.Close()
@@ -644,6 +771,11 @@ func storeQKMModules(inputs qkmInputs, modules map[string]*qkmModule) (map[strin
 		}
 		module.cacheRef = ref
 		module.cacheDirty = false
+		module.cachePath = path
+		module.cacheLoaded = true
+		moduleHeader := qkmModuleHeaderFor(module)
+		module.cacheReusable = moduleHeader.Reusable
+		module.cacheLLVMHash = moduleHeader.LLVMHash
 		if info, err := os.Stat(path); err == nil {
 			module.cacheModTime = info.ModTime().UnixNano()
 		}
