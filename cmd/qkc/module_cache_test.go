@@ -2,12 +2,13 @@ package main
 
 import (
 	"bytes"
+	"compress/gzip"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/marzeq/qk/ir"
-	"github.com/marzeq/qk/sema"
 	"github.com/marzeq/qk/types"
 )
 
@@ -25,7 +26,6 @@ func TestQKMRoundTrip(t *testing.T) {
 			"std": {LLVM: "; std", Objects: map[string][]byte{"target": {1, 2, 3}}},
 			"app": {LLVM: "; app"},
 		},
-		Interfaces: map[string]sema.ModuleInterface{"app": {Name: "app"}},
 	}
 	if err := storeQKM(inputs, want); err != nil {
 		t.Fatal(err)
@@ -41,6 +41,76 @@ func TestQKMRoundTrip(t *testing.T) {
 	if filepath.Ext(inputs.Path) != ".qkm" {
 		t.Fatalf("cache path %q is not a .qkm", inputs.Path)
 	}
+	manifest := readQKMManifest(t, inputs.Path)
+	if len(manifest.Modules) != 0 || len(manifest.ModuleRefs) != len(want.Modules) {
+		t.Fatalf("manifest embedded modules instead of shared references: %#v", manifest)
+	}
+}
+
+func TestQKMModulesAreSharedBetweenProjectManifests(t *testing.T) {
+	t.Setenv("QK_CACHE_DIR", t.TempDir())
+	args := &Args{mainModule: ".", target: "arm64-test", outputType: OutputExecutable}
+	first, err := makeQKMInputs(args,
+		map[string]string{"/home/user/foo/main.qk": "module main\n"},
+		map[string]string{"/home/user/foo/main.qk": "."},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := makeQKMInputs(args,
+		map[string]string{"/home/user/code/flappy/main.qk": "module main\n"},
+		map[string]string{"/home/user/code/flappy/main.qk": "."},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Path == second.Path {
+		t.Fatal("distinct projects unexpectedly selected one whole-build manifest")
+	}
+	stdlib := &qkmModule{SourceHash: "stdlib-source", ComptimeHash: "stdlib-comptime", LLVM: "; std"}
+	firstBuild := &qkmFile{Primary: ".", Order: []string{"std"}, Modules: map[string]*qkmModule{"std": stdlib}}
+	if err := storeQKM(first, firstBuild); err != nil {
+		t.Fatal(err)
+	}
+	loaded, ok := loadQKM(first)
+	if !ok {
+		t.Fatal("first project manifest was not loadable")
+	}
+	secondBuild := &qkmFile{Primary: ".", Order: []string{"std"}, Modules: map[string]*qkmModule{"std": loaded.Modules["std"]}}
+	if err := storeQKM(second, secondBuild); err != nil {
+		t.Fatal(err)
+	}
+	firstManifest := readQKMManifest(t, first.Path)
+	secondManifest := readQKMManifest(t, second.Path)
+	if firstManifest.ModuleRefs["std"] == "" || firstManifest.ModuleRefs["std"] != secondManifest.ModuleRefs["std"] {
+		t.Fatalf("stdlib module was not shared: %q != %q", firstManifest.ModuleRefs["std"], secondManifest.ModuleRefs["std"])
+	}
+	entries, err := filepath.Glob(filepath.Join(first.CacheRoot, ".shared", "*", "*.qmm"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("stored %d module blobs, want one shared blob", len(entries))
+	}
+}
+
+func readQKMManifest(t *testing.T, path string) qkmFile {
+	t.Helper()
+	file, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	compressed, err := gzip.NewReader(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer compressed.Close()
+	var manifest qkmFile
+	if err := json.NewDecoder(compressed).Decode(&manifest); err != nil {
+		t.Fatal(err)
+	}
+	return manifest
 }
 
 func TestQKMGenericTemplateRoundTripAndInstantiation(t *testing.T) {
@@ -141,5 +211,24 @@ func TestCorruptQKMFallsBackToCompilation(t *testing.T) {
 	}
 	if _, ok := loadQKM(inputs); ok {
 		t.Fatal("corrupt .qkm was accepted")
+	}
+}
+
+func TestCorruptQKMModuleFallsBackToCompilation(t *testing.T) {
+	t.Setenv("QK_CACHE_DIR", t.TempDir())
+	inputs, err := makeQKMInputs(&Args{mainModule: "app"}, map[string]string{"x": "source"}, map[string]string{"x": "app"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cached := &qkmFile{Primary: "app", Order: []string{"app"}, Modules: map[string]*qkmModule{"app": {LLVM: "; app"}}}
+	if err := storeQKM(inputs, cached); err != nil {
+		t.Fatal(err)
+	}
+	manifest := readQKMManifest(t, inputs.Path)
+	if err := os.WriteFile(qkmModulePath(inputs.CacheRoot, manifest.ModuleRefs["app"]), []byte("not a module"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := loadQKM(inputs); ok {
+		t.Fatal("manifest with corrupt shared module was accepted")
 	}
 }

@@ -28,24 +28,23 @@ const qkmFormatVersion = 4
 const qkmFrontendABI = "qk-frontend-interface-v8"
 const qkmBackendABI = "qk-libllvm-22-v1"
 
-// qkmFile is deliberately a compiler-owned format. Source-backed cache files
-// and eventually distributed precompiled modules use the same container; the
-// latter can simply arrive from a different store.
+// qkmFile is a compiler-owned whole-build manifest. Its module payloads live
+// in content-addressed qmm files so manifests from unrelated projects can
+// reference the same dependency and standard-library data.
 type qkmFile struct {
-	Format          int                             `json:"format"`
-	FrontendABI     string                          `json:"frontend_abi"`
-	InputHash       string                          `json:"input_hash"`
-	VariantHash     string                          `json:"variant_hash"`
-	Primary         string                          `json:"primary"`
-	Order           []string                        `json:"order"`
-	Modules         map[string]*qkmModule           `json:"modules"`
-	RuntimeLLVM     string                          `json:"runtime_llvm,omitempty"`
-	RuntimeObjects  map[string][]byte               `json:"runtime_objects,omitempty"`
-	Links           []attributes.Link               `json:"links,omitempty"`
-	LinkRoots       []string                        `json:"link_roots,omitempty"`
-	Interfaces      map[string]sema.ModuleInterface `json:"interfaces,omitempty"`
-	InterfaceHashes map[string]string               `json:"interface_hashes,omitempty"`
-	Warnings        []string                        `json:"warnings,omitempty"`
+	Format         int                   `json:"format"`
+	FrontendABI    string                `json:"frontend_abi"`
+	InputHash      string                `json:"input_hash"`
+	VariantHash    string                `json:"variant_hash"`
+	Primary        string                `json:"primary"`
+	Order          []string              `json:"order"`
+	Modules        map[string]*qkmModule `json:"modules,omitempty"`
+	ModuleRefs     map[string]string     `json:"module_refs,omitempty"`
+	RuntimeLLVM    string                `json:"runtime_llvm,omitempty"`
+	RuntimeObjects map[string][]byte     `json:"runtime_objects,omitempty"`
+	Links          []attributes.Link     `json:"links,omitempty"`
+	LinkRoots      []string              `json:"link_roots,omitempty"`
+	Warnings       []string              `json:"warnings,omitempty"`
 }
 
 type qkmModule struct {
@@ -60,6 +59,8 @@ type qkmModule struct {
 	LinkProviders    []qkmLinkProvider     `json:"link_providers,omitempty"`
 	Warnings         []string              `json:"warnings,omitempty"`
 	Objects          map[string][]byte     `json:"objects,omitempty"`
+	cacheRef         string
+	cacheDirty       bool
 }
 
 type qkmLinkProvider struct {
@@ -323,7 +324,7 @@ func loadQKM(inputs qkmInputs) (*qkmFile, bool) {
 	var cached qkmFile
 	if err := json.NewDecoder(compressed).Decode(&cached); err != nil ||
 		cached.Format != qkmFormatVersion || cached.FrontendABI != qkmFrontendABI ||
-		cached.InputHash != inputs.Hash || len(cached.Order) == 0 || len(cached.Modules) == 0 {
+		cached.InputHash != inputs.Hash || len(cached.Order) == 0 || !hydrateQKMModules(&cached, inputs.CacheRoot) {
 		return nil, false
 	}
 	for _, module := range cached.Modules {
@@ -378,10 +379,64 @@ func loadQKMPath(path string) (*qkmFile, bool) {
 	defer compressed.Close()
 	var cached qkmFile
 	if json.NewDecoder(compressed).Decode(&cached) != nil || cached.Format != qkmFormatVersion ||
-		cached.FrontendABI != qkmFrontendABI {
+		cached.FrontendABI != qkmFrontendABI || !hydrateQKMModules(&cached, filepath.Dir(filepath.Dir(path))) {
 		return nil, false
 	}
 	return &cached, true
+}
+
+func hydrateQKMModules(cached *qkmFile, cacheRoot string) bool {
+	if len(cached.ModuleRefs) == 0 {
+		return len(cached.Modules) != 0
+	}
+	modules := make(map[string]*qkmModule, len(cached.ModuleRefs))
+	for name, ref := range cached.ModuleRefs {
+		module, ok := loadQKMModule(cacheRoot, ref)
+		if !ok {
+			return false
+		}
+		modules[name] = module
+	}
+	cached.Modules = modules
+	return len(modules) != 0
+}
+
+func qkmModulePath(cacheRoot, ref string) string {
+	prefix := ref
+	if len(prefix) > 2 {
+		prefix = prefix[:2]
+	}
+	return filepath.Join(cacheRoot, ".shared", prefix, ref+".qmm")
+}
+
+func loadQKMModule(cacheRoot, ref string) (*qkmModule, bool) {
+	if decoded, err := hex.DecodeString(ref); err != nil || len(decoded) != sha256.Size {
+		return nil, false
+	}
+	file, err := os.Open(qkmModulePath(cacheRoot, ref))
+	if err != nil {
+		return nil, false
+	}
+	defer file.Close()
+	compressed, err := gzip.NewReader(file)
+	if err != nil {
+		return nil, false
+	}
+	defer compressed.Close()
+	encoded, err := io.ReadAll(compressed)
+	if err != nil {
+		return nil, false
+	}
+	digest := sha256.Sum256(encoded)
+	if hex.EncodeToString(digest[:]) != ref {
+		return nil, false
+	}
+	var module qkmModule
+	if json.Unmarshal(encoded, &module) != nil {
+		return nil, false
+	}
+	module.cacheRef = ref
+	return &module, true
 }
 
 func matchingQKMModule(candidates []*qkmModule, interfaceHashes map[string]string, comptimeHash string) *qkmModule {
@@ -461,6 +516,7 @@ func storeQKM(inputs qkmInputs, cached *qkmFile) error {
 			for key, object := range old.Objects {
 				if len(module.Objects[key]) == 0 {
 					module.Objects[key] = object
+					module.cacheDirty = true
 				}
 			}
 		}
@@ -477,6 +533,11 @@ func storeQKM(inputs qkmInputs, cached *qkmFile) error {
 	cached.FrontendABI = qkmFrontendABI
 	cached.InputHash = inputs.Hash
 	cached.VariantHash = inputs.VariantHash
+	refs, err := storeQKMModules(inputs.CacheRoot, cached.Modules)
+	if err != nil {
+		return err
+	}
+	cached.ModuleRefs = refs
 	if err := os.MkdirAll(filepath.Dir(inputs.Path), 0o755); err != nil {
 		return err
 	}
@@ -486,8 +547,10 @@ func storeQKM(inputs qkmInputs, cached *qkmFile) error {
 	}
 	temporaryPath := temporary.Name()
 	defer os.Remove(temporaryPath)
+	disk := *cached
+	disk.Modules = nil
 	compressed := gzip.NewWriter(temporary)
-	encodeErr := json.NewEncoder(compressed).Encode(cached)
+	encodeErr := json.NewEncoder(compressed).Encode(&disk)
 	closeGzipErr := compressed.Close()
 	closeFileErr := temporary.Close()
 	if encodeErr != nil {
@@ -508,6 +571,64 @@ func storeQKM(inputs qkmInputs, cached *qkmFile) error {
 		return err
 	}
 	return os.Rename(temporaryPath, inputs.Path)
+}
+
+func storeQKMModules(cacheRoot string, modules map[string]*qkmModule) (map[string]string, error) {
+	refs := make(map[string]string, len(modules))
+	for name, module := range modules {
+		if module.cacheRef != "" && !module.cacheDirty {
+			if _, err := os.Stat(qkmModulePath(cacheRoot, module.cacheRef)); err == nil {
+				refs[name] = module.cacheRef
+				continue
+			}
+		}
+		encoded, err := json.Marshal(module)
+		if err != nil {
+			return nil, err
+		}
+		digest := sha256.Sum256(encoded)
+		ref := hex.EncodeToString(digest[:])
+		refs[name] = ref
+		path := qkmModulePath(cacheRoot, ref)
+		if _, err := os.Stat(path); err == nil {
+			module.cacheRef = ref
+			module.cacheDirty = false
+			continue
+		} else if !os.IsNotExist(err) {
+			return nil, err
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return nil, err
+		}
+		temporary, err := os.CreateTemp(filepath.Dir(path), "module-*.qmm")
+		if err != nil {
+			return nil, err
+		}
+		temporaryPath := temporary.Name()
+		compressed := gzip.NewWriter(temporary)
+		_, writeErr := compressed.Write(encoded)
+		closeGzipErr := compressed.Close()
+		closeFileErr := temporary.Close()
+		if writeErr != nil || closeGzipErr != nil || closeFileErr != nil {
+			_ = os.Remove(temporaryPath)
+			if writeErr != nil {
+				return nil, writeErr
+			}
+			if closeGzipErr != nil {
+				return nil, closeGzipErr
+			}
+			return nil, closeFileErr
+		}
+		if err := os.Rename(temporaryPath, path); err != nil {
+			_ = os.Remove(temporaryPath)
+			if _, statErr := os.Stat(path); statErr != nil {
+				return nil, err
+			}
+		}
+		module.cacheRef = ref
+		module.cacheDirty = false
+	}
+	return refs, nil
 }
 
 func qkmObjectKey(args *Args) string {
@@ -587,6 +708,7 @@ func rememberQKMObject(module *qkmModule, key, path string) error {
 		module.Objects = make(map[string][]byte)
 	}
 	module.Objects[key] = data
+	module.cacheDirty = true
 	return nil
 }
 

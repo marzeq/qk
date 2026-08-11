@@ -266,15 +266,26 @@ func main() {
 	}
 
 	moduleInterfaces := frontend.interfaces
+	moduleInterfaceHashes := qkmInterfaceHashes(moduleInterfaces)
 	moduleSourceHashes := qkmSourceHashes(compileTimeSources, sourcePackagePaths)
 	activeQKM := &qkmFile{
 		Primary: args.mainModule, Order: append([]string(nil), order...),
 		Modules: make(map[string]*qkmModule, len(order)), RuntimeLLVM: freestandingRuntime,
 		Links: append([]attributes.Link(nil), moduleLinks...), LinkRoots: append([]string(nil), linkRoots...),
-		Interfaces: moduleInterfaces, InterfaceHashes: qkmInterfaceHashes(moduleInterfaces), Warnings: cachedWarningText,
+		Warnings: cachedWarningText,
 	}
 	activeQKM.RuntimeObjects = findQKMRuntimeObjects(qkmInputs, freestandingRuntime)
 	for _, moduleName := range order {
+		if cachedModule := frontend.cachedModules[moduleName]; cachedModule != nil {
+			if len(cachedModule.Objects) == 0 {
+				if objects := findQKMImplementationObjects(qkmInputs, moduleName, llvmOutputs[moduleName]); len(objects) != 0 {
+					cachedModule.Objects = objects
+					cachedModule.cacheDirty = true
+				}
+			}
+			activeQKM.Modules[moduleName] = cachedModule
+			continue
+		}
 		encodedTemplates, encodeErr := encodeQKMTemplates(genericTemplates[moduleName])
 		check(encodeErr)
 		encodedIR, encodeErr := encodeQKMIR(irModules[moduleName])
@@ -285,17 +296,13 @@ func main() {
 		if module := modules[moduleName]; module != nil {
 			imports = append([]string(nil), module.Imports...)
 			linkProviders = qkmLinkProviders(frontend.partials, moduleName)
-		} else if cachedModule := frontend.cachedModules[moduleName]; cachedModule != nil {
-			imports = append([]string(nil), cachedModule.Imports...)
-			linkProviders = append([]qkmLinkProvider(nil), cachedModule.LinkProviders...)
-			objects = cachedModule.Objects
 		}
 		if objects == nil {
 			objects = findQKMImplementationObjects(qkmInputs, moduleName, llvmOutputs[moduleName])
 		}
 		importInterfaces := make(map[string]string, len(imports))
 		for _, imported := range imports {
-			importInterfaces[imported] = activeQKM.InterfaceHashes[imported]
+			importInterfaces[imported] = moduleInterfaceHashes[imported]
 		}
 		iface, hasInterface := moduleInterfaces[moduleName]
 		var interfacePtr *sema.ModuleInterface
