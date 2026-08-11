@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/marzeq/qk/ir"
+	"github.com/marzeq/qk/sema"
 	"github.com/marzeq/qk/types"
 )
 
@@ -91,6 +92,40 @@ func TestQKMModulesAreSharedBetweenProjectManifests(t *testing.T) {
 	}
 	if len(entries) != 1 {
 		t.Fatalf("stored %d module blobs, want one shared blob", len(entries))
+	}
+}
+
+func TestQKMCandidateSearchLoadsOnlyRequestedModules(t *testing.T) {
+	t.Setenv("QK_CACHE_DIR", t.TempDir())
+	args := &Args{mainModule: ".", target: "arm64-test", outputType: OutputExecutable}
+	storedInputs, err := makeQKMInputs(args,
+		map[string]string{"/project/one/main.qk": "module main\n"},
+		map[string]string{"/project/one/main.qk": "."},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	searchedInputs, err := makeQKMInputs(args,
+		map[string]string{"/project/two/main.qk": "module main\n"},
+		map[string]string{"/project/two/main.qk": "."},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored := &qkmFile{Primary: ".", Order: []string{"std", "."}, Modules: map[string]*qkmModule{
+		"std": {SourceHash: "stdlib-source", Interface: &sema.ModuleInterface{Name: "std"}, IR: []byte{1}, LLVM: "; std"},
+		".":   {SourceHash: "application-source", LLVM: "; app"},
+	}}
+	if err := storeQKM(storedInputs, stored); err != nil {
+		t.Fatal(err)
+	}
+	manifest := readQKMManifest(t, storedInputs.Path)
+	if err := os.WriteFile(qkmModulePath(storedInputs.CacheRoot, manifest.ModuleRefs["."]), []byte("corrupt"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	candidates := findQKMModuleCandidates(searchedInputs, map[string]string{"std": "stdlib-source"})
+	if len(candidates["std"]) != 1 {
+		t.Fatalf("corrupt unrelated module prevented stdlib candidate discovery: %#v", candidates)
 	}
 }
 

@@ -327,14 +327,6 @@ func loadQKM(inputs qkmInputs) (*qkmFile, bool) {
 		cached.InputHash != inputs.Hash || len(cached.Order) == 0 || !hydrateQKMModules(&cached, inputs.CacheRoot) {
 		return nil, false
 	}
-	for _, module := range cached.Modules {
-		if _, err := decodeQKMTemplates(module.Templates); err != nil {
-			return nil, false
-		}
-		if _, err := decodeQKMIR(module.IR); err != nil {
-			return nil, false
-		}
-	}
 	return &cached, true
 }
 
@@ -343,6 +335,7 @@ func loadQKM(inputs qkmInputs) (*qkmFile, bool) {
 // their imported interface hashes are validated later in dependency order.
 func findQKMModuleCandidates(inputs qkmInputs, sourceHashes map[string]string) map[string][]*qkmModule {
 	result := make(map[string][]*qkmModule)
+	seenRefs := make(map[string]bool)
 	_ = filepath.WalkDir(inputs.CacheRoot, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return nil
@@ -350,12 +343,22 @@ func findQKMModuleCandidates(inputs qkmInputs, sourceHashes map[string]string) m
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".qkm" || path == inputs.Path {
 			return nil
 		}
-		cached, ok := loadQKMPath(path)
+		cached, ok := loadQKMManifestPath(path)
 		if !ok || cached.VariantHash != inputs.VariantHash {
 			return nil
 		}
-		for name, module := range cached.Modules {
-			if module == nil || module.SourceHash == "" || module.SourceHash != sourceHashes[name] ||
+		cacheRoot := filepath.Dir(filepath.Dir(path))
+		for name, sourceHash := range sourceHashes {
+			ref := cached.ModuleRefs[name]
+			if ref != "" {
+				key := name + "\x00" + ref
+				if seenRefs[key] {
+					continue
+				}
+				seenRefs[key] = true
+			}
+			module, _ := loadQKMManifestModule(cached, cacheRoot, name)
+			if module == nil || module.SourceHash == "" || module.SourceHash != sourceHash ||
 				module.Interface == nil || len(module.IR) == 0 || module.LLVM == "" {
 				continue
 			}
@@ -366,7 +369,7 @@ func findQKMModuleCandidates(inputs qkmInputs, sourceHashes map[string]string) m
 	return result
 }
 
-func loadQKMPath(path string) (*qkmFile, bool) {
+func loadQKMManifestPath(path string) (*qkmFile, bool) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, false
@@ -379,10 +382,18 @@ func loadQKMPath(path string) (*qkmFile, bool) {
 	defer compressed.Close()
 	var cached qkmFile
 	if json.NewDecoder(compressed).Decode(&cached) != nil || cached.Format != qkmFormatVersion ||
-		cached.FrontendABI != qkmFrontendABI || !hydrateQKMModules(&cached, filepath.Dir(filepath.Dir(path))) {
+		cached.FrontendABI != qkmFrontendABI || (len(cached.ModuleRefs) == 0 && len(cached.Modules) == 0) {
 		return nil, false
 	}
 	return &cached, true
+}
+
+func loadQKMManifestModule(cached *qkmFile, cacheRoot, name string) (*qkmModule, bool) {
+	if ref := cached.ModuleRefs[name]; ref != "" {
+		return loadQKMModule(cacheRoot, ref)
+	}
+	module := cached.Modules[name]
+	return module, module != nil
 }
 
 func hydrateQKMModules(cached *qkmFile, cacheRoot string) bool {
@@ -463,6 +474,7 @@ func findQKMImplementationObjects(inputs qkmInputs, moduleName, llvm string) map
 		return nil
 	}
 	var result map[string][]byte
+	seenRefs := make(map[string]bool)
 	_ = filepath.WalkDir(inputs.CacheRoot, func(path string, entry os.DirEntry, err error) error {
 		if err != nil || result != nil {
 			return nil
@@ -470,11 +482,18 @@ func findQKMImplementationObjects(inputs qkmInputs, moduleName, llvm string) map
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".qkm" || path == inputs.Path {
 			return nil
 		}
-		cached, ok := loadQKMPath(path)
+		cached, ok := loadQKMManifestPath(path)
 		if !ok || cached.VariantHash != inputs.VariantHash {
 			return nil
 		}
-		if module := cached.Modules[moduleName]; module != nil && module.LLVM == llvm && len(module.Objects) != 0 {
+		if ref := cached.ModuleRefs[moduleName]; ref != "" {
+			if seenRefs[ref] {
+				return nil
+			}
+			seenRefs[ref] = true
+		}
+		module, _ := loadQKMManifestModule(cached, filepath.Dir(filepath.Dir(path)), moduleName)
+		if module != nil && module.LLVM == llvm && len(module.Objects) != 0 {
 			result = module.Objects
 		}
 		return nil
@@ -494,7 +513,7 @@ func findQKMRuntimeObjects(inputs qkmInputs, llvm string) map[string][]byte {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".qkm" || path == inputs.Path {
 			return nil
 		}
-		cached, ok := loadQKMPath(path)
+		cached, ok := loadQKMManifestPath(path)
 		if ok && cached.VariantHash == inputs.VariantHash && cached.RuntimeLLVM == llvm && len(cached.RuntimeObjects) != 0 {
 			result = cached.RuntimeObjects
 		}
