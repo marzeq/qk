@@ -2171,6 +2171,9 @@ func specializationConstant(expr parser.ExpressionNode) (symbols.SpecializationC
 func (v *Validator) validateInlineAsm(n *parser.InlineAsmNode) {
 	poisoned := false
 	seenClobbers := make(map[string]struct{}, len(n.Clobbers))
+	if strings.ContainsRune(n.Template, '\x00') {
+		v.errorf(n, "@asm template cannot contain a NUL byte")
+	}
 	for i := range n.Outputs {
 		output := &n.Outputs[i]
 		if types.HasError(output.Type) {
@@ -2182,6 +2185,10 @@ func (v *Validator) validateInlineAsm(n *parser.InlineAsmNode) {
 			v.errorf(n, "@asm output %d constraint must begin with '='", i+1)
 		} else if strings.ContainsAny(output.Constraint, ",*") {
 			v.errorf(n, "@asm output %d constraint cannot contain ',' or use an indirect '*' operand", i+1)
+		} else if hasInlineAsmConstraintControl(output.Constraint) {
+			v.errorf(n, "@asm output %d constraint contains whitespace or a control character", i+1)
+		} else if !inlineAsmConstraintAcceptsType(strings.TrimPrefix(output.Constraint, "="), output.Type) {
+			v.errorf(n, "@asm output %d constraint %q is incompatible with type %v", i+1, output.Constraint, output.Type)
 		}
 	}
 	for i := range n.Inputs {
@@ -2202,13 +2209,27 @@ func (v *Validator) validateInlineAsm(n *parser.InlineAsmNode) {
 			v.errorf(n, "@asm input %d constraint cannot be empty", i+1)
 		} else if input.Constraint[0] == '=' || input.Constraint[0] == '~' || strings.Contains(input.Constraint, ",") {
 			v.errorf(n, "invalid @asm input %d constraint %q", i+1, input.Constraint)
+		} else if hasInlineAsmConstraintControl(input.Constraint) {
+			v.errorf(n, "@asm input %d constraint contains whitespace or a control character", i+1)
+		} else if tied, ok := inlineAsmTiedOutput(input.Constraint); ok {
+			if tied >= len(n.Outputs) {
+				v.errorf(n, "@asm input %d constraint refers to missing output %d", i+1, tied)
+			} else if !inlineAsmTypesCompatible(inputType, n.Outputs[tied].Type) {
+				v.errorf(n, "@asm input %d type %v is incompatible with tied output %d type %v", i+1, inputType, tied, n.Outputs[tied].Type)
+			}
+		} else if startsWithDecimalDigit(input.Constraint) {
+			v.errorf(n, "invalid @asm tied input %d constraint %q", i+1, input.Constraint)
+		} else if !inlineAsmConstraintAcceptsType(input.Constraint, inputType) {
+			v.errorf(n, "@asm input %d constraint %q is incompatible with type %v", i+1, input.Constraint, inputType)
+		} else if input.Constraint == "i" && !inlineAsmIntegerConstant(input.Value) {
+			v.errorf(input.Value, "@asm input %d constraint \"i\" requires an integer constant", i+1)
 		}
 	}
 	if poisoned {
 		n.SetType(types.ErrorType{})
 	}
 	for _, clobber := range n.Clobbers {
-		if clobber == "" || strings.ContainsAny(clobber, "{},") {
+		if clobber == "" || strings.ContainsAny(clobber, "{},~") || hasInlineAsmConstraintControl(clobber) || !inlineAsmClobberName(clobber) {
 			v.errorf(n, "invalid @asm clobber name %q", clobber)
 			continue
 		}
@@ -2217,6 +2238,116 @@ func (v *Validator) validateInlineAsm(n *parser.InlineAsmNode) {
 		}
 		seenClobbers[clobber] = struct{}{}
 	}
+	for _, operand := range inlineAsmTemplateOperands(n.Template) {
+		if operand >= len(n.Outputs)+len(n.Inputs) {
+			v.errorf(n, "@asm template refers to missing operand %d", operand)
+		}
+	}
+}
+
+func hasInlineAsmConstraintControl(value string) bool {
+	return strings.IndexFunc(value, func(r rune) bool { return r <= ' ' || r == 0x7f }) >= 0
+}
+
+func startsWithDecimalDigit(value string) bool {
+	return value != "" && value[0] >= '0' && value[0] <= '9'
+}
+
+func inlineAsmTiedOutput(value string) (int, bool) {
+	if !startsWithDecimalDigit(value) {
+		return 0, false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return 0, false
+		}
+	}
+	index, err := strconv.Atoi(value)
+	return index, err == nil
+}
+
+func inlineAsmConstraintAcceptsType(constraint string, t types.Type) bool {
+	if constraint == "" || t == nil || types.HasError(t) {
+		return true
+	}
+	underlying := types.Underlying(t)
+	switch constraint {
+	case "r":
+		switch underlying.(type) {
+		case types.PointerType, types.EnumType, types.FlagsType:
+			return true
+		case types.PrimitiveType:
+			return !underlying.Equals(types.PrimitiveF32) && !underlying.Equals(types.PrimitiveF64) && !underlying.Equals(types.PrimitiveVoid)
+		}
+		return false
+	case "f":
+		return underlying.Equals(types.PrimitiveF32) || underlying.Equals(types.PrimitiveF64)
+	case "i":
+		switch underlying.(type) {
+		case types.EnumType, types.FlagsType:
+			return true
+		case types.PrimitiveType:
+			return !underlying.Equals(types.PrimitiveF32) && !underlying.Equals(types.PrimitiveF64) && !underlying.Equals(types.PrimitiveVoid)
+		}
+		return false
+	default:
+		return true // Target-specific constraints are validated by LLVM.
+	}
+}
+
+func inlineAsmTypesCompatible(left, right types.Type) bool {
+	return left != nil && right != nil && (left.Equals(right) || types.Underlying(left).Equals(types.Underlying(right)))
+}
+
+func inlineAsmIntegerConstant(value parser.ExpressionNode) bool {
+	switch value.(type) {
+	case *parser.IntegerLiteralNode, *parser.CharLiteralNode, *parser.BoolLiteralNode:
+		return true
+	default:
+		return false
+	}
+}
+
+func inlineAsmClobberName(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if !(r == '_' || r == '.' || r == '-' || r >= '0' && r <= '9' || r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z') {
+			return false
+		}
+	}
+	return true
+}
+
+func inlineAsmTemplateOperands(template string) []int {
+	var result []int
+	for i := 0; i < len(template); i++ {
+		if template[i] != '$' || i+1 >= len(template) {
+			continue
+		}
+		if template[i+1] == '$' {
+			i++
+			continue
+		}
+		start := i + 1
+		if template[start] == '{' {
+			start++
+		}
+		end := start
+		for end < len(template) && template[end] >= '0' && template[end] <= '9' {
+			end++
+		}
+		if end == start {
+			continue
+		}
+		index, err := strconv.Atoi(template[start:end])
+		if err == nil {
+			result = append(result, index)
+		}
+		i = end - 1
+	}
+	return result
 }
 
 func validInlineAsmType(t types.Type) bool {
