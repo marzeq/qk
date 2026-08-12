@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"runtime/pprof"
 
-	"github.com/marzeq/qk/attributes"
 	"github.com/marzeq/qk/comptime"
 	"github.com/marzeq/qk/ir"
 	"github.com/marzeq/qk/loader"
@@ -386,31 +385,6 @@ func main() {
 		}
 		objFiles = append(objFiles, objFile)
 	}
-	if cache != nil && !probeLibcFreeLink {
-		snapshot := &cachedBuildSnapshot{
-			Links: append([]attributes.Link(nil), moduleLinks...), LinkRoots: append([]string(nil), linkRoots...),
-			Warnings: append([]string(nil), displayedWarnings...),
-		}
-		for _, moduleName := range order {
-			if path := artifactPaths[moduleName]; path != "" {
-				relative, relativeErr := filepath.Rel(cache.root, path)
-				if relativeErr == nil {
-					snapshot.Modules = append(snapshot.Modules, cachedBuildEntry{Name: moduleName, Path: relative})
-				}
-			}
-		}
-		if path := artifactPaths["__qk.runtime"]; path != "" {
-			if relative, relativeErr := filepath.Rel(cache.root, path); relativeErr == nil {
-				snapshot.Runtime = relative
-			}
-		}
-		if len(snapshot.Modules) == len(order) {
-			if storeErr := cache.storeBuildSnapshot(buildHash, snapshot); storeErr != nil && args.verbose {
-				fmt.Fprintf(os.Stderr, "warning: failed to store lowered build snapshot: %v\n", storeErr)
-			}
-		}
-	}
-
 	stat, err := os.Stat(args.output)
 
 	switch {
@@ -429,10 +403,18 @@ func main() {
 		}
 	}
 
-	err = linkObjects(objFiles, moduleLinks, linkRoots, args)
+	linkArgs := args
+	if probeLibcFreeLink {
+		// A failed libc-free link is an implementation detail of the probe, not
+		// a user-facing linker failure. Only print the final link invocation.
+		quietProbeArgs := *args
+		quietProbeArgs.verbose = false
+		linkArgs = &quietProbeArgs
+	}
+	err = linkObjects(objFiles, moduleLinks, linkRoots, linkArgs)
 	if err != nil && probeLibcFreeLink {
 		if args.verbose {
-			fmt.Printf("libc-free link retained live libc references; retrying with the hosted runtime: %v\n", err)
+			fmt.Println("libc-free link retained live libc references; retrying with the hosted runtime")
 		}
 		hostedRuntime, runtimeErr := buildFreestandingRuntime(
 			args.target, true, true, !args.noStdlib, mainInitializer, userMain,
@@ -450,6 +432,19 @@ func main() {
 		}
 		runtimeObject, runtimeErr := compileLLVMModule(buildDir, "hosted runtime", hostedRuntime, args)
 		check(runtimeErr)
+		if cache != nil {
+			hostedRuntimeHash := implementationHash("__qk.runtime", hostedRuntime)
+			hostedRuntimePath := cache.modulePath(hostedRuntimeHash)
+			hostedArtifact := &cachedArtifact{ImplementationHash: hostedRuntimeHash, Objects: make(map[string][]byte)}
+			if data, readErr := os.ReadFile(runtimeObject); readErr == nil {
+				hostedArtifact.Objects[objectKey] = data
+				if storeErr := storeCachedArtifact(hostedRuntimePath, hostedArtifact); storeErr != nil && args.verbose {
+					fmt.Fprintf(os.Stderr, "warning: failed to update hosted runtime artifact: %v\n", storeErr)
+				} else if storeErr == nil {
+					artifactPaths["__qk.runtime"] = hostedRuntimePath
+				}
+			}
+		}
 		if len(objFiles) == 0 {
 			fatal("hosted runtime retry has no runtime object to replace")
 		}
@@ -459,6 +454,9 @@ func main() {
 		err = linkObjects(objFiles, moduleLinks, linkRoots, args)
 	}
 	check(err)
+	if cache != nil {
+		storeSuccessfulBuildSnapshot(cache, buildHash, order, artifactPaths, moduleLinks, linkRoots, displayedWarnings, args.verbose)
+	}
 
 	if args.keepBuildDir {
 		for _, buildDir := range buildDirs {
