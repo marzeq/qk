@@ -32,7 +32,7 @@ cp -a libs/. "$staging_directory/libs/"
 release_ldflags='-Wl,--disable-new-dtags,-rpath,$ORIGIN/../lib'
 GOCACHE=${GOCACHE:-"${staging_parent}/go-build-cache"} \
   CGO_LDFLAGS="${CGO_LDFLAGS:-} ${release_ldflags}" \
-  go build -trimpath -ldflags="-s -w" -o "$staging_directory/bin/qkc" ./cmd/qkc
+  go build -trimpath -ldflags="-s -w -X=main.compilerVersion=${version}" -o "$staging_directory/bin/qkc" ./cmd/qkc
 
 mapfile -t bundled_libraries < <(
   ldd "$staging_directory/bin/qkc" |
@@ -72,6 +72,11 @@ for library in "${resolved_bundled_libraries[@]}"; do
   fi
 done
 
+reported_version=$("$staging_directory/bin/qkc" --version)
+if [[ "$reported_version" != "qk compiler version ${version}" ]]; then
+  echo "packaged qkc reported an unexpected version: $reported_version" >&2
+  exit 1
+fi
 "$staging_directory/bin/qkc" -h >/dev/null
 smoke_directory="$staging_parent/smoke"
 mkdir -p "$smoke_directory"

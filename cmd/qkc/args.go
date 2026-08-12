@@ -11,6 +11,8 @@ import (
 	"github.com/marzeq/qk/shared"
 )
 
+var compilerVersion = "(in development)"
+
 type OutputType int
 
 const (
@@ -466,7 +468,7 @@ func printUsage() {
 }
 
 func printVersion() {
-	fmt.Println("qk compiler version (in development)")
+	fmt.Printf("qk compiler version %s\n", compilerVersion)
 }
 
 func finaliseArgs(args *Args) error {

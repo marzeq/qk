@@ -67,7 +67,7 @@ release_ldflags='-Wl,-rpath,@executable_path/../lib'
 GOCACHE=${GOCACHE:-"${staging_parent}/go-build-cache"} \
   CGO_CXXFLAGS="${CGO_CXXFLAGS:-} -I${llvm_prefix}/include -I${lld_prefix}/include" \
   CGO_LDFLAGS="${CGO_LDFLAGS:-} -L${llvm_library_directory} -L${lld_prefix}/lib ${release_ldflags}" \
-  go build -trimpath -ldflags="-s -w" -o "$staging_directory/bin/qkc" ./cmd/qkc
+  go build -trimpath -ldflags="-s -w -X=main.compilerVersion=${version}" -o "$staging_directory/bin/qkc" ./cmd/qkc
 
 dependencies() {
   otool -L "$1" | awk 'NR > 1 { print $1 }'
@@ -188,6 +188,11 @@ for target in "$staging_directory/bin/qkc" "$staging_directory"/lib/*.dylib; do
   done < <(dependencies "$target")
 done
 
+reported_version=$("$staging_directory/bin/qkc" --version)
+if [[ "$reported_version" != "qk compiler version ${version}" ]]; then
+  echo "packaged qkc reported an unexpected version: $reported_version" >&2
+  exit 1
+fi
 "$staging_directory/bin/qkc" -h >/dev/null
 smoke_directory="$staging_parent/smoke"
 mkdir -p "$smoke_directory"
