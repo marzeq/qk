@@ -53,7 +53,7 @@ Windows, use an LLVM build compatible with the selected cgo toolchain and set
 
 ## Docs
 
-- [`docs/docs.md`](docs/docs.md) is the language and compiler reference.
+- [`docs/guide.md`](docs/guide.md) is the QK language and user guide.
 
 ## Contributing
 

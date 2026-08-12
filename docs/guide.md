@@ -1,3 +1,5 @@
+<!-- This is the user-facing QK language guide. Do not document compiler internals, implementation details, cache formats, or internal build architecture here. -->
+
 # Hello world
 
 Write the following program:
@@ -77,7 +79,7 @@ let value: i32 = 10
 let value = value + 1
 ```
 
-The name `_` explicitly discards a value and never enters the symbol table. It is most often used while unpacking multiple function results.
+The name `_` explicitly discards a value and does not create a binding. It is most often used while unpacking multiple function results.
 
 # Literals
 
@@ -163,7 +165,7 @@ cmd/
     main.qk
 ```
 
-The semantic name to directory structure mapping is done from the current working directory where the compiler is invoked.
+Semantic names are mapped to the directory structure relative to the current working directory.
 
 A directory cannot have multiple files declaring different modules.
 
@@ -590,7 +592,7 @@ let numbers: [4]i32 = [10, 20, 30, 40]
 let zeros: [8]u8 = [0; 8]
 ```
 
-The repeated form `[value; count]` evaluates `value` once and copies it into every element. A sequence literal needs an expected array or slice type so the compiler knows which representation to construct.
+The repeated form `[value; count]` evaluates `value` once and copies it into every element. A sequence literal needs an expected array or slice type to determine its representation.
 
 Arrays are indexed with `array[index]`. A statically known invalid array index is rejected, but ordinary runtime indexing is unchecked; use slicing when a runtime bounds check is required.
 
@@ -1015,7 +1017,7 @@ let Measured = type trait {
 }
 ```
 
-A type may omit `double_measure` and inherit the default, or declare a matching method to override it. An explicitly declared same-name method with an incompatible receiver or signature still prevents conformance. The compiler validates the default once, then emits a specialized variant for each concrete conforming type that uses it.
+A type may omit `double_measure` and inherit the default, or declare a matching method to override it. An explicitly declared same-name method with an incompatible receiver or signature still prevents conformance.
 
 `Self` refers to the concrete implementing type within a trait:
 
@@ -1047,7 +1049,7 @@ An addressable value can be borrowed automatically when cast to a static pointer
 
 ## Dynamic trait pointers
 
-`*dyn Trait` and `*mut dyn Trait` are erased fat pointers containing a data pointer and a vtable pointer. They provide runtime polymorphism:
+`*dyn Trait` and `*mut dyn Trait` are dynamic trait pointers. They provide runtime polymorphism:
 
 ```qk
 let writer: *mut dyn Writer = file.&mut.(*mut dyn Writer)
@@ -1058,7 +1060,7 @@ An explicit concrete-to-dynamic conversion requires a pointer operand. Use `valu
 
 When a function expects an immutable dynamic trait pointer, QK may contextually borrow an addressable value or materialise a computed value into temporary storage. A mutable dynamic trait pointer always requires a mutable place.
 
-Dynamic trait-to-trait casts select a compatible target vtable at runtime. QK emits vtables only for concrete types that actually flow into the source trait, keeping unused conformers out of the final program.
+Dynamic trait-to-trait casts select a compatible target trait implementation at runtime.
 
 # Casts
 
@@ -1139,7 +1141,7 @@ These builtins are intentionally unavailable for auto-tagged unions. Mutable poi
 
 ## `panic` and `assert`
 
-`panic(message)` is a built-in terminating function that accepts `str`. The compiler always links a small runtime implementation, including for `-nolibc` builds.
+`panic(message)` is a built-in terminating function that accepts `str` and is available in `-nolibc` builds.
 
 `assert(condition, message)` accepts a `bool` and a `str`. It returns normally when the condition is true; otherwise it prints `assertion failed: ` followed by the message and terminates the process.
 
@@ -1180,7 +1182,7 @@ when OS == .Windows {
 }
 ```
 
-It can appear at module or local scope, and selected tokens continue through the normal compiler pipeline. `else when` chains are supported.
+It can appear at module or local scope. `else when` chains are supported.
 
 The built-in configuration values are:
 
@@ -1240,7 +1242,7 @@ Use `abi "qk"` only when the external definition was produced for QK's own ABI. 
 let printf(format: cstr, ...): i32 @foreign
 ```
 
-The C ABI accepts only representations supported by the selected target. QK rejects multi-result functions, opaque values by value, nominal tagged unions, and other unsupported signatures before code generation.
+The C ABI accepts only representations supported by the selected target. Multi-result functions, opaque values by value, nominal tagged unions, and other unsupported signatures are rejected.
 
 ## Exported symbols
 
@@ -1268,7 +1270,7 @@ module graphics @link(
 )
 ```
 
-`system` names a system library, `search` adds a library search directory, `path` links one explicit file, and `framework` selects an Apple framework. The build driver collects link metadata separately from import dependencies.
+`system` names a system library, `search` adds a library search directory, `path` links one explicit file, and `framework` selects an Apple framework. Link requirements are separate from import dependencies.
 
 ## Optimisation attributes
 
@@ -1280,7 +1282,7 @@ let fail(message: str): void @noreturn {
 }
 ```
 
-These attributes affect code generation and control-flow analysis. They do not replace correct source-level types.
+These attributes control inlining and return behavior. They do not replace correct source-level types.
 
 # Packages and source layout
 
@@ -1294,7 +1296,7 @@ module net.http
 
 The command package name `main` is special. It may be declared in any selected directory, cannot be imported, and must provide `main()`.
 
-The driver reads only immediate `.qk` files in each reachable package. It follows imports directly instead of walking unrelated source directories.
+Only immediate `.qk` files in each reachable package belong to that package. Unrelated source directories are not included automatically.
 
 ## Import resolution
 
@@ -1304,14 +1306,14 @@ When the selected package lies beneath the invocation directory, that invocation
 
 The `std` and `std.*` names are reserved for the installed standard library or a trusted `-stdlib` development override. Ordinary source packages cannot declare them.
 
-The compiler checkout and release layout contain a top-level `libs` directory.
+QK distributions contain a top-level `libs` directory.
 `go run ./cmd/qkc` discovers it from the QK checkout, while an installed
 `<root>/bin/qkc` loads `<root>/libs`. `QK_LIB_DIR` overrides this lookup.
 Because the Go tool installs executables but not repository data, use
 `scripts/dev_install.sh` rather than plain `go install` for a complete
 development installation under `~/.local/share/qk`.
 
-The standard library is an implicit dependency of ordinary modules unless `-nostdlib` is used. Its submodules use explicit imports internally to keep the dependency graph acyclic.
+The standard library is an implicit dependency of ordinary modules unless `-nostdlib` is used.
 
 ## Explicit-file builds
 
@@ -1319,9 +1321,9 @@ Passing one `.qk` file to `build` or `run` creates a synthetic primary package f
 
 # Diagnostics and warnings
 
-QK reports source ranges with line context throughout tokenisation, parsing, semantic analysis, and code generation. Installed library diagnostics use their source paths and retain the same source context.
+QK diagnostics report source ranges with line context. Installed library diagnostics use their source paths and retain the same source context.
 
-The compiler warns about unreferenced local variables, loop bindings, and parameters after it has analysed the complete function. Prefixing a name with `_` does not suppress a warning; use the exact discard name `_` when no binding is wanted.
+QK warns about unreferenced local variables, loop bindings, and parameters. Prefixing a name with `_` does not suppress a warning; use the exact discard name `_` when no binding is wanted.
 
 Warning categories currently include `unused-variable` and `unused-parameter`. The global policy is selected with:
 
@@ -1340,7 +1342,7 @@ qkc build \
   .
 ```
 
-`show` prints a warning, `off` discards it, and `error` promotes it to a compilation error before code generation.
+`show` prints a warning, `off` discards it, and `error` promotes it to a compilation error.
 
 # Building programs
 
@@ -1369,39 +1371,6 @@ Optimisation is selected with `-O0`, `-O1`, `-O2`, `-O3`, `-Os`, `-Oz`, `-Ofast`
 
 Use `-no-emit` to perform compilation checks without producing output. `-dump-ir`, `-dump-llvm`, and `-dump-asm` are development aids for inspecting compiler output.
 
-## Incremental artifacts
-
-Native module artifacts are cached below the platform user cache directory, or
-below `QK_CACHE_DIR` when it is set. A configuration hash separates target,
-release, output, optimisation, CPU-feature, relocation, and code-model variants.
-Each stable module implementation is stored as:
-
-```text
-<cache-root>/artifacts-v2/<configuration-hash>/<module-implementation-hash>/blob
-```
-
-Concrete generic specializations are immutable, request-addressed artifacts
-owned by the defining module implementation:
-
-```text
-<module-implementation-hash>/specializations/<request-hash>
-```
-
-Different projects can therefore add and reuse specializations without
-rewriting the module blob. The files use QK's versioned binary artifact format;
-they are not JSON, archives, or compressed containers. Corrupt or incompatible
-files are ignored and regenerated. An artifact contains only its magic, format
-version, implementation hash, and keyed native object bytes; LLVM IR is not
-stored.
-
-An exact warm build uses a binary build snapshot that references the immutable
-module and specialization artifacts selected by the previous build. This skips
-compile-time expansion, semantic analysis, QK IR generation, LLVM generation,
-and native compilation while still performing the final link.
-
-All `-dump-ir`, `-dump-llvm`, and `-dump-asm` builds bypass cache reads and
-writes so their output always comes directly from the active compiler pipeline.
-
 ## Libraries and freestanding builds
 
 `-l`, `-L`, and `-Xlink` add native library, search-path, and linker arguments. `-static` requests static libraries where the target toolchain supports them.
@@ -1410,7 +1379,7 @@ writes so their output always comes directly from the active compiler pipeline.
 
 Other freestanding executable targets are currently rejected until they have target-specific startup support. `-nostdlib` is separate: it omits QK's installed library sources altogether.
 
-Cross-linking requires suitable CRT objects, libraries, and usually a sysroot for the selected target. QK uses its in-process Clang driver and LLD integration; it does not invoke Clang, LLVM, or a linker subprocess.
+Cross-linking requires suitable CRT objects, libraries, and usually a sysroot for the selected target.
 
 # Standard library tour
 
