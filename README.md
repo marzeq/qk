@@ -9,7 +9,6 @@ git clone git@github.com:marzeq/qk.git
 cd qk
 git config core.hooksPath .githooks # if you plan to contribute
 
-go test ./... # includes the QK library tree in ./libs
 go build ./cmd/qkc   # or run 'go run ./cmd/qkc' directly
 ```
 
@@ -24,6 +23,12 @@ This installs the development release under `~/.local/share/qk/{bin,libs}` and
 creates `~/.local/bin/qkc` as a symlink to the installed compiler. Plain
 `go install ./cmd/qkc` installs only the executable because the Go tool has no
 mechanism for installing repository data files.
+
+## Testing
+
+`go test ./...` runs all unit tests, including behavioural tests and a standard library type-check.
+
+This is included as a pre-push git hook, and it will block pushes if any tests fail. You can bypass this by using `git push --no-verify`.
 
 ## Supported platforms
 
