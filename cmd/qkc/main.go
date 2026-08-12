@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,7 +14,6 @@ import (
 	"github.com/marzeq/qk/loader"
 	"github.com/marzeq/qk/parser"
 	"github.com/marzeq/qk/shared"
-	"github.com/marzeq/qk/stdlib"
 	"github.com/marzeq/qk/types"
 )
 
@@ -34,7 +32,6 @@ func main() {
 			check(profile.Close())
 		}()
 	}
-	searchPaths := buildSearchPaths(args.packageRoot, args.packagePaths)
 	releaseMode := comptime.ReleaseModeDebug
 	if args.release {
 		releaseMode = comptime.ReleaseModeRelease
@@ -44,34 +41,25 @@ func main() {
 		Sysroot:      args.sysroot,
 		ReleaseMode:  releaseMode,
 	}
-	selectedStdlibSources := map[string]string{}
-	stdlibSourceRoot := ""
+	libraryRoot := ""
 	if args.noStdlib {
 		// A genuinely library-free build must also work when no libs directory is
 		// installed beside qkc.
-	} else if args.stdlibPath != "" {
-		stdlibSourceRoot = args.stdlibPath
-		var err error
-		selectedStdlibSources, err = stdlib.ReadSources(args.stdlibPath)
-		check(err)
-		if len(selectedStdlibSources) == 0 {
-			fatal("no standard-library source files found in %s", args.stdlibPath)
-		}
+	} else if args.libraryPath != "" {
+		libraryRoot = args.libraryPath
 	} else {
-		libraryRoot, err := resolveLibraryRoot()
-		check(err)
-		stdlibSourceRoot = libraryRoot
-		selectedStdlibSources, err = stdlib.ReadSources(libraryRoot)
+		var err error
+		libraryRoot, err = resolveLibraryRoot()
 		check(err)
 	}
-	stdlibPackagePaths, availablePackages, err := stdlib.SourcePackagePaths(selectedStdlibSources, stdlibSourceRoot)
-	check(err)
-	discovered, compileTimeSources, sourcePackagePaths, err := discoverSourcePackages(
-		args.mainModule, args.baseDir, args.file, searchPaths, availablePackages,
+	searchPaths := buildSearchPaths(args.packageRoot, args.packagePaths)
+	if libraryRoot != "" {
+		searchPaths = append([]string{libraryRoot}, searchPaths...)
+	}
+	discovered, compileTimeSources, sourcePackagePaths, trustedSources, err := discoverSourcePackages(
+		args.mainModule, args.baseDir, args.file, searchPaths, libraryRoot, !args.noStdlib,
 	)
 	check(err)
-	maps.Copy(compileTimeSources, selectedStdlibSources)
-	maps.Copy(sourcePackagePaths, stdlibPackagePaths)
 	if args.run && discovered[0].Name != "main" {
 		fatal("cannot run package %q: package must declare module main", discovered[0].Name)
 	}
@@ -102,7 +90,7 @@ func main() {
 	comptimeConfig.ModuleBindings, err = comptime.ResolvePackageBindings(compileTimeSources, sourcePackagePaths, comptimeConfig)
 	check(err)
 	frontend, err := runFrontend(
-		args, comptimeConfig, compileTimeSources, sourcePackagePaths, args.verbose, args.debug,
+		args, comptimeConfig, compileTimeSources, sourcePackagePaths, trustedSources, args.verbose, args.debug,
 	)
 	check(err)
 	modules, order := frontend.modules, frontend.order

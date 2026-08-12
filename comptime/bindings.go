@@ -124,7 +124,6 @@ func ResolvePackageBindings(sources map[string]string, packagePaths map[string]s
 	}
 	values := make(map[string]Value, len(declarations))
 	target := targetFromConfig(config)
-	target.checkingStdlib = config.CheckingStdlib
 	target.releaseMode = config.ReleaseMode
 	state := map[string]uint8{}
 	var resolve func(string, shared.Location) (Value, error)

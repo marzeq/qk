@@ -86,7 +86,7 @@ func collectPackageFiles(dir string) ([]string, error) {
 	return files, nil
 }
 
-func inspectPackage(path string, files []string, sources, sourcePackages map[string]string) (*sourcePackage, error) {
+func inspectPackage(path string, files []string, libraryRoot string, sources, sourcePackages map[string]string, trustedSources map[string]bool) (*sourcePackage, error) {
 	pkg := &sourcePackage{Path: path, Files: append([]string(nil), files...)}
 	seenImports := map[string]bool{}
 	for _, file := range files {
@@ -119,39 +119,44 @@ func inspectPackage(path string, files []string, sources, sourcePackages map[str
 		}
 		sources[file] = source
 		sourcePackages[file] = path
+		trustedSources[file] = trustedStandardLibrarySource(file, libraryRoot)
 	}
 	return pkg, nil
 }
 
-func discoverSourcePackages(primaryPath, rootDir, selectedFile string, searchRoots []string, available map[string]bool) ([]*sourcePackage, map[string]string, map[string]string, error) {
+func discoverSourcePackages(primaryPath, rootDir, selectedFile string, searchRoots []string, libraryRoot string, implicitStd bool) ([]*sourcePackage, map[string]string, map[string]string, map[string]bool, error) {
 	rootFiles := []string{selectedFile}
 	if selectedFile == "" {
 		var err error
 		rootFiles, err = collectPackageFiles(rootDir)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 	}
 	if len(rootFiles) == 0 {
-		return nil, nil, nil, fmt.Errorf("no source files found in package directory %s", rootDir)
+		return nil, nil, nil, nil, fmt.Errorf("no source files found in package directory %s", rootDir)
 	}
 
 	sources := map[string]string{}
 	sourcePackages := map[string]string{}
-	root, err := inspectPackage(primaryPath, rootFiles, sources, sourcePackages)
+	trustedSources := map[string]bool{}
+	root, err := inspectPackage(primaryPath, rootFiles, libraryRoot, sources, sourcePackages, trustedSources)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	if selectedFile == "" && primaryPath != "." && root.Name != "main" && root.Name != primaryPath {
-		return nil, nil, nil, fmt.Errorf("package directory %q must declare module %q or module main, found %q", rootDir, primaryPath, root.Name)
+		return nil, nil, nil, nil, fmt.Errorf("package directory %q must declare module %q or module main, found %q", rootDir, primaryPath, root.Name)
 	}
 	packages := []*sourcePackage{root}
 	seen := map[string]bool{primaryPath: true}
 	queue := append([]string(nil), root.Imports...)
+	if implicitStd && root.Name != "std" && !strings.HasPrefix(root.Name, "std.") {
+		queue = append(queue, "std")
+	}
 	for len(queue) != 0 {
 		path := queue[0]
 		queue = queue[1:]
-		if seen[path] || available[path] {
+		if seen[path] {
 			continue
 		}
 		seen[path] = true
@@ -160,7 +165,7 @@ func discoverSourcePackages(primaryPath, rootDir, selectedFile string, searchRoo
 		for _, searchRoot := range searchRoots {
 			candidate, exists, resolveErr := resolvePackageDirectory(searchRoot, path)
 			if resolveErr != nil {
-				return nil, nil, nil, resolveErr
+				return nil, nil, nil, nil, resolveErr
 			}
 			if !exists {
 				continue
@@ -170,7 +175,7 @@ func discoverSourcePackages(primaryPath, rootDir, selectedFile string, searchRoo
 				if os.IsNotExist(readErr) {
 					continue
 				}
-				return nil, nil, nil, readErr
+				return nil, nil, nil, nil, readErr
 			}
 			if len(candidateFiles) == 0 {
 				continue
@@ -181,20 +186,33 @@ func discoverSourcePackages(primaryPath, rootDir, selectedFile string, searchRoo
 		if len(files) == 0 {
 			continue
 		}
-		pkg, err := inspectPackage(path, files, sources, sourcePackages)
+		pkg, err := inspectPackage(path, files, libraryRoot, sources, sourcePackages, trustedSources)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("loading %s: %w", packageDir, err)
+			return nil, nil, nil, nil, fmt.Errorf("loading %s: %w", packageDir, err)
 		}
 		if pkg.Name == "main" {
-			return nil, nil, nil, fmt.Errorf("imported package %q cannot declare module main", path)
+			return nil, nil, nil, nil, fmt.Errorf("imported package %q cannot declare module main", path)
 		}
 		if pkg.Name != path {
-			return nil, nil, nil, fmt.Errorf("package directory %q must declare module %q, found %q", packageDir, path, pkg.Name)
+			return nil, nil, nil, nil, fmt.Errorf("package directory %q must declare module %q, found %q", packageDir, path, pkg.Name)
 		}
 		packages = append(packages, pkg)
 		queue = append(queue, pkg.Imports...)
 	}
-	return packages, sources, sourcePackages, nil
+	return packages, sources, sourcePackages, trustedSources, nil
+}
+
+func trustedStandardLibrarySource(source, libraryRoot string) bool {
+	if libraryRoot == "" {
+		return false
+	}
+	standardRoot := filepath.Join(libraryRoot, "std")
+	resolvedSource, sourceErr := filepath.EvalSymlinks(source)
+	resolvedRoot, rootErr := filepath.EvalSymlinks(standardRoot)
+	if sourceErr != nil || rootErr != nil {
+		return false
+	}
+	return pathWithin(resolvedSource, resolvedRoot)
 }
 
 func collectSourceFiles(paths []string, exclude []string) ([]string, error) {

@@ -22,7 +22,6 @@ type expander struct {
 type Config struct {
 	TargetTriple   string
 	Sysroot        string
-	CheckingStdlib bool
 	ReleaseMode    ReleaseMode
 	PackagePath    string
 	ModuleBindings map[string]Value
@@ -39,7 +38,6 @@ const (
 // returning the token stream that should continue through the compiler pipeline.
 func Expand(tokens []tokeniser.Token, config Config) ([]tokeniser.Token, error) {
 	target := targetFromConfig(config)
-	target.checkingStdlib = config.CheckingStdlib
 	target.releaseMode = config.ReleaseMode
 	target.bindings = make(map[string]Value)
 	currentModule := config.PackagePath
@@ -602,7 +600,6 @@ type targetValues struct {
 	targetHasProcessExit bool
 	noLibc               bool
 	noStdlib             bool
-	checkingStdlib       bool
 	releaseMode          ReleaseMode
 	bindings             map[string]Value
 }
@@ -645,8 +642,6 @@ func evaluate(node parser.ExpressionNode, target targetValues, resolveBinding fu
 			return Value{kind: valueBool, boolean: target.targetHasEnvironment}, nil
 		case "TargetHasProcessExit":
 			return Value{kind: valueBool, boolean: target.targetHasProcessExit}, nil
-		case "CheckingStdlib":
-			return Value{kind: valueBool, boolean: target.checkingStdlib}, nil
 		default:
 			if resolveBinding != nil {
 				value, err := resolveBinding(n.Name, n.Loc)

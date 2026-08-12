@@ -27,9 +27,10 @@ func runFrontend(
 	args *Args,
 	config comptime.Config,
 	sources, sourcePackages map[string]string,
+	trustedSources map[string]bool,
 	verbose, debug bool,
 ) (*frontendResult, error) {
-	graphModules, origins, err := sourceModuleGraph(sources, sourcePackages, config, args.noStdlib)
+	graphModules, origins, err := sourceModuleGraph(sources, sourcePackages, trustedSources, config, args.noStdlib)
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +54,7 @@ func runFrontend(
 			if err != nil {
 				return nil, err
 			}
-			partial, err := loader.CollectModuleInfo(root, name == "std" || strings.HasPrefix(name, "std."))
+			partial, err := loader.CollectModuleInfo(root, trustedSources[origin])
 			if err != nil {
 				return nil, err
 			}
@@ -107,7 +108,7 @@ func runFrontend(
 	return result, nil
 }
 
-func sourceModuleGraph(sources, sourcePackages map[string]string, config comptime.Config, noStdlib bool) (map[string]*loader.ModuleInfo, map[string][]string, error) {
+func sourceModuleGraph(sources, sourcePackages map[string]string, trustedSources map[string]bool, config comptime.Config, noStdlib bool) (map[string]*loader.ModuleInfo, map[string][]string, error) {
 	modules := make(map[string]*loader.ModuleInfo)
 	origins := make(map[string][]string)
 	paths := make([]string, 0, len(sources))
@@ -136,8 +137,10 @@ func sourceModuleGraph(sources, sourcePackages map[string]string, config comptim
 		}
 		module := modules[name]
 		if module == nil {
-			module = &loader.ModuleInfo{Path: name, Name: header.Module, TrustedStandardLibrary: name == "std" || strings.HasPrefix(name, "std.")}
+			module = &loader.ModuleInfo{Path: name, Name: header.Module, TrustedStandardLibrary: trustedSources[origin]}
 			modules[name] = module
+		} else if module.TrustedStandardLibrary != trustedSources[origin] {
+			return nil, nil, fmt.Errorf("module %q mixes trusted and untrusted sources", name)
 		}
 		for _, imported := range header.Imports {
 			if !containsString(module.Imports, imported) {

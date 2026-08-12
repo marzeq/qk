@@ -9,7 +9,7 @@ git clone git@github.com:marzeq/qk.git
 cd qk
 git config core.hooksPath .githooks # if you plan to contribute
 
-go generate ./stdlib # typecheck the QK library tree in ./libs
+go test ./... # includes the QK library tree in ./libs
 go build ./cmd/qkc   # or run 'go run ./cmd/qkc' directly
 ```
 

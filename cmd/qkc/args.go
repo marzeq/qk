@@ -72,7 +72,7 @@ type Args struct {
 	keepBuildDir bool
 	static       bool
 	release      bool
-	stdlibPath   string
+	libraryPath  string
 	noStdlib     bool
 	noEmit       bool
 	target       string
@@ -326,7 +326,7 @@ func (p *argumentParser) parseCurrent() error {
 		if err != nil {
 			return err
 		}
-		p.args.stdlibPath = value
+		p.args.libraryPath = value
 
 	case tok == "-target":
 		value, err := p.nextValue(tok)
@@ -449,7 +449,7 @@ func printUsage() {
 	fmt.Println("  -nolibc            Do not link against the C standard library")
 	fmt.Println("  -nostdlib          Do not load the installed QK library tree")
 	fmt.Println("  -release           Select .Release for the compile-time ReleaseMode value")
-	fmt.Println("  -stdlib <dir>      Trust and use an external QK standard-library source tree")
+	fmt.Println("  -stdlib <dir>      Use an external QK library root; trust packages beneath its std directory")
 	fmt.Println("  -I <dir>           Add a package search root (can be repeated)")
 	fmt.Println("  -l <lib>           Link with library <lib> (can specify multiple times)")
 	fmt.Println("  -target <triple>   Target triple for code generation")
@@ -523,19 +523,19 @@ func finaliseArgs(args *Args) error {
 		}
 		args.sysroot = abs
 	}
-	if args.stdlibPath != "" {
+	if args.libraryPath != "" {
 		if args.noStdlib {
 			return fmt.Errorf("-nostdlib and -stdlib cannot be used together")
 		}
-		info, err := os.Stat(args.stdlibPath)
+		info, err := os.Stat(args.libraryPath)
 		if err != nil || !info.IsDir() {
-			return fmt.Errorf("standard-library path is not a directory: %s", args.stdlibPath)
+			return fmt.Errorf("QK library path is not a directory: %s", args.libraryPath)
 		}
-		abs, err := filepath.Abs(args.stdlibPath)
+		abs, err := filepath.Abs(args.libraryPath)
 		if err != nil {
-			return fmt.Errorf("failed to get absolute standard-library path: %v", err)
+			return fmt.Errorf("failed to get absolute QK library path: %v", err)
 		}
-		args.stdlibPath = abs
+		args.libraryPath = abs
 	}
 
 	return nil

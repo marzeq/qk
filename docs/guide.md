@@ -1302,15 +1302,16 @@ Only immediate `.qk` files in each reachable package belong to that package. Unr
 
 ## Import resolution
 
-An import path maps directly to a subdirectory of an ordered package root. The project root is searched first, repeated `-I` roots follow, and platform user and system roots come last.
+An import path maps directly to a subdirectory of an ordered package root. The selected external library root is searched first, then the project root, repeated `-I` roots, and platform user and system roots.
 
 When the selected package lies beneath the invocation directory, that invocation directory is the project root. Otherwise the selected package directory becomes its own root.
 
-The `std` and `std.*` names are reserved for the installed standard library or a trusted `-stdlib` development override. Ordinary source packages cannot declare them.
+The `std` and `std.*` names are reserved for sources beneath the `std` directory of the installed library root or a trusted `-stdlib` development override. Ordinary source packages cannot declare them.
 
 QK distributions contain a top-level `libs` directory.
 `go run ./cmd/qkc` discovers it from the QK checkout, while an installed
 `<root>/bin/qkc` loads `<root>/libs`. `QK_LIB_DIR` overrides this lookup.
+`-stdlib <dir>` selects the same kind of complete library root for a development build; only its `std` subtree is trusted.
 Because the Go tool installs executables but not repository data, use
 `scripts/dev_install.sh` rather than plain `go install` for a complete
 development installation under `~/.local/share/qk`.
