@@ -1369,6 +1369,34 @@ Optimisation is selected with `-O0`, `-O1`, `-O2`, `-O3`, `-Os`, `-Oz`, `-Ofast`
 
 Use `-no-emit` to perform compilation checks without producing output. `-dump-ir`, `-dump-llvm`, and `-dump-asm` are development aids for inspecting compiler output.
 
+## Incremental artifacts
+
+Native module artifacts are cached below the platform user cache directory, or
+below `QK_CACHE_DIR` when it is set. A configuration hash separates target,
+release, output, optimisation, CPU-feature, relocation, and code-model variants.
+Each stable module implementation is stored as:
+
+```text
+<cache-root>/artifacts-v1/<configuration-hash>/<module-implementation-hash>/blob
+```
+
+Concrete generic specializations are immutable, request-addressed artifacts
+owned by the defining module implementation:
+
+```text
+<module-implementation-hash>/specializations/<request-hash>
+```
+
+Different projects can therefore add and reuse specializations without
+rewriting the module blob. The files use QK's versioned binary artifact format;
+they are not JSON, archives, or compressed containers. Corrupt or incompatible
+files are ignored and regenerated.
+
+An exact warm build uses a binary build snapshot that references the immutable
+module and specialization artifacts selected by the previous build. This skips
+compile-time expansion, semantic analysis, QK IR generation, LLVM generation,
+and native compilation while still performing the final link.
+
 ## Libraries and freestanding builds
 
 `-l`, `-L`, and `-Xlink` add native library, search-path, and linker arguments. `-static` requests static libraries where the target toolchain supports them.

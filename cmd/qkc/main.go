@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"maps"
 	"os"
@@ -8,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime/pprof"
 
+	"github.com/marzeq/qk/attributes"
 	"github.com/marzeq/qk/comptime"
 	"github.com/marzeq/qk/ir"
 	"github.com/marzeq/qk/loader"
@@ -80,6 +83,20 @@ func main() {
 	if args.outputType == OutputExecutable && discovered[0].Name != "main" {
 		fatal("cannot build executable from package %q: package must declare module main", discovered[0].Name)
 	}
+	cache, cacheErr := newArtifactCache(args)
+	if cacheErr != nil && args.verbose {
+		fmt.Fprintf(os.Stderr, "warning: module artifact cache is unavailable: %v\n", cacheErr)
+	}
+	buildHash := buildInputHash(args, compileTimeSources, sourcePackagePaths)
+	if cache != nil && !args.run && !args.dumpIR && !args.dumpAsm {
+		if snapshot, ok := cache.loadBuildSnapshot(buildHash); ok {
+			if args.verbose {
+				fmt.Println("used cached lowered QK build")
+			}
+			check(runCachedBuildSnapshot(cache, snapshot, args))
+			return
+		}
+	}
 	comptimeConfig.ModuleBindings, err = comptime.ResolvePackageBindings(compileTimeSources, sourcePackagePaths, comptimeConfig)
 	check(err)
 	frontend, err := runFrontend(
@@ -89,6 +106,7 @@ func main() {
 	modules, order := frontend.modules, frontend.order
 	irModules, genericTemplates := frontend.irModules, frontend.templates
 	var warnings = frontend.warnings
+	var displayedWarnings []string
 	for _, warning := range warnings {
 		mode := args.warningMode
 		if diagnostic, ok := warning.(shared.Error); ok {
@@ -99,6 +117,7 @@ func main() {
 		switch mode {
 		case WarningModeShow:
 			text := warning.Error()
+			displayedWarnings = append(displayedWarnings, text)
 			fmt.Println(text)
 		case WarningModeError:
 			if diagnostic, ok := warning.(shared.Error); ok {
@@ -108,11 +127,15 @@ func main() {
 			}
 		}
 	}
-	specializationIR, err := loader.ExtractGenericSpecializations(irModules, genericTemplates, frontend.interfaces)
+	specializationUnits, err := loader.ExtractGenericSpecializationUnits(irModules, genericTemplates, frontend.interfaces)
 	check(err)
-	if len(specializationIR.Functions) != 0 {
-		irModules[loader.SpecializationModule] = specializationIR
-		order = append(order, loader.SpecializationModule)
+	specializationMetadata := make(map[string]loader.SpecializationUnit, len(specializationUnits))
+	for _, unit := range specializationUnits {
+		digest := sha256.Sum256([]byte(unit.Key))
+		name := loader.SpecializationModule + "." + hex.EncodeToString(digest[:8])
+		irModules[name] = unit.IR
+		specializationMetadata[name] = unit
+		order = append(order, name)
 	}
 	requestedModuleLinks := linksForUsedForeignSymbols(
 		frontend.partials, irModules, args.outputType == OutputObject,
@@ -137,6 +160,37 @@ func main() {
 			args.target,
 		)
 	}
+	artifactPaths := make(map[string]string, len(llvmOutputs))
+	artifacts := make(map[string]*cachedArtifact, len(llvmOutputs))
+	moduleHashes := make(map[string]string, len(llvmOutputs))
+	for moduleName, llvmOutput := range llvmOutputs {
+		if _, specialized := specializationMetadata[moduleName]; !specialized {
+			moduleHashes[moduleName] = implementationHash(moduleName, llvmOutput)
+		}
+	}
+	for moduleName, llvmOutput := range llvmOutputs {
+		if cache == nil {
+			artifacts[moduleName] = &cachedArtifact{LLVM: llvmOutput, Objects: make(map[string][]byte)}
+			continue
+		}
+		var path string
+		if unit, specialized := specializationMetadata[moduleName]; specialized {
+			ownerHash := moduleHashes[unit.DefiningModule]
+			if ownerHash == "" {
+				ownerHash = specializationOwnerHash(moduleHashes)
+			}
+			digest := sha256.Sum256([]byte(unit.Key))
+			path = cache.specializationPath(ownerHash, hex.EncodeToString(digest[:]))
+		} else {
+			path = cache.modulePath(moduleHashes[moduleName])
+		}
+		artifactPaths[moduleName] = path
+		artifact, ok := loadCachedArtifact(path, llvmOutput)
+		if !ok {
+			artifact = &cachedArtifact{LLVM: llvmOutput, Objects: make(map[string][]byte)}
+		}
+		artifacts[moduleName] = artifact
+	}
 	mainInitializer := ""
 	userMain := ""
 	if mainIR := irModules[args.mainModule]; mainIR != nil {
@@ -152,6 +206,18 @@ func main() {
 		userMain,
 	)
 	check(err)
+	if freestandingRuntime != "" {
+		llvmOutputs["__qk.runtime"] = freestandingRuntime
+		artifact := &cachedArtifact{LLVM: freestandingRuntime, Objects: make(map[string][]byte)}
+		if cache != nil {
+			path := cache.modulePath(implementationHash("__qk.runtime", freestandingRuntime))
+			artifactPaths["__qk.runtime"] = path
+			if loaded, ok := loadCachedArtifact(path, freestandingRuntime); ok {
+				artifact = loaded
+			}
+		}
+		artifacts["__qk.runtime"] = artifact
+	}
 
 	if args.dumpIR {
 		for _, moduleName := range order {
@@ -243,6 +309,7 @@ func main() {
 
 	var buildDirs []string
 	var objFiles []string
+	const objectKey = cachedNativeObjectKey
 	for _, moduleName := range order {
 		buildDir, err := emitLLVMFile(llvmOutputs[moduleName])
 		check(err)
@@ -264,8 +331,23 @@ func main() {
 		}
 
 		objFile := filepath.Join(buildDir, "module.o")
-		objFile, err = compileLLVMModule(buildDir, moduleName, llvmOutputs[moduleName], args)
-		check(err)
+		artifact := artifacts[moduleName]
+		if data := artifact.Objects[objectKey]; len(data) != 0 && os.WriteFile(objFile, data, 0o644) == nil {
+			if args.verbose {
+				fmt.Printf("used cached object for module %s\n", moduleName)
+			}
+		} else {
+			objFile, err = compileLLVMModule(buildDir, moduleName, llvmOutputs[moduleName], args)
+			check(err)
+			if data, readErr := os.ReadFile(objFile); readErr == nil {
+				artifact.Objects[objectKey] = data
+				if path := artifactPaths[moduleName]; path != "" {
+					if storeErr := storeCachedArtifact(path, artifact); storeErr != nil && args.verbose {
+						fmt.Fprintf(os.Stderr, "warning: failed to update module artifact %s: %v\n", moduleName, storeErr)
+					}
+				}
+			}
+		}
 		objFiles = append(objFiles, objFile)
 	}
 	if freestandingRuntime != "" {
@@ -280,9 +362,48 @@ func main() {
 			check(dumpAssemblyFile(buildDir))
 		}
 		objFile := filepath.Join(buildDir, "module.o")
-		objFile, err = compileLLVMModule(buildDir, "freestanding runtime", freestandingRuntime, args)
-		check(err)
+		artifact := artifacts["__qk.runtime"]
+		if data := artifact.Objects[objectKey]; len(data) != 0 && os.WriteFile(objFile, data, 0o644) == nil {
+			if args.verbose {
+				fmt.Println("used cached object for freestanding runtime")
+			}
+		} else {
+			objFile, err = compileLLVMModule(buildDir, "freestanding runtime", freestandingRuntime, args)
+			check(err)
+			if data, readErr := os.ReadFile(objFile); readErr == nil {
+				artifact.Objects[objectKey] = data
+				if path := artifactPaths["__qk.runtime"]; path != "" {
+					if storeErr := storeCachedArtifact(path, artifact); storeErr != nil && args.verbose {
+						fmt.Fprintf(os.Stderr, "warning: failed to update runtime artifact: %v\n", storeErr)
+					}
+				}
+			}
+		}
 		objFiles = append(objFiles, objFile)
+	}
+	if cache != nil && !probeLibcFreeLink {
+		snapshot := &cachedBuildSnapshot{
+			Links: append([]attributes.Link(nil), moduleLinks...), LinkRoots: append([]string(nil), linkRoots...),
+			Warnings: append([]string(nil), displayedWarnings...),
+		}
+		for _, moduleName := range order {
+			if path := artifactPaths[moduleName]; path != "" {
+				relative, relativeErr := filepath.Rel(cache.root, path)
+				if relativeErr == nil {
+					snapshot.Modules = append(snapshot.Modules, cachedBuildEntry{Name: moduleName, Path: relative})
+				}
+			}
+		}
+		if path := artifactPaths["__qk.runtime"]; path != "" {
+			if relative, relativeErr := filepath.Rel(cache.root, path); relativeErr == nil {
+				snapshot.Runtime = relative
+			}
+		}
+		if len(snapshot.Modules) == len(order) {
+			if storeErr := cache.storeBuildSnapshot(buildHash, snapshot); storeErr != nil && args.verbose {
+				fmt.Fprintf(os.Stderr, "warning: failed to store lowered build snapshot: %v\n", storeErr)
+			}
+		}
 	}
 
 	stat, err := os.Stat(args.output)

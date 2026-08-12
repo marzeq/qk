@@ -19,10 +19,29 @@ type specializationRequest struct {
 	key      string
 }
 
+// SpecializationUnit is the deterministic output of one concrete generic
+// request. Persistence belongs to the build layer; the compiler only exposes
+// the stable request key and resulting IR.
+type SpecializationUnit struct {
+	Key            string
+	DefiningModule string
+	IR             *ir.Module
+}
+
 // ExtractGenericSpecializations replaces importer-demanded generic functions
 // with standalone instantiated IR and removes their old copies from base
 // modules. Base module implementations therefore no longer vary by importer.
 func ExtractGenericSpecializations(modules map[string]*ir.Module, templates map[string][]ir.GenericTemplate, interfaces map[string]sema.ModuleInterface) (*ir.Module, error) {
+	return extractGenericSpecializations(modules, templates, interfaces, nil)
+}
+
+func ExtractGenericSpecializationUnits(modules map[string]*ir.Module, templates map[string][]ir.GenericTemplate, interfaces map[string]sema.ModuleInterface) ([]SpecializationUnit, error) {
+	var units []SpecializationUnit
+	_, err := extractGenericSpecializations(modules, templates, interfaces, &units)
+	return units, err
+}
+
+func extractGenericSpecializations(modules map[string]*ir.Module, templates map[string][]ir.GenericTemplate, interfaces map[string]sema.ModuleInterface, units *[]SpecializationUnit) (*ir.Module, error) {
 	byName := make(map[string]ir.GenericTemplate)
 	methodTargets := make(map[string]string)
 	for _, iface := range interfaces {
@@ -178,6 +197,15 @@ func ExtractGenericSpecializations(modules map[string]*ir.Module, templates map[
 				return nil, err
 			}
 			result.Functions = append(result.Functions, function)
+		}
+		if units != nil {
+			unitFunctions := append([]*ir.Function(nil), functions...)
+			unit := SpecializationUnit{
+				Key: request.key, DefiningModule: request.template.Module,
+				IR: &ir.Module{Functions: unitFunctions},
+			}
+			addSpecializationExterns(unit.IR)
+			*units = append(*units, unit)
 		}
 	}
 	for _, moduleName := range moduleNames {

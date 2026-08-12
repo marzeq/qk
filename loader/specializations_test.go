@@ -32,7 +32,7 @@ func TestExtractGenericSpecializationsRenamesFunctionConstantCallee(t *testing.T
 		ir.Return{},
 	)
 
-	result, err := ExtractGenericSpecializations(
+	units, err := ExtractGenericSpecializationUnits(
 		map[string]*ir.Module{"main": {Functions: []*ir.Function{caller}}},
 		map[string][]ir.GenericTemplate{"example": {template}},
 		nil,
@@ -47,7 +47,10 @@ func TestExtractGenericSpecializationsRenamesFunctionConstantCallee(t *testing.T
 	if call.Callee == nil || call.Callee.FunctionName == baseName {
 		t.Fatalf("function-constant callee was not specialized: %#v", call.Callee)
 	}
-	if len(result.Functions) != 1 || result.Functions[0].Name != call.Callee.FunctionName {
+	if len(units) != 1 || units[0].DefiningModule != "example" || units[0].Key == "" {
+		t.Fatalf("unexpected specialization units: %#v", units)
+	}
+	if len(units[0].IR.Functions) != 1 || units[0].IR.Functions[0].Name != call.Callee.FunctionName {
 		t.Fatalf("specialization target %q does not match generated function", call.Callee.FunctionName)
 	}
 }
