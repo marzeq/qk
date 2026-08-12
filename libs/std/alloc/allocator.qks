@@ -23,6 +23,7 @@ pub let Allocator = type trait {
     new_size: usz,
     align: usz,
   ): (*mut void, bool)
+  let as_allocator(*mut self): *mut dyn Allocator
 }
 
 let checked_size<T>(count: usz): (usz, bool) {

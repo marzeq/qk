@@ -1485,7 +1485,8 @@ func (a *Attributor) attributeMethodCall(n *parser.FunctionCallNode) bool {
 	if view := staticTraitView(member.Subject); view != nil {
 		return a.attributeStaticTraitMethodCall(n, member, view)
 	}
-	if traitPtr, ok := traitPointer(member.Subject.GetType()); ok {
+	if traitPtr, ok := a.analyser.traitPointer(member.Subject.GetType()); ok {
+		member.Subject.SetType(traitPtr)
 		for slot, requirement := range traitPtr.Trait.Methods {
 			if requirement.Name != member.Field.Name {
 				continue

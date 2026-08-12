@@ -259,14 +259,21 @@ func (a *Analyser) specializeGenericAlias(info *genericAliasInfo, arguments []ty
 		return nil
 	}
 	key := specializationKey(arguments)
+	displayName := specializationDisplayName(info.node.Name, arguments)
 	if existing := info.specializations[key]; existing != nil {
 		if existing.state == aliasResolving {
 			if indirect {
+				if _, ok := info.node.Type.(*parser.TraitTypeNode); ok && !info.node.Transparent {
+					return &symbols.Symbol{
+						Name: displayName, Kind: symbols.SymbolKindType,
+						TypeInfo: types.TraitType{Module: info.module, Name: displayName},
+					}
+				}
 				return &symbols.Symbol{
-					Name: specializationDisplayName(info.node.Name, arguments),
+					Name: displayName,
 					Kind: symbols.SymbolKindType,
 					TypeInfo: &types.AliasRef{
-						Module: info.module, Name: specializationDisplayName(info.node.Name, arguments),
+						Module: info.module, Name: displayName,
 						Target: &existing.resolved,
 					},
 				}
@@ -276,7 +283,6 @@ func (a *Analyser) specializeGenericAlias(info *genericAliasInfo, arguments []ty
 		}
 		return existing.symbol
 	}
-	displayName := specializationDisplayName(info.node.Name, arguments)
 	specialization := &genericAliasSpecialization{state: aliasResolving}
 	info.specializations[key] = specialization
 	bindings := typeArgumentBindings(info.parameters, arguments)
@@ -285,6 +291,7 @@ func (a *Analyser) specializeGenericAlias(info *genericAliasInfo, arguments []ty
 		if trait, ok := resolved.(types.TraitType); ok && !info.node.Transparent {
 			trait.Module, trait.Name = info.module, displayName
 			resolved = trait
+			a.nominalTraits[trait.Module+":"+trait.Name] = trait
 			a.registerTraitDefaults(info.node, trait, info.root)
 		} else if !info.node.Transparent {
 			resolved = types.DefinedType{
@@ -432,7 +439,7 @@ func (a *Analyser) instantiateSemanticNode(node parser.Node) {
 		return
 	}
 	if cast.TraitConversion {
-		if target, ok := traitPointer(targetType); ok {
+		if target, ok := a.traitPointer(targetType); ok {
 			methods, conforms := a.structuralConformance(cast.Operand.GetType(), target, cast)
 			if !conforms {
 				a.errorf(cast, "type %v does not conform to %v", cast.ConcreteType, target.Trait)

@@ -622,6 +622,6 @@ pub let Arena.free_all(*mut self): void {
   self.deinit()
 }
 
-pub let Arena.allocator(*mut self): *mut dyn Allocator = self
+pub let Arena.as_allocator(*mut self): *mut dyn Allocator = self
 
 }

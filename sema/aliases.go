@@ -23,6 +23,9 @@ func (a *Analyser) resolveAlias(info *aliasInfo, node parser.Node, indirect bool
 	switch info.state {
 	case aliasResolving:
 		if indirect {
+			if _, ok := info.node.Type.(*parser.TraitTypeNode); ok && !info.node.Transparent {
+				return types.TraitType{Module: a.currentMod, Name: info.node.Name}
+			}
 			return &types.AliasRef{Module: a.currentMod, Name: info.node.Name, Target: &info.resolved}
 		}
 		a.errorf(node, "circular type definition detected")
@@ -42,6 +45,7 @@ func (a *Analyser) resolveAlias(info *aliasInfo, node parser.Node, indirect bool
 		trait.Module = a.currentMod
 		trait.Name = info.node.Name
 		resolved = trait
+		a.nominalTraits[trait.Module+":"+trait.Name] = trait
 		a.registerTraitDefaults(info.node, trait, a.currentRoot)
 	} else if !info.node.Transparent {
 		resolved = types.DefinedType{Module: a.currentMod, Name: info.node.Name, Underlying: resolved}

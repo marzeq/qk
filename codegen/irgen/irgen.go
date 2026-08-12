@@ -3409,7 +3409,7 @@ func specializationConstantExpr(expr parser.ExpressionNode) (symbols.Specializat
 
 func (g *Generator) generateTraitCall(node *parser.FunctionCallNode) ir.Operand {
 	receiver := g.GenerateExpr(node.Args[0])
-	traitPtr := receiver.Type.(types.TraitPointerType)
+	traitPtr := node.Symbol.Signature.Parameters[0].(types.TraitPointerType)
 	vtType := traitVTableType(traitPtr.Trait)
 	vtPtrType := types.PointerType{Base: vtType}
 	vtID := g.currentFunction.NewValueOfType(vtPtrType)

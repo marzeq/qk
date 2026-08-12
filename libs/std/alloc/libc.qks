@@ -156,4 +156,4 @@ pub let LibcAllocator.resize<T>(
   return result.(*mut T), resized
 }
 
-pub let LibcAllocator.allocator(*mut self): *mut dyn Allocator = self
+pub let LibcAllocator.as_allocator(*mut self): *mut dyn Allocator = self

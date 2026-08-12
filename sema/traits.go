@@ -8,9 +8,45 @@ import (
 	"github.com/marzeq/qk/types"
 )
 
-func traitPointer(t types.Type) (types.TraitPointerType, bool) {
+func (a *Analyser) traitPointer(t types.Type) (types.TraitPointerType, bool) {
 	p, ok := types.Underlying(t).(types.TraitPointerType)
+	if ok {
+		p.Trait = a.completeTrait(p.Trait)
+	}
 	return p, ok
+}
+
+func (a *Analyser) completeTrait(trait types.TraitType) types.TraitType {
+	if trait.Any || len(trait.Methods) != 0 || trait.Name == "" {
+		return completeDirectTraitReferences(trait)
+	}
+	if complete, ok := a.nominalTraits[trait.Module+":"+trait.Name]; ok {
+		return completeDirectTraitReferences(complete)
+	}
+	if module := a.modules[trait.Module]; module != nil {
+		if symbol, ok := module.Scope.Resolve(trait.Name); ok {
+			if complete, ok := types.Underlying(symbol.TypeInfo).(types.TraitType); ok {
+				return completeDirectTraitReferences(complete)
+			}
+		}
+	}
+	return trait
+}
+
+func completeDirectTraitReferences(trait types.TraitType) types.TraitType {
+	if len(trait.Methods) == 0 {
+		return trait
+	}
+	methods := append([]types.TraitMethod(nil), trait.Methods...)
+	for index := range methods {
+		if pointer, ok := types.Underlying(methods[index].ReturnType).(types.TraitPointerType); ok &&
+			len(pointer.Trait.Methods) == 0 && pointer.Trait.Equals(trait) {
+			pointer.Trait = trait
+			methods[index].ReturnType = pointer
+		}
+	}
+	trait.Methods = methods
+	return trait
 }
 
 func concretePointer(t types.Type) (types.PointerType, bool) {
@@ -19,6 +55,7 @@ func concretePointer(t types.Type) (types.PointerType, bool) {
 }
 
 func (a *Analyser) structuralConformance(from types.Type, target types.TraitPointerType, at parser.Node) ([]*symbols.Symbol, bool) {
+	target.Trait = a.completeTrait(target.Trait)
 	pointer, ok := concretePointer(from)
 	if !ok || (!pointer.Mutable && target.Mutable) {
 		return nil, false
@@ -64,7 +101,7 @@ func (a *Analyser) structuralConformance(from types.Type, target types.TraitPoin
 }
 
 func (v *Validator) traitConversion(node parser.ExpressionNode, expected types.Type) (*parser.CastNode, bool) {
-	target, ok := traitPointer(expected)
+	target, ok := v.analyser.traitPointer(expected)
 	if !ok {
 		return nil, false
 	}

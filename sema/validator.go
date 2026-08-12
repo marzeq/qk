@@ -1471,7 +1471,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			n.TraitMethods = conversion.TraitMethods
 			break
 		}
-		if target, ok := traitPointer(targetType); ok {
+		if target, ok := v.analyser.traitPointer(targetType); ok {
 			got := n.Operand.GetType()
 			parameter, symbolic := genericTypeParameterBase(got)
 			constraint, constrained := types.TraitType{}, false
@@ -1494,8 +1494,8 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			n.Operand = v.createCast(n.Operand, targetType)
 		}
 
-		if sourceTrait, ok := traitPointer(n.Operand.GetType()); ok {
-			if targetTrait, targetIsTrait := traitPointer(targetType); targetIsTrait {
+		if sourceTrait, ok := v.analyser.traitPointer(n.Operand.GetType()); ok {
+			if targetTrait, targetIsTrait := v.analyser.traitPointer(targetType); targetIsTrait {
 				if !sourceTrait.Mutable && targetTrait.Mutable {
 					v.errorf(n, "cannot cast immutable %v to mutable %v", n.Operand.GetType(), targetType)
 					break
@@ -2856,8 +2856,8 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 	// not be treated as a concrete value and borrowed into a second trait
 	// object. In particular, Any structurally accepts every pointer, including
 	// a pointer to the storage of an existing *dyn Any value.
-	if _, sourceIsTrait := traitPointer(got); sourceIsTrait {
-		if _, targetIsTrait := traitPointer(expected); targetIsTrait && got.CanCoerceTo(expected) {
+	if _, sourceIsTrait := v.analyser.traitPointer(got); sourceIsTrait {
+		if _, targetIsTrait := v.analyser.traitPointer(expected); targetIsTrait && got.CanCoerceTo(expected) {
 			if got.Equals(expected) {
 				return node
 			}
@@ -2876,7 +2876,7 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 	if cast, ok := v.traitConversion(node, expected); ok {
 		return cast
 	}
-	if target, ok := traitPointer(expected); ok {
+	if target, ok := v.analyser.traitPointer(expected); ok {
 		if types.HasUntyped(got) {
 			v.errorf(node, "cannot infer concrete type for trait conversion; add a type annotation or cast")
 			return node

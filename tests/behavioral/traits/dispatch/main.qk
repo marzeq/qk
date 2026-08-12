@@ -5,21 +5,25 @@ import std.io
 let Measured = type trait {
   let measure(self): usz
   let double_measure(self): usz = self.measure() * 2
+  let as_measured(*mut self): *mut dyn Measured
 }
 
 let Value = type struct { amount: usz }
 let Value.measure(self): usz = self.amount
+let Value.as_measured(*mut self): *mut dyn Measured = self
 
 let dynamic_measure(value: *dyn Measured): usz = value.double_measure()
 
 let main() {
-  let value = Value.{ amount=21 }
+  let mut value = Value.{ amount=21 }
   let static = value.(Measured)
   let dynamic = value.&.(*dyn Measured)
+  let mutable_dynamic = value.&mut.(*mut dyn Measured)
   let erased: *dyn Any = value.&.(*dyn Any)
   let recovered, ok = erased.(Value)
   assert(static.measure() == 21, "static trait view")
   assert(dynamic_measure(dynamic) == 42, "dynamic dispatch and default")
+  assert(mutable_dynamic.as_measured().measure() == 21, "recursive dynamic return")
   assert(ok && recovered.amount == 21, "Any checked cast")
   std.io.println("traits ok")
 }
