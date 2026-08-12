@@ -32,13 +32,19 @@ func resolveLibraryRootFor(executable, cwd, temporaryRoot string) (string, error
 		return "", fmt.Errorf("qkc is running through go run but no QK checkout containing libs was found above %s", cwd)
 	}
 
-	executableDir := filepath.Dir(executable)
-	for _, candidate := range []string{
-		filepath.Join(executableDir, "..", "libs"),
-		filepath.Join(executableDir, "libs"),
-	} {
-		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
-			return filepath.Abs(candidate)
+	executables := []string{executable}
+	if resolved, err := filepath.EvalSymlinks(executable); err == nil && resolved != executable {
+		executables = append(executables, resolved)
+	}
+	for _, installedExecutable := range executables {
+		executableDir := filepath.Dir(installedExecutable)
+		for _, candidate := range []string{
+			filepath.Join(executableDir, "..", "libs"),
+			filepath.Join(executableDir, "libs"),
+		} {
+			if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+				return filepath.Abs(candidate)
+			}
 		}
 	}
 	return "", fmt.Errorf("QK libraries not found beside %s; expected ../libs relative to the installed bin directory or set QK_LIB_DIR", executable)

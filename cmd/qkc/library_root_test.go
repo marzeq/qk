@@ -45,3 +45,39 @@ func TestResolveLibraryRootForInstalledBinary(t *testing.T) {
 		t.Fatalf("installed library root: got %q, want %q", got, want)
 	}
 }
+
+func TestResolveLibraryRootForSymlinkedInstalledBinary(t *testing.T) {
+	prefix := t.TempDir()
+	bin := filepath.Join(prefix, "bin")
+	libs := filepath.Join(prefix, "libs")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(libs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	executable := filepath.Join(bin, "qkc")
+	if err := os.WriteFile(executable, nil, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	commandBin := filepath.Join(t.TempDir(), "bin")
+	if err := os.Mkdir(commandBin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	commandLink := filepath.Join(commandBin, "qkc")
+	if err := os.Symlink(executable, commandLink); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := resolveLibraryRootFor(commandLink, t.TempDir(), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := filepath.EvalSymlinks(libs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("symlinked installed library root: got %q, want %q", got, want)
+	}
+}
