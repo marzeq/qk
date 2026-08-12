@@ -221,6 +221,7 @@ pub let mut stderr: ConsoleWriter = .{ descriptor=2 }
 when TargetHasFilesystem {
 import std
 import std.alloc
+import std.ctypes
 import std.libc
 
 pub let FileWriter = type struct {
@@ -355,7 +356,7 @@ pub let FileReader.read_line(
 
   let file = self.handle.(*std.libc.FILE)
   let c_buffer = buffer.(*mut u8)
-  let line = std.libc.fgets(c_buffer, @len(buffer).(i32), file)
+  let line = std.libc.fgets(c_buffer.(*mut std.ctypes.char), @len(buffer).(i32), file)
   if line == nil {
     if std.libc.feof(file) != 0 { return 0, std.error.Error.none() }
     return 0, std.error.last_error()

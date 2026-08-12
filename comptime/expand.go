@@ -595,6 +595,7 @@ type targetValues struct {
 	arch                 string
 	environment          string
 	pointerBits          int64
+	cCharSigned          bool
 	targetHasLibc        bool
 	targetHasFilesystem  bool
 	targetHasEnvironment bool
@@ -634,6 +635,8 @@ func evaluate(node parser.ExpressionNode, target targetValues, resolveBinding fu
 			return Value{kind: valueEnum, domain: "ReleaseMode", name: name}, nil
 		case "PointerBits":
 			return Value{kind: valueInteger, integer: big.NewInt(target.pointerBits)}, nil
+		case "CCharSigned":
+			return Value{kind: valueBool, boolean: target.cCharSigned}, nil
 		case "TargetHasLibc":
 			return Value{kind: valueBool, boolean: target.targetHasLibc}, nil
 		case "TargetHasFilesystem":
@@ -817,6 +820,7 @@ func targetFromTriple(triple string) targetValues {
 	target := strings.ToLower(triple)
 	archName := qktarget.Arch(triple)
 	values := targetValues{os: "Unknown", arch: "Unknown", environment: "Unknown"}
+	values.cCharSigned = qktarget.CCharSigned(triple)
 	if bits, ok := qktarget.PointerBits(triple); ok {
 		values.pointerBits = int64(bits)
 	}

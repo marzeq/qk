@@ -1196,6 +1196,8 @@ The built-in configuration values are:
 
 - `PointerBits`, an integer target pointer width.
 
+- `CCharSigned`, whether plain C `char` is signed for the target ABI.
+
 Compile-time expressions support booleans, integers, the configuration enum values, logical operations, integer arithmetic and comparison, and references to visible compile-time bindings.
 
 ## Compile-time errors

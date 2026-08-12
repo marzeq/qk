@@ -3,6 +3,7 @@ module std.fs
 when TargetHasFilesystem {
 import std
 import std.alloc
+import std.ctypes
 import std.error
 import std.io
 import std.libc
@@ -257,9 +258,12 @@ pub let current_directory(
   for true {
     let mut result, allocated = Path.with_capacity(allocator, capacity)
     if !allocated { return result, std.error.Error.out_of_memory() }
-    let mut path: *mut u8 = nil
-    when OS == .Windows { path = std.libc.getcwd(result.bytes.ptr, capacity.(i32)) }
-    else { path = std.libc.getcwd(result.bytes.ptr, capacity) }
+    let mut path: *mut std.ctypes.char = nil
+    when OS == .Windows {
+      path = std.libc.getcwd(result.bytes.ptr.(*mut std.ctypes.char), capacity.(i32))
+    } else {
+      path = std.libc.getcwd(result.bytes.ptr.(*mut std.ctypes.char), capacity)
+    }
     if path != nil {
       let mut length: usz = 0
       for result.bytes.ptr[length] != '\0' { length += 1 }

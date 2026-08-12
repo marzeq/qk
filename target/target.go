@@ -33,3 +33,20 @@ func PointerBits(triple string) (int, bool) {
 		return 0, false
 	}
 }
+
+// CCharSigned reports whether plain C char uses the signed representation for
+// the target ABI. ARM ABIs default to unsigned char, except for the Apple and
+// Windows variants, which define plain char as signed.
+func CCharSigned(triple string) bool {
+	target := strings.ToLower(EffectiveTriple(triple))
+	switch Arch(target) {
+	case "arm", "armv6", "armv7", "armv7a", "armv7l", "thumb", "thumbv7", "thumbv7a",
+		"aarch64", "arm64":
+		return strings.Contains(target, "apple") || strings.Contains(target, "darwin") ||
+			strings.Contains(target, "macos") || strings.Contains(target, "windows") ||
+			strings.Contains(target, "mingw") || strings.Contains(target, "msvc") ||
+			strings.Contains(target, "win32")
+	default:
+		return true
+	}
+}

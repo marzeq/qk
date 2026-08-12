@@ -4,6 +4,8 @@ import (
 	"math/big"
 	"strings"
 	"testing"
+
+	"github.com/marzeq/qk/parser"
 )
 
 func TestPackageBindingsFingerprintIsScoped(t *testing.T) {
@@ -39,5 +41,26 @@ func TestResolvePackageBindingsUsesImportScope(t *testing.T) {
 	sources["app.qk"] = "module app\nlet Enabled = comptime unrelated.Value\n"
 	if _, err := ResolvePackageBindings(sources, packages, Config{}); err == nil || !strings.Contains(err.Error(), "is not in scope") {
 		t.Fatalf("unimported compile-time binding was accepted: %v", err)
+	}
+}
+
+func TestCCharSignedCompileTimeValue(t *testing.T) {
+	for _, test := range []struct {
+		triple string
+		signed bool
+	}{
+		{triple: "x86_64-linux-gnu", signed: true},
+		{triple: "aarch64-linux-gnu", signed: false},
+	} {
+		t.Run(test.triple, func(t *testing.T) {
+			target := targetFromTriple(test.triple)
+			value, err := evaluate(&parser.IdentifierNode{Name: "CCharSigned"}, target, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if value.kind != valueBool || value.boolean != test.signed {
+				t.Fatalf("CCharSigned = %#v, want %t", value, test.signed)
+			}
+		})
 	}
 }
