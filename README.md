@@ -56,6 +56,13 @@ The headers and libraries must be visible to cgo's C++ compiler and linker. On
 Windows, use an LLVM build compatible with the selected cgo toolchain and set
 `CGO_CXXFLAGS`/`CGO_LDFLAGS` when it is installed outside standard search paths.
 
+On MacOS we provide a script that you can source that detects brew installed
+LLVM 22 and sets the appropriate environment variables for building the compiler:
+
+```bash
+source ./scripts/macos-brew-init.sh
+```
+
 ## Docs
 
 - [`docs/guide.md`](docs/guide.md) is the QK language and user guide.
