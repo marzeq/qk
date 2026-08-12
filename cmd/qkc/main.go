@@ -87,8 +87,11 @@ func main() {
 	if cacheErr != nil && args.verbose {
 		fmt.Fprintf(os.Stderr, "warning: module artifact cache is unavailable: %v\n", cacheErr)
 	}
+	if args.dumpIR || args.dumpLLVM || args.dumpAsm {
+		cache = nil
+	}
 	buildHash := buildInputHash(args, compileTimeSources, sourcePackagePaths)
-	if cache != nil && !args.run && !args.dumpIR && !args.dumpAsm {
+	if cache != nil && !args.run {
 		if snapshot, ok := cache.loadBuildSnapshot(buildHash); ok {
 			if args.verbose {
 				fmt.Println("used cached lowered QK build")
@@ -170,7 +173,7 @@ func main() {
 	}
 	for moduleName, llvmOutput := range llvmOutputs {
 		if cache == nil {
-			artifacts[moduleName] = &cachedArtifact{LLVM: llvmOutput, Objects: make(map[string][]byte)}
+			artifacts[moduleName] = &cachedArtifact{ImplementationHash: implementationHash(moduleName, llvmOutput), Objects: make(map[string][]byte)}
 			continue
 		}
 		var path string
@@ -185,9 +188,10 @@ func main() {
 			path = cache.modulePath(moduleHashes[moduleName])
 		}
 		artifactPaths[moduleName] = path
-		artifact, ok := loadCachedArtifact(path, llvmOutput)
+		artifactHash := implementationHash(moduleName, llvmOutput)
+		artifact, ok := loadCachedArtifact(path, artifactHash)
 		if !ok {
-			artifact = &cachedArtifact{LLVM: llvmOutput, Objects: make(map[string][]byte)}
+			artifact = &cachedArtifact{ImplementationHash: artifactHash, Objects: make(map[string][]byte)}
 		}
 		artifacts[moduleName] = artifact
 	}
@@ -208,11 +212,12 @@ func main() {
 	check(err)
 	if freestandingRuntime != "" {
 		llvmOutputs["__qk.runtime"] = freestandingRuntime
-		artifact := &cachedArtifact{LLVM: freestandingRuntime, Objects: make(map[string][]byte)}
+		runtimeHash := implementationHash("__qk.runtime", freestandingRuntime)
+		artifact := &cachedArtifact{ImplementationHash: runtimeHash, Objects: make(map[string][]byte)}
 		if cache != nil {
-			path := cache.modulePath(implementationHash("__qk.runtime", freestandingRuntime))
+			path := cache.modulePath(runtimeHash)
 			artifactPaths["__qk.runtime"] = path
-			if loaded, ok := loadCachedArtifact(path, freestandingRuntime); ok {
+			if loaded, ok := loadCachedArtifact(path, runtimeHash); ok {
 				artifact = loaded
 			}
 		}

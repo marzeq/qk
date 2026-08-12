@@ -1377,7 +1377,7 @@ release, output, optimisation, CPU-feature, relocation, and code-model variants.
 Each stable module implementation is stored as:
 
 ```text
-<cache-root>/artifacts-v1/<configuration-hash>/<module-implementation-hash>/blob
+<cache-root>/artifacts-v2/<configuration-hash>/<module-implementation-hash>/blob
 ```
 
 Concrete generic specializations are immutable, request-addressed artifacts
@@ -1390,12 +1390,17 @@ owned by the defining module implementation:
 Different projects can therefore add and reuse specializations without
 rewriting the module blob. The files use QK's versioned binary artifact format;
 they are not JSON, archives, or compressed containers. Corrupt or incompatible
-files are ignored and regenerated.
+files are ignored and regenerated. An artifact contains only its magic, format
+version, implementation hash, and keyed native object bytes; LLVM IR is not
+stored.
 
 An exact warm build uses a binary build snapshot that references the immutable
 module and specialization artifacts selected by the previous build. This skips
 compile-time expansion, semantic analysis, QK IR generation, LLVM generation,
 and native compilation while still performing the final link.
+
+All `-dump-ir`, `-dump-llvm`, and `-dump-asm` builds bypass cache reads and
+writes so their output always comes directly from the active compiler pipeline.
 
 ## Libraries and freestanding builds
 

@@ -16,8 +16,8 @@ import (
 	"github.com/marzeq/qk/attributes"
 )
 
-const artifactCacheVersion = 1
-const artifactCompilerABI = "qk-lowered-artifacts-v1"
+const artifactCacheVersion = 2
+const artifactCompilerABI = "qk-lowered-artifacts-v2"
 const artifactMagic = "QKARTF01"
 const buildSnapshotMagic = "QKBUILD1"
 const maxArtifactField = 1 << 30
@@ -27,8 +27,8 @@ type artifactCache struct {
 }
 
 type cachedArtifact struct {
-	LLVM    string
-	Objects map[string][]byte
+	ImplementationHash string
+	Objects            map[string][]byte
 }
 
 type cachedBuildEntry struct {
@@ -61,7 +61,7 @@ func newArtifactCache(args *Args) (*artifactCache, error) {
 	} {
 		writeHashString(hash, value)
 	}
-	return &artifactCache{root: filepath.Join(root, "artifacts-v1", hex.EncodeToString(hash.Sum(nil)))}, nil
+	return &artifactCache{root: filepath.Join(root, "artifacts-v2", hex.EncodeToString(hash.Sum(nil)))}, nil
 }
 
 func writeHashString(writer io.Writer, value string) {
@@ -123,9 +123,9 @@ func (cache *artifactCache) specializationPath(ownerHash, requestHash string) st
 	return filepath.Join(cache.root, ownerHash, "specializations", requestHash)
 }
 
-func loadCachedArtifact(path, expectedLLVM string) (*cachedArtifact, bool) {
+func loadCachedArtifact(path, expectedHash string) (*cachedArtifact, bool) {
 	artifact, ok := loadCachedArtifactAny(path)
-	return artifact, ok && artifact.LLVM == expectedLLVM
+	return artifact, ok && artifact.ImplementationHash == expectedHash
 }
 
 func loadCachedArtifactAny(path string) (*cachedArtifact, bool) {
@@ -143,15 +143,15 @@ func loadCachedArtifactAny(path string) (*cachedArtifact, bool) {
 	if err != nil || version != artifactCacheVersion {
 		return nil, false
 	}
-	llvm, err := readArtifactString(reader)
-	if err != nil {
+	implementationHash, err := readArtifactString(reader)
+	if err != nil || !validArtifactHash(implementationHash) {
 		return nil, false
 	}
 	count, err := readArtifactU32(reader)
 	if err != nil || count > 1024 {
 		return nil, false
 	}
-	artifact := &cachedArtifact{LLVM: llvm, Objects: make(map[string][]byte, count)}
+	artifact := &cachedArtifact{ImplementationHash: implementationHash, Objects: make(map[string][]byte, count)}
 	for range count {
 		key, keyErr := readArtifactString(reader)
 		object, objectErr := readArtifactBytes(reader)
@@ -272,7 +272,8 @@ func (cache *artifactCache) loadBuildSnapshot(hash string) (*cachedBuildSnapshot
 		if err != nil || strings.Contains(snapshot.Modules[i].Path, "..") || filepath.IsAbs(snapshot.Modules[i].Path) {
 			return nil, false
 		}
-		if _, ok := loadCachedArtifactAny(filepath.Join(cache.root, snapshot.Modules[i].Path)); !ok {
+		artifact, ok := loadCachedArtifactAny(filepath.Join(cache.root, snapshot.Modules[i].Path))
+		if !ok || filepath.Base(filepath.Dir(filepath.Join(cache.root, snapshot.Modules[i].Path))) != artifact.ImplementationHash && filepath.Base(filepath.Join(cache.root, snapshot.Modules[i].Path)) == "blob" {
 			return nil, false
 		}
 	}
@@ -311,7 +312,7 @@ func (cache *artifactCache) loadBuildSnapshot(hash string) (*cachedBuildSnapshot
 }
 
 func storeCachedArtifact(path string, artifact *cachedArtifact) error {
-	if artifact == nil || artifact.LLVM == "" {
+	if artifact == nil || !validArtifactHash(artifact.ImplementationHash) {
 		return errors.New("cannot store empty artifact")
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -329,7 +330,7 @@ func storeCachedArtifact(path string, artifact *cachedArtifact) error {
 		writeErr = writeArtifactU32(writer, artifactCacheVersion)
 	}
 	if writeErr == nil {
-		writeErr = writeArtifactString(writer, artifact.LLVM)
+		writeErr = writeArtifactString(writer, artifact.ImplementationHash)
 	}
 	keys := make([]string, 0, len(artifact.Objects))
 	for key := range artifact.Objects {
@@ -360,7 +361,7 @@ func storeCachedArtifact(path string, artifact *cachedArtifact) error {
 		return nil
 	}
 	// Another compiler may have installed the same content-addressed artifact.
-	if existing, ok := loadCachedArtifact(path, artifact.LLVM); ok {
+	if existing, ok := loadCachedArtifact(path, artifact.ImplementationHash); ok {
 		for _, key := range keys {
 			if len(existing.Objects[key]) == 0 {
 				return os.Rename(temporaryPath, path)
@@ -369,6 +370,11 @@ func storeCachedArtifact(path string, artifact *cachedArtifact) error {
 		return nil
 	}
 	return os.Rename(temporaryPath, path)
+}
+
+func validArtifactHash(value string) bool {
+	decoded, err := hex.DecodeString(value)
+	return err == nil && len(decoded) == sha256.Size
 }
 
 func readArtifactU32(reader io.Reader) (uint32, error) {

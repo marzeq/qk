@@ -18,7 +18,7 @@ func TestArtifactCacheUsesRequestedLayoutAndBinaryFormat(t *testing.T) {
 	}
 	implementation := implementationHash("std.io", "; llvm")
 	path := cache.modulePath(implementation)
-	artifact := &cachedArtifact{LLVM: "; llvm", Objects: map[string][]byte{"native": {1, 2, 3}}}
+	artifact := &cachedArtifact{ImplementationHash: implementation, Objects: map[string][]byte{"native": {1, 2, 3}}}
 	if err := storeCachedArtifact(path, artifact); err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +32,10 @@ func TestArtifactCacheUsesRequestedLayoutAndBinaryFormat(t *testing.T) {
 	if !bytes.HasPrefix(raw, []byte(artifactMagic)) || bytes.HasPrefix(raw, []byte("{")) {
 		t.Fatalf("artifact is not the custom binary format: %q", raw[:min(len(raw), 16)])
 	}
-	loaded, ok := loadCachedArtifact(path, "; llvm")
+	if bytes.Contains(raw, []byte("; llvm")) {
+		t.Fatal("artifact contains LLVM IR")
+	}
+	loaded, ok := loadCachedArtifact(path, implementation)
 	if !ok || !bytes.Equal(loaded.Objects["native"], []byte{1, 2, 3}) {
 		t.Fatalf("artifact did not round trip: %#v", loaded)
 	}
@@ -46,7 +49,7 @@ func TestSpecializationsAccumulateWithoutRewritingModuleBlob(t *testing.T) {
 	}
 	implementation := implementationHash("std.io", "; base")
 	modulePath := cache.modulePath(implementation)
-	if err := storeCachedArtifact(modulePath, &cachedArtifact{LLVM: "; base"}); err != nil {
+	if err := storeCachedArtifact(modulePath, &cachedArtifact{ImplementationHash: implementation}); err != nil {
 		t.Fatal(err)
 	}
 	before, err := os.ReadFile(modulePath)
@@ -55,7 +58,8 @@ func TestSpecializationsAccumulateWithoutRewritingModuleBlob(t *testing.T) {
 	}
 	for _, request := range []string{"request-a", "request-b"} {
 		path := cache.specializationPath(implementation, request)
-		if err := storeCachedArtifact(path, &cachedArtifact{LLVM: "; " + request}); err != nil {
+		requestHash := implementationHash("specialization", request)
+		if err := storeCachedArtifact(path, &cachedArtifact{ImplementationHash: requestHash}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -77,7 +81,7 @@ func TestCorruptArtifactIsRejected(t *testing.T) {
 	if err := os.WriteFile(path, []byte(artifactMagic+"broken"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := loadCachedArtifact(path, "; llvm"); ok {
+	if _, ok := loadCachedArtifact(path, implementationHash("x", "y")); ok {
 		t.Fatal("corrupt artifact was accepted")
 	}
 }
@@ -103,9 +107,10 @@ func TestBuildSnapshotRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	modulePath := cache.modulePath("implementation")
+	implementation := implementationHash("main", "; module")
+	modulePath := cache.modulePath(implementation)
 	if err := storeCachedArtifact(modulePath, &cachedArtifact{
-		LLVM: "; module", Objects: map[string][]byte{cachedNativeObjectKey: {1}},
+		ImplementationHash: implementation, Objects: map[string][]byte{cachedNativeObjectKey: {1}},
 	}); err != nil {
 		t.Fatal(err)
 	}

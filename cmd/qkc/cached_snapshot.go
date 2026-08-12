@@ -13,7 +13,7 @@ func runCachedBuildSnapshot(cache *artifactCache, snapshot *cachedBuildSnapshot,
 	for _, warning := range snapshot.Warnings {
 		fmt.Println(warning)
 	}
-	if args.noEmit && !args.dumpLLVM {
+	if args.noEmit {
 		return nil
 	}
 	var buildDirs []string
@@ -22,9 +22,6 @@ func runCachedBuildSnapshot(cache *artifactCache, snapshot *cachedBuildSnapshot,
 		artifact, ok := loadCachedArtifactAny(filepath.Join(cache.root, relativePath))
 		if !ok {
 			return fmt.Errorf("cached artifact %s is unavailable", name)
-		}
-		if args.dumpLLVM {
-			dumpLLVMModule(artifact.LLVM)
 		}
 		if args.noEmit {
 			return nil
