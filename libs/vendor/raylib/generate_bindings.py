@@ -17,7 +17,7 @@ Reserved = {
 
 Primitives = {
     "void": "void",
-    "bool": "std.ctypes.bool",
+    "bool": "bool",
     "char": "std.ctypes.char",
     "unsigned char": "std.ctypes.unsigned_char",
     "unsigned short": "std.ctypes.unsigned_short",
@@ -26,19 +26,7 @@ Primitives = {
     "long": "std.ctypes.long",
     "float": "std.ctypes.float",
     "double": "std.ctypes.double",
-}
-
-QKPrimitives = {
-    "void": "void",
-    "bool": "bool",
-    "char": "u8",
-    "unsigned char": "u8",
-    "unsigned short": "u16",
-    "unsigned int": "u32",
-    "int": "i32",
-    "long": "i64",
-    "float": "f32",
-    "double": "f64",
+    "va_list": "VaList",
 }
 
 EnumPrefixes = {
@@ -68,7 +56,7 @@ EnumPrefixes = {
 
 def snake(name: str) -> str:
     name = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", name)
-    name = re.sub(r"([a-z])([A-Z])", r"\1_\2", name)
+    name = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", name)
     return name.lower()
 
 
@@ -101,8 +89,6 @@ def qk_type(c_type: str, field: bool = False) -> str:
 
     if c_type == "...":
         return "..."
-    if c_type == "va_list":
-        return "*mut TraceLogArgs"
     if c_type == "const char *":
         return "cstr"
     if c_type == "const char **":
@@ -114,35 +100,6 @@ def qk_type(c_type: str, field: bool = False) -> str:
     if is_const:
         base = base[6:].strip()
     mapped = Primitives.get(base, base)
-
-    if stars == 0:
-        return mapped
-
-    pointer = ("*" if is_const else "*mut ") + mapped
-    for _ in range(stars - 1):
-        pointer = "*mut " + pointer
-    return pointer
-
-
-def wrapper_type(c_type: str, parameter: bool = False) -> str:
-    c_type = " ".join(c_type.strip().split())
-    array = re.fullmatch(r"(.+?)\[(\d+)\]", c_type)
-    if array:
-        return f"[{array[2]}]{wrapper_type(array[1], parameter=parameter)}"
-
-    if c_type == "...":
-        return "..."
-    if c_type == "const char *":
-        return "str" if parameter else "cstr"
-    if c_type == "const char **":
-        return "*mut cstr"
-
-    stars = c_type.count("*")
-    base = c_type.replace("*", "").strip()
-    is_const = base.startswith("const ")
-    if is_const:
-        base = base[6:].strip()
-    mapped = QKPrimitives.get(base, base)
 
     if stars == 0:
         return mapped
@@ -194,50 +151,17 @@ ReturnTypeOverrides = {
 }
 
 
-def declaration_params(symbol: str, params: list[dict], wrapper: bool = False) -> str:
+def declaration_params(symbol: str, params: list[dict]) -> str:
     rendered = []
     for param in params:
         if param["type"] == "...":
             rendered.append("...")
         else:
-            rendered_type = qk_type(param["type"])
-            if wrapper:
-                rendered_type = ParamTypeOverrides.get(
-                    (symbol, param["name"]), wrapper_type(param["type"], parameter=True)
-                )
-            else:
-                rendered_type = ParamTypeOverrides.get(
-                    (symbol, param["name"]), rendered_type
-                )
+            rendered_type = ParamTypeOverrides.get(
+                (symbol, param["name"]), qk_type(param["type"])
+            )
             rendered.append(f"{identifier(param['name'])}: {rendered_type}")
     return ", ".join(rendered)
-
-
-def wrapper_argument(symbol: str, param: dict) -> str:
-    name = identifier(param["name"])
-    c_type = param["type"]
-    if c_type == "const char *":
-        return f"_{name}_cstr"
-    override = ParamTypeOverrides.get((symbol, param["name"]))
-    if override:
-        return name
-    abi_type = qk_type(c_type)
-    public_type = wrapper_type(c_type, parameter=True)
-    if public_type == abi_type:
-        return name
-    if c_type == "bool":
-        return f"if {name} {{ 1 }} else {{ 0 }}"
-    return f"{name}.({abi_type})"
-
-
-def wrapper_return_expression(symbol: str, c_type: str, call: str) -> str:
-    public_type = ReturnTypeOverrides.get(symbol, wrapper_type(c_type))
-    abi_type = ReturnTypeOverrides.get(symbol, qk_type(c_type))
-    if public_type == abi_type:
-        return call
-    if c_type == "bool":
-        return f"{call} != 0"
-    return f"{call}.({public_type})"
 
 
 def generate(api: dict) -> str:
@@ -267,17 +191,16 @@ def generate(api: dict) -> str:
         '      framework "OpenGL",',
         '      path "./native/macos-universal/libraylib.a",',
         "    } else {",
-        '      system "raylib",',
+        '      compiler_error("Cannot build raylib for this platform.")',
         "    }",
         "  )",
         "",
         "import std.ctypes",
-        "import std.libc",
+        "",
+        "pub let VaList = type alias *mut void",
         "",
         "pub let rAudioBuffer = type opaque",
         "pub let rAudioProcessor = type opaque",
-        "// ABI-only view of TraceLogCallback's va_list; do not dereference it.",
-        "pub let TraceLogArgs = type opaque",
         "",
     ]
 
@@ -338,22 +261,6 @@ def generate(api: dict) -> str:
     ]
     out += constants + [""]
 
-    out += [
-        "let _raylib_cstr(value: str): *mut u8 {",
-        '  if @len(value) == ~0.(usz) { panic("raylib string is too large") }',
-        "  let buffer = std.libc.malloc(@len(value) + 1).(*mut u8)",
-        '  if buffer == nil { panic("raylib string allocation failed") }',
-        "  let mut index: usz = 0",
-        "  for index < @len(value) {",
-        "    buffer[index] = value[index]",
-        "    index += 1",
-        "  }",
-        "  buffer[@len(value)] = '\\0'",
-        "  return buffer",
-        "}",
-        "",
-    ]
-
     color_names = {
         "LIGHTGRAY": "LightGray", "GRAY": "Gray", "DARKGRAY": "DarkGray",
         "YELLOW": "Yellow", "GOLD": "Gold", "ORANGE": "Orange",
@@ -378,42 +285,11 @@ def generate(api: dict) -> str:
     for function in api["functions"]:
         symbol = function["name"]
         params = declaration_params(symbol, function.get("params", []))
-        return_type = ReturnTypeOverrides.get(
-            symbol, qk_type(function["returnType"])
+        return_type = ReturnTypeOverrides.get(symbol, qk_type(function["returnType"]))
+        out.append(
+            f"pub let {snake(symbol)}({params}): {return_type} "
+            f"@foreign(symbol \"{symbol}\")"
         )
-        out.append(f"let {symbol}({params}): {return_type} @foreign")
-
-    out += [""]
-
-    for function in api["functions"]:
-        symbol = function["name"]
-        all_params = function.get("params", [])
-        params = [param for param in all_params if param["type"] != "..."]
-        declaration = declaration_params(symbol, params, wrapper=True)
-        return_type = ReturnTypeOverrides.get(
-            symbol, wrapper_type(function["returnType"])
-        )
-        out.append(f"pub let {snake(symbol)}({declaration}): {return_type} {{")
-        for param in params:
-            if param["type"] != "const char *":
-                continue
-            name = identifier(param["name"])
-            out.append(f"  let _{name}_cstr = _raylib_cstr({name})")
-        args = ", ".join(wrapper_argument(symbol, param) for param in params)
-        call = f"{symbol}({args})"
-        if function["returnType"] == "void":
-            out.append(f"  {call}")
-        else:
-            out.append(f"  let _result = {call}")
-        for param in params:
-            if param["type"] == "const char *":
-                out.append(f"  std.libc.free(_{identifier(param['name'])}_cstr)")
-        if function["returnType"] != "void":
-            expression = wrapper_return_expression(
-                symbol, function["returnType"], "_result"
-            )
-            out.append(f"  return {expression}")
-        out += ["}", ""]
 
     out += [
         "",
