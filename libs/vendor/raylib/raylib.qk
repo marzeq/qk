@@ -1669,19 +1669,19 @@ pub let end_drawing(): void {
   EndDrawing()
 }
 
-pub let begin_mode2_d(camera: Camera2D): void {
+pub let begin_mode2d(camera: Camera2D): void {
   BeginMode2D(camera)
 }
 
-pub let end_mode2_d(): void {
+pub let end_mode2d(): void {
   EndMode2D()
 }
 
-pub let begin_mode3_d(camera: Camera3D): void {
+pub let begin_mode3d(camera: Camera3D): void {
   BeginMode3D(camera)
 }
 
-pub let end_mode3_d(): void {
+pub let end_mode3d(): void {
   EndMode3D()
 }
 
@@ -1811,12 +1811,12 @@ pub let get_world_to_screen_ex(position: Vector3, camera: Camera, width: i32, he
   return _result
 }
 
-pub let get_world_to_screen2_d(position: Vector2, camera: Camera2D): Vector2 {
+pub let get_world_to_screen2d(position: Vector2, camera: Camera2D): Vector2 {
   let _result = GetWorldToScreen2D(position, camera)
   return _result
 }
 
-pub let get_screen_to_world2_d(position: Vector2, camera: Camera2D): Vector2 {
+pub let get_screen_to_world2d(position: Vector2, camera: Camera2D): Vector2 {
   let _result = GetScreenToWorld2D(position, camera)
   return _result
 }
@@ -1826,7 +1826,7 @@ pub let get_camera_matrix(camera: Camera): Matrix {
   return _result
 }
 
-pub let get_camera_matrix2_d(camera: Camera2D): Matrix {
+pub let get_camera_matrix2d(camera: Camera2D): Matrix {
   let _result = GetCameraMatrix2D(camera)
   return _result
 }
@@ -3742,23 +3742,23 @@ pub let text_to_float(text: str): f32 {
   return _result.(f32)
 }
 
-pub let draw_line3_d(start_pos: Vector3, end_pos: Vector3, color: Color): void {
+pub let draw_line3d(start_pos: Vector3, end_pos: Vector3, color: Color): void {
   DrawLine3D(start_pos, end_pos, color)
 }
 
-pub let draw_point3_d(position: Vector3, color: Color): void {
+pub let draw_point3d(position: Vector3, color: Color): void {
   DrawPoint3D(position, color)
 }
 
-pub let draw_circle3_d(center: Vector3, radius: f32, rotation_axis: Vector3, rotation_angle: f32, color: Color): void {
+pub let draw_circle3d(center: Vector3, radius: f32, rotation_axis: Vector3, rotation_angle: f32, color: Color): void {
   DrawCircle3D(center, radius.(std.ctypes.float), rotation_axis, rotation_angle.(std.ctypes.float), color)
 }
 
-pub let draw_triangle3_d(v1: Vector3, v2: Vector3, v3: Vector3, color: Color): void {
+pub let draw_triangle3d(v1: Vector3, v2: Vector3, v3: Vector3, color: Color): void {
   DrawTriangle3D(v1, v2, v3, color)
 }
 
-pub let draw_triangle_strip3_d(points: *Vector3, point_count: i32, color: Color): void {
+pub let draw_triangle_strip3d(points: *Vector3, point_count: i32, color: Color): void {
   DrawTriangleStrip3D(points, point_count.(std.ctypes.int), color)
 }
 
