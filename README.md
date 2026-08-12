@@ -70,3 +70,17 @@ source ./scripts/macos-brew-init.sh
 ## Contributing
 
 I don't really see a point in accepting contributions at this stage, but you may try I guess, maybe I'll like your changes.
+
+## Versions and releases
+
+I use `nightly-*` releases as short-lived development snapshots and `pre.N`
+tags for milestones I consider worth keeping. The language has a strong enough
+identity that I no longer intend to make major syntax or semantic changes
+without a concrete need, but compatibility is still not guaranteed between
+these milestones.
+
+During the pre-release stage I mostly want to build real programs, fix the bugs
+they expose, expand the standard library, and improve compilation speed and
+tooling. QK may stay in this stage indefinitely as a hobby project. If it ever
+makes sense to maintain stable releases, I plan to switch to a
+`YY.minor.patch` version scheme.
