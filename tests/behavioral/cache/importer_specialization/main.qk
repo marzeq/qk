@@ -1,5 +1,0 @@
-module main
-
-import std.io
-
-let main() {}

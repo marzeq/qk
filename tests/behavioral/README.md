@@ -7,12 +7,11 @@ suite is a normal Go package, so all fixtures run as part of:
 go test ./...
 ```
 
-The package builds `qkc` once in `TestMain`, copies every fixture to a temporary
-directory, and gives it a private `XDG_CACHE_HOME`. Non-cache fixtures run in
-parallel. Cache sequences and fixtures with `"serial": true` run serially.
+The package builds `qkc` once in `TestMain` and copies every fixture to a
+temporary directory. Fixtures run in parallel unless `"serial": true`.
 
 `test.json` requires one of these modes: `run-pass`, `compile-pass`,
-`compile-fail`, `run-fail`, or `cache-sequence`. It can also set
+`compile-fail`, or `run-fail`. It can also set
 `compilerArgs`, `args`, `env`, `goos`, `goarch`, `timeout`, `stdoutRegex`, and
 `stderrRegex`. A fixture can provide `stdin.txt`, `args.txt`, `stdout.txt`,
 `stderr.txt`, and `exit-code.txt`. Each line of `args.txt` is one argument, so
@@ -25,11 +24,6 @@ accept an intentional output change, run:
 ```sh
 UPDATE_BEHAVIORAL=1 go test ./tests/behavioral -run TestBehavioral
 ```
-
-Cache sequences retain the working tree and cache between ordered steps. A
-step can replace files with `files`, choose a pass/fail `mode`, and assert exact
-`stdout`, exact `stderr`, `exitCode`, `stdoutContains`, or
-`stdoutNotContains`.
 
 `features.json` is checked independently. Every listed feature must reference
 an existing positive fixture and either an existing negative fixture or an

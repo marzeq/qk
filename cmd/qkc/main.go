@@ -7,14 +7,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime/pprof"
-	"strings"
 
-	"github.com/marzeq/qk/attributes"
 	"github.com/marzeq/qk/comptime"
 	"github.com/marzeq/qk/ir"
 	"github.com/marzeq/qk/loader"
 	"github.com/marzeq/qk/parser"
-	"github.com/marzeq/qk/sema"
 	"github.com/marzeq/qk/shared"
 	"github.com/marzeq/qk/stdlib"
 	"github.com/marzeq/qk/types"
@@ -83,54 +80,15 @@ func main() {
 	if args.outputType == OutputExecutable && discovered[0].Name != "main" {
 		fatal("cannot build executable from package %q: package must declare module main", discovered[0].Name)
 	}
-	qkmInputs, qkmErr := makeQKMInputs(args, compileTimeSources, sourcePackagePaths)
-	var cachedQKM *qkmFile
-	if qkmErr == nil && !args.dumpIR {
-		cachedQKM, _ = loadQKM(qkmInputs)
-		if cachedQKM != nil {
-			if args.verbose {
-				fmt.Printf("used cached QK modules from %s\n", qkmInputs.Path)
-			}
-			check(runCachedQKM(cachedQKM, qkmInputs, args))
-			return
-		}
-	}
 	comptimeConfig.ModuleBindings, err = comptime.ResolvePackageBindings(compileTimeSources, sourcePackagePaths, comptimeConfig)
 	check(err)
-	forcedRebuild := make(map[string]bool)
-	var frontend *incrementalFrontendResult
-	for {
-		frontend, err = runIncrementalFrontend(
-			args, comptimeConfig, compileTimeSources, sourcePackagePaths, qkmInputs,
-			forcedRebuild, args.verbose, args.debug,
-		)
-		check(err)
-		missing := missingCachedImplementationModules(frontend)
-		changed := false
-		for _, module := range missing {
-			if forcedRebuild[module] {
-				continue
-			}
-			forcedRebuild[module] = true
-			changed = true
-			if args.verbose {
-				fmt.Printf("rebuilding cached frontend for module %s to materialize requested specialization\n", module)
-			}
-		}
-		if !changed {
-			if len(missing) != 0 {
-				fatal("cached implementation remains incomplete after rebuilding modules: %s", strings.Join(missing, ", "))
-			}
-			break
-		}
-	}
+	frontend, err := runFrontend(
+		args, comptimeConfig, compileTimeSources, sourcePackagePaths, args.verbose, args.debug,
+	)
+	check(err)
 	modules, order := frontend.modules, frontend.order
 	irModules, genericTemplates := frontend.irModules, frontend.templates
-	for _, warning := range frontend.cachedWarnings {
-		fmt.Println(warning)
-	}
 	var warnings = frontend.warnings
-	var cachedWarningText []string
 	for _, warning := range warnings {
 		mode := args.warningMode
 		if diagnostic, ok := warning.(shared.Error); ok {
@@ -141,7 +99,6 @@ func main() {
 		switch mode {
 		case WarningModeShow:
 			text := warning.Error()
-			cachedWarningText = append(cachedWarningText, text)
 			fmt.Println(text)
 		case WarningModeError:
 			if diagnostic, ok := warning.(shared.Error); ok {
@@ -158,7 +115,7 @@ func main() {
 		order = append(order, loader.SpecializationModule)
 	}
 	requestedModuleLinks := linksForUsedForeignSymbols(
-		frontend.partials, frontend.cachedModules, irModules, args.outputType == OutputObject,
+		frontend.partials, irModules, args.outputType == OutputObject,
 	)
 	probeLibcFreeLink := args.outputType == OutputExecutable && targetIsLinuxX8664(args.target) &&
 		moduleLinksContainLibc(requestedModuleLinks)
@@ -173,10 +130,6 @@ func main() {
 
 	llvmOutputs := make(map[string]string, len(irModules))
 	for _, moduleName := range order {
-		if cachedModule := frontend.cachedModules[moduleName]; cachedModule != nil {
-			llvmOutputs[moduleName] = cachedModule.LLVM
-			continue
-		}
 		llvmOutputs[moduleName] = buildLLVMModule(
 			irModules[moduleName],
 			moduleName,
@@ -265,65 +218,6 @@ func main() {
 		}
 	}
 
-	moduleInterfaces := frontend.interfaces
-	moduleInterfaceHashes := qkmInterfaceHashes(moduleInterfaces)
-	moduleSourceHashes := qkmSourceHashes(compileTimeSources, sourcePackagePaths)
-	activeQKM := &qkmFile{
-		Primary: args.mainModule, Order: append([]string(nil), order...),
-		Modules: make(map[string]*qkmModule, len(order)), RuntimeLLVM: freestandingRuntime,
-		Links: append([]attributes.Link(nil), moduleLinks...), LinkRoots: append([]string(nil), linkRoots...),
-		Warnings: cachedWarningText,
-	}
-	activeQKM.RuntimeObjects = findQKMRuntimeObjects(qkmInputs, freestandingRuntime)
-	for _, moduleName := range order {
-		if cachedModule := frontend.cachedModules[moduleName]; cachedModule != nil {
-			if len(cachedModule.Objects) == 0 {
-				if objects := findQKMImplementationObjects(qkmInputs, moduleName, llvmOutputs[moduleName]); len(objects) != 0 {
-					cachedModule.Objects = objects
-					cachedModule.cacheDirty = true
-				}
-			}
-			activeQKM.Modules[moduleName] = cachedModule
-			continue
-		}
-		encodedTemplates, encodeErr := encodeQKMTemplates(genericTemplates[moduleName])
-		check(encodeErr)
-		encodedIR, encodeErr := encodeQKMIR(irModules[moduleName])
-		check(encodeErr)
-		var imports []string
-		var linkProviders []qkmLinkProvider
-		var objects map[string][]byte
-		if module := modules[moduleName]; module != nil {
-			imports = append([]string(nil), module.Imports...)
-			linkProviders = qkmLinkProviders(frontend.partials, moduleName)
-		}
-		if objects == nil {
-			objects = findQKMImplementationObjects(qkmInputs, moduleName, llvmOutputs[moduleName])
-		}
-		importInterfaces := make(map[string]string, len(imports))
-		for _, imported := range imports {
-			importInterfaces[imported] = moduleInterfaceHashes[imported]
-		}
-		iface, hasInterface := moduleInterfaces[moduleName]
-		var interfacePtr *sema.ModuleInterface
-		if hasInterface {
-			interfaceCopy := iface
-			interfacePtr = &interfaceCopy
-		}
-		activeQKM.Modules[moduleName] = &qkmModule{
-			SourceHash: moduleSourceHashes[moduleName], ComptimeHash: frontend.comptimeHashes[moduleName], Imports: imports,
-			ImportInterfaces: importInterfaces, Interface: interfacePtr,
-			Templates: encodedTemplates, IR: encodedIR, LLVM: llvmOutputs[moduleName], LinkProviders: linkProviders, Objects: objects,
-		}
-	}
-	if qkmErr == nil {
-		if err := storeQKM(qkmInputs, activeQKM); err == nil {
-			pruneOldQKMFiles(qkmInputs.Path)
-		} else if args.verbose {
-			fmt.Fprintf(os.Stderr, "warning: failed to write QK module cache: %v\n", err)
-		}
-	}
-
 	if args.noEmit {
 		if args.dumpAsm {
 			for _, moduleName := range order {
@@ -349,8 +243,6 @@ func main() {
 
 	var buildDirs []string
 	var objFiles []string
-	objectKey := qkmObjectKey(args)
-	qkmObjectsChanged := false
 	for _, moduleName := range order {
 		buildDir, err := emitLLVMFile(llvmOutputs[moduleName])
 		check(err)
@@ -372,17 +264,8 @@ func main() {
 		}
 
 		objFile := filepath.Join(buildDir, "module.o")
-		if materializeQKMObject(activeQKM.Modules[moduleName], objectKey, objFile) {
-			if args.verbose {
-				fmt.Printf("used cached object for module %s\n", moduleName)
-			}
-		} else {
-			objFile, err = compileLLVMModule(buildDir, moduleName, llvmOutputs[moduleName], args)
-			check(err)
-			if rememberQKMObject(activeQKM.Modules[moduleName], objectKey, objFile) == nil {
-				qkmObjectsChanged = true
-			}
-		}
+		objFile, err = compileLLVMModule(buildDir, moduleName, llvmOutputs[moduleName], args)
+		check(err)
 		objFiles = append(objFiles, objFile)
 	}
 	if freestandingRuntime != "" {
@@ -397,27 +280,9 @@ func main() {
 			check(dumpAssemblyFile(buildDir))
 		}
 		objFile := filepath.Join(buildDir, "module.o")
-		if data := activeQKM.RuntimeObjects[objectKey]; len(data) != 0 && os.WriteFile(objFile, data, 0o644) == nil {
-			if args.verbose {
-				fmt.Println("used cached object for freestanding runtime")
-			}
-		} else {
-			objFile, err = compileLLVMModule(buildDir, "freestanding runtime", freestandingRuntime, args)
-			check(err)
-			if data, readErr := os.ReadFile(objFile); readErr == nil {
-				if activeQKM.RuntimeObjects == nil {
-					activeQKM.RuntimeObjects = make(map[string][]byte)
-				}
-				activeQKM.RuntimeObjects[objectKey] = data
-				qkmObjectsChanged = true
-			}
-		}
+		objFile, err = compileLLVMModule(buildDir, "freestanding runtime", freestandingRuntime, args)
+		check(err)
 		objFiles = append(objFiles, objFile)
-	}
-	if qkmObjectsChanged && qkmErr == nil {
-		if err := storeQKM(qkmInputs, activeQKM); err != nil && args.verbose {
-			fmt.Fprintf(os.Stderr, "warning: failed to update QK module cache: %v\n", err)
-		}
 	}
 
 	stat, err := os.Stat(args.output)
@@ -464,19 +329,8 @@ func main() {
 		}
 		objFiles[len(objFiles)-1] = runtimeObject
 		moduleLinks = requestedModuleLinks
-		activeQKM.RuntimeLLVM = hostedRuntime
-		activeQKM.RuntimeObjects = make(map[string][]byte)
-		if data, readErr := os.ReadFile(runtimeObject); readErr == nil {
-			activeQKM.RuntimeObjects[objectKey] = data
-		}
-		activeQKM.Links = append([]attributes.Link(nil), moduleLinks...)
 		_ = os.Remove(args.output)
 		err = linkObjects(objFiles, moduleLinks, linkRoots, args)
-		if err == nil && qkmErr == nil {
-			if storeErr := storeQKM(qkmInputs, activeQKM); storeErr != nil && args.verbose {
-				fmt.Fprintf(os.Stderr, "warning: failed to update QK module cache after hosted link: %v\n", storeErr)
-			}
-		}
 	}
 	check(err)
 

@@ -1,7 +1,0 @@
-module main
-
-let CacheValue: i32 = comptime 1
-
-let main() {
-  assert(CacheValue == 1, "initial application comptime value")
-}

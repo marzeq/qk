@@ -30,31 +30,17 @@ var (
 )
 
 type testSpec struct {
-	Mode          string            `json:"mode"`
-	Package       string            `json:"package,omitempty"`
-	CompilerArgs  []string          `json:"compilerArgs,omitempty"`
-	Args          []string          `json:"args,omitempty"`
-	Env           map[string]string `json:"env,omitempty"`
-	GOOS          []string          `json:"goos,omitempty"`
-	GOARCH        []string          `json:"goarch,omitempty"`
-	Timeout       string            `json:"timeout,omitempty"`
-	Serial        bool              `json:"serial,omitempty"`
-	StdoutRegex   bool              `json:"stdoutRegex,omitempty"`
-	StderrRegex   bool              `json:"stderrRegex,omitempty"`
-	CacheSequence []sequenceStep    `json:"cacheSequence,omitempty"`
-}
-
-type sequenceStep struct {
-	Name               string            `json:"name"`
-	Mode               string            `json:"mode,omitempty"`
-	CompilerArgs       []string          `json:"compilerArgs,omitempty"`
-	Files              map[string]string `json:"files,omitempty"`
-	Stdout             *string           `json:"stdout,omitempty"`
-	Stderr             *string           `json:"stderr,omitempty"`
-	ExitCode           *int              `json:"exitCode,omitempty"`
-	StdoutContains     []string          `json:"stdoutContains,omitempty"`
-	StdoutNotContains  []string          `json:"stdoutNotContains,omitempty"`
-	NoDynamicLibraries bool              `json:"noDynamicLibraries,omitempty"`
+	Mode         string            `json:"mode"`
+	Package      string            `json:"package,omitempty"`
+	CompilerArgs []string          `json:"compilerArgs,omitempty"`
+	Args         []string          `json:"args,omitempty"`
+	Env          map[string]string `json:"env,omitempty"`
+	GOOS         []string          `json:"goos,omitempty"`
+	GOARCH       []string          `json:"goarch,omitempty"`
+	Timeout      string            `json:"timeout,omitempty"`
+	Serial       bool              `json:"serial,omitempty"`
+	StdoutRegex  bool              `json:"stdoutRegex,omitempty"`
+	StderrRegex  bool              `json:"stderrRegex,omitempty"`
 }
 
 type featureManifest struct {
@@ -110,7 +96,7 @@ func TestBehavioral(t *testing.T) {
 	for _, caseName := range cases {
 		t.Run(caseName, func(t *testing.T) {
 			spec := readSpec(t, filepath.Join(fixturesRoot, filepath.FromSlash(caseName)))
-			if !spec.Serial && spec.Mode != "cache-sequence" {
+			if !spec.Serial {
 				t.Parallel()
 			}
 			runCase(t, caseName, spec)
@@ -166,7 +152,7 @@ func TestFeatureManifest(t *testing.T) {
 			}
 		}
 		for _, fixture := range feature.Positive {
-			if known[fixture] && modes[fixture] != "run-pass" && modes[fixture] != "compile-pass" && modes[fixture] != "cache-sequence" {
+			if known[fixture] && modes[fixture] != "run-pass" && modes[fixture] != "compile-pass" {
 				t.Errorf("feature %q positive fixture %q has mode %q", feature.Name, fixture, modes[fixture])
 			}
 		}
@@ -216,7 +202,7 @@ func readSpec(t *testing.T, caseDir string) testSpec {
 		t.Fatalf("decode test.json: %v", err)
 	}
 	switch spec.Mode {
-	case "run-pass", "compile-pass", "compile-fail", "run-fail", "cache-sequence":
+	case "run-pass", "compile-pass", "compile-fail", "run-fail":
 	default:
 		t.Fatalf("unknown behavioral mode %q", spec.Mode)
 	}
@@ -234,17 +220,11 @@ func runCase(t *testing.T, caseName string, spec testSpec) {
 	if err := copyFixture(fixtureDir, workDir); err != nil {
 		t.Fatal(err)
 	}
-	cacheDir := filepath.Join(workDir, ".cache")
-	if spec.Mode == "cache-sequence" {
-		runCacheSequence(t, fixtureDir, workDir, cacheDir, spec)
-		return
-	}
-
-	stdout, stderr, exitCode := invoke(t, workDir, cacheDir, spec, spec.Mode, spec.CompilerArgs)
+	stdout, stderr, exitCode := invoke(t, workDir, spec, spec.Mode, spec.CompilerArgs)
 	assertResult(t, fixtureDir, workDir, spec, stdout, stderr, exitCode)
 }
 
-func invoke(t *testing.T, workDir, cacheDir string, spec testSpec, mode string, compilerArgs []string) (string, string, int) {
+func invoke(t *testing.T, workDir string, spec testSpec, mode string, compilerArgs []string) (string, string, int) {
 	t.Helper()
 	timeout := 30 * time.Second
 	if spec.Timeout != "" {
@@ -289,7 +269,7 @@ func invoke(t *testing.T, workDir, cacheDir string, spec testSpec, mode string, 
 	// Diagnostics omit caret marker lines when rendered with ANSI colours.
 	// Force the compiler's plain format so snapshots are identical whether the
 	// parent go test command is attached to a terminal or captured by CI.
-	cmd.Env = append(cmd.Env, "NO_COLOR=1", "XDG_CACHE_HOME="+cacheDir, "QK_LIB_DIR="+filepath.Join(repositoryRoot, "libs"))
+	cmd.Env = append(cmd.Env, "NO_COLOR=1", "QK_LIB_DIR="+filepath.Join(repositoryRoot, "libs"))
 	if stdin, ok := optionalFile(filepath.Join(workDir, "stdin.txt")); ok {
 		cmd.Stdin = strings.NewReader(stdin)
 	}
@@ -372,63 +352,6 @@ func assertOutput(t *testing.T, fixtureDir, workDir, name, actual string, regex 
 	t.Errorf("%s mismatch\n%s", name, lineDiff(expected, actual))
 }
 
-func runCacheSequence(t *testing.T, fixtureDir, workDir, cacheDir string, spec testSpec) {
-	t.Helper()
-	if len(spec.CacheSequence) == 0 {
-		t.Fatal("cache-sequence fixture has no cacheSequence steps")
-	}
-	for index, step := range spec.CacheSequence {
-		name := step.Name
-		if name == "" {
-			name = strconv.Itoa(index + 1)
-		}
-		t.Run(name, func(t *testing.T) {
-			for relative, contents := range step.Files {
-				path := filepath.Join(workDir, filepath.FromSlash(relative))
-				if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
-					t.Fatal(err)
-				}
-			}
-			mode := step.Mode
-			if mode == "" {
-				mode = "build-pass"
-			}
-			compilerArgs := append(append([]string(nil), spec.CompilerArgs...), step.CompilerArgs...)
-			stdout, stderr, exitCode := invoke(t, workDir, cacheDir, spec, mode, compilerArgs)
-			stdout = cacheEvents(stdout)
-			expectedExit := 0
-			if step.ExitCode != nil {
-				expectedExit = *step.ExitCode
-			}
-			if exitCode != expectedExit {
-				t.Errorf("exit code: got %d, want %d\nstdout:\n%s\nstderr:\n%s", exitCode, expectedExit, stdout, stderr)
-			}
-			if step.Stdout != nil && stdout != normalizeExpected(*step.Stdout, fixtureDir, workDir) {
-				t.Errorf("stdout mismatch\n%s", lineDiff(normalizeExpected(*step.Stdout, fixtureDir, workDir), stdout))
-			}
-			if step.Stderr != nil && stderr != normalizeExpected(*step.Stderr, fixtureDir, workDir) {
-				t.Errorf("stderr mismatch\n%s", lineDiff(normalizeExpected(*step.Stderr, fixtureDir, workDir), stderr))
-			}
-			for _, text := range step.StdoutContains {
-				if !strings.Contains(stdout, text) {
-					t.Errorf("stdout does not contain %q\n%s", text, stdout)
-				}
-			}
-			for _, text := range step.StdoutNotContains {
-				if strings.Contains(stdout, text) {
-					t.Errorf("stdout unexpectedly contains %q\n%s", text, stdout)
-				}
-			}
-			if step.NoDynamicLibraries && exitCode == 0 {
-				assertNoDynamicLibraries(t, filepath.Join(workDir, "program"))
-			}
-		})
-	}
-}
-
 func assertNoDynamicLibraries(t *testing.T, path string) {
 	t.Helper()
 	if runtime.GOOS != "linux" {
@@ -446,19 +369,6 @@ func assertNoDynamicLibraries(t *testing.T, path string) {
 	if len(libraries) != 0 {
 		t.Errorf("output unexpectedly depends on dynamic libraries: %s", strings.Join(libraries, ", "))
 	}
-}
-
-func cacheEvents(output string) string {
-	var events []string
-	for _, line := range strings.Split(strings.TrimSuffix(output, "\n"), "\n") {
-		if strings.HasPrefix(line, "used cached ") {
-			events = append(events, line)
-		}
-	}
-	if len(events) == 0 {
-		return ""
-	}
-	return strings.Join(events, "\n") + "\n"
 }
 
 func copyFixture(source, destination string) error {

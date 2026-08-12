@@ -22,16 +22,15 @@ import (
 // adding native libraries merely because their package was loaded.
 func linksForUsedForeignSymbols(
 	partials []*loader.PartialModuleInfo,
-	cachedModules map[string]*qkmModule,
 	modules map[string]*ir.Module,
 	rootAllExternal bool,
 ) []attributes.Link {
 	referenced := reachableNativeSymbols(modules, rootAllExternal)
 	var links []attributes.Link
 	seen := map[attributes.Link]bool{}
-	addProvider := func(provider qkmLinkProvider) {
+	addProvider := func(providerLinks []attributes.Link, symbols []string) {
 		used := false
-		for _, symbol := range provider.Symbols {
+		for _, symbol := range symbols {
 			if referenced[symbol] {
 				used = true
 				break
@@ -40,7 +39,7 @@ func linksForUsedForeignSymbols(
 		if !used {
 			return
 		}
-		for _, link := range provider.Links {
+		for _, link := range providerLinks {
 			if !seen[link] {
 				seen[link] = true
 				links = append(links, link)
@@ -55,35 +54,9 @@ func linksForUsedForeignSymbols(
 		if modules[path] == nil || len(partial.Links) == 0 {
 			continue
 		}
-		addProvider(qkmLinkProvider{Links: partial.Links, Symbols: fileForeignSymbols(partial.Root)})
-	}
-	for name, module := range cachedModules {
-		if modules[name] == nil {
-			continue
-		}
-		for _, provider := range module.LinkProviders {
-			addProvider(provider)
-		}
+		addProvider(partial.Links, fileForeignSymbols(partial.Root))
 	}
 	return links
-}
-
-func qkmLinkProviders(partials []*loader.PartialModuleInfo, module string) []qkmLinkProvider {
-	var providers []qkmLinkProvider
-	for _, partial := range partials {
-		path := partial.Path
-		if path == "" {
-			path = partial.Name
-		}
-		if path != module || len(partial.Links) == 0 {
-			continue
-		}
-		providers = append(providers, qkmLinkProvider{
-			Links:   append([]attributes.Link(nil), partial.Links...),
-			Symbols: fileForeignSymbols(partial.Root),
-		})
-	}
-	return providers
 }
 
 func fileForeignSymbols(root *parser.RootNode) []string {

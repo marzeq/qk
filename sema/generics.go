@@ -400,9 +400,6 @@ func (a *Analyser) specializeGenericFunction(template *symbols.Symbol, arguments
 	return instance
 }
 
-// specializeGenericFunctionSymbol keeps source-free cached templates symbolic:
-// their concrete body is instantiated later from QKM IR rather than by cloning
-// a parser tree that is intentionally not present.
 func (a *Analyser) specializeGenericFunctionSymbol(template *symbols.Symbol, arguments []types.Type, use parser.Node) *symbols.Symbol {
 	if a.genericFunctions[template] == nil {
 		checkFrom := 0

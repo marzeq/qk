@@ -80,7 +80,7 @@ func (a *Analyser) AnalyseModule(root *parser.RootNode, path string, trustedStan
 
 // DeclareModule builds the module-level semantic interface without visiting
 // implementation bodies. Keeping this phase explicit is what allows imported
-// interfaces to eventually come from .qkm files instead of source ASTs.
+// interfaces to be inspected independently of source ASTs.
 func (a *Analyser) DeclareModule(root *parser.RootNode, path string, trustedStandardLibrary bool) {
 	a.modulePaths[root] = path
 	// Aliases are module-local; method tables remain available so later modules

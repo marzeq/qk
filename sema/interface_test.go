@@ -3,9 +3,7 @@ package sema
 import (
 	"testing"
 
-	"github.com/marzeq/qk/parser"
 	"github.com/marzeq/qk/shared"
-	"github.com/marzeq/qk/tokeniser"
 	"github.com/marzeq/qk/types"
 )
 
@@ -31,46 +29,6 @@ func TestInterfaceTypePreservesStructuralInformation(t *testing.T) {
 	pointer := encoded.Underlying.Fields[0].Type
 	if pointer.Kind != "pointer" || !pointer.Mutable || pointer.Base.Name != "u8" {
 		t.Fatalf("field type was not preserved: %#v", pointer)
-	}
-	decoded, err := decodeInterfaceType(encoded)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !input.Equals(decoded) {
-		t.Fatalf("decoded type %v does not equal input %v", decoded, input)
-	}
-}
-
-func TestAnalyserConsumesSourceFreeModuleInterface(t *testing.T) {
-	analyser := NewAnalyser()
-	err := analyser.DeclareModuleInterface(ModuleInterface{
-		Name: "dep",
-		Symbols: []InterfaceSymbol{{
-			Name: "answer", Kind: "function",
-			ReturnTypeInfo: &InterfaceType{Kind: "primitive", Name: "i32"},
-		}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	source := "module main\nimport dep\nlet main() {\n  dep.answer()\n}\n"
-	tokens, err := tokeniser.NewTokeniser(source, "main.qk").Tokenise()
-	if err != nil {
-		t.Fatal(err)
-	}
-	root, err := parser.NewParser(tokens).Parse()
-	if err != nil {
-		t.Fatal(err)
-	}
-	analyser.DeclareModule(root, "main", false)
-	analyser.AnalyseModuleBody(root, "main")
-	if len(analyser.Errors()) != 0 {
-		t.Fatalf("source-free import failed semantic analysis: %v", analyser.Errors())
-	}
-	attributor := analyser.NewAttributor()
-	attributor.AttributeModule(root)
-	if len(attributor.Errors()) != 0 {
-		t.Fatalf("source-free import failed attribution: %v", attributor.Errors())
 	}
 }
 

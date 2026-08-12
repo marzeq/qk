@@ -105,10 +105,8 @@ func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, o
 	return nil, warnings
 }
 
-// RunSemanticModule analyses one source-backed module after all of its cached
-// or source-backed dependency interfaces have been declared. Keeping this
-// operation module-local is what allows unchanged dependencies to remain
-// source-free during an incremental build.
+// RunSemanticModule analyses one source-backed module after its dependencies
+// have been declared.
 func RunSemanticModule(info *ModuleInfo, analyser *sema.Analyser, verbose, debug bool) (errors []error, warnings []error) {
 	analyser.DeclareModule(info.Root, info.Path, info.TrustedStandardLibrary)
 	if len(analyser.Errors()) != 0 {
@@ -152,8 +150,7 @@ func RunSemanticModule(info *ModuleInfo, analyser *sema.Analyser, verbose, debug
 
 // RunSemanticModuleBodies completes attribution and validation for modules
 // whose declarations and analysed bodies have already been installed. This
-// preserves the language's global structural-method declaration phase while
-// allowing cached modules to participate through interfaces only.
+// preserves the language's global structural-method declaration phase.
 func RunSemanticModuleBodies(mods map[string]*ModuleInfo, analyser *sema.Analyser, order []string, verbose, debug bool) (errors []error, warnings []error) {
 	attributor := analyser.NewAttributor()
 	for _, name := range order {

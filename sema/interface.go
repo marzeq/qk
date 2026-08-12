@@ -10,9 +10,8 @@ import (
 	"github.com/marzeq/qk/types"
 )
 
-// ModuleInterface is the stable, serializable public surface written to a
-// .qkm. Type spellings are canonical compiler spellings; a future format may
-// add a binary type graph without changing the enclosing container.
+// ModuleInterface describes the public surface used while extracting
+// cross-module generic specializations.
 type ModuleInterface struct {
 	Name                   string                  `json:"name"`
 	TrustedStandardLibrary bool                    `json:"trusted_standard_library,omitempty"`

@@ -1379,12 +1379,6 @@ Other freestanding executable targets are currently rejected until they have tar
 
 Cross-linking requires suitable CRT objects, libraries, and usually a sysroot for the selected target. QK uses its in-process Clang driver and LLD integration; it does not invoke Clang, LLVM, or a linker subprocess.
 
-## Module object cache
-
-The compiler caches content-addressed native module objects in the platform user cache directory. The key includes emitted LLVM content and object-generation options, so a hit skips optimisation and native compilation for that module while final linking still runs.
-
-Cache hits refresh their modification time. Objects unused for 30 days are removed at startup, and the oldest remaining entries are evicted after the cache exceeds 512 MiB.
-
 # Standard library tour
 
 The installed standard library is divided into small `std` packages. Features that do not require libc remain available under `-nolibc`; hosted streams, files, and the libc allocator are selected out when libc is absent.
