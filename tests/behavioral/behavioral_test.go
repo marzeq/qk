@@ -2,10 +2,13 @@ package behavioral_test
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"debug/elf"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -22,12 +25,20 @@ import (
 
 const updateEnvironment = "UPDATE_BEHAVIORAL"
 
+const behavioralCacheEnvironment = "QK_BEHAVIORAL_CACHE"
+
 var (
 	repositoryRoot string
 	fixturesRoot   string
 	compilerPath   string
 	testMainDir    string
+	resultCache    *behavioralResultCache
 )
+
+type behavioralResultCache struct {
+	root string
+	base []byte
+}
 
 type testSpec struct {
 	Mode         string            `json:"mode"`
@@ -72,11 +83,15 @@ func TestMain(m *testing.M) {
 	compilerPath = filepath.Join(testMainDir, "qkc"+executableSuffix())
 	build := exec.Command("go", "build", "-o", compilerPath, "./cmd/qkc")
 	build.Dir = repositoryRoot
-	build.Env = append(os.Environ(), "GOCACHE="+filepath.Join(testMainDir, "go-cache"))
+	build.Env = os.Environ()
 	if output, buildErr := build.CombinedOutput(); buildErr != nil {
 		fmt.Fprintf(os.Stderr, "behavioral tests: build qkc: %v\n%s", buildErr, output)
 		_ = os.RemoveAll(testMainDir)
 		os.Exit(2)
+	}
+	resultCache, err = newBehavioralResultCache()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "behavioral tests: result cache unavailable: %v\n", err)
 	}
 
 	code := m.Run()
@@ -95,13 +110,132 @@ func TestBehavioral(t *testing.T) {
 
 	for _, caseName := range cases {
 		t.Run(caseName, func(t *testing.T) {
-			spec := readSpec(t, filepath.Join(fixturesRoot, filepath.FromSlash(caseName)))
+			fixtureDir := filepath.Join(fixturesRoot, filepath.FromSlash(caseName))
+			spec := readSpec(t, fixtureDir)
 			if !spec.Serial {
 				t.Parallel()
+			}
+			if resultCache != nil {
+				key, err := resultCache.caseKey(caseName, fixtureDir)
+				if err != nil {
+					t.Logf("behavioral result cache miss: %v", err)
+				} else if resultCache.hit(caseName, key) {
+					t.Log("cached behavioral result")
+					return
+				} else {
+					runCase(t, caseName, spec)
+					if !t.Failed() && !t.Skipped() {
+						if err := resultCache.store(caseName, key); err != nil {
+							t.Logf("behavioral result cache write failed: %v", err)
+						}
+					}
+					return
+				}
 			}
 			runCase(t, caseName, spec)
 		})
 	}
+}
+
+func newBehavioralResultCache() (*behavioralResultCache, error) {
+	if os.Getenv(updateEnvironment) == "1" || os.Getenv(behavioralCacheEnvironment) == "off" {
+		return nil, nil
+	}
+	cacheRoot, err := os.UserCacheDir()
+	if err != nil {
+		return nil, err
+	}
+	root := filepath.Join(cacheRoot, "qk", "behavioral-results-v1")
+	digest := sha256.New()
+	for _, value := range []string{"qk-behavioral-results-v1", runtime.GOOS, runtime.GOARCH} {
+		writeDigestString(digest, value)
+	}
+	if err := writeDigestFile(digest, compilerPath, "qkc"); err != nil {
+		return nil, err
+	}
+	if err := writeDigestTree(digest, filepath.Join(repositoryRoot, "libs"), "libs"); err != nil {
+		return nil, err
+	}
+	if err := writeDigestHarness(digest); err != nil {
+		return nil, err
+	}
+	return &behavioralResultCache{root: root, base: digest.Sum(nil)}, nil
+}
+
+func (cache *behavioralResultCache) caseKey(caseName, fixtureDir string) (string, error) {
+	digest := sha256.New()
+	_, _ = digest.Write(cache.base)
+	writeDigestString(digest, caseName)
+	if err := writeDigestTree(digest, fixtureDir, "fixture"); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(digest.Sum(nil)), nil
+}
+
+func (cache *behavioralResultCache) hit(caseName, key string) bool {
+	data, err := os.ReadFile(cache.resultPath(caseName))
+	return err == nil && strings.TrimSpace(string(data)) == key
+}
+
+func (cache *behavioralResultCache) store(caseName, key string) error {
+	path := cache.resultPath(caseName)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(key+"\n"), 0o644)
+}
+
+func writeDigestHarness(digest hash.Hash) error {
+	entries, err := os.ReadDir(fixturesRoot)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".go" {
+			continue
+		}
+		if err := writeDigestFile(digest, filepath.Join(fixturesRoot, entry.Name()), entry.Name()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (cache *behavioralResultCache) resultPath(caseName string) string {
+	return filepath.Join(cache.root, filepath.FromSlash(caseName), "result")
+}
+
+func writeDigestTree(digest hash.Hash, root, label string) error {
+	return filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		return writeDigestFile(digest, path, filepath.ToSlash(filepath.Join(label, relative)))
+	})
+}
+
+func writeDigestFile(digest hash.Hash, path, label string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	writeDigestString(digest, label)
+	writeDigestString(digest, strconv.Itoa(len(data)))
+	_, _ = digest.Write(data)
+	return nil
+}
+
+func writeDigestString(digest hash.Hash, value string) {
+	_, _ = digest.Write([]byte(strconv.Itoa(len(value))))
+	_, _ = digest.Write([]byte{':'})
+	_, _ = digest.Write([]byte(value))
 }
 
 func TestFeatureManifest(t *testing.T) {
@@ -166,6 +300,36 @@ func TestFeatureManifest(t *testing.T) {
 		if !referenced[fixture] {
 			t.Errorf("fixture %q is not referenced by features.json", fixture)
 		}
+	}
+}
+
+func TestBehavioralResultCacheTracksFixtureContent(t *testing.T) {
+	fixtureDir := t.TempDir()
+	defer os.RemoveAll(fixtureDir)
+	sourcePath := filepath.Join(fixtureDir, "main.qk")
+	if err := os.WriteFile(sourcePath, []byte("module main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cache := &behavioralResultCache{root: t.TempDir(), base: []byte("compiler-and-libraries")}
+	first, err := cache.caseKey("example", fixtureDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cache.store("example", first); err != nil {
+		t.Fatal(err)
+	}
+	if !cache.hit("example", first) {
+		t.Fatal("stored result was not reused")
+	}
+	if err := os.WriteFile(sourcePath, []byte("module main\nlet main() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := cache.caseKey("example", fixtureDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed == first || cache.hit("example", changed) {
+		t.Fatal("fixture content change did not invalidate the cached result")
 	}
 }
 

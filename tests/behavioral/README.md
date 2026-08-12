@@ -9,6 +9,10 @@ go test ./...
 
 The package builds `qkc` once in `TestMain` and copies every fixture to a
 temporary directory. Fixtures run in parallel unless `"serial": true`.
+Successful fixture results are cached independently. A fixture runs again when
+its files change, or when the compiler, external libraries, test harness,
+platform, or cache format changes. Set `QK_BEHAVIORAL_CACHE=off` to force every
+selected fixture to run. Snapshot-update runs always bypass the result cache.
 
 `test.json` requires one of these modes: `run-pass`, `compile-pass`,
 `compile-fail`, or `run-fail`. It can also set
