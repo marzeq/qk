@@ -397,9 +397,26 @@ func copyFixture(source, destination string) error {
 
 func normalize(value, workDir string) string {
 	value = strings.ReplaceAll(value, "\r\n", "\n")
-	value = strings.ReplaceAll(value, workDir, "<CASE>")
-	value = strings.ReplaceAll(value, filepath.ToSlash(workDir), "<CASE>")
+	workDirs := []string{workDir}
+	if resolved, err := filepath.EvalSymlinks(workDir); err == nil && resolved != workDir {
+		workDirs = append(workDirs, resolved)
+	}
+	// macOS exposes /var through /private/var. MkdirTemp may return the former
+	// while diagnostics contain the latter even when no symlink component was
+	// present for EvalSymlinks to rewrite.
+	if runtime.GOOS == "darwin" && strings.HasPrefix(workDir, "/var/") {
+		workDirs = append(workDirs, "/private"+workDir)
+	}
+	slices.SortFunc(workDirs, func(left, right string) int { return len(right) - len(left) })
+	for _, directory := range workDirs {
+		value = strings.ReplaceAll(value, directory, "<CASE>")
+		value = strings.ReplaceAll(value, filepath.ToSlash(directory), "<CASE>")
+	}
 	value = strings.ReplaceAll(value, compilerPath, "<QKC>")
+	// Some Homebrew LLVM builds inject /usr/local/lib as a driver search path.
+	// Newer ld64.lld versions warn when it is absent; this host-toolchain noise
+	// is unrelated to the compiled program and varies between installations.
+	value = strings.ReplaceAll(value, "ld64.lld: warning: directory not found for option -L/usr/local/lib\n", "")
 	return value
 }
 
