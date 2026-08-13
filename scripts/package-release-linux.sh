@@ -53,23 +53,14 @@ mapfile -t bundled_libraries < <(
     grep -Ev '/(libc|libm|libdl|librt|libpthread)\.so(\.|$)|/ld-linux[^/]*\.so'
 )
 
-if ! printf '%s\n' "${bundled_libraries[@]}" | grep -E '/lib(LLVM|clang|lld)' >/dev/null; then
-  echo "no dynamic LLVM, Clang, or LLD libraries were found in qkc" >&2
+if ! printf '%s\n' "${bundled_libraries[@]}" | grep -E '/libLLVM' >/dev/null; then
+  echo "no dynamic LLVM library was found in qkc" >&2
   exit 1
 fi
 
 for library in "${bundled_libraries[@]}"; do
   cp -L "$library" "$staging_directory/lib/$(basename "$library")"
 done
-
-resource_directory=$(clang -print-resource-dir)
-if [[ ! -d "$resource_directory" ]]; then
-  echo "Clang resource directory not found: $resource_directory" >&2
-  exit 1
-fi
-resource_version=$(basename "$resource_directory")
-mkdir -p "$staging_directory/lib/clang"
-cp -a "$resource_directory" "$staging_directory/lib/clang/$resource_version"
 
 bundle_library_directory=$(realpath "$staging_directory/lib")
 mapfile -t resolved_bundled_libraries < <(

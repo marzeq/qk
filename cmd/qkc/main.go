@@ -64,7 +64,7 @@ func main() {
 		fatal("cannot run package %q: package must declare module main", discovered[0].Name)
 	}
 	if !args.run && args.output == "" && args.outputType == OutputUnspecified && discovered[0].Name != "main" {
-		args.outputType = OutputObject
+		args.outputType = OutputStaticLibrary
 	}
 	check(finaliseOutputArgs(args))
 	if args.outputType == OutputExecutable && discovered[0].Name != "main" {
@@ -128,7 +128,7 @@ func main() {
 		order = append(order, name)
 	}
 	requestedModuleLinks := linksForUsedForeignSymbols(
-		frontend.partials, irModules, args.outputType == OutputObject,
+		frontend.partials, irModules, args.outputType == OutputObject || args.outputType == OutputStaticLibrary,
 	)
 	probeLibcFreeLink := args.outputType == OutputExecutable && targetIsLinuxX8664(args.target) &&
 		moduleLinksContainLibc(requestedModuleLinks)
@@ -261,7 +261,7 @@ func main() {
 	}
 
 	var linkRoots []string
-	if args.outputType == OutputObject || args.outputType == OutputWebAssembly {
+	if args.outputType == OutputObject || args.outputType == OutputStaticLibrary || args.outputType == OutputWebAssembly {
 		for _, moduleName := range order {
 			for _, fn := range irModules[moduleName].Functions {
 				if fn.Linkage == ir.LinkageExternal && fn.Visibility == ir.VisibilityDefault {
@@ -397,6 +397,7 @@ func main() {
 		// a user-facing linker failure. Only print the final link invocation.
 		quietProbeArgs := *args
 		quietProbeArgs.verbose = false
+		quietProbeArgs.quietLink = true
 		linkArgs = &quietProbeArgs
 	}
 	err = linkObjects(objFiles, moduleLinks, linkRoots, linkArgs)

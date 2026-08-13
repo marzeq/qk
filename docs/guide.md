@@ -1356,7 +1356,7 @@ qkc build .
 qkc build src/tool.qk
 ```
 
-`-o` chooses the output path, and `-t exe|obj|so` chooses an executable, relocatable object, or shared library. A `main` package defaults to an executable; a non-command package defaults to relocatable object output.
+`-o` chooses the output path, and `-t exe|obj|lib|so|wasm` chooses an executable, combined relocatable object, static archive, shared library, or WebAssembly module. A `main` package defaults to an executable; a non-command package defaults to a static archive (`.a`, or `.lib` for MSVC). Final linking and archive creation use the target platform's tools from `PATH`.
 
 `qkc run` builds an executable, launches it, and forwards every argument after the package argument:
 

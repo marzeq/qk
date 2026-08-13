@@ -49,32 +49,6 @@ while IFS= read -r dependency; do
   esac
 done < <(ldd "$staging_directory/bin/qkc.exe" | awk '{ print $3 }')
 
-# qkc uses Clang's driver layout to locate the MinGW import libraries.
-cp -L "$(command -v clang)" "$staging_directory/bin/clang.exe"
-while IFS= read -r dependency; do
-  case "$dependency" in
-    /ucrt64/bin/*.dll) cp -L "$dependency" "$staging_directory/bin/" ;;
-  esac
-done < <(ldd "$staging_directory/bin/clang.exe" | awk '{ print $3 }')
-# Copy the UCRT/MinGW startup objects and import libraries, but not the LLVM,
-# Clang, or LLD development archives: qkc already carries their runtime DLLs.
-while IFS= read -r library; do
-  name=$(basename "$library")
-  case "$name" in
-    libLLVM*|libclang*|liblld*) continue ;;
-  esac
-  cp -L "$library" "$staging_directory/lib/"
-done < <(find /ucrt64/lib -maxdepth 1 -type f \( -name '*.a' -o -name '*.o' \) -print)
-
-resource_directory=$(clang -print-resource-dir)
-if [[ ! -d "$resource_directory" ]]; then
-  echo "Clang resource directory not found: $resource_directory" >&2
-  exit 1
-fi
-resource_version=$(basename "$resource_directory")
-mkdir -p "$staging_directory/lib/clang"
-cp -a "$resource_directory" "$staging_directory/lib/clang/$resource_version"
-
 reported_version=$(PATH="$staging_directory/bin:/usr/bin" "$staging_directory/bin/qkc.exe" --version)
 if [[ "$reported_version" != "qk compiler version ${version}" ]]; then
   echo "packaged qkc reported an unexpected version: $reported_version" >&2

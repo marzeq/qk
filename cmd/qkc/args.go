@@ -21,6 +21,7 @@ const (
 	OutputObject
 	OutputSharedLib
 	OutputWebAssembly
+	OutputStaticLibrary
 )
 
 type OptimisationLevel string
@@ -65,6 +66,7 @@ type Args struct {
 	outputName   string
 	optLevel     OptimisationLevel
 	verbose      bool
+	quietLink    bool
 	debug        bool
 	warningMode  WarningMode
 	warningModes map[string]WarningMode
@@ -121,6 +123,8 @@ func parseOutputType(value string) (OutputType, error) {
 		return OutputExecutable, nil
 	case "obj", "object", ".o", ".obj":
 		return OutputObject, nil
+	case "lib", "staticlib", "archive", ".a", ".lib":
+		return OutputStaticLibrary, nil
 	case "so", "shared", "sharedlib", ".so", ".dll", ".dylib":
 		return OutputSharedLib, nil
 	case "wasm", ".wasm":
@@ -442,7 +446,7 @@ func printUsage() {
 	fmt.Println("The package defaults to the current directory and may be a directory or one .qk file.")
 	fmt.Println("Options:")
 	fmt.Println("  -o <file>          Output file name")
-	fmt.Println("  -t <type>          Output type (exe, obj, so, wasm)")
+	fmt.Println("  -t <type>          Output type (exe, obj, lib, so, wasm)")
 	fmt.Println("  -O <level>         Optimisation level (0, 1, 2, 3, s, z, fast, g)")
 	fmt.Println("  -warn <show|off|error>  Warning mode (default: show)")
 	fmt.Println("  -warn-unused-variable <show|off|error>   Override unused-variable warnings")
@@ -560,6 +564,8 @@ func finaliseOutputArgs(args *Args) error {
 			args.output = defaultSharedLibraryName(args.outputName, args.target)
 		case OutputWebAssembly:
 			args.output = args.outputName + ".wasm"
+		case OutputStaticLibrary:
+			args.output = defaultStaticLibraryName(args.outputName, args.target)
 		}
 	} else {
 		switch args.outputType {
@@ -568,6 +574,8 @@ func finaliseOutputArgs(args *Args) error {
 			switch ext {
 			case ".o", ".obj":
 				args.outputType = OutputObject
+			case ".a", ".lib":
+				args.outputType = OutputStaticLibrary
 			case ".wasm":
 				args.outputType = OutputWebAssembly
 			case ".so", ".dll", ".dylib":
@@ -602,6 +610,13 @@ func defaultObjectName(module, target string) string {
 		return module + ".obj"
 	}
 	return module + ".o"
+}
+
+func defaultStaticLibraryName(module, target string) string {
+	if targetIsWindowsMSVC(target) {
+		return module + ".lib"
+	}
+	return "lib" + module + ".a"
 }
 
 func defaultSharedLibraryName(module, target string) string {

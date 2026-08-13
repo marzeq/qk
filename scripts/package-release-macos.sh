@@ -44,23 +44,6 @@ fi
 
 llvm_prefix=$($llvm_config --prefix)
 llvm_library_directory=$($llvm_config --libdir)
-clang_command=${CLANG:-"$llvm_prefix/bin/clang"}
-if [[ ! -x "$clang_command" ]]; then
-  echo "Clang not found: $clang_command" >&2
-  exit 1
-fi
-
-if [[ -n ${LLD_ROOT:-} ]]; then
-  lld_prefix=$LLD_ROOT
-elif [[ -f "$llvm_library_directory/liblldCommon.dylib" ]]; then
-  lld_prefix=$llvm_prefix
-elif command -v brew >/dev/null 2>&1 && [[ -f $(brew --prefix lld)/lib/liblldCommon.dylib ]]; then
-  lld_prefix=$(brew --prefix lld)
-else
-  echo "LLD development libraries not found; install LLD or set LLD_ROOT" >&2
-  exit 1
-fi
-
 version=$1
 output_directory=${2:-dist}
 architecture=$host_architecture
@@ -78,8 +61,8 @@ cp -a libs/. "$staging_directory/libs/"
 
 release_ldflags='-Wl,-rpath,@executable_path/../lib'
 GOCACHE=${GOCACHE:-"${staging_parent}/go-build-cache"} \
-  CGO_CXXFLAGS="${CGO_CXXFLAGS:-} -I${llvm_prefix}/include -I${lld_prefix}/include" \
-  CGO_LDFLAGS="${CGO_LDFLAGS:-} -L${llvm_library_directory} -L${lld_prefix}/lib ${release_ldflags}" \
+  CGO_CXXFLAGS="${CGO_CXXFLAGS:-} -I${llvm_prefix}/include" \
+  CGO_LDFLAGS="${CGO_LDFLAGS:-} -L${llvm_library_directory} ${release_ldflags}" \
   go build -trimpath -ldflags="-s -w -X=main.compilerVersion=${version}" -o "$staging_directory/bin/qkc" ./cmd/qkc
 
 dependencies() {
@@ -147,8 +130,8 @@ while (( queue_index < ${#queue[@]} )); do
   done < <(dependencies "$owner")
 done
 
-if ! printf '%s\n' "${libraries[@]}" | grep -E '/lib(LLVM|clang|lld)' >/dev/null; then
-  echo "no dynamic LLVM, Clang, or LLD libraries were found in qkc" >&2
+if ! printf '%s\n' "${libraries[@]}" | grep -E '/libLLVM' >/dev/null; then
+  echo "no dynamic LLVM library was found in qkc" >&2
   exit 1
 fi
 
@@ -179,15 +162,6 @@ for library in "$staging_directory"/lib/*.dylib; do
   codesign --force --sign - "$library" >/dev/null
 done
 codesign --force --sign - "$staging_directory/bin/qkc" >/dev/null
-
-resource_directory=$($clang_command -print-resource-dir)
-if [[ ! -d "$resource_directory" ]]; then
-  echo "Clang resource directory not found: $resource_directory" >&2
-  exit 1
-fi
-resource_version=$(basename "$resource_directory")
-mkdir -p "$staging_directory/lib/clang"
-cp -a "$resource_directory" "$staging_directory/lib/clang/$resource_version"
 
 for target in "$staging_directory/bin/qkc" "$staging_directory"/lib/*.dylib; do
   while IFS= read -r dependency; do

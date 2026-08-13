@@ -25,7 +25,3 @@ type Options struct {
 func Compile(string, string, string, OutputKind, Options) error {
 	return fmt.Errorf("qkc was built without cgo; native code generation is unavailable")
 }
-
-func Link([]string, bool) error {
-	return fmt.Errorf("qkc was built without cgo; native linking is unavailable")
-}

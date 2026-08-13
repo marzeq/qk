@@ -1,6 +1,11 @@
 package main
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+
+	"github.com/marzeq/qk/attributes"
+)
 
 func TestWindowsHostDefaultsToMSVC(t *testing.T) {
 	if got := defaultTargetForHost("windows"); got != "x86_64-pc-windows-msvc" {
@@ -60,4 +65,31 @@ func TestMSVCCRTIsRecognizedAsLibc(t *testing.T) {
 			t.Fatalf("MSVC CRT library %q was not recognized as libc", library)
 		}
 	}
+}
+
+func TestMSVCLinkArgumentsUseNativeSyntax(t *testing.T) {
+	config := &Args{output: "app.exe", outputType: OutputExecutable, libs: []string{"user32"}}
+	links := []attributes.Link{{Kind: attributes.LinkSystem, Value: "c"}}
+	got, err := buildMSVCLinkArgs([]string{"one.obj", "two.obj"}, links, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantSuffix := []string{"/DEFAULTLIB:libcmt", "user32.lib", "kernel32.lib", "one.obj", "two.obj"}
+	if len(got) < len(wantSuffix) || !reflect.DeepEqual(got[len(got)-len(wantSuffix):], wantSuffix) {
+		t.Fatalf("MSVC linker arguments: got %q, want suffix %q", got, wantSuffix)
+	}
+}
+
+func TestMSVCLinkArgumentsKeepCRTStartupWithoutCLibraryImport(t *testing.T) {
+	config := &Args{output: "app.exe", outputType: OutputExecutable}
+	got, err := buildMSVCLinkArgs([]string{"main.obj"}, nil, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, argument := range got {
+		if argument == "/DEFAULTLIB:libcmt" {
+			return
+		}
+	}
+	t.Fatalf("MSVC linker arguments omit CRT startup: %q", got)
 }

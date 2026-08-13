@@ -25,12 +25,6 @@ int qk_compile_llvm(
 
 void qk_dispose_error(char *error_message);
 
-int qk_link_lld(
-    const char *const *arguments,
-    size_t argument_count,
-    int verbose,
-    char **error_message);
-
 #ifdef __cplusplus
 }
 #endif

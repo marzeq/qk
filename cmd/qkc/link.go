@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/marzeq/qk/attributes"
-	"github.com/marzeq/qk/codegen/llvmbackend"
 	"github.com/marzeq/qk/ir"
 	"github.com/marzeq/qk/loader"
 	"github.com/marzeq/qk/parser"
@@ -239,63 +239,139 @@ func collectFunctionOperands(value reflect.Value, names *[]string) {
 }
 
 func linkObjects(objFiles []string, moduleLinks []attributes.Link, roots []string, config *Args) error {
-	args, err := buildLinkArgs(objFiles, moduleLinks, roots, config)
-	if err != nil {
-		return err
-	}
-
-	// ld64.lld does not implement Mach-O relocatable linking. Use Apple's
-	// linker on Darwin hosts for this one output mode while retaining embedded
-	// LLD for executable and shared-library links.
-	if config.outputType == OutputObject && targetIsApple(config.target) {
-		if runtime.GOOS != "darwin" {
-			return fmt.Errorf("Mach-O relocatable object output requires an Apple linker on the host")
+	switch config.outputType {
+	case OutputStaticLibrary:
+		return archiveObjects(objFiles, config)
+	case OutputObject:
+		return partiallyLinkObjects(objFiles, roots, config)
+	case OutputWebAssembly:
+		args, err := buildWasmLinkArgs(objFiles, moduleLinks, roots, config)
+		if err != nil {
+			return err
 		}
-		return linkDarwinRelocatable(args, config.verbose)
+		return runExternalTool("wasm-ld", args, config.verbose, config.quietLink)
+	case OutputExecutable, OutputSharedLib:
+		if targetIsWindowsMSVC(config.target) {
+			if runtime.GOOS != "windows" {
+				return fmt.Errorf("Windows MSVC linking requires link.exe on a Windows host; emit a static library or target object instead")
+			}
+			if _, err := hostWindowsToolchainArgs(config.target, config.sysroot); err != nil {
+				return err
+			}
+			args, err := buildMSVCLinkArgs(objFiles, moduleLinks, config)
+			if err != nil {
+				return err
+			}
+			return runExternalTool("link.exe", args, config.verbose, config.quietLink)
+		}
+		if err := validateExternalLinkTarget(config.target, config.sysroot); err != nil {
+			return err
+		}
+		args, err := buildLinkArgs(objFiles, moduleLinks, config)
+		if err != nil {
+			return err
+		}
+		if targetIsApple(config.target) {
+			return runExternalTool("xcrun", append([]string{"clang"}, args...), config.verbose, config.quietLink)
+		}
+		return runExternalTool("clang", args, config.verbose, config.quietLink)
+	default:
+		return fmt.Errorf("unknown output type")
 	}
-
-	return llvmbackend.Link(args, config.verbose)
 }
 
-func linkDarwinRelocatable(args []string, verbose bool) error {
-	output, err := exec.Command("xcrun", "--find", "ld").Output()
-	if err != nil {
-		return fmt.Errorf("could not locate the Apple linker with xcrun: %w", err)
-	}
-	linker := strings.TrimSpace(string(output))
-	if linker == "" {
-		return fmt.Errorf("xcrun returned an empty Apple linker path")
-	}
-	args = appleRelocatableLinkArgs(args)
+func runExternalTool(tool string, args []string, verbose, quiet bool) error {
 	if verbose {
-		fmt.Fprintf(os.Stderr, "> %s %s\n", linker, strings.Join(args, " "))
+		fmt.Fprintf(os.Stderr, "> %s %s\n", tool, strings.Join(args, " "))
 	}
-	command := exec.Command(linker, args...)
-	command.Stdout = os.Stdout
-	command.Stderr = os.Stderr
+	command := exec.Command(tool, args...)
+	if quiet {
+		command.Stdout = io.Discard
+		command.Stderr = io.Discard
+	} else {
+		command.Stdout = os.Stdout
+		command.Stderr = os.Stderr
+	}
 	if err := command.Run(); err != nil {
-		return fmt.Errorf("Apple relocatable linking failed: %w", err)
+		if _, ok := err.(*exec.Error); ok {
+			return fmt.Errorf("required external tool %q was not found in PATH", tool)
+		}
+		return fmt.Errorf("%s failed: %w", tool, err)
 	}
 	return nil
 }
 
-func appleRelocatableLinkArgs(args []string) []string {
-	result := make([]string, 0, len(args))
-	for index := 0; index < len(args); index++ {
-		argument := args[index]
-		switch {
-		case argument == "-target" && index+1 < len(args):
-			index++
-		case argument == "-nostdlib":
-		case strings.HasPrefix(argument, "--sysroot="):
-			result = append(result, "-syslibroot", strings.TrimPrefix(argument, "--sysroot="))
-		case strings.HasPrefix(argument, "-Wl,"):
-			result = append(result, strings.Split(strings.TrimPrefix(argument, "-Wl,"), ",")...)
-		default:
-			result = append(result, argument)
-		}
+func archiveObjects(objFiles []string, config *Args) error {
+	archiveDir, err := os.MkdirTemp("", "qk-archive-*")
+	if err != nil {
+		return fmt.Errorf("could not prepare archive members: %w", err)
 	}
-	return result
+	defer os.RemoveAll(archiveDir)
+	members := make([]string, 0, len(objFiles))
+	for index, object := range objFiles {
+		data, err := os.ReadFile(object)
+		if err != nil {
+			return fmt.Errorf("could not read archive member %s: %w", object, err)
+		}
+		extension := filepath.Ext(object)
+		if extension == "" {
+			extension = ".o"
+		}
+		member := filepath.Join(archiveDir, fmt.Sprintf("module-%04d%s", index, extension))
+		if err := os.WriteFile(member, data, 0o644); err != nil {
+			return fmt.Errorf("could not prepare archive member %s: %w", object, err)
+		}
+		members = append(members, member)
+	}
+	if targetIsWindowsMSVC(config.target) {
+		if runtime.GOOS == "windows" {
+			args := []string{"/NOLOGO", "/OUT:" + config.output}
+			args = append(args, members...)
+			args = append(args, config.linkArgs...)
+			return runExternalTool("lib.exe", args, config.verbose, config.quietLink)
+		}
+		args := []string{"rcs", config.output}
+		args = append(args, members...)
+		return runExternalTool("llvm-ar", args, config.verbose, config.quietLink)
+	}
+	args := []string{"rcs", config.output}
+	args = append(args, members...)
+	return runExternalTool("ar", args, config.verbose, config.quietLink)
+}
+
+func partiallyLinkObjects(objFiles, roots []string, config *Args) error {
+	switch {
+	case targetIsWindows(config.target):
+		return fmt.Errorf("relocatable object output for Windows targets is unavailable; use -t lib")
+	case targetIsApple(config.target):
+		if runtime.GOOS != "darwin" {
+			return fmt.Errorf("Mach-O relocatable object output requires Apple's ld on a Darwin host; use -t lib")
+		}
+		args := []string{"ld", "-r"}
+		if config.sysroot != "" {
+			args = append(args, "-syslibroot", config.sysroot)
+		}
+		for _, root := range roots {
+			args = append(args, "-u", "_"+root)
+		}
+		args = append(args, objFiles...)
+		args = append(args, "-o", config.output)
+		return runExternalTool("xcrun", args, config.verbose, config.quietLink)
+	case targetIsWebAssembly(config.target):
+		args := []string{"-r"}
+		args = append(args, objFiles...)
+		args = append(args, "-o", config.output)
+		return runExternalTool("wasm-ld", args, config.verbose, config.quietLink)
+	default:
+		args := []string{"-r"}
+		for _, root := range roots {
+			args = append(args, "-u", root)
+		}
+		args = append(args, config.linkArgs...)
+		args = append(args, objFiles...)
+		args = append(args, "-o", config.output)
+		return runExternalTool("ld.lld", args, config.verbose, config.quietLink)
+	}
 }
 
 func moduleLinksContainLibc(moduleLinks []attributes.Link) bool {
@@ -327,50 +403,158 @@ func isCLibrary(library string) bool {
 	}
 }
 
-func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots []string, config *Args) ([]string, error) {
+func validateExternalLinkTarget(target, sysroot string) error {
+	switch {
+	case isWindowsGNUTarget(target):
+		if sysroot == "" {
+			return fmt.Errorf("Windows GNU target requires an explicit MinGW sysroot; pass -sysroot <path>")
+		}
+		return nil
+	case targetIsWindows(target):
+		return nil
+	case targetIsApple(target):
+		if runtime.GOOS != "darwin" {
+			return fmt.Errorf("Darwin linking requires Apple's toolchain on a Darwin host; emit a static library or target object instead")
+		}
+	case strings.Contains(effectiveTargetName(target), "linux"):
+		if runtime.GOOS != "linux" {
+			return fmt.Errorf("Linux linking requires a Linux host toolchain; emit a static library or target object instead")
+		}
+	case strings.Contains(effectiveTargetName(target), "freebsd"):
+		if runtime.GOOS != "freebsd" {
+			return fmt.Errorf("FreeBSD linking requires a FreeBSD host toolchain; emit a static library or target object instead")
+		}
+	case strings.Contains(effectiveTargetName(target), "openbsd"):
+		if runtime.GOOS != "openbsd" {
+			return fmt.Errorf("OpenBSD linking requires an OpenBSD host toolchain; emit a static library or target object instead")
+		}
+	case strings.Contains(effectiveTargetName(target), "netbsd"):
+		if runtime.GOOS != "netbsd" {
+			return fmt.Errorf("NetBSD linking requires a NetBSD host toolchain; emit a static library or target object instead")
+		}
+	}
+	return nil
+}
+
+func buildWasmLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots []string, config *Args) ([]string, error) {
+	args := []string{"--no-entry", "--gc-sections"}
+	for _, root := range roots {
+		args = append(args, "--export="+root)
+	}
+	args = append(args, unwrapLinkerArgs(config.linkArgs)...)
+	for _, link := range moduleLinks {
+		switch link.Kind {
+		case attributes.LinkSystem:
+			args = append(args, "-l"+link.Value)
+		case attributes.LinkPath:
+			args = append(args, link.Value)
+		case attributes.LinkSearchPath:
+			args = append(args, "-L"+link.Value)
+		case attributes.LinkFramework:
+			return nil, fmt.Errorf("WebAssembly does not support framework link %q", link.Value)
+		default:
+			return nil, fmt.Errorf("unknown module link kind %d", link.Kind)
+		}
+	}
+	for _, library := range config.libs {
+		args = append(args, "-l"+library)
+	}
+	for _, path := range config.libraryPaths {
+		args = append(args, "-L"+path)
+	}
+	args = append(args, objFiles...)
+	args = append(args, "-o", config.output)
+	return args, nil
+}
+
+func unwrapLinkerArgs(args []string) []string {
+	result := make([]string, 0, len(args))
+	for _, argument := range args {
+		if strings.HasPrefix(argument, "-Wl,") {
+			result = append(result, strings.Split(strings.TrimPrefix(argument, "-Wl,"), ",")...)
+		} else {
+			result = append(result, argument)
+		}
+	}
+	return result
+}
+
+func buildMSVCLinkArgs(objFiles []string, moduleLinks []attributes.Link, config *Args) ([]string, error) {
+	args := []string{"/NOLOGO", "/INCREMENTAL:NO", "/OPT:REF", "/OUT:" + config.output}
+	if config.outputType == OutputSharedLib {
+		if config.static {
+			return nil, fmt.Errorf("cannot use -static with shared lib output")
+		}
+		args = append(args, "/DLL")
+	}
+	if config.outputType == OutputExecutable {
+		args = append(args, "/ENTRY:mainCRTStartup")
+	}
+	// QK exposes a C-compatible main function on Windows. The MSVC startup
+	// object in libcmt supplies mainCRTStartup and the argc/argv/envp setup.
+	args = append(args, "/DEFAULTLIB:libcmt")
+	for _, directory := range filepath.SplitList(os.Getenv("LIB")) {
+		if directory != "" {
+			args = append(args, "/LIBPATH:"+directory)
+		}
+	}
+	args = append(args, config.linkArgs...)
+	for _, link := range moduleLinks {
+		switch link.Kind {
+		case attributes.LinkSystem:
+			if !isCLibrary(link.Value) {
+				args = append(args, windowsLibraryName(link.Value))
+			}
+		case attributes.LinkPath:
+			args = append(args, link.Value)
+		case attributes.LinkSearchPath:
+			args = append(args, "/LIBPATH:"+link.Value)
+		case attributes.LinkFramework:
+			return nil, fmt.Errorf("Windows MSVC does not support framework link %q", link.Value)
+		default:
+			return nil, fmt.Errorf("unknown module link kind %d", link.Kind)
+		}
+	}
+	for _, library := range config.libs {
+		if !isCLibrary(library) {
+			args = append(args, windowsLibraryName(library))
+		}
+	}
+	for _, path := range config.libraryPaths {
+		args = append(args, "/LIBPATH:"+path)
+	}
+	args = append(args, "kernel32.lib")
+	args = append(args, objFiles...)
+	return args, nil
+}
+
+func windowsLibraryName(library string) string {
+	if filepath.Ext(library) == "" {
+		return library + ".lib"
+	}
+	return library
+}
+
+func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, config *Args) ([]string, error) {
 	args := append([]string{}, objFiles...)
 
 	switch config.outputType {
 	case OutputExecutable:
-	case OutputObject:
-		if targetIsWindows(config.target) {
-			return nil, fmt.Errorf("relocatable object output for Windows targets is unavailable")
-		}
-		args = append(args, "-r")
 	case OutputSharedLib:
 		if config.static {
 			return nil, fmt.Errorf("cannot use --static with shared lib output")
 		}
 		args = append(args, "-shared")
-	case OutputWebAssembly:
-		args = append(args, "-Wl,--no-entry")
 	default:
 		return nil, fmt.Errorf("unknown output type")
 	}
-	if config.outputType != OutputObject || (!targetIsWebAssembly(config.target) && !targetIsApple(config.target)) {
-		args = append(args, deadStripLinkerFlag(config.target))
-		if config.outputType != OutputObject && config.outputType != OutputWebAssembly {
-			args = append(args, unusedDynamicLibrariesFlag(config.target))
-		}
-	}
-	if config.outputType == OutputObject && !targetIsWebAssembly(config.target) && !targetIsApple(config.target) {
-		for _, root := range roots {
-			args = append(args, linkerUndefinedFlag(config.target, root))
-		}
-	}
-	if config.outputType == OutputWebAssembly {
-		for _, root := range roots {
-			args = append(args, "-Wl,--export="+root)
-		}
-	}
+	args = append(args, deadStripLinkerFlag(config.target), unusedDynamicLibrariesFlag(config.target))
 
 	if config.static {
 		args = append(args, "-static")
 	}
 	linksLibc := moduleLinksContainLibc(moduleLinks)
-	if config.outputType == OutputObject || config.outputType == OutputWebAssembly {
-		args = append(args, defaultLibrarySuppressionArgs(config.target, config.outputType)...)
-	} else if !linksLibc {
+	if !linksLibc {
 		args = append(args, defaultLibrarySuppressionArgs(config.target, config.outputType)...)
 		if config.outputType == OutputExecutable && targetIsLinuxX8664(config.target) {
 			args = append(args, "-nostartfiles", "-Wl,-e,_start")
@@ -390,21 +574,11 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots []str
 	if config.target != "" {
 		args = append([]string{"-target", config.target}, args...)
 	}
-	toolchainArgs, err := hostWindowsToolchainArgs(config.target, config.sysroot)
-	if err != nil {
-		return nil, err
-	}
-	args = append(toolchainArgs, args...)
 	args = append(args, config.linkArgs...)
 
 	for _, link := range moduleLinks {
 		switch link.Kind {
 		case attributes.LinkSystem:
-			// A Mach-O relocatable link cannot consume a dylib text stub. Keep
-			// libc references unresolved for the final executable or dylib link.
-			if config.outputType == OutputObject && targetIsApple(config.target) && (link.Value == "c" || link.Value == "System") {
-				continue
-			}
 			// The MSVC driver selects the appropriate static or dynamic CRT from
 			// its default libraries. Adding ucrt.lib explicitly mixes the import
 			// and static CRTs and produces duplicate runtime symbols.
@@ -426,7 +600,7 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots []str
 		args = append(args, "-l"+lib)
 	}
 	if targetIsWindows(config.target) {
-		// The thin runtime uses the stable Win32 kernel ABI, never the CRT.
+		// Panic reporting uses the stable Win32 kernel ABI directly.
 		args = append(args, "-lkernel32")
 	}
 	for _, path := range config.libraryPaths {
@@ -489,7 +663,9 @@ func defaultLibrarySuppressionArgs(target string, outputType OutputType) []strin
 		return nil
 	}
 	if targetIsWindows(target) {
-		return []string{"-nodefaultlibs"}
+		// MinGW's CRT supplies the executable entry point and process argument
+		// setup for QK's C-compatible main function.
+		return nil
 	}
 	return []string{"-nolibc"}
 }
@@ -505,7 +681,7 @@ func deadStripLinkerFlag(target string) string {
 	switch {
 	case targetIsApple(target):
 		return "-Wl,-dead_strip"
-	case strings.Contains(target, "windows"), strings.Contains(target, "mingw"), strings.Contains(target, "msvc"):
+	case targetIsWindowsMSVC(target):
 		return "-Wl,/OPT:REF"
 	default:
 		return "-Wl,--gc-sections"
@@ -517,7 +693,7 @@ func unusedDynamicLibrariesFlag(target string) string {
 	switch {
 	case targetIsApple(target):
 		return "-Wl,-dead_strip_dylibs"
-	case targetIsWindows(target):
+	case targetIsWindowsMSVC(target):
 		return "-Wl,/OPT:REF"
 	default:
 		return "-Wl,--as-needed"

@@ -81,36 +81,6 @@ func Compile(input, output, optimizedIR string, kind OutputKind, options Options
 	return nil
 }
 
-func Link(arguments []string, verbose bool) error {
-	cArguments := make([]*C.char, len(arguments))
-	for index, argument := range arguments {
-		cArguments[index] = C.CString(argument)
-		defer C.free(unsafe.Pointer(cArguments[index]))
-	}
-
-	var argumentsPointer **C.char
-	if len(cArguments) > 0 {
-		argumentsPointer = &cArguments[0]
-	}
-	var errorMessage *C.char
-	result := C.qk_link_lld(
-		argumentsPointer,
-		C.size_t(len(cArguments)),
-		C.int(boolToInt(verbose)),
-		&errorMessage,
-	)
-	if errorMessage != nil {
-		defer C.qk_dispose_error(errorMessage)
-	}
-	if result != 0 {
-		if errorMessage == nil {
-			return fmt.Errorf("libLLD linking failed")
-		}
-		return fmt.Errorf("libLLD linking failed: %s", C.GoString(errorMessage))
-	}
-	return nil
-}
-
 func boolToInt(value bool) int {
 	if value {
 		return 1

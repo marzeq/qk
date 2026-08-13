@@ -34,9 +34,9 @@ This is included as a pre-push git hook, and it will block pushes if any tests f
 
 ### For the compiler itself
 
-Linux, macOS, and Windows hosts are supported when the required LLVM 22,
-Clang C++, and LLD development libraries are available. Linux is currently the
-most extensively exercised host.
+Linux, macOS, and Windows hosts are supported when the required LLVM 22
+development libraries are available. Final linking uses platform tools from
+`PATH`. Linux is currently the most extensively exercised host.
 
 ### For compiling code with the compiler
 
@@ -47,27 +47,28 @@ aggregate lowering is currently limited to the documented target families.
 
 ### Running a bundled release
 
-Should be self contined within the extracted archive.
+The compiler and QK libraries are contained in the extracted archive. Native
+final links additionally require the platform toolchain described below.
 
 ### Building the compiler yourself
 
 All source builds require Go 1.23.5 or newer, cgo, a C++17 compiler, and a
 matching LLVM 22 development installation containing:
 
-- LLVM and Clang C++ headers, including `llvm/`, `clang/`, and `lld/`;
-- the LLVM and Clang C++ libraries; and
-- the LLD ELF, COFF, MinGW, Mach-O, WebAssembly, and Common driver libraries.
+- LLVM headers under `llvm/`; and
+- the LLVM shared library.
 
 LLVM's command-line tools alone are insufficient. The headers and libraries
 must match the selected C++ ABI and be visible through `CGO_CXXFLAGS` and
-`CGO_LDFLAGS`.
+`CGO_LDFLAGS`. At runtime, native Unix links require `clang`, WebAssembly links
+require `wasm-ld`, archives require `ar`, Windows MSVC links require
+`link.exe`/`lib.exe`, and native Apple links use `xcrun clang`.
 
 #### Linux
 
-Install Go, Clang/Clang++, and the LLVM 22, Clang C++, and LLD 22 development
-packages supplied by your distribution or the LLVM project. Package names vary;
-the installation must provide `llvm-config-22` and the libraries named in
-`codegen/llvmbackend/link_dynamic.go`. Then run:
+Install Go, Clang/Clang++, LLVM 22 development packages, an archiver, and
+`wasm-ld` when WebAssembly output is needed. Package names vary; the LLVM
+installation must provide `llvm-config-22`. Then run:
 
 ```bash
 llvm_prefix=$(llvm-config-22 --prefix)
@@ -80,24 +81,22 @@ go build ./cmd/qkc
 go test ./...
 ```
 
-Keep the same environment variables set for `go test`. If your distribution
-installs LLD in a separate prefix, add its `include` and `lib` directories to
-the corresponding cgo variables.
+Keep the same environment variables set for `go test`.
 
 #### macOS
 
-Install the Xcode Command Line Tools, Go, LLVM 22, and LLD 22. With Homebrew:
+Install the Xcode Command Line Tools, Go, and LLVM 22. With Homebrew:
 
 ```bash
 xcode-select --install
-brew install go llvm lld
+brew install go llvm
 source ./scripts/macos-brew-init.sh
 go build ./cmd/qkc
 go test ./...
 ```
 
-The initialization script locates the Homebrew prefixes and exports the cgo
-include and library paths. LLD is a separate Homebrew formula.
+The initialization script locates the Homebrew LLVM prefix and exports the cgo
+include and library paths.
 
 #### Windows (MSYS2 UCRT64)
 
@@ -108,8 +107,7 @@ UCRT64 ABI environment:
 pacman -S --needed \
   mingw-w64-ucrt-x86_64-go \
   mingw-w64-ucrt-x86_64-clang \
-  mingw-w64-ucrt-x86_64-llvm \
-  mingw-w64-ucrt-x86_64-lld
+  mingw-w64-ucrt-x86_64-llvm
 
 export CC=clang
 export CXX=clang++
@@ -123,11 +121,13 @@ go test ./...
 Keep the same environment variables set for `go test`. Do not mix UCRT64
 libraries with MSVC or another MSYS2 environment such as MINGW64/CLANG64.
 
-MSVC and MSVC-targeted Clang are not supported for building qkc. Go's Windows
-cgo toolchain expects a GCC-compatible MinGW environment, and the official
+MSVC and MSVC-targeted Clang are not supported for building qkc itself. Go's
+Windows cgo toolchain expects a GCC-compatible MinGW environment, and the official
 MSVC LLVM archives use a different static component-library layout. This only
-restricts how the compiler executable itself is built; qkc can still emit and
-link code for Windows MSVC target triples.
+restricts how the compiler executable itself is built. QK's default Windows
+target remains MSVC and final links use `link.exe`/`lib.exe` from an initialized
+Visual Studio developer environment. Explicit Windows GNU targets use Clang
+with the supplied MinGW sysroot.
 
 ## Docs
 

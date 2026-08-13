@@ -1,30 +1,16 @@
 package main
 
 import (
-	"reflect"
+	"runtime"
 	"testing"
 )
 
-func TestAppleRelocatableLinkArgs(t *testing.T) {
-	got := appleRelocatableLinkArgs([]string{
-		"one.o",
-		"two.o",
-		"-r",
-		"-nostdlib",
-		"-target", "arm64-apple-macosx",
-		"--sysroot=/MacOSX.sdk",
-		"-Wl,-u,_entry",
-		"-o", "result.o",
-	})
-	want := []string{
-		"one.o",
-		"two.o",
-		"-r",
-		"-syslibroot", "/MacOSX.sdk",
-		"-u", "_entry",
-		"-o", "result.o",
+func TestCrossHostFinalLinkIsRejected(t *testing.T) {
+	target := "arm64-apple-macosx"
+	if runtime.GOOS == "darwin" {
+		target = "x86_64-unknown-linux-gnu"
 	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("Apple relocatable linker arguments: got %q, want %q", got, want)
+	if err := validateExternalLinkTarget(target, "/target-sysroot"); err == nil {
+		t.Fatalf("cross-host final link for %q was accepted", target)
 	}
 }
