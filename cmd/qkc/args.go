@@ -472,6 +472,9 @@ func printVersion() {
 }
 
 func finaliseArgs(args *Args) error {
+	if args.target == "" {
+		args.target = defaultTargetForHost(runtime.GOOS)
+	}
 	if args.packageArg == "" {
 		args.packageArg = "."
 	}
@@ -616,7 +619,17 @@ func effectiveTargetName(target string) string {
 	if target != "" {
 		return strings.ToLower(target)
 	}
+	if target = defaultTargetForHost(runtime.GOOS); target != "" {
+		return target
+	}
 	return runtime.GOARCH + "-" + runtime.GOOS
+}
+
+func defaultTargetForHost(goos string) string {
+	if goos == "windows" {
+		return "x86_64-pc-windows-msvc"
+	}
+	return ""
 }
 
 func targetIsWindows(target string) bool {

@@ -2,6 +2,25 @@ package main
 
 import "testing"
 
+func TestWindowsHostDefaultsToMSVC(t *testing.T) {
+	if got := defaultTargetForHost("windows"); got != "x86_64-pc-windows-msvc" {
+		t.Fatalf("Windows default target: got %q", got)
+	}
+	if got := defaultTargetForHost("linux"); got != "" {
+		t.Fatalf("Linux default target override: got %q", got)
+	}
+}
+
+func TestWindowsGNUTargetRequiresExplicitSysroot(t *testing.T) {
+	target := "x86_64-w64-windows-gnu"
+	if _, err := hostWindowsToolchainArgs(target, ""); err == nil {
+		t.Fatal("Windows GNU target without a sysroot was accepted")
+	}
+	if _, err := hostWindowsToolchainArgs(target, t.TempDir()); err != nil {
+		t.Fatalf("Windows GNU target with a sysroot was rejected: %v", err)
+	}
+}
+
 func TestTargetSystemLibrary(t *testing.T) {
 	tests := []struct {
 		target  string

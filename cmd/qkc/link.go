@@ -258,20 +258,44 @@ func linkObjects(objFiles []string, moduleLinks []attributes.Link, roots []strin
 }
 
 func linkDarwinRelocatable(args []string, verbose bool) error {
-	clang, err := exec.LookPath("clang")
+	output, err := exec.Command("xcrun", "--find", "ld").Output()
 	if err != nil {
-		return fmt.Errorf("find Clang for Mach-O relocatable link: %w", err)
+		return fmt.Errorf("could not locate the Apple linker with xcrun: %w", err)
 	}
+	linker := strings.TrimSpace(string(output))
+	if linker == "" {
+		return fmt.Errorf("xcrun returned an empty Apple linker path")
+	}
+	args = appleRelocatableLinkArgs(args)
 	if verbose {
-		fmt.Fprintf(os.Stderr, "> %s %s\n", clang, strings.Join(args, " "))
+		fmt.Fprintf(os.Stderr, "> %s %s\n", linker, strings.Join(args, " "))
 	}
-	command := exec.Command(clang, args...)
+	command := exec.Command(linker, args...)
 	command.Stdout = os.Stdout
 	command.Stderr = os.Stderr
 	if err := command.Run(); err != nil {
 		return fmt.Errorf("Apple relocatable linking failed: %w", err)
 	}
 	return nil
+}
+
+func appleRelocatableLinkArgs(args []string) []string {
+	result := make([]string, 0, len(args))
+	for index := 0; index < len(args); index++ {
+		argument := args[index]
+		switch {
+		case argument == "-target" && index+1 < len(args):
+			index++
+		case argument == "-nostdlib":
+		case strings.HasPrefix(argument, "--sysroot="):
+			result = append(result, "-syslibroot", strings.TrimPrefix(argument, "--sysroot="))
+		case strings.HasPrefix(argument, "-Wl,"):
+			result = append(result, strings.Split(strings.TrimPrefix(argument, "-Wl,"), ",")...)
+		default:
+			result = append(result, argument)
+		}
+	}
+	return result
 }
 
 func moduleLinksContainLibc(moduleLinks []attributes.Link) bool {
@@ -366,7 +390,7 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots []str
 	if config.target != "" {
 		args = append([]string{"-target", config.target}, args...)
 	}
-	toolchainArgs, err := hostWindowsToolchainArgs(config.target)
+	toolchainArgs, err := hostWindowsToolchainArgs(config.target, config.sysroot)
 	if err != nil {
 		return nil, err
 	}
@@ -427,32 +451,30 @@ func targetIsWindowsMSVC(target string) bool {
 	return strings.Contains(strings.ToLower(target), "msvc")
 }
 
-func hostWindowsToolchainArgs(target string) ([]string, error) {
-	if runtime.GOOS != "windows" || !targetIsWindows(target) {
+func hostWindowsToolchainArgs(target, sysroot string) ([]string, error) {
+	if !targetIsWindows(target) {
 		return nil, nil
 	}
-	if targetIsWindowsMSVC(target) {
-		libraryEnvironment := os.Getenv("LIB")
-		if libraryEnvironment == "" {
-			return nil, fmt.Errorf("MSVC target requires an initialized Visual Studio developer environment (LIB is not set)")
+	if !targetIsWindowsMSVC(target) {
+		if sysroot == "" {
+			return nil, fmt.Errorf("Windows GNU target requires an explicit MinGW sysroot; pass -sysroot <path>")
 		}
-		var args []string
-		for _, directory := range filepath.SplitList(libraryEnvironment) {
-			if directory != "" {
-				args = append(args, "-L"+directory)
-			}
+		return nil, nil
+	}
+	if runtime.GOOS != "windows" {
+		return nil, nil
+	}
+	libraryEnvironment := os.Getenv("LIB")
+	if libraryEnvironment == "" {
+		return nil, fmt.Errorf("MSVC target requires an initialized Visual Studio developer environment (LIB is not set)")
+	}
+	var args []string
+	for _, directory := range filepath.SplitList(libraryEnvironment) {
+		if directory != "" {
+			args = append(args, "-L"+directory)
 		}
-		return args, nil
 	}
-	clang, err := exec.LookPath("clang")
-	if err != nil {
-		return nil, fmt.Errorf("Windows GNU target requires clang on PATH: %w", err)
-	}
-	libraryDirectory := filepath.Join(filepath.Dir(filepath.Dir(clang)), "lib")
-	if info, err := os.Stat(libraryDirectory); err != nil || !info.IsDir() {
-		return nil, fmt.Errorf("could not locate the Windows GNU library directory beside Clang: %s", libraryDirectory)
-	}
-	return []string{"-L" + libraryDirectory}, nil
+	return args, nil
 }
 
 func defaultLibrarySuppressionArgs(target string, outputType OutputType) []string {
