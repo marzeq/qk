@@ -1,0 +1,12 @@
+module main
+
+import std.alloc
+import model
+
+let append_item(allocator: *mut dyn std.alloc.Allocator): bool {
+  let mut children = model.Children.init(allocator)
+  let item = model.Item.{ value=1 }
+  return children.append(item)
+}
+
+let main() {}

@@ -1390,8 +1390,16 @@ func (a *Attributor) attributeMethodValue(n *parser.FieldAccessNode) bool {
 		if !ok {
 			return false
 		}
-		if ident.Symbol.Kind == symbols.SymbolKindType && ident.Symbol.TemplateSymbol != nil {
-			ownerArguments = ident.Symbol.TypeArguments
+		if ident.Symbol.Kind == symbols.SymbolKindType {
+			if ident.Symbol.TemplateSymbol != nil {
+				ownerArguments = ident.Symbol.TypeArguments
+			} else if defined, specialized := ident.Symbol.TypeInfo.(types.DefinedType); specialized && defined.GenericName != "" {
+				// A transparent alias to a generic nominal type is not itself a
+				// template symbol. Recover the concrete owner arguments retained by
+				// its target so static generic methods specialize as they would on
+				// the underlying type spelling.
+				ownerArguments = defined.TypeArguments
+			}
 		}
 	}
 	method := a.analyser.methods[module+":"+owner][n.Field.Name]
