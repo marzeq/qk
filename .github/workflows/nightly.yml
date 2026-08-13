@@ -212,19 +212,49 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          mapfile -t stale_tags < <(
+          mapfile -t nightly_releases < <(
             gh release list \
               --repo "$GITHUB_REPOSITORY" \
               --limit 100 \
               --json tagName,createdAt,isDraft \
-              --jq 'map(select(.isDraft == false and (.tagName | startswith("nightly-")))) | sort_by(.createdAt) | reverse | .[3:] | .[].tagName'
+              --jq 'map(select(.isDraft == false and (.tagName | startswith("nightly-")))) | sort_by(.createdAt) | reverse | .[].tagName'
           )
-          for tag in "${stale_tags[@]}"; do
+          retained_tags=("${nightly_releases[@]:0:3}")
+
+          is_retained() {
+            local candidate=$1
+            local retained_tag
+            for retained_tag in "${retained_tags[@]}"; do
+              if [[ $candidate == "$retained_tag" ]]; then
+                return 0
+              fi
+            done
+            return 1
+          }
+
+          for tag in "${nightly_releases[@]:3}"; do
             if git ls-remote --exit-code --tags primary "refs/tags/$tag" >/dev/null 2>&1; then
               git push primary --delete "refs/tags/$tag"
             fi
-            gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes
-            if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" >/dev/null 2>&1; then
+            gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
+          done
+
+          mapfile -t primary_tags < <(
+            git ls-remote --refs --tags primary 'refs/tags/nightly-*' |
+              awk '{ sub("^refs/tags/", "", $2); print $2 }'
+          )
+          for tag in "${primary_tags[@]}"; do
+            if ! is_retained "$tag"; then
+              git push primary --delete "refs/tags/$tag"
+            fi
+          done
+
+          mapfile -t github_tags < <(
+            gh api --paginate "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/nightly-" \
+              --jq '.[] | .ref | sub("^refs/tags/"; "")'
+          )
+          for tag in "${github_tags[@]}"; do
+            if ! is_retained "$tag"; then
               gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$tag"
             fi
           done
