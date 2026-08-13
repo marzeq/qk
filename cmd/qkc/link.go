@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"strings"
@@ -275,7 +276,7 @@ func linkDarwinRelocatable(args []string, verbose bool) error {
 
 func moduleLinksContainLibc(moduleLinks []attributes.Link) bool {
 	for _, link := range moduleLinks {
-		if link.Kind == attributes.LinkSystem && (link.Value == "c" || link.Value == "System") {
+		if link.Kind == attributes.LinkSystem && isCLibrary(link.Value) {
 			return true
 		}
 	}
@@ -285,12 +286,21 @@ func moduleLinksContainLibc(moduleLinks []attributes.Link) bool {
 func withoutLibcLinks(moduleLinks []attributes.Link) []attributes.Link {
 	result := make([]attributes.Link, 0, len(moduleLinks))
 	for _, link := range moduleLinks {
-		if link.Kind == attributes.LinkSystem && (link.Value == "c" || link.Value == "System") {
+		if link.Kind == attributes.LinkSystem && isCLibrary(link.Value) {
 			continue
 		}
 		result = append(result, link)
 	}
 	return result
+}
+
+func isCLibrary(library string) bool {
+	switch strings.ToLower(library) {
+	case "c", "system", "msvcrt", "ucrt":
+		return true
+	default:
+		return false
+	}
 }
 
 func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots []string, config *Args) ([]string, error) {
@@ -356,6 +366,11 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots []str
 	if config.target != "" {
 		args = append([]string{"-target", config.target}, args...)
 	}
+	toolchainArgs, err := hostWindowsToolchainArgs(config.target)
+	if err != nil {
+		return nil, err
+	}
+	args = append(toolchainArgs, args...)
 	args = append(args, config.linkArgs...)
 
 	for _, link := range moduleLinks {
@@ -366,7 +381,13 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots []str
 			if config.outputType == OutputObject && targetIsApple(config.target) && (link.Value == "c" || link.Value == "System") {
 				continue
 			}
-			args = append(args, "-l"+link.Value)
+			// The MSVC driver selects the appropriate static or dynamic CRT from
+			// its default libraries. Adding ucrt.lib explicitly mixes the import
+			// and static CRTs and produces duplicate runtime symbols.
+			if targetIsWindowsMSVC(config.target) && isCLibrary(link.Value) {
+				continue
+			}
+			args = append(args, "-l"+targetSystemLibrary(config.target, link.Value))
 		case attributes.LinkPath:
 			args = append(args, link.Value)
 		case attributes.LinkSearchPath:
@@ -390,6 +411,48 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots []str
 
 	args = append(args, "-o", config.output)
 	return args, nil
+}
+
+func targetSystemLibrary(target, library string) string {
+	if library == "c" && targetIsWindows(target) {
+		if targetIsWindowsMSVC(target) {
+			return "ucrt"
+		}
+		return "msvcrt"
+	}
+	return library
+}
+
+func targetIsWindowsMSVC(target string) bool {
+	return strings.Contains(strings.ToLower(target), "msvc")
+}
+
+func hostWindowsToolchainArgs(target string) ([]string, error) {
+	if runtime.GOOS != "windows" || !targetIsWindows(target) {
+		return nil, nil
+	}
+	if targetIsWindowsMSVC(target) {
+		libraryEnvironment := os.Getenv("LIB")
+		if libraryEnvironment == "" {
+			return nil, fmt.Errorf("MSVC target requires an initialized Visual Studio developer environment (LIB is not set)")
+		}
+		var args []string
+		for _, directory := range filepath.SplitList(libraryEnvironment) {
+			if directory != "" {
+				args = append(args, "-L"+directory)
+			}
+		}
+		return args, nil
+	}
+	clang, err := exec.LookPath("clang")
+	if err != nil {
+		return nil, fmt.Errorf("Windows GNU target requires clang on PATH: %w", err)
+	}
+	libraryDirectory := filepath.Join(filepath.Dir(filepath.Dir(clang)), "lib")
+	if info, err := os.Stat(libraryDirectory); err != nil || !info.IsDir() {
+		return nil, fmt.Errorf("could not locate the Windows GNU library directory beside Clang: %s", libraryDirectory)
+	}
+	return []string{"-L" + libraryDirectory}, nil
 }
 
 func defaultLibrarySuppressionArgs(target string, outputType OutputType) []string {

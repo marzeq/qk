@@ -1,7 +1,13 @@
 module std.libc
 
 when TargetHasLibc {
-  @link(system "c")
+  when Environment == .MSVC {
+    @link(system "ucrt")
+  } else when OS == .Windows {
+    @link(system "msvcrt")
+  } else {
+    @link(system "c")
+  }
 
 import std.ctypes
 
