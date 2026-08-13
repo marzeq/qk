@@ -44,6 +44,19 @@ if ! static_llvm_system_libraries=$($llvm_config --link-static --system-libs all
   echo "could not determine LLVM's static system-library dependencies" >&2
   exit 1
 fi
+static_zstd_library="${llvm_prefix}/lib/libzstd.a"
+if [[ ! -f $static_zstd_library ]]; then
+  echo "static zstd archive not found: $static_zstd_library" >&2
+  exit 1
+fi
+filtered_llvm_system_libraries=
+for library in $static_llvm_system_libraries; do
+  case $library in
+    -lz3|*libz3.dll.a) ;;
+    -lzstd|*libzstd.dll.a) filtered_llvm_system_libraries+=" ${static_zstd_library}" ;;
+    *) filtered_llvm_system_libraries+=" ${library}" ;;
+  esac
+done
 
 version=$1
 output_directory=${2:-dist}
@@ -61,12 +74,13 @@ mkdir -p "$staging_directory/bin" "$staging_directory/libs" "$output_directory"
 cp -a libs/. "$staging_directory/libs/"
 cp LICENSE "$staging_directory/LICENSE"
 
+final_linker_flags="${CGO_LDFLAGS:-} -L${llvm_library_directory} ${static_llvm_libraries} ${filtered_llvm_system_libraries} -static"
 GOCACHE=${GOCACHE:-"${staging_parent}/go-build-cache"} \
   CGO_CXXFLAGS="${CGO_CXXFLAGS:-} -I${llvm_prefix}/include" \
-  CGO_LDFLAGS="${CGO_LDFLAGS:-} -L${llvm_library_directory} ${static_llvm_libraries} ${static_llvm_system_libraries}" \
+  CGO_LDFLAGS= \
   go build -tags qk_static_llvm -trimpath \
-  -ldflags="-s -w -linkmode=external -extldflags=-static -X=main.compilerVersion=${version}" \
-  -o "$staging_directory/bin/qkc.exe" ./cmd/qkc
+    -ldflags="-s -w -linkmode=external -extldflags '${final_linker_flags}' -X=main.compilerVersion=${version}" \
+    -o "$staging_directory/bin/qkc.exe" ./cmd/qkc
 
 if ldd "$staging_directory/bin/qkc.exe" | grep -Eiq '(/ucrt64/|\\ucrt64\\|/mingw64/|\\mingw64\\)'; then
   echo "release qkc retains MSYS2/MinGW runtime DLL dependencies" >&2

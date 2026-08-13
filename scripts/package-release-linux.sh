@@ -51,6 +51,17 @@ if ! static_llvm_system_libraries=$($llvm_config --link-static --system-libs all
   echo "could not determine LLVM's static system-library dependencies" >&2
   exit 1
 fi
+# Debian's LLVM configuration records its optional Z3 dependency as an
+# absolute shared-library path. QK does not use LLVM's Z3-backed APIs, and the
+# corresponding object is not pulled from the static LLVM archives, so omit it
+# from a fully static release link.
+filtered_llvm_system_libraries=
+for library in $static_llvm_system_libraries; do
+  case $library in
+    -lz3|*libz3.so|*libz3.so.*) ;;
+    *) filtered_llvm_system_libraries+=" ${library}" ;;
+  esac
+done
 
 version=$1
 output_directory=${2:-dist}
@@ -68,11 +79,12 @@ mkdir -p "$staging_directory/bin" "$staging_directory/libs" "$output_directory"
 cp -a libs/. "$staging_directory/libs/"
 cp LICENSE "$staging_directory/LICENSE"
 
+final_linker_flags="${CGO_LDFLAGS:-} -L${llvm_library_directory} ${static_llvm_libraries} ${filtered_llvm_system_libraries} -static"
 GOCACHE=${GOCACHE:-"${staging_parent}/go-build-cache"} \
   CGO_CXXFLAGS="${CGO_CXXFLAGS:-} -I${llvm_prefix}/include" \
-  CGO_LDFLAGS="${CGO_LDFLAGS:-} -L${llvm_library_directory} ${static_llvm_libraries} ${static_llvm_system_libraries}" \
+  CGO_LDFLAGS= \
   go build -tags qk_static_llvm -trimpath \
-    -ldflags="-s -w -linkmode=external -extldflags=-static -X=main.compilerVersion=${version}" \
+    -ldflags="-s -w -linkmode=external -extldflags '${final_linker_flags}' -X=main.compilerVersion=${version}" \
     -o "$staging_directory/bin/qkc" ./cmd/qkc
 
 if readelf -l "$staging_directory/bin/qkc" 2>/dev/null | grep -q 'INTERP' ||
