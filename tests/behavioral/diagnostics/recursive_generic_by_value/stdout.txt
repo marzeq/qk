@@ -1,0 +1,9 @@
+Error: <CASE>/main.qk:3:1
+   1 | module main
+   2 | 
+   3 | let Box<T> = type struct { value: T }
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   4 | let Children = type alias Box<Node>
+   5 | let Node = type union(@auto) { Next(child: Children) }
+
+generic type "Box" contains an incomplete type by value

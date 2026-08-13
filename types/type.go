@@ -985,7 +985,28 @@ func IsOpaque(t Type) bool {
 // IsComplete reports whether a type has a known by-value representation.
 // Pointer representation never depends on the completeness of its base type.
 func IsComplete(t Type) bool {
-	switch t := Underlying(t).(type) {
+	return isComplete(t, make(map[string]bool), make(map[*AliasRef]bool))
+}
+
+func isComplete(t Type, defined map[string]bool, aliases map[*AliasRef]bool) bool {
+	switch t := t.(type) {
+	case DefinedType:
+		key := Identity(t)
+		if defined[key] {
+			return false
+		}
+		defined[key] = true
+		complete := isComplete(t.Underlying, defined, aliases)
+		delete(defined, key)
+		return complete
+	case *AliasRef:
+		if aliases[t] || t.Target == nil || *t.Target == nil {
+			return false
+		}
+		aliases[t] = true
+		complete := isComplete(*t.Target, defined, aliases)
+		delete(aliases, t)
+		return complete
 	case OpaqueType:
 		return false
 	case TraitType:
@@ -994,23 +1015,23 @@ func IsComplete(t Type) bool {
 		return false
 	case StructType:
 		for _, field := range t.Fields {
-			if !IsComplete(field.R) {
+			if !isComplete(field.R, defined, aliases) {
 				return false
 			}
 		}
 	case UnionType:
 		for _, field := range t.Fields {
-			if !IsComplete(field.R) {
+			if !isComplete(field.R, defined, aliases) {
 				return false
 			}
 		}
 	case SliceType:
-		return IsComplete(t.Base)
+		return isComplete(t.Base, defined, aliases)
 	case ArrayType:
-		return IsComplete(t.Base)
+		return isComplete(t.Base, defined, aliases)
 	case MultipleReturnType:
 		for _, item := range t.Types {
-			if !IsComplete(item) {
+			if !isComplete(item, defined, aliases) {
 				return false
 			}
 		}

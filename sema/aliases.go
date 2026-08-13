@@ -22,7 +22,9 @@ type aliasInfo struct {
 func (a *Analyser) resolveAlias(info *aliasInfo, node parser.Node, indirect bool) types.Type {
 	switch info.state {
 	case aliasResolving:
-		if indirect {
+		named, namedType := info.node.Type.(*parser.NamedTypeNode)
+		genericApplication := namedType && len(named.TypeArguments) != 0
+		if indirect || genericApplication {
 			if _, ok := info.node.Type.(*parser.TraitTypeNode); ok && !info.node.Transparent {
 				return types.TraitType{Module: a.currentMod, Name: info.node.Name}
 			}
@@ -39,7 +41,11 @@ func (a *Analyser) resolveAlias(info *aliasInfo, node parser.Node, indirect bool
 
 	previousTraitContext := a.resolvingTraitMethodTypes
 	a.resolvingTraitMethodTypes = false
-	resolved := a.resolveTypeNodeAt(info.node.Type, false)
+	// Preserve the indirection that led into this named type. A recursive
+	// reference may pass through intermediate aliases before returning to the
+	// type whose storage is pointer-backed. Completeness validation still
+	// rejects cycles that ultimately contain values inline.
+	resolved := a.resolveTypeNodeAt(info.node.Type, indirect)
 	a.resolvingTraitMethodTypes = previousTraitContext
 	if trait, ok := resolved.(types.TraitType); ok && !info.node.Transparent {
 		trait.Module = a.currentMod

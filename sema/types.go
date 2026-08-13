@@ -93,7 +93,10 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 					a.errorf(t, "unsupported generic type %q", t.Name)
 					return types.ErrorType{}
 				}
-				arguments := a.resolveGenericArguments(t.TypeArguments)
+				// The generic representation decides whether a recursive argument is
+				// stored by value or behind indirection. Preserve a recursive reference
+				// until specialization has exposed that representation.
+				arguments := a.resolveGenericArgumentsAt(t.TypeArguments, true)
 				specialization := a.specializeGenericAlias(info, arguments, t, indirect)
 				if specialization == nil {
 					return types.ErrorType{}
@@ -129,7 +132,7 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 				a.errorf(t, "unsupported generic type %q", t.Name)
 				return types.ErrorType{}
 			}
-			arguments := a.resolveGenericArguments(t.TypeArguments)
+			arguments := a.resolveGenericArgumentsAt(t.TypeArguments, true)
 			specialization := a.specializeGenericAlias(info, arguments, t, indirect)
 			if specialization == nil {
 				return types.ErrorType{}

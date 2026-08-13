@@ -109,7 +109,10 @@
     {
       "name": "aggregate diagnostics",
       "positive": ["types/aggregates"],
-      "negative": ["diagnostics/duplicate_field"]
+      "negative": [
+        "diagnostics/duplicate_field",
+        "diagnostics/recursive_generic_by_value"
+      ]
     },
     {
       "name": "generic inference diagnostics",

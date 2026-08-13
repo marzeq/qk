@@ -1,6 +1,7 @@
 package sema
 
 import (
+	"sort"
 	"strconv"
 	"strings"
 
@@ -40,7 +41,13 @@ func (a *Analyser) collectTopLevel(root *parser.RootNode) {
 }
 
 func (a *Analyser) resolveBodies(root *parser.RootNode) {
-	for _, info := range a.aliases {
+	aliasNames := make([]string, 0, len(a.aliases))
+	for name := range a.aliases {
+		aliasNames = append(aliasNames, name)
+	}
+	sort.Strings(aliasNames)
+	for _, name := range aliasNames {
+		info := a.aliases[name]
 		if info.state == aliasUnseen {
 			a.resolveAlias(info, info.node, false)
 		}

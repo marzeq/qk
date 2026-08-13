@@ -180,9 +180,13 @@ func genericTypeParameterBase(t types.Type) (types.TypeParameter, bool) {
 }
 
 func (a *Analyser) resolveGenericArguments(nodes []parser.TypeNode) []types.Type {
+	return a.resolveGenericArgumentsAt(nodes, false)
+}
+
+func (a *Analyser) resolveGenericArgumentsAt(nodes []parser.TypeNode, indirect bool) []types.Type {
 	arguments := make([]types.Type, len(nodes))
 	for i, node := range nodes {
-		arguments[i] = a.resolveTypeNode(node)
+		arguments[i] = a.resolveTypeNodeAt(node, indirect)
 	}
 	return arguments
 }
@@ -287,7 +291,7 @@ func (a *Analyser) specializeGenericAlias(info *genericAliasInfo, arguments []ty
 	info.specializations[key] = specialization
 	bindings := typeArgumentBindings(info.parameters, arguments)
 	a.withDefinitionContext(info.module, a.modules[info.module].TrustedStandardLibrary, bindings, func() {
-		resolved := a.resolveTypeNodeAt(info.node.Type, false)
+		resolved := a.resolveTypeNodeAt(info.node.Type, indirect)
 		if trait, ok := resolved.(types.TraitType); ok && !info.node.Transparent {
 			trait.Module, trait.Name = info.module, displayName
 			resolved = trait
