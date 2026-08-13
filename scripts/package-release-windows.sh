@@ -44,17 +44,21 @@ if ! static_llvm_system_libraries=$($llvm_config --link-static --system-libs all
   echo "could not determine LLVM's static system-library dependencies" >&2
   exit 1
 fi
-static_zstd_library="${llvm_prefix}/lib/libzstd.a"
-if [[ ! -f $static_zstd_library ]]; then
-  echo "static zstd archive not found: $static_zstd_library" >&2
+zstd_dll="${llvm_prefix}/bin/libzstd.dll"
+zstd_license="${llvm_prefix}/share/licenses/zstd/LICENSE"
+if [[ ! -f $zstd_dll ]]; then
+  echo "LLVM's zstd runtime not found: $zstd_dll" >&2
   exit 1
 fi
-filtered_llvm_system_libraries=
-for library in $static_llvm_system_libraries; do
+if [[ ! -f $zstd_license ]]; then
+  echo "zstd license file not found: $zstd_license" >&2
+  exit 1
+fi
+filtered_llvm_link_flags=
+for library in $static_llvm_libraries $static_llvm_system_libraries; do
   case $library in
     -lz3|*libz3.dll.a) ;;
-    -lzstd|*libzstd.dll.a) filtered_llvm_system_libraries+=" ${static_zstd_library}" ;;
-    *) filtered_llvm_system_libraries+=" ${library}" ;;
+    *) filtered_llvm_link_flags+=" ${library}" ;;
   esac
 done
 
@@ -73,8 +77,10 @@ trap cleanup EXIT
 mkdir -p "$staging_directory/bin" "$staging_directory/libs" "$output_directory"
 cp -a libs/. "$staging_directory/libs/"
 cp LICENSE "$staging_directory/LICENSE"
+cp "$zstd_dll" "$staging_directory/bin/libzstd.dll"
+cp "$zstd_license" "$staging_directory/ZSTD-LICENSE.txt"
 
-final_linker_flags="${CGO_LDFLAGS:-} -L${llvm_library_directory} ${static_llvm_libraries} ${filtered_llvm_system_libraries} -static"
+final_linker_flags="${CGO_LDFLAGS:-} -L${llvm_library_directory} ${filtered_llvm_link_flags} -static"
 GOCACHE=${GOCACHE:-"${staging_parent}/go-build-cache"} \
   CGO_CXXFLAGS="${CGO_CXXFLAGS:-} -I${llvm_prefix}/include" \
   CGO_LDFLAGS= \
@@ -82,9 +88,10 @@ GOCACHE=${GOCACHE:-"${staging_parent}/go-build-cache"} \
     -ldflags="-s -w -linkmode=external -extldflags '${final_linker_flags}' -X=main.compilerVersion=${version}" \
     -o "$staging_directory/bin/qkc.exe" ./cmd/qkc
 
-if ldd "$staging_directory/bin/qkc.exe" | grep -Eiq '(/ucrt64/|\\ucrt64\\|/mingw64/|\\mingw64\\)'; then
+if PATH="$staging_directory/bin:$PATH" ldd "$staging_directory/bin/qkc.exe" |
+   grep -Eiq '(/ucrt64/|\\ucrt64\\|/mingw64/|\\mingw64\\)'; then
   echo "release qkc retains MSYS2/MinGW runtime DLL dependencies" >&2
-  ldd "$staging_directory/bin/qkc.exe" >&2
+  PATH="$staging_directory/bin:$PATH" ldd "$staging_directory/bin/qkc.exe" >&2
   exit 1
 fi
 

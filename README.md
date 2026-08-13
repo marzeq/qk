@@ -47,13 +47,16 @@ aggregate lowering is currently limited to the documented target families.
 
 ### Running a bundled release
 
-Release builds embed LLVM statically. Linux and Windows release executables
-also statically link their non-system compiler runtime dependencies; macOS does
-not support fully static executables, so its release depends only on Apple
-system libraries. Functionally, a release needs only `bin/` and `libs/`.
-`LICENSE` and `LLVM-LICENSE.txt` are included as distribution metadata;
-additional notices may be required if the selected static LLVM build pulls in
-other third-party libraries.
+Release builds embed LLVM statically. Linux release executables also statically
+link their non-system compiler runtime dependencies. The stock MSYS2 LLVM
+archives retain their zstd DLL ABI, so Windows releases place `libzstd.dll`
+beside `qkc.exe`; macOS does not support fully static executables, so its
+release depends only on Apple system libraries. Functionally, a release needs
+only `bin/` and `libs/`.
+`LICENSE`, `LLVM-LICENSE.txt`, and any bundled runtime license such as Windows'
+`ZSTD-LICENSE.txt` are included as distribution metadata; additional notices
+may be required if the selected static LLVM build pulls in other third-party
+libraries.
 Native final links additionally require the platform toolchain described below.
 
 ### Building the compiler yourself

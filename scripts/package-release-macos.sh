@@ -68,12 +68,12 @@ fi
 # Homebrew enables LLVM's optional Z3 integration, but QK does not use those
 # APIs. Avoid retaining libz3.dylib, and force zstd to its archive because
 # Darwin has no global static-link mode.
-filtered_llvm_system_libraries=
-for library in $static_llvm_system_libraries; do
+filtered_llvm_link_flags=
+for library in $static_llvm_libraries $static_llvm_system_libraries; do
   case $library in
     -lz3|*libz3*.dylib) ;;
-    -lzstd|*libzstd*.dylib) filtered_llvm_system_libraries+=" ${static_zstd_library}" ;;
-    *) filtered_llvm_system_libraries+=" ${library}" ;;
+    -lzstd|*libzstd*.dylib) filtered_llvm_link_flags+=" ${static_zstd_library}" ;;
+    *) filtered_llvm_link_flags+=" ${library}" ;;
   esac
 done
 version=$1
@@ -92,7 +92,7 @@ mkdir -p "$staging_directory/bin" "$staging_directory/libs" "$output_directory"
 cp -a libs/. "$staging_directory/libs/"
 cp LICENSE "$staging_directory/LICENSE"
 
-final_linker_flags="${CGO_LDFLAGS:-} -L${llvm_library_directory} ${static_llvm_libraries} ${filtered_llvm_system_libraries}"
+final_linker_flags="${CGO_LDFLAGS:-} -L${llvm_library_directory} ${filtered_llvm_link_flags}"
 GOCACHE=${GOCACHE:-"${staging_parent}/go-build-cache"} \
   CGO_CXXFLAGS="${CGO_CXXFLAGS:-} -I${llvm_prefix}/include" \
   CGO_LDFLAGS= \

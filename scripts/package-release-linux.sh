@@ -55,11 +55,11 @@ fi
 # absolute shared-library path. QK does not use LLVM's Z3-backed APIs, and the
 # corresponding object is not pulled from the static LLVM archives, so omit it
 # from a fully static release link.
-filtered_llvm_system_libraries=
-for library in $static_llvm_system_libraries; do
+filtered_llvm_link_flags=
+for library in $static_llvm_libraries $static_llvm_system_libraries; do
   case $library in
     -lz3|*libz3.so|*libz3.so.*) ;;
-    *) filtered_llvm_system_libraries+=" ${library}" ;;
+    *) filtered_llvm_link_flags+=" ${library}" ;;
   esac
 done
 
@@ -79,7 +79,7 @@ mkdir -p "$staging_directory/bin" "$staging_directory/libs" "$output_directory"
 cp -a libs/. "$staging_directory/libs/"
 cp LICENSE "$staging_directory/LICENSE"
 
-final_linker_flags="${CGO_LDFLAGS:-} -L${llvm_library_directory} ${static_llvm_libraries} ${filtered_llvm_system_libraries} -static"
+final_linker_flags="${CGO_LDFLAGS:-} -L${llvm_library_directory} ${filtered_llvm_link_flags} -static"
 GOCACHE=${GOCACHE:-"${staging_parent}/go-build-cache"} \
   CGO_CXXFLAGS="${CGO_CXXFLAGS:-} -I${llvm_prefix}/include" \
   CGO_LDFLAGS= \
@@ -100,7 +100,9 @@ for candidate in \
   "$llvm_prefix/share/llvm/LICENSE.TXT" \
   "$llvm_prefix/share/licenses/llvm/LICENSE" \
   "$llvm_prefix/share/licenses/llvm/LICENSE.TXT" \
-  "$llvm_prefix/share/doc/llvm/LICENSE.TXT"; do
+  "$llvm_prefix/share/doc/llvm/LICENSE.TXT" \
+  "/usr/share/doc/llvm-22-dev/copyright" \
+  "/usr/share/doc/llvm-22/copyright"; do
   if [[ -f $candidate ]]; then
     llvm_license=$candidate
     break
