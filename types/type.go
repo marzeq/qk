@@ -1287,13 +1287,6 @@ func (a SliceType) CanCoerceTo(other Type) bool {
 	if a.Equals(other) {
 		return true
 	}
-	if otherPointer, ok := other.(PointerType); ok {
-		if otherPointer.Mutable && !a.Mutable {
-			return false
-		}
-		return otherPointer.Base.Equals(PrimitiveVoid) || a.Base.Equals(otherPointer.Base)
-	}
-
 	otherSlice, ok := other.(SliceType)
 	if !ok {
 		return false
@@ -1310,15 +1303,6 @@ func (a SliceType) CanCastTo(other Type) bool {
 		return true
 	}
 
-	if otherPointer, ok := other.(PointerType); ok {
-		if otherPointer.Mutable && !a.Mutable {
-			return false
-		}
-		if otherPointer.Base.Equals(PrimitiveVoid) {
-			return true
-		}
-		return a.Base.CanCastTo(otherPointer.Base) || a.Base.Equals(otherPointer.Base)
-	}
 	if otherSlice, ok := other.(SliceType); ok {
 		if otherSlice.Mutable && !a.Mutable {
 			return false

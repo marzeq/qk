@@ -39,7 +39,11 @@
     },
     {
       "name": "generics",
-      "positive": ["generics/identity", "generics/imported_alias_method"],
+      "positive": [
+        "generics/identity",
+        "generics/imported_alias_method",
+        "generics/dynamic_array_append"
+      ],
       "negativeNotApplicable": true
     },
     {
@@ -96,7 +100,8 @@
       "positive": ["basic_syntax/values"],
       "negative": [
         "diagnostics/type_mismatch",
-        "diagnostics/inconsistent_if_branches"
+        "diagnostics/inconsistent_if_branches",
+        "diagnostics/slice_pointer_cast"
       ]
     },
     {

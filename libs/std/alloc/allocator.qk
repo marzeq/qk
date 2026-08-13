@@ -86,7 +86,7 @@ pub let free<T>(
 
   let size, valid = checked_size<T>(@len(memory))
   if valid {
-    allocator.free_bytes(memory.(*mut T), size, @alignof(T))
+    allocator.free_bytes(memory[:], size, @alignof(T))
   }
 }
 
@@ -106,7 +106,7 @@ pub let resize<T>(
   }
 
   let result, resized = allocator.resize_bytes(
-    memory.(*mut T),
+    memory[:],
     old_size,
     new_size,
     @alignof(T),

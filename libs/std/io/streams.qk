@@ -44,6 +44,7 @@ pub let ConsoleReader = type struct {
 
 pub let ConsoleReader.read(*mut self, buffer: []mut u8): (usz, std.error.Error) {
   if @len(buffer) == 0 { return 0, std.error.Error.none() }
+  let buffer_ptr: *mut u8 = buffer[:]
 
   when OS == .Windows {
     let handle = _get_std_handle(-10)
@@ -51,7 +52,7 @@ pub let ConsoleReader.read(*mut self, buffer: []mut u8): (usz, std.error.Error) 
     let mut read: u32 = 0
     let ok = _read_file(
       handle,
-      buffer.(*mut u8),
+      buffer_ptr,
       if @len(buffer) > 4294967295 { 4294967295 } else { @len(buffer).(u32) },
       read.&mut,
       nil,
@@ -72,7 +73,7 @@ pub let ConsoleReader.read(*mut self, buffer: []mut u8): (usz, std.error.Error) 
       out i64 "={rax}",
       in syscall "{rax}",
       in self.descriptor.(i64) "{rdi}",
-      in buffer.(*mut u8) "{rsi}",
+      in buffer_ptr "{rsi}",
       in @len(buffer) "{rdx}",
       clobber "rcx",
       clobber "r11",
@@ -95,7 +96,7 @@ pub let ConsoleReader.read(*mut self, buffer: []mut u8): (usz, std.error.Error) 
         out i64 "={x0}",
         in syscall "{x16}",
         in self.descriptor.(i64) "{x0}",
-        in buffer.(*mut u8) "{x1}",
+        in buffer_ptr "{x1}",
         in @len(buffer) "{x2}",
         clobber "memory",
         volatile)
@@ -107,7 +108,7 @@ pub let ConsoleReader.read(*mut self, buffer: []mut u8): (usz, std.error.Error) 
         out i64 "={x0}",
         in syscall "{x8}",
         in self.descriptor.(i64) "{x0}",
-        in buffer.(*mut u8) "{x1}",
+        in buffer_ptr "{x1}",
         in @len(buffer) "{x2}",
         clobber "memory",
         volatile)
@@ -121,6 +122,7 @@ pub let ConsoleReader.read(*mut self, buffer: []mut u8): (usz, std.error.Error) 
 
 pub let ConsoleWriter.write(*mut self, bytes: []u8): (usz, std.error.Error) {
   if @len(bytes) == 0 { return 0, std.error.Error.none() }
+  let bytes_ptr: *u8 = bytes[:]
 
   when OS == .Windows {
     let handle = _get_std_handle(if self.descriptor == 1 { -11 } else { -12 })
@@ -128,7 +130,7 @@ pub let ConsoleWriter.write(*mut self, bytes: []u8): (usz, std.error.Error) {
     let mut written: u32 = 0
     let ok = _write_file(
       handle,
-      bytes.(*u8),
+      bytes_ptr,
       if @len(bytes) > 4294967295 { 4294967295 } else { @len(bytes).(u32) },
       written.&mut,
       nil,
@@ -149,7 +151,7 @@ pub let ConsoleWriter.write(*mut self, bytes: []u8): (usz, std.error.Error) {
       out i64 "={rax}",
       in syscall "{rax}",
       in self.descriptor.(i64) "{rdi}",
-      in bytes.(*u8) "{rsi}",
+      in bytes_ptr "{rsi}",
       in @len(bytes) "{rdx}",
       clobber "rcx",
       clobber "r11",
@@ -172,7 +174,7 @@ pub let ConsoleWriter.write(*mut self, bytes: []u8): (usz, std.error.Error) {
         out i64 "={x0}",
         in syscall "{x16}",
         in self.descriptor.(i64) "{x0}",
-        in bytes.(*u8) "{x1}",
+        in bytes_ptr "{x1}",
         in @len(bytes) "{x2}",
         clobber "memory",
         volatile)
@@ -184,7 +186,7 @@ pub let ConsoleWriter.write(*mut self, bytes: []u8): (usz, std.error.Error) {
         out i64 "={x0}",
         in syscall "{x8}",
         in self.descriptor.(i64) "{x0}",
-        in bytes.(*u8) "{x1}",
+        in bytes_ptr "{x1}",
         in @len(bytes) "{x2}",
         clobber "memory",
         volatile)
@@ -257,7 +259,7 @@ pub let FileWriter.write(
   if @len(bytes) == 0 { return 0, std.error.Error.none() }
 
   let file = self.handle.(*std.libc.FILE)
-  let count = std.libc.write(std.libc.fileno(file), bytes.(*u8), @len(bytes))
+  let count = std.libc.write(std.libc.fileno(file), bytes[:], @len(bytes))
   if count < 0 { return 0, std.error.last_error() }
   return count.(usz), std.error.Error.none()
 }
@@ -314,10 +316,11 @@ pub let FileReader.read(
 ): (usz, std.error.Error) {
   if self.handle == nil { return 0, std.error.Error.invalid_handle() }
   if @len(buffer) == 0 { return 0, std.error.Error.none() }
+  let buffer_ptr: *mut u8 = buffer[:]
 
   let count = std.libc.read(
     std.libc.fileno(self.handle.(*std.libc.FILE)),
-    buffer.(*mut u8),
+    buffer_ptr,
     @len(buffer),
   )
   if count < 0 { return 0, std.error.last_error() }
@@ -355,7 +358,7 @@ pub let FileReader.read_line(
   if @len(buffer) == 0 { return 0, std.error.Error.none() }
 
   let file = self.handle.(*std.libc.FILE)
-  let c_buffer = buffer.(*mut u8)
+  let c_buffer: *mut u8 = buffer[:]
   let line = std.libc.fgets(c_buffer.(*mut std.ctypes.char), @len(buffer).(i32), file)
   if line == nil {
     if std.libc.feof(file) != 0 { return 0, std.error.Error.none() }

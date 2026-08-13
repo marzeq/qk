@@ -88,7 +88,7 @@ pub let (DynamicArray<T>).ensure_capacity<T>(
     return false
   }
 
-  self.ptr = resized.(*mut T)
+  self.ptr = resized[:]
   self.capacity = new_capacity
   return true
 }
@@ -284,7 +284,7 @@ pub let (DynamicArray<T>).shrink_to_fit<T>(*mut self): bool {
   let memory = self.ptr[0:self.capacity]
   let resized, success = std.alloc.resize<T>(self.allocator, memory, self.count)
   if !success { return false }
-  self.ptr = resized.(*mut T)
+  self.ptr = resized[:]
   self.capacity = self.count
   return true
 }

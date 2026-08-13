@@ -1590,6 +1590,18 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			break
 		}
 		if n.GenericAssertion {
+			if _, sourceIsSlice := types.Underlying(n.Operand.GetType()).(types.SliceType); sourceIsSlice {
+				if _, targetIsPointer := types.Underlying(targetType).(types.PointerType); targetIsPointer {
+					n.GenericAssertion = false
+					if n.Checked {
+						n.StaticAssertion = true
+						n.AssertionMatches = false
+					} else {
+						v.errorf(n, "cannot cast %v to %v; use a full slice expression such as value[:] to expose its data pointer", n.Operand.GetType(), targetType)
+					}
+					break
+				}
+			}
 			n.AssertionMatches = n.Operand.GetType().Equals(targetType)
 			break
 		}
@@ -2875,6 +2887,14 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 	case *parser.MatchNode:
 		v.validateMatch(n, expected)
 		return n
+	case *parser.SliceExprNode:
+		v.validateExpr(n)
+		source, sourceIsSlice := types.Underlying(n.GetType()).(types.SliceType)
+		target, targetIsPointer := types.Underlying(expected).(types.PointerType)
+		if sourceIsSlice && targetIsPointer && (!target.Mutable || source.Mutable) &&
+			(target.Base.Equals(types.PrimitiveVoid) || source.Base.Equals(target.Base)) {
+			return &parser.CastNode{Operand: n, Loc: n.GetLoc(), Type: expected}
+		}
 	}
 
 	if n, ok := node.(*parser.IdentifierNode); ok &&

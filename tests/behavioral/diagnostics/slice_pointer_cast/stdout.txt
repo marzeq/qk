@@ -1,0 +1,9 @@
+Error: <CASE>/main.qk:5:11
+   3 | let main() {
+   4 |   let values: []mut i32 = []
+   5 |   let _ = values.(*mut i32)
+     |           ^^^^^^^^^^^^^^^^^
+   6 | }
+   7 | 
+
+cannot cast []mut i32 to *mut i32

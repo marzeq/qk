@@ -159,7 +159,7 @@ pub let StringBuilder.ensure_capacity(
     return false
   }
 
-  self.ptr = resized.(*mut u8)
+  self.ptr = resized[:]
   self.capacity = new_capacity
   return true
 }

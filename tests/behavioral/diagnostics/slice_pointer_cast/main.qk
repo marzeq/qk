@@ -1,0 +1,6 @@
+module main
+
+let main() {
+  let values: []mut i32 = []
+  let _ = values.(*mut i32)
+}
