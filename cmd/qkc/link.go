@@ -442,6 +442,16 @@ func buildWasmLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots [
 		args = append(args, "--export="+root)
 	}
 	args = append(args, unwrapLinkerArgs(config.linkArgs)...)
+	moduleLinks = orderedModuleLinks(moduleLinks)
+	for _, link := range moduleLinks {
+		if link.Kind == attributes.LinkSearchPath {
+			args = append(args, "-L"+link.Value)
+		}
+	}
+	for _, path := range config.libraryPaths {
+		args = append(args, "-L"+path)
+	}
+	args = append(args, objFiles...)
 	for _, link := range moduleLinks {
 		switch link.Kind {
 		case attributes.LinkSystem:
@@ -449,7 +459,7 @@ func buildWasmLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots [
 		case attributes.LinkPath:
 			args = append(args, link.Value)
 		case attributes.LinkSearchPath:
-			args = append(args, "-L"+link.Value)
+			continue
 		case attributes.LinkFramework:
 			return nil, fmt.Errorf("WebAssembly does not support framework link %q", link.Value)
 		default:
@@ -459,12 +469,34 @@ func buildWasmLinkArgs(objFiles []string, moduleLinks []attributes.Link, roots [
 	for _, library := range config.libs {
 		args = append(args, "-l"+library)
 	}
-	for _, path := range config.libraryPaths {
-		args = append(args, "-L"+path)
-	}
-	args = append(args, objFiles...)
 	args = append(args, "-o", config.output)
 	return args, nil
+}
+
+// Static linkers resolve archives from left to right. Link attributes are
+// declarative, so put explicit archives before the system libraries and
+// frameworks that satisfy their unresolved symbols. Preserve declaration
+// order within each category for dependencies between explicit archives.
+func orderedModuleLinks(links []attributes.Link) []attributes.Link {
+	ordered := make([]attributes.Link, 0, len(links))
+	for _, kind := range []attributes.LinkKind{
+		attributes.LinkSearchPath,
+		attributes.LinkPath,
+		attributes.LinkSystem,
+		attributes.LinkFramework,
+	} {
+		for _, link := range links {
+			if link.Kind == kind {
+				ordered = append(ordered, link)
+			}
+		}
+	}
+	for _, link := range links {
+		if link.Kind > attributes.LinkFramework {
+			ordered = append(ordered, link)
+		}
+	}
+	return ordered
 }
 
 func unwrapLinkerArgs(args []string) []string {
@@ -499,6 +531,7 @@ func buildMSVCLinkArgs(objFiles []string, moduleLinks []attributes.Link, config 
 		}
 	}
 	args = append(args, config.linkArgs...)
+	moduleLinks = orderedModuleLinks(moduleLinks)
 	for _, link := range moduleLinks {
 		switch link.Kind {
 		case attributes.LinkSystem:
@@ -576,6 +609,15 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, config *Arg
 	}
 	args = append(args, config.linkArgs...)
 
+	moduleLinks = orderedModuleLinks(moduleLinks)
+	for _, link := range moduleLinks {
+		if link.Kind == attributes.LinkSearchPath {
+			args = append(args, "-L"+link.Value)
+		}
+	}
+	for _, path := range config.libraryPaths {
+		args = append(args, "-L"+path)
+	}
 	for _, link := range moduleLinks {
 		switch link.Kind {
 		case attributes.LinkSystem:
@@ -589,7 +631,7 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, config *Arg
 		case attributes.LinkPath:
 			args = append(args, link.Value)
 		case attributes.LinkSearchPath:
-			args = append(args, "-L"+link.Value)
+			continue
 		case attributes.LinkFramework:
 			args = append(args, "-framework", link.Value)
 		default:
@@ -603,10 +645,6 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, config *Arg
 		// Panic reporting uses the stable Win32 kernel ABI directly.
 		args = append(args, "-lkernel32")
 	}
-	for _, path := range config.libraryPaths {
-		args = append(args, "-L"+path)
-	}
-
 	args = append(args, "-o", config.output)
 	return args, nil
 }
