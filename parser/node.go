@@ -689,9 +689,10 @@ func (n *OffsetOfNode) SetType(t types.Type)   { n.Type = t }
 func (n *OffsetOfNode) GetType() types.Type    { return n.Type }
 
 type ImportNode struct {
-	Modules []string
-	Aliases []string
-	Loc     shared.Location
+	Modules         []string
+	ResolvedModules []string
+	Aliases         []string
+	Loc             shared.Location
 }
 
 func (n ImportNode) GetLoc() shared.Location { return n.Loc }

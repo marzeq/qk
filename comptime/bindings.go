@@ -71,7 +71,7 @@ type moduleBindingDeclaration struct {
 }
 
 type moduleBindingScope struct {
-	imports map[string]bool
+	imports map[string]string
 	aliases map[string]string
 }
 
@@ -84,6 +84,12 @@ func ResolveModuleBindings(sources map[string]string, config Config) (map[string
 // ResolvePackageBindings resolves module-level compile-time bindings under
 // canonical package paths rather than local module declarations.
 func ResolvePackageBindings(sources map[string]string, packagePaths map[string]string, config Config) (map[string]Value, error) {
+	return ResolvePackageBindingsWithImports(sources, packagePaths, nil, config)
+}
+
+// ResolvePackageBindingsWithImports resolves compile-time bindings while
+// preserving the source-visible import paths used by project source mounts.
+func ResolvePackageBindingsWithImports(sources map[string]string, packagePaths map[string]string, importResolutions map[string]map[string]string, config Config) (map[string]Value, error) {
 	origins := make([]string, 0, len(sources))
 	for origin := range sources {
 		origins = append(origins, origin)
@@ -102,14 +108,18 @@ func ResolvePackageBindings(sources map[string]string, packagePaths map[string]s
 		}
 		scope := moduleScopes[module]
 		if scope == nil {
-			scope = &moduleBindingScope{imports: make(map[string]bool), aliases: make(map[string]string)}
+			scope = &moduleBindingScope{imports: make(map[string]string), aliases: make(map[string]string)}
 			moduleScopes[module] = scope
 		}
 		if header, scanErr := parser.ScanSourceHeader(tokens); scanErr == nil {
 			for i, imported := range header.Imports {
-				scope.imports[imported] = true
+				resolved := imported
+				if target := importResolutions[module][imported]; target != "" {
+					resolved = target
+				}
+				scope.imports[imported] = resolved
 				if i < len(header.Aliases) && header.Aliases[i] != "" {
-					scope.aliases[header.Aliases[i]] = imported
+					scope.aliases[header.Aliases[i]] = resolved
 				}
 			}
 		}
@@ -147,9 +157,9 @@ func ResolvePackageBindings(sources map[string]string, packagePaths map[string]s
 				if strings.HasPrefix(name, declaration.module+".") && !strings.Contains(strings.TrimPrefix(name, declaration.module+"."), ".") {
 					resolved = name
 				}
-				for imported := range declaration.scope.imports {
+				for imported, target := range declaration.scope.imports {
 					if strings.HasPrefix(name, imported+".") && !strings.Contains(strings.TrimPrefix(name, imported+"."), ".") {
-						resolved = name
+						resolved = target + strings.TrimPrefix(name, imported)
 						break
 					}
 				}

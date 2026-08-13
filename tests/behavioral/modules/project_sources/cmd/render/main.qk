@@ -1,0 +1,15 @@
+module main
+
+import vendor.alpha
+import vendor.beta
+import vendor.special
+import vendor.special.child
+
+let main() {
+	let value: vendor.alpha.Value = 10
+	assert(value == 10, "mounted qualified type")
+  assert(vendor.alpha.answer() == 10, "first collection source")
+  assert(vendor.beta.answer() == 20, "second collection source")
+  assert(vendor.special.answer() == 30, "exact source")
+  assert(vendor.special.child.answer() == 40, "exact source child")
+}

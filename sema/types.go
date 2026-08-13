@@ -110,11 +110,15 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 			return sym.TypeInfo
 		}
 
+		modulePath := a.currentImportAliases[t.ModName]
+		if modulePath == "" {
+			modulePath = t.ModName
+		}
 		var mod *symbols.Module
 		if modSym, ok := a.current.Resolve(t.ModName); ok && modSym.Kind == symbols.SymbolKindModule {
 			mod = modSym.Module
-		} else if a.modulePathAccessible(t.ModName, true) {
-			mod = a.modules[t.ModName]
+		} else if a.modulePathAccessible(modulePath, true) {
+			mod = a.modules[modulePath]
 		}
 		if mod == nil {
 			a.errorf(t, "unknown module %q", t.ModName)

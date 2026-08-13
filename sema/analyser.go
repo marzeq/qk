@@ -22,6 +22,8 @@ type Analyser struct {
 	currentTrustedStandardLibrary bool
 	currentImports                map[string]bool
 	importsByModule               map[string]map[string]bool
+	currentImportAliases          map[string]string
+	importAliasesByModule         map[string]map[string]string
 	typeParameterBindings         map[string]types.Type
 	resolvingTraitMethodTypes     bool
 	currentRoot                   *parser.RootNode
@@ -49,6 +51,7 @@ func NewAnalyser() *Analyser {
 		concreteTypes:          make(map[string]types.Type),
 		nominalTraits:          make(map[string]types.TraitType),
 		importsByModule:        make(map[string]map[string]bool),
+		importAliasesByModule:  make(map[string]map[string]string),
 		modulePaths:            make(map[*parser.RootNode]string),
 		functionDefinitions:    make(map[*symbols.Symbol]*functionDefinitionInfo),
 		genericFunctions:       make(map[*symbols.Symbol]*genericFunctionInfo),
@@ -105,10 +108,15 @@ func (a *Analyser) DeclareModule(root *parser.RootNode, path string, trustedStan
 	a.currentMod = path
 	a.currentTrustedStandardLibrary = trustedStandardLibrary
 	a.currentImports = a.importsByModule[path]
+	a.currentImportAliases = a.importAliasesByModule[path]
 	a.currentRoot = root
 	if a.currentImports == nil {
 		a.currentImports = make(map[string]bool)
 		a.importsByModule[path] = a.currentImports
+	}
+	if a.currentImportAliases == nil {
+		a.currentImportAliases = make(map[string]string)
+		a.importAliasesByModule[path] = a.currentImportAliases
 	}
 
 	a.collectTopLevel(root)
@@ -125,6 +133,7 @@ func (a *Analyser) AnalyseModuleBody(root *parser.RootNode, path string) {
 	a.currentMod = path
 	a.currentTrustedStandardLibrary = mod.TrustedStandardLibrary
 	a.currentImports = a.importsByModule[path]
+	a.currentImportAliases = a.importAliasesByModule[path]
 	a.currentRoot = root
 	a.aliases = a.aliasesByModule[path]
 	a.resolveBodies(root)

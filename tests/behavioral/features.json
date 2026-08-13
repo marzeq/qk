@@ -52,6 +52,7 @@
         "modules/import",
         "modules/explicit_file",
         "modules/search_path",
+        "modules/project_sources",
         "modules/nostdlib"
       ],
       "negative": [

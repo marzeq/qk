@@ -53,7 +53,12 @@ func CollectModuleInfo(root *parser.RootNode, trustedStandardLibrary bool) (*Par
 			}
 
 		case *parser.ImportNode:
-			imports = append(imports, n.Modules...)
+			for i, imported := range n.Modules {
+				if i < len(n.ResolvedModules) && n.ResolvedModules[i] != "" {
+					imported = n.ResolvedModules[i]
+				}
+				imports = append(imports, imported)
+			}
 		}
 	}
 

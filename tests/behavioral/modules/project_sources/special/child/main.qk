@@ -1,0 +1,3 @@
+module special.child
+
+pub let answer(): i32 = 40

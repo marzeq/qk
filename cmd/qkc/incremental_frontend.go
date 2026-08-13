@@ -28,9 +28,10 @@ func runFrontend(
 	config comptime.Config,
 	sources, sourcePackages map[string]string,
 	trustedSources map[string]bool,
+	importResolutions map[string]map[string]string,
 	verbose, debug bool,
 ) (*frontendResult, error) {
-	graphModules, origins, err := sourceModuleGraph(sources, sourcePackages, trustedSources, config, args.noStdlib)
+	graphModules, origins, err := sourceModuleGraph(sources, sourcePackages, trustedSources, importResolutions, config, args.noStdlib)
 	if err != nil {
 		return nil, err
 	}
@@ -54,6 +55,7 @@ func runFrontend(
 			if err != nil {
 				return nil, err
 			}
+			resolveRootImports(root, importResolutions[name])
 			partial, err := loader.CollectModuleInfo(root, trustedSources[origin])
 			if err != nil {
 				return nil, err
@@ -108,7 +110,7 @@ func runFrontend(
 	return result, nil
 }
 
-func sourceModuleGraph(sources, sourcePackages map[string]string, trustedSources map[string]bool, config comptime.Config, noStdlib bool) (map[string]*loader.ModuleInfo, map[string][]string, error) {
+func sourceModuleGraph(sources, sourcePackages map[string]string, trustedSources map[string]bool, importResolutions map[string]map[string]string, config comptime.Config, noStdlib bool) (map[string]*loader.ModuleInfo, map[string][]string, error) {
 	modules := make(map[string]*loader.ModuleInfo)
 	origins := make(map[string][]string)
 	paths := make([]string, 0, len(sources))
@@ -143,6 +145,9 @@ func sourceModuleGraph(sources, sourcePackages map[string]string, trustedSources
 			return nil, nil, fmt.Errorf("module %q mixes trusted and untrusted sources", name)
 		}
 		for _, imported := range header.Imports {
+			if resolved := importResolutions[name][imported]; resolved != "" {
+				imported = resolved
+			}
 			if !containsString(module.Imports, imported) {
 				module.Imports = append(module.Imports, imported)
 			}
@@ -155,6 +160,23 @@ func sourceModuleGraph(sources, sourcePackages map[string]string, trustedSources
 		}
 	}
 	return modules, origins, nil
+}
+
+func resolveRootImports(root *parser.RootNode, resolutions map[string]string) {
+	for _, node := range root.Body {
+		importNode, ok := node.(*parser.ImportNode)
+		if !ok {
+			continue
+		}
+		importNode.ResolvedModules = make([]string, len(importNode.Modules))
+		for i, visible := range importNode.Modules {
+			resolved := resolutions[visible]
+			if resolved == "" {
+				resolved = visible
+			}
+			importNode.ResolvedModules[i] = resolved
+		}
+	}
 }
 
 func containsString(values []string, target string) bool {

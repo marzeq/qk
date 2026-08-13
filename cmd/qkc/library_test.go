@@ -35,19 +35,19 @@ func TestLibraryTreeThroughCompilerFrontend(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, sources, sourcePackages, trustedSources, err := discoverSourcePackages(
-		".", projectRoot, "", []string{libraryRoot, projectRoot}, libraryRoot, true,
+	_, sources, sourcePackages, trustedSources, importResolutions, err := discoverSourcePackages(
+		".", projectRoot, "", []string{libraryRoot, projectRoot}, nil, libraryRoot, true,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	config := comptime.Config{}
-	config.ModuleBindings, err = comptime.ResolvePackageBindings(sources, sourcePackages, config)
+	config.ModuleBindings, err = comptime.ResolvePackageBindingsWithImports(sources, sourcePackages, importResolutions, config)
 	if err != nil {
 		t.Fatal(err)
 	}
 	args := &Args{mainModule: "."}
-	if _, err := runFrontend(args, config, sources, sourcePackages, trustedSources, false, false); err != nil {
+	if _, err := runFrontend(args, config, sources, sourcePackages, trustedSources, importResolutions, false, false); err != nil {
 		t.Fatal(err)
 	}
 }

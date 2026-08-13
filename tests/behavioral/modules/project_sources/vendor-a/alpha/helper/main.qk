@@ -1,0 +1,3 @@
+module alpha.helper
+
+pub let answer(): i32 = 10

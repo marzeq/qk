@@ -58,6 +58,9 @@ type Args struct {
 	baseDir      string
 	packageRoot  string
 	packagePaths []string
+	sourceMounts []sourceMount
+	manifestPath string
+	manifestData string
 	file         string
 	packageArg   string
 	programArgs  []string
@@ -505,8 +508,17 @@ func finaliseArgs(args *Args) error {
 	if err != nil {
 		return fmt.Errorf("failed to get working directory: %v", err)
 	}
+	manifest, err := findProjectManifest(args.baseDir)
+	if err != nil {
+		return err
+	}
 	args.packageRoot = workingDir
-	if !pathWithin(args.baseDir, workingDir) {
+	if manifest != nil {
+		args.packageRoot = manifest.Root
+		args.sourceMounts = manifest.Mounts
+		args.manifestPath = manifest.Path
+		args.manifestData = manifest.Source
+	} else if !pathWithin(args.baseDir, workingDir) {
 		args.packageRoot = args.baseDir
 	}
 	args.mainModule = packagePathFromDirectory(args.packageRoot, args.baseDir)

@@ -56,8 +56,8 @@ func main() {
 	if libraryRoot != "" {
 		searchPaths = append([]string{libraryRoot}, searchPaths...)
 	}
-	discovered, compileTimeSources, sourcePackagePaths, trustedSources, err := discoverSourcePackages(
-		args.mainModule, args.baseDir, args.file, searchPaths, libraryRoot, !args.noStdlib,
+	discovered, compileTimeSources, sourcePackagePaths, trustedSources, importResolutions, err := discoverSourcePackages(
+		args.mainModule, args.baseDir, args.file, searchPaths, args.sourceMounts, libraryRoot, !args.noStdlib,
 	)
 	check(err)
 	if args.run && discovered[0].Name != "main" {
@@ -87,10 +87,12 @@ func main() {
 			return
 		}
 	}
-	comptimeConfig.ModuleBindings, err = comptime.ResolvePackageBindings(compileTimeSources, sourcePackagePaths, comptimeConfig)
+	comptimeConfig.ModuleBindings, err = comptime.ResolvePackageBindingsWithImports(
+		compileTimeSources, sourcePackagePaths, importResolutions, comptimeConfig,
+	)
 	check(err)
 	frontend, err := runFrontend(
-		args, comptimeConfig, compileTimeSources, sourcePackagePaths, trustedSources, args.verbose, args.debug,
+		args, comptimeConfig, compileTimeSources, sourcePackagePaths, trustedSources, importResolutions, args.verbose, args.debug,
 	)
 	check(err)
 	modules, order := frontend.modules, frontend.order

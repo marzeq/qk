@@ -149,7 +149,7 @@ QK follows the C/C++-style comment tradition:
 
 # Modules
 
-QK's module system is inspired by Go's module system—that is, the semantic names of modules follow the directory structure of the project. For example, files belonging to the `foo.bar` module live in the `foo/bar` directory. The module name is declared at the top of the file:
+QK's module system is inspired by Go's module system—that is, semantic module names normally follow the directory structure of the project. Optional project source mounts can add an import prefix without changing a library's semantic module names. The module name is declared at the top of the file:
 
 ```qk
 module foo.bar
@@ -1305,6 +1305,24 @@ Only immediate `.qk` files in each reachable package belong to that package. Unr
 An import path maps directly to a subdirectory of an ordered package root. The selected external library root is searched first, then the project root, repeated `-I` roots, and platform user and system roots.
 
 When the selected package lies beneath the invocation directory, that invocation directory is the project root. Otherwise the selected package directory becomes its own root.
+
+### Optional `qk.mod` source mounts
+
+The nearest `qk.mod` in the selected package directory or one of its parents becomes the project root. The file is optional and does not declare a project-wide module name. It currently configures additional source locations:
+
+```text
+sources vendor "./vendor"
+sources vendor "./more-vendor"
+source vendor.mdhtml "./vendor/mdhtml/mdhtml"
+```
+
+Paths are relative to the directory containing `qk.mod` unless absolute.
+
+`sources <prefix> <directory>` mounts a collection. Each first-level library beneath the directory keeps its own semantic name. With `sources vendor "./vendor"`, `import vendor.mdhtml` loads `./vendor/mdhtml`, whose files declare `module mdhtml`; `vendor/mdhtml/parser` declares `module mdhtml.parser`. Imports within that library continue to use those semantic names, such as `import mdhtml.parser`.
+
+`source <prefix> <directory>` mounts one source tree at an exact public import prefix. With `source vendor.mdhtml "./vendor/mdhtml/mdhtml"`, `import vendor.mdhtml` loads that directory as semantic module `mdhtml`, and `import vendor.mdhtml.parser` loads its `parser` subdirectory as `mdhtml.parser`.
+
+Directives are additive. Repeating `sources vendor` merges collection roots; an exact `source vendor.foo` can coexist with `sources vendor`; and project `vendor` collections merge with the `vendor` packages distributed in QK's installed library tree. If one visible import or one semantic module resolves to distinct source directories, compilation fails with an ambiguity or conflict diagnostic. Repeating an identical mapping is harmless.
 
 The `std` and `std.*` names are reserved for sources beneath the `std` directory of the installed library root or a trusted `-stdlib` development override. Ordinary source packages cannot declare them.
 

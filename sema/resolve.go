@@ -32,11 +32,15 @@ func (a *Analyser) resolveIdentifier(n *parser.IdentifierNode) (*symbols.Symbol,
 		return resolved, ok
 	}
 
+	modulePath := a.currentImportAliases[n.Module]
+	if modulePath == "" {
+		modulePath = n.Module
+	}
 	var mod *symbols.Module
 	if modSym, ok := a.current.Resolve(n.Module); ok && modSym.Kind == symbols.SymbolKindModule {
 		mod = modSym.Module
-	} else if a.modulePathAccessible(n.Module, true) {
-		mod = a.modules[n.Module]
+	} else if a.modulePathAccessible(modulePath, true) {
+		mod = a.modules[modulePath]
 	}
 	if mod == nil {
 		a.errorf(n, "unknown module %q", n.Module)
@@ -49,7 +53,7 @@ func (a *Analyser) resolveIdentifier(n *parser.IdentifierNode) (*symbols.Symbol,
 		return nil, false
 	}
 
-	if !sym.Public && n.Module != a.currentMod {
+	if !sym.Public && modulePath != a.currentMod {
 		a.errorf(n, "symbol %q is not public in module %q", sym.Name, n.Module)
 		return nil, false
 	}
@@ -210,14 +214,28 @@ func (a *Analyser) resolveModuleField(n *parser.FieldAccessNode) bool {
 	}
 
 	candidate := path + "." + n.Field.Name
-	if mod := a.modules[candidate]; mod != nil && a.modulePathAccessible(candidate, false) {
+	resolvedCandidate := a.currentImportAliases[candidate]
+	if resolvedCandidate == "" {
+		resolvedCandidate = candidate
+	}
+	if mod := a.modules[resolvedCandidate]; mod != nil && a.modulePathAccessible(resolvedCandidate, false) {
 		n.ModulePath = candidate
 		return true
 	}
-	if !a.modulePathAccessible(path, true) {
+	for imported := range a.currentImportAliases {
+		if strings.HasPrefix(imported, candidate+".") {
+			n.ModulePath = candidate
+			return true
+		}
+	}
+	resolvedPath := a.currentImportAliases[path]
+	if resolvedPath == "" {
+		resolvedPath = path
+	}
+	if !a.modulePathAccessible(resolvedPath, true) {
 		return false
 	}
-	mod := a.modules[path]
+	mod := a.modules[resolvedPath]
 	if mod == nil {
 		return false
 	}
@@ -226,12 +244,12 @@ func (a *Analyser) resolveModuleField(n *parser.FieldAccessNode) bool {
 		a.errorf(n, "undefined symbol %q in module %q", n.Field.Name, path)
 		return true
 	}
-	if !sym.Public && path != a.currentMod {
+	if !sym.Public && resolvedPath != a.currentMod {
 		a.errorf(n, "symbol %q is not public in module %q", sym.Name, path)
 		return true
 	}
 	resolved := &parser.IdentifierNode{
-		Name: n.Field.Name, Module: path, ResolvedModuleName: path, Loc: n.Field.Loc,
+		Name: n.Field.Name, Module: resolvedPath, ResolvedModuleName: resolvedPath, Loc: n.Field.Loc,
 		TypeArguments: n.Field.TypeArguments,
 	}
 	if _, ok := a.resolveGenericIdentifier(resolved, sym); !ok {

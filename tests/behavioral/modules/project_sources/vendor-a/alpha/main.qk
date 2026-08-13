@@ -1,0 +1,7 @@
+module alpha
+
+import alpha.helper
+import beta
+
+pub let Value = type alias i32
+pub let answer(): i32 = alpha.helper.answer() + beta.offset()

@@ -44,6 +44,18 @@ func TestResolvePackageBindingsUsesImportScope(t *testing.T) {
 	}
 }
 
+func TestResolvePackageBindingsUsesResolvedMountedImport(t *testing.T) {
+	sources := map[string]string{
+		"dep.qk": "module dep\npub let Feature = comptime true\n",
+		"app.qk": "module app\nimport vendor.dep\nlet Enabled = comptime vendor.dep.Feature\n",
+	}
+	packages := map[string]string{"dep.qk": "dep", "app.qk": "app"}
+	resolutions := map[string]map[string]string{"app": {"vendor.dep": "dep"}}
+	if _, err := ResolvePackageBindingsWithImports(sources, packages, resolutions, Config{}); err != nil {
+		t.Fatalf("mounted compile-time import was not resolved to its semantic module: %v", err)
+	}
+}
+
 func TestCCharSignedCompileTimeValue(t *testing.T) {
 	for _, test := range []struct {
 		triple string

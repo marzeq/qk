@@ -620,13 +620,26 @@ func (a *Analyser) collectGlobalVariable(n *parser.DeclarationNode) {
 
 func (a *Analyser) collectImport(n *parser.ImportNode) {
 	for i, name := range n.Modules {
-		mod, ok := a.modules[name]
+		target := name
+		if i < len(n.ResolvedModules) && n.ResolvedModules[i] != "" {
+			target = n.ResolvedModules[i]
+		}
+		mod, ok := a.modules[target]
 		if !ok {
 			a.errorf(n, "unknown module %q", name)
 			continue
 		}
 
-		a.currentImports[name] = true
+		a.currentImports[target] = true
+		a.currentImportAliases[name] = target
+		visibleParts := strings.Split(name, ".")
+		targetParts := strings.Split(target, ".")
+		for visibleCount := 1; visibleCount < len(visibleParts); visibleCount++ {
+			targetCount := len(targetParts) - (len(visibleParts) - visibleCount)
+			if targetCount > 0 {
+				a.currentImportAliases[strings.Join(visibleParts[:visibleCount], ".")] = strings.Join(targetParts[:targetCount], ".")
+			}
+		}
 		alias := strings.Split(name, ".")[0]
 		if i < len(n.Aliases) && n.Aliases[i] != "" {
 			alias = n.Aliases[i]

@@ -78,6 +78,7 @@ func (a *Attributor) selectModule(root *parser.RootNode) {
 		a.analyser.currentTrustedStandardLibrary = mod.TrustedStandardLibrary
 	}
 	a.analyser.currentImports = a.analyser.importsByModule[path]
+	a.analyser.currentImportAliases = a.analyser.importAliasesByModule[path]
 	a.analyser.aliases = a.analyser.aliasesByModule[path]
 }
 

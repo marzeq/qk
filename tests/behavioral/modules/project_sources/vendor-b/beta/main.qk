@@ -1,0 +1,4 @@
+module beta
+
+pub let answer(): i32 = 20
+pub let offset(): i32 = 0

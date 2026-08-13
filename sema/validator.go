@@ -77,6 +77,7 @@ func (v *Validator) selectModule(root *parser.RootNode) {
 		v.analyser.currentTrustedStandardLibrary = mod.TrustedStandardLibrary
 	}
 	v.analyser.currentImports = v.analyser.importsByModule[path]
+	v.analyser.currentImportAliases = v.analyser.importAliasesByModule[path]
 	v.analyser.aliases = v.analyser.aliasesByModule[path]
 }
 
