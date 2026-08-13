@@ -17,8 +17,16 @@ env:
 
 jobs:
   linux:
-    name: Package Linux
-    runs-on: ubuntu-24.04
+    name: Package Linux (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     steps:
       - name: Check out repository
@@ -47,15 +55,23 @@ jobs:
       - name: Upload Linux archive
         uses: actions/upload-artifact@v7
         with:
-          name: qk-${{ env.NIGHTLY_VERSION }}-linux
+          name: qk-${{ env.NIGHTLY_VERSION }}-linux-${{ matrix.arch }}
           path: dist/*.tar.gz
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
 
   macos:
-    name: Package macOS
-    runs-on: macos-14
+    name: Package macOS (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: macos-15-intel
+          - arch: arm64
+            runner: macos-15
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     steps:
       - name: Check out repository
@@ -80,7 +96,41 @@ jobs:
       - name: Upload macOS archive
         uses: actions/upload-artifact@v7
         with:
-          name: qk-${{ env.NIGHTLY_VERSION }}-macos
+          name: qk-${{ env.NIGHTLY_VERSION }}-macos-${{ matrix.arch }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  windows:
+    name: Package Windows
+    runs-on: windows-2025
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install MSYS2 UCRT64 toolchain
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-go
+            mingw-w64-ucrt-x86_64-clang
+            mingw-w64-ucrt-x86_64-llvm
+            mingw-w64-ucrt-x86_64-lld
+
+      - name: Build release archive
+        run: scripts/package-release-windows.sh "$NIGHTLY_VERSION" dist
+
+      - name: Upload Windows archive
+        uses: actions/upload-artifact@v7
+        with:
+          name: qk-${{ env.NIGHTLY_VERSION }}-windows
           path: dist/*.tar.gz
           if-no-files-found: error
           compression-level: 0
@@ -88,7 +138,7 @@ jobs:
 
   publish:
     name: Publish nightly release
-    needs: [linux, macos]
+    needs: [linux, macos, windows]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:

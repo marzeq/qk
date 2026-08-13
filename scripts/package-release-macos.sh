@@ -18,6 +18,19 @@ for command in go otool install_name_tool codesign tar; do
   fi
 done
 
+case $(uname -m) in
+  x86_64) host_architecture=amd64 ;;
+  arm64) host_architecture=arm64 ;;
+  *)
+    echo "unsupported macOS release architecture: $(uname -m)" >&2
+    exit 1
+    ;;
+esac
+if [[ $(go env GOARCH) != "$host_architecture" ]]; then
+  echo "release builds must use the native Go architecture: $host_architecture" >&2
+  exit 1
+fi
+
 if [[ -n ${LLVM_CONFIG:-} ]]; then
   llvm_config=$LLVM_CONFIG
 elif command -v llvm-config >/dev/null 2>&1; then
@@ -50,7 +63,7 @@ fi
 
 version=$1
 output_directory=${2:-dist}
-architecture=$(go env GOARCH)
+architecture=$host_architecture
 archive_name="qk-${version}-macos-${architecture}"
 staging_parent=$(mktemp -d)
 staging_directory="${staging_parent}/${archive_name}"
