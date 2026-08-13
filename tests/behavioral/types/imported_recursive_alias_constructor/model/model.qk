@@ -1,0 +1,10 @@
+module model
+
+import std.collections
+
+pub let AContainer = type struct { children: InlineChildren }
+pub let InlineChildren = type alias std.collections.DynamicArray<Inline>
+pub let Inline = type union(@auto) {
+  Text(value: str),
+  Link(destination: str, title: str, children: InlineChildren),
+}

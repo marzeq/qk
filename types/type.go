@@ -387,10 +387,24 @@ type AliasRef struct {
 
 func (r *AliasRef) Equals(other Type) bool {
 	if o, ok := other.(*AliasRef); ok {
-		return r.Module == o.Module && r.Name == o.Name
+		if r.Module == o.Module && r.Name == o.Name {
+			return true
+		}
 	}
 	if d, ok := other.(DefinedType); ok {
-		return r.Module == d.Module && r.Name == d.Name
+		if r.Module == d.Module && r.Name == d.Name {
+			return true
+		}
+	}
+	// Recursive resolution can leave a provisional reference to a transparent
+	// alias in an already-built aggregate. Once the alias target is available,
+	// compare through it. Nominal recursive types remain distinct because their
+	// target is the nominal DefinedType rather than its underlying structure.
+	if r.Target != nil && *r.Target != nil {
+		target := *r.Target
+		if reference, same := target.(*AliasRef); !same || reference != r {
+			return target.Equals(other)
+		}
 	}
 	return false
 }
@@ -408,7 +422,7 @@ func (d DefinedType) Equals(other Type) bool {
 	case DefinedType:
 		return d.Module == o.Module && d.Name == o.Name
 	case *AliasRef:
-		return d.Module == o.Module && d.Name == o.Name
+		return o.Equals(d)
 	default:
 		return false
 	}

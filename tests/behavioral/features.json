@@ -26,7 +26,10 @@
     },
     {
       "name": "aggregate types",
-      "positive": ["types/aggregates"],
+      "positive": [
+        "types/aggregates",
+        "types/imported_recursive_alias_constructor"
+      ],
       "negativeNotApplicable": true
     },
     {

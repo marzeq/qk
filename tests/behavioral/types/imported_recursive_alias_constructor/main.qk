@@ -1,0 +1,12 @@
+module main
+
+import std.alloc
+import model
+
+let construct(allocator: *mut dyn std.alloc.Allocator): model.Inline {
+  let children: model.InlineChildren = model.InlineChildren.init(allocator)
+  let link: model.Inline = .Link("url", "", children)
+  return link
+}
+
+let main() {}
