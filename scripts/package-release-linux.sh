@@ -7,7 +7,7 @@ if [[ $# -lt 1 || $# -gt 2 ]]; then
   exit 2
 fi
 
-for command in go clang ldd realpath tar; do
+for command in go clang readelf tar; do
   if ! command -v "$command" >/dev/null 2>&1; then
     echo "required command not found: $command" >&2
     exit 1
@@ -27,6 +27,31 @@ if [[ $(go env GOARCH) != "$host_architecture" ]]; then
   exit 1
 fi
 
+if [[ -n ${LLVM_CONFIG:-} ]]; then
+  llvm_config=$LLVM_CONFIG
+elif command -v llvm-config-22 >/dev/null 2>&1; then
+  llvm_config=$(command -v llvm-config-22)
+elif command -v llvm-config >/dev/null 2>&1; then
+  llvm_config=$(command -v llvm-config)
+else
+  echo "llvm-config not found; install static LLVM 22 development files or set LLVM_CONFIG" >&2
+  exit 1
+fi
+if [[ $($llvm_config --version) != 22.* ]]; then
+  echo "release builds require LLVM 22; $llvm_config reports $($llvm_config --version)" >&2
+  exit 1
+fi
+llvm_prefix=$($llvm_config --prefix)
+llvm_library_directory=$($llvm_config --libdir)
+if ! static_llvm_libraries=$($llvm_config --link-static --libs all-targets passes irreader 2>/dev/null); then
+  echo "LLVM static component archives are unavailable; install or build static LLVM 22" >&2
+  exit 1
+fi
+if ! static_llvm_system_libraries=$($llvm_config --link-static --system-libs all-targets passes irreader 2>/dev/null); then
+  echo "could not determine LLVM's static system-library dependencies" >&2
+  exit 1
+fi
+
 version=$1
 output_directory=${2:-dist}
 architecture=$host_architecture
@@ -39,42 +64,41 @@ cleanup() {
 }
 trap cleanup EXIT
 
-mkdir -p "$staging_directory/bin" "$staging_directory/lib" "$staging_directory/libs" "$output_directory"
+mkdir -p "$staging_directory/bin" "$staging_directory/libs" "$output_directory"
 cp -a libs/. "$staging_directory/libs/"
+cp LICENSE "$staging_directory/LICENSE"
 
-release_ldflags='-Wl,--disable-new-dtags,-rpath,$ORIGIN/../lib'
 GOCACHE=${GOCACHE:-"${staging_parent}/go-build-cache"} \
-  CGO_LDFLAGS="${CGO_LDFLAGS:-} ${release_ldflags}" \
-  go build -trimpath -ldflags="-s -w -X=main.compilerVersion=${version}" -o "$staging_directory/bin/qkc" ./cmd/qkc
+  CGO_CXXFLAGS="${CGO_CXXFLAGS:-} -I${llvm_prefix}/include" \
+  CGO_LDFLAGS="${CGO_LDFLAGS:-} -L${llvm_library_directory} ${static_llvm_libraries} ${static_llvm_system_libraries}" \
+  go build -tags qk_static_llvm -trimpath \
+    -ldflags="-s -w -linkmode=external -extldflags=-static -X=main.compilerVersion=${version}" \
+    -o "$staging_directory/bin/qkc" ./cmd/qkc
 
-mapfile -t bundled_libraries < <(
-  ldd "$staging_directory/bin/qkc" |
-    awk '$2 == "=>" && $3 ~ /^\// { print $3 }' |
-    grep -Ev '/(libc|libm|libdl|librt|libpthread)\.so(\.|$)|/ld-linux[^/]*\.so'
-)
-
-if ! printf '%s\n' "${bundled_libraries[@]}" | grep -E '/libLLVM' >/dev/null; then
-  echo "no dynamic LLVM library was found in qkc" >&2
+if readelf -l "$staging_directory/bin/qkc" 2>/dev/null | grep -q 'INTERP' ||
+   readelf -d "$staging_directory/bin/qkc" 2>/dev/null | grep -q '(NEEDED)'; then
+  echo "release qkc retains dynamic ELF dependencies" >&2
+  readelf -d "$staging_directory/bin/qkc" >&2
   exit 1
 fi
 
-for library in "${bundled_libraries[@]}"; do
-  cp -L "$library" "$staging_directory/lib/$(basename "$library")"
-done
-
-bundle_library_directory=$(realpath "$staging_directory/lib")
-mapfile -t resolved_bundled_libraries < <(
-  ldd "$staging_directory/bin/qkc" |
-    awk '$2 == "=>" && $3 ~ /^\// { print $3 }' |
-    grep -Ev '/(libc|libm|libdl|librt|libpthread)\.so(\.|$)|/ld-linux[^/]*\.so'
-)
-for library in "${resolved_bundled_libraries[@]}"; do
-  resolved_library=$(realpath "$library")
-  if [[ "$resolved_library" != "$bundle_library_directory/"* ]]; then
-    echo "qkc resolves a bundled dependency outside the release bundle: $library" >&2
-    exit 1
+llvm_license=
+for candidate in \
+  "$llvm_prefix/LICENSE.TXT" \
+  "$llvm_prefix/share/llvm/LICENSE.TXT" \
+  "$llvm_prefix/share/licenses/llvm/LICENSE" \
+  "$llvm_prefix/share/licenses/llvm/LICENSE.TXT" \
+  "$llvm_prefix/share/doc/llvm/LICENSE.TXT"; do
+  if [[ -f $candidate ]]; then
+    llvm_license=$candidate
+    break
   fi
 done
+if [[ -z $llvm_license ]]; then
+  echo "LLVM license file not found beneath $llvm_prefix" >&2
+  exit 1
+fi
+cp "$llvm_license" "$staging_directory/LLVM-LICENSE.txt"
 
 reported_version=$("$staging_directory/bin/qkc" --version)
 if [[ "$reported_version" != "qk compiler version ${version}" ]]; then

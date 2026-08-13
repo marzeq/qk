@@ -47,8 +47,14 @@ aggregate lowering is currently limited to the documented target families.
 
 ### Running a bundled release
 
-The compiler and QK libraries are contained in the extracted archive. Native
-final links additionally require the platform toolchain described below.
+Release builds embed LLVM statically. Linux and Windows release executables
+also statically link their non-system compiler runtime dependencies; macOS does
+not support fully static executables, so its release depends only on Apple
+system libraries. Functionally, a release needs only `bin/` and `libs/`.
+`LICENSE` and `LLVM-LICENSE.txt` are included as distribution metadata;
+additional notices may be required if the selected static LLVM build pulls in
+other third-party libraries.
+Native final links additionally require the platform toolchain described below.
 
 ### Building the compiler yourself
 
@@ -60,20 +66,21 @@ matching LLVM 22 development installation containing:
 
 LLVM's command-line tools alone are insufficient. The headers and libraries
 must match the selected C++ ABI and be visible through `CGO_CXXFLAGS` and
-`CGO_LDFLAGS`. At runtime, native Unix links require `clang`, WebAssembly links
-require `wasm-ld`, archives require `ar`, Windows MSVC links require
-`link.exe`/`lib.exe`, and native Apple links use `xcrun clang`.
+`CGO_LDFLAGS`.
+
+Ordinary `go build ./cmd/qkc` deliberately links against the system's shared
+LLVM. The release scripts use the `qk_static_llvm` build tag and require LLVM's
+static component archives plus static versions of their non-system
+dependencies; they fail instead of falling back to a dynamic release.
 
 #### Linux
 
-Install Go, Clang/Clang++, LLVM 22 development packages, an archiver, and
-`wasm-ld` when WebAssembly output is needed. Package names vary; the LLVM
-installation must provide `llvm-config-22`. Then run:
+Install Go, Clang/Clang++, LLVM 22 development packages and an archiver. Package names vary.
 
 ```bash
-llvm_prefix=$(llvm-config-22 --prefix)
-export CC=clang-22
-export CXX=clang++-22
+llvm_prefix=$(llvm-config --prefix) # may need to be llvm-config-22
+export CC=clang # may need to append -22
+export CXX=clang++ # also may need to append -22
 export CGO_ENABLED=1
 export CGO_CXXFLAGS="-I${llvm_prefix}/include"
 export CGO_LDFLAGS="-L${llvm_prefix}/lib"

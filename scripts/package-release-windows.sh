@@ -22,6 +22,29 @@ if [[ $(go env GOARCH) != amd64 ]]; then
   exit 1
 fi
 
+if [[ -n ${LLVM_CONFIG:-} ]]; then
+  llvm_config=$LLVM_CONFIG
+elif command -v llvm-config >/dev/null 2>&1; then
+  llvm_config=$(command -v llvm-config)
+else
+  echo "llvm-config not found; install static LLVM 22 development files or set LLVM_CONFIG" >&2
+  exit 1
+fi
+if [[ $($llvm_config --version) != 22.* ]]; then
+  echo "release builds require LLVM 22; $llvm_config reports $($llvm_config --version)" >&2
+  exit 1
+fi
+llvm_prefix=$($llvm_config --prefix)
+llvm_library_directory=$($llvm_config --libdir)
+if ! static_llvm_libraries=$($llvm_config --link-static --libs all-targets passes irreader 2>/dev/null); then
+  echo "LLVM static component archives are unavailable; install or build static LLVM 22" >&2
+  exit 1
+fi
+if ! static_llvm_system_libraries=$($llvm_config --link-static --system-libs all-targets passes irreader 2>/dev/null); then
+  echo "could not determine LLVM's static system-library dependencies" >&2
+  exit 1
+fi
+
 version=$1
 output_directory=${2:-dist}
 architecture=amd64
@@ -34,20 +57,40 @@ cleanup() {
 }
 trap cleanup EXIT
 
-mkdir -p "$staging_directory/bin" "$staging_directory/lib" "$staging_directory/libs" "$output_directory"
+mkdir -p "$staging_directory/bin" "$staging_directory/libs" "$output_directory"
 cp -a libs/. "$staging_directory/libs/"
+cp LICENSE "$staging_directory/LICENSE"
 
 GOCACHE=${GOCACHE:-"${staging_parent}/go-build-cache"} \
-  go build -trimpath -ldflags="-s -w -X=main.compilerVersion=${version}" \
+  CGO_CXXFLAGS="${CGO_CXXFLAGS:-} -I${llvm_prefix}/include" \
+  CGO_LDFLAGS="${CGO_LDFLAGS:-} -L${llvm_library_directory} ${static_llvm_libraries} ${static_llvm_system_libraries}" \
+  go build -tags qk_static_llvm -trimpath \
+  -ldflags="-s -w -linkmode=external -extldflags=-static -X=main.compilerVersion=${version}" \
   -o "$staging_directory/bin/qkc.exe" ./cmd/qkc
 
-# Windows searches beside the executable for DLLs. ldd reports the complete
-# UCRT64 dependency closure, so no MSYS2 installation is needed at runtime.
-while IFS= read -r dependency; do
-  case "$dependency" in
-    /ucrt64/bin/*.dll) cp -L "$dependency" "$staging_directory/bin/" ;;
-  esac
-done < <(ldd "$staging_directory/bin/qkc.exe" | awk '{ print $3 }')
+if ldd "$staging_directory/bin/qkc.exe" | grep -Eiq '(/ucrt64/|\\ucrt64\\|/mingw64/|\\mingw64\\)'; then
+  echo "release qkc retains MSYS2/MinGW runtime DLL dependencies" >&2
+  ldd "$staging_directory/bin/qkc.exe" >&2
+  exit 1
+fi
+
+llvm_license=
+for candidate in \
+  "$llvm_prefix/LICENSE.TXT" \
+  "$llvm_prefix/share/llvm/LICENSE.TXT" \
+  "$llvm_prefix/share/licenses/llvm/LICENSE" \
+  "$llvm_prefix/share/licenses/llvm/LICENSE.TXT" \
+  "$llvm_prefix/share/doc/llvm/LICENSE.TXT"; do
+  if [[ -f $candidate ]]; then
+    llvm_license=$candidate
+    break
+  fi
+done
+if [[ -z $llvm_license ]]; then
+  echo "LLVM license file not found beneath $llvm_prefix" >&2
+  exit 1
+fi
+cp "$llvm_license" "$staging_directory/LLVM-LICENSE.txt"
 
 reported_version=$(PATH="$staging_directory/bin:/usr/bin" "$staging_directory/bin/qkc.exe" --version)
 if [[ "$reported_version" != "qk compiler version ${version}" ]]; then
