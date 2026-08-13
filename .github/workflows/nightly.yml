@@ -119,11 +119,30 @@ jobs:
             return 1
           }
 
+          delete_github_tag() {
+            local tag=$1
+            local error
+            if ! gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" >/dev/null 2>&1; then
+              return 0
+            fi
+            if error=$(gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$tag" 2>&1); then
+              return 0
+            fi
+            # Deleting the primary tag is mirrored to GitHub asynchronously.
+            # Treat a tag that disappeared during the API request as success.
+            if ! gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" >/dev/null 2>&1; then
+              return 0
+            fi
+            echo "$error" >&2
+            return 1
+          }
+
           for tag in "${nightly_releases[@]:3}"; do
+            gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes
             if git ls-remote --exit-code --tags primary "refs/tags/$tag" >/dev/null 2>&1; then
               git push primary --delete "refs/tags/$tag"
             fi
-            gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
+            delete_github_tag "$tag"
           done
 
           mapfile -t primary_tags < <(
@@ -142,6 +161,6 @@ jobs:
           )
           for tag in "${github_tags[@]}"; do
             if ! is_retained "$tag"; then
-              gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$tag"
+              delete_github_tag "$tag"
             fi
           done
