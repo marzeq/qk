@@ -255,6 +255,11 @@ jobs:
           )
           for tag in "${github_tags[@]}"; do
             if ! is_retained "$tag"; then
-              gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$tag"
+              if ! delete_output=$(gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$tag" 2>&1); then
+                if [[ $delete_output != *"Reference does not exist"* ]]; then
+                  echo "$delete_output" >&2
+                  exit 1
+                fi
+              fi
             fi
           done
