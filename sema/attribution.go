@@ -148,7 +148,7 @@ func (a *Attributor) attributeNode(node parser.Node) {
 				body := n.Body.(parser.ExpressionNode)
 				candidates = append(candidates, returnTypeCandidate{node: n, ty: body.GetType()})
 			}
-			n.Symbol.Signature.ReturnType = a.mergeReturnTypes(candidates)
+			n.Symbol.Signature.ReturnType = a.mergeReturnTypes(candidates, "inconsistent return types")
 
 			if types.HasUntyped(n.Symbol.Signature.ReturnType) {
 				a.errorf(n, "cannot infer function return type from untyped numeric value; add a return type annotation or cast")
@@ -1245,7 +1245,7 @@ func (a *Attributor) attributeLambda(n *parser.LambdaNode, expected types.Type, 
 		if parser.NodeFallsThrough(n.Body) {
 			candidates = append(candidates, returnTypeCandidate{node: n, ty: n.Body.GetType()})
 		}
-		signature.ReturnType = a.mergeReturnTypes(candidates)
+		signature.ReturnType = a.mergeReturnTypes(candidates, "inconsistent return types")
 		if types.HasUntyped(signature.ReturnType) {
 			if !hasContext && !requireComplete {
 				signature.ReturnType = nil
@@ -1903,7 +1903,7 @@ type returnTypeCandidate struct {
 	ty   types.Type
 }
 
-func (a *Attributor) mergeReturnTypes(candidates []returnTypeCandidate) types.Type {
+func (a *Attributor) mergeReturnTypes(candidates []returnTypeCandidate, diagnostic string) types.Type {
 	if len(candidates) == 0 {
 		return types.PrimitiveVoid
 	}
@@ -1917,13 +1917,17 @@ func (a *Attributor) mergeReturnTypes(candidates []returnTypeCandidate) types.Ty
 		if types.IsNumeric(current) && types.IsNumeric(candidate.ty) {
 			current = types.PromoteNumeric(current, candidate.ty)
 			if types.HasError(current) {
-				a.errorf(candidate.node, "inconsistent return types")
+				if diagnostic != "" {
+					a.errorf(candidate.node, "%s", diagnostic)
+				}
 				return current
 			}
 			continue
 		}
 		if !current.Equals(candidate.ty) {
-			a.errorf(candidate.node, "inconsistent return types: expected %v, got %v", current, candidate.ty)
+			if diagnostic != "" {
+				a.errorf(candidate.node, "%s: expected %v, got %v", diagnostic, current, candidate.ty)
+			}
 			return types.ErrorType{}
 		}
 	}
@@ -1989,7 +1993,10 @@ func (a *Attributor) attributeIf(n *parser.IfNode) {
 		n.SetType(types.PrimitiveVoid)
 		return
 	}
-	n.SetType(a.mergeReturnTypes(candidates))
+	// A surrounding declaration, assignment, return, or call may provide a
+	// common type that each branch can convert to. Defer mismatch reporting to
+	// validation, once that context is available.
+	n.SetType(a.mergeReturnTypes(candidates, ""))
 }
 
 func (a *Attributor) attributeMatch(n *parser.MatchNode) {
@@ -2031,7 +2038,7 @@ func (a *Attributor) attributeMatch(n *parser.MatchNode) {
 		n.SetType(types.PrimitiveVoid)
 		return
 	}
-	n.SetType(a.mergeReturnTypes(candidates))
+	n.SetType(a.mergeReturnTypes(candidates, ""))
 }
 
 func (a *Attributor) attributeMatchPattern(pattern *parser.MatchPatternNode, subjectType types.Type) {

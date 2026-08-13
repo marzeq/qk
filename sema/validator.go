@@ -879,6 +879,14 @@ func (v *Validator) validateIfExpression(n *parser.IfNode, expected types.Type) 
 	}
 	if expected != nil {
 		n.SetType(expected)
+	} else if types.HasError(n.GetType()) {
+		candidates := make([]returnTypeCandidate, 0, len(branches))
+		for _, branch := range branches {
+			if branch != nil && parser.NodeFallsThrough(branch) {
+				candidates = append(candidates, returnTypeCandidate{node: branch, ty: branch.GetType()})
+			}
+		}
+		v.reportInconsistentExpressionResults(candidates, "inconsistent if expression branch types")
 	}
 }
 
@@ -931,6 +939,39 @@ func (v *Validator) validateMatch(n *parser.MatchNode, expected types.Type) {
 		n.SetType(types.ErrorType{})
 	} else if expected != nil {
 		n.SetType(expected)
+	} else if types.HasError(n.GetType()) {
+		var candidates []returnTypeCandidate
+		for i := range n.Arms {
+			body := n.Arms[i].Body
+			if parser.NodeFallsThrough(body) {
+				candidates = append(candidates, returnTypeCandidate{node: body, ty: body.GetType()})
+			}
+		}
+		v.reportInconsistentExpressionResults(candidates, "inconsistent match arm types")
+	}
+}
+
+func (v *Validator) reportInconsistentExpressionResults(candidates []returnTypeCandidate, diagnostic string) {
+	if len(candidates) < 2 {
+		return
+	}
+	current := candidates[0].ty
+	for _, candidate := range candidates[1:] {
+		if types.HasError(current) || types.HasError(candidate.ty) {
+			return
+		}
+		if types.IsNumeric(current) && types.IsNumeric(candidate.ty) {
+			current = types.PromoteNumeric(current, candidate.ty)
+			if types.HasError(current) {
+				v.errorf(candidate.node, "%s", diagnostic)
+				return
+			}
+			continue
+		}
+		if !current.Equals(candidate.ty) {
+			v.errorf(candidate.node, "%s: expected %v, got %v", diagnostic, current, candidate.ty)
+			return
+		}
 	}
 }
 
@@ -1250,7 +1291,14 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		return
 	}
 	if types.HasError(node.GetType()) {
-		return
+		// Expression containers can be poisoned solely because their otherwise
+		// valid result branches disagree. Visit them so validation can either use
+		// surrounding context or issue a result-specific diagnostic.
+		switch node.(type) {
+		case *parser.BlockNode, *parser.IfNode, *parser.MatchNode:
+		default:
+			return
+		}
 	}
 
 	switch n := node.(type) {

@@ -1,0 +1,10 @@
+module main
+
+let main() {
+  let value = if true {
+    "text"
+  } else {
+    false
+  }
+  let _ = value
+}

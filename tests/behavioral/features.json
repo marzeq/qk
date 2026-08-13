@@ -91,7 +91,10 @@
     {
       "name": "type mismatch diagnostics",
       "positive": ["basic_syntax/values"],
-      "negative": ["diagnostics/type_mismatch"]
+      "negative": [
+        "diagnostics/type_mismatch",
+        "diagnostics/inconsistent_if_branches"
+      ]
     },
     {
       "name": "control-flow diagnostics",

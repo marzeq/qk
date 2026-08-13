@@ -12,6 +12,10 @@ let Value = type struct { amount: usz }
 let Value.measure(self): usz = self.amount
 let Value.as_measured(*mut self): *mut dyn Measured = self
 
+let OtherValue = type struct { amount: usz }
+let OtherValue.measure(self): usz = self.amount
+let OtherValue.as_measured(*mut self): *mut dyn Measured = self
+
 let dynamic_measure(value: *dyn Measured): usz = value.double_measure()
 
 let main() {
@@ -19,11 +23,18 @@ let main() {
   let static = value.(Measured)
   let dynamic = value.&.(*dyn Measured)
   let mutable_dynamic = value.&mut.(*mut dyn Measured)
+  let mut other = OtherValue.{ amount=7 }
+  let selected: *mut dyn Measured = if false {
+    value.&mut
+  } else {
+    other.&mut
+  }
   let erased: *dyn Any = value.&.(*dyn Any)
   let recovered, ok = erased.(Value)
   assert(static.measure() == 21, "static trait view")
   assert(dynamic_measure(dynamic) == 42, "dynamic dispatch and default")
   assert(mutable_dynamic.as_measured().measure() == 21, "recursive dynamic return")
+  assert(selected.measure() == 7, "contextual conditional trait conversion")
   assert(ok && recovered.amount == 21, "Any checked cast")
   std.io.println("traits ok")
 }

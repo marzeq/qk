@@ -1,0 +1,13 @@
+Error: <CASE>/main.qk:6:10
+   4 |   let value = if true {
+   5 |     "text"
+   6 |   } else {
+     |          ^
+   7 |     false
+     | ^^^^^^^^^
+   8 |   }
+     | ^^^
+   9 |   let _ = value
+  10 | }
+
+inconsistent if expression branch types: expected str, got bool
