@@ -45,23 +45,89 @@ aggregate lowering is currently limited to the documented target families.
 
 ## Dependencies
 
-### Building the compiler
+### Running a bundled release
 
-- Reasonably modern Go version
-- A C++17 compiler
-- LLVM and Clang 22 development headers
-- LLVM 22, Clang C++, and LLD driver libraries
+Should be self contined within the extracted archive.
 
-The headers and libraries must be visible to cgo's C++ compiler and linker. On
-Windows, use an LLVM build compatible with the selected cgo toolchain and set
-`CGO_CXXFLAGS`/`CGO_LDFLAGS` when it is installed outside standard search paths.
+### Building the compiler yourself
 
-On MacOS we provide a script that you can source that detects brew installed
-LLVM 22 and sets the appropriate environment variables for building the compiler:
+All source builds require Go 1.23.5 or newer, cgo, a C++17 compiler, and a
+matching LLVM 22 development installation containing:
+
+- LLVM and Clang C++ headers, including `llvm/`, `clang/`, and `lld/`;
+- the LLVM and Clang C++ libraries; and
+- the LLD ELF, COFF, MinGW, Mach-O, WebAssembly, and Common driver libraries.
+
+LLVM's command-line tools alone are insufficient. The headers and libraries
+must match the selected C++ ABI and be visible through `CGO_CXXFLAGS` and
+`CGO_LDFLAGS`.
+
+#### Linux
+
+Install Go, Clang/Clang++, and the LLVM 22, Clang C++, and LLD 22 development
+packages supplied by your distribution or the LLVM project. Package names vary;
+the installation must provide `llvm-config-22` and the libraries named in
+`codegen/llvmbackend/link_dynamic.go`. Then run:
 
 ```bash
-source ./scripts/macos-brew-init.sh
+llvm_prefix=$(llvm-config-22 --prefix)
+export CC=clang-22
+export CXX=clang++-22
+export CGO_ENABLED=1
+export CGO_CXXFLAGS="-I${llvm_prefix}/include"
+export CGO_LDFLAGS="-L${llvm_prefix}/lib"
+go build ./cmd/qkc
+go test ./...
 ```
+
+Keep the same environment variables set for `go test`. If your distribution
+installs LLD in a separate prefix, add its `include` and `lib` directories to
+the corresponding cgo variables.
+
+#### macOS
+
+Install the Xcode Command Line Tools, Go, LLVM 22, and LLD 22. With Homebrew:
+
+```bash
+xcode-select --install
+brew install go llvm lld
+source ./scripts/macos-brew-init.sh
+go build ./cmd/qkc
+go test ./...
+```
+
+The initialization script locates the Homebrew prefixes and exports the cgo
+include and library paths. LLD is a separate Homebrew formula.
+
+#### Windows (MSYS2 UCRT64)
+
+Run these commands in an MSYS2 UCRT64 shell. Keep all components in the same
+UCRT64 ABI environment:
+
+```bash
+pacman -S --needed \
+  mingw-w64-ucrt-x86_64-go \
+  mingw-w64-ucrt-x86_64-clang \
+  mingw-w64-ucrt-x86_64-llvm \
+  mingw-w64-ucrt-x86_64-lld
+
+export CC=clang
+export CXX=clang++
+export CGO_ENABLED=1
+export CGO_CXXFLAGS=-I/ucrt64/include
+export CGO_LDFLAGS=-L/ucrt64/lib
+go build ./cmd/qkc
+go test ./...
+```
+
+Keep the same environment variables set for `go test`. Do not mix UCRT64
+libraries with MSVC or another MSYS2 environment such as MINGW64/CLANG64.
+
+MSVC and MSVC-targeted Clang are not supported for building qkc. Go's Windows
+cgo toolchain expects a GCC-compatible MinGW environment, and the official
+MSVC LLVM archives use a different static component-library layout. This only
+restricts how the compiler executable itself is built; qkc can still emit and
+link code for Windows MSVC target triples.
 
 ## Docs
 
