@@ -64,6 +64,7 @@ type Args struct {
 	file         string
 	packageArg   string
 	programArgs  []string
+	installPath  string
 	output       string
 	mainModule   string
 	outputName   string
@@ -94,6 +95,7 @@ type Args struct {
 	libs         []string
 	libraryPaths []string
 	run          bool
+	install      bool
 	cpuProfile   string
 }
 
@@ -189,12 +191,15 @@ func (p *argumentParser) parseSplitArgs(option string, target *[]string) error {
 
 func (p *argumentParser) parse() (*Args, error) {
 	if len(p.input) == 0 {
-		return nil, fmt.Errorf("expected build or run command")
+		return nil, fmt.Errorf("expected build, run, or install command")
 	}
 	switch p.input[0] {
 	case "build":
 	case "run":
 		p.args.run = true
+	case "install":
+		p.args.install = true
+		p.args.release = true
 	case "-h", "--help":
 		printUsage()
 		os.Exit(0)
@@ -202,7 +207,7 @@ func (p *argumentParser) parse() (*Args, error) {
 		printVersion()
 		os.Exit(0)
 	default:
-		return nil, fmt.Errorf("unknown command %q: expected build or run", p.input[0])
+		return nil, fmt.Errorf("unknown command %q: expected build, run, or install", p.input[0])
 	}
 	p.index = 1
 	for p.index < len(p.input) {
@@ -213,6 +218,14 @@ func (p *argumentParser) parse() (*Args, error) {
 		}
 		if err := p.parseCurrent(); err != nil {
 			return nil, err
+		}
+	}
+	if p.args.install {
+		if p.args.packageArg == "" {
+			return nil, fmt.Errorf("install requires a package path and an install directory")
+		}
+		if p.args.installPath == "" {
+			return nil, fmt.Errorf("install requires an install directory after the package path")
 		}
 	}
 
@@ -430,6 +443,11 @@ func (p *argumentParser) parseCurrent() error {
 		if strings.HasPrefix(tok, "-") {
 			return fmt.Errorf("unknown argument: %s", tok)
 		}
+		if p.args.install && p.args.packageArg != "" && p.args.installPath == "" {
+			p.args.installPath = tok
+			p.index++
+			return nil
+		}
 		if p.args.packageArg != "" {
 			return fmt.Errorf("multiple package arguments specified")
 		}
@@ -445,33 +463,61 @@ func parseArgs() (*Args, error) {
 }
 
 func printUsage() {
-	fmt.Printf("Usage: %s <build|run> [options] [package]\n", os.Args[0])
-	fmt.Println("The package defaults to the current directory and may be a directory or one .qk file.")
-	fmt.Println("Options:")
-	fmt.Println("  -o <file>          Output file name")
-	fmt.Println("  -t <type>          Output type (exe, obj, lib, so, wasm)")
-	fmt.Println("  -O <level>         Optimisation level (0, 1, 2, 3, s, z, fast, g)")
-	fmt.Println("  -warn <show|off|error>  Warning mode (default: show)")
-	fmt.Println("  -warn-unused-variable <show|off|error>   Override unused-variable warnings")
-	fmt.Println("  -warn-unused-parameter <show|off|error>  Override unused-parameter warnings")
-	fmt.Println("  -static            Link with static libraries")
-	fmt.Println("  -nolibc            Do not link against the C standard library")
-	fmt.Println("  -nostdlib          Do not load the installed QK library tree")
-	fmt.Println("  -release           Select .Release for the compile-time ReleaseMode value")
-	fmt.Println("  -stdlib <dir>      Use an external QK library root; trust packages beneath its std directory")
-	fmt.Println("  -I <dir>           Add a package search root (can be repeated)")
-	fmt.Println("  -l <lib>           Link with library <lib> (can specify multiple times)")
-	fmt.Println("  -target <triple>   Target triple for code generation")
-	fmt.Println("  -sysroot <path>    Sysroot path for target")
-	fmt.Println("  -cpu <name>        LLVM target CPU (for example: native, x86-64-v3)")
-	fmt.Println("  -features <list>   LLVM target features (for example: +avx2,-sse4.1)")
-	fmt.Println("  -target-abi <name> Target-specific ABI name")
-	fmt.Println("  -relocation-model <model>  Relocation model (default, static, pic, dynamic-no-pic)")
-	fmt.Println("  -code-model <model>        Code model (default, tiny, small, kernel, medium, large)")
-	fmt.Println("  -Xlink <args>      Additional arguments for the native link")
-	fmt.Println("  -L <path>          Add library search path (can specify multiple times)")
-	fmt.Println("  -no-emit           Do not emit any output files, just check for errors")
-	fmt.Println("  -cpuprofile <file> Write a Go CPU profile for the compiler process")
+	name := filepath.Base(os.Args[0])
+	fmt.Printf(`QK compiler
+
+Usage:
+  %s build [options] [package]
+  %s run [options] [package] [arguments...]
+  %s install [options] <package> <directory>
+  %s --help
+  %s --version
+
+Commands:
+  build      Compile a package (the current directory by default)
+  run        Compile and run an executable package
+  install    Compile an executable in release mode and place it in directory
+
+A package may be a directory or one explicit .qk source file. Options for run
+must appear before the package; all following values are passed to the program.
+
+Build options:
+  -o <file>             Set the output file name
+  -t <type>             Set output type: exe, obj, lib, so, or wasm
+  -O <level>            Set optimisation: 0, 1, 2, 3, s, z, fast, or g
+  -release              Select .Release for the compile-time ReleaseMode value
+  -static               Prefer static libraries when linking
+  -no-emit              Check and compile without writing an output file
+
+Diagnostics:
+  -warn <mode>          Set warnings to show, off, or error (default: show)
+  -warn-<name> <mode>   Override one warning category
+  -d                    Enable compiler debug output
+  -v                    Print verbose compiler and linker output
+  -dump-ir              Print target-independent QK IR
+  -dump-llvm            Print generated LLVM IR
+  -dump-asm             Print generated assembly
+  -keep-build-dir       Preserve temporary build directories
+  -cpuprofile <file>    Write a compiler CPU profile
+
+Packages and libraries:
+  -nostdlib             Do not load the installed QK library tree
+  -stdlib <dir>         Use an external QK library root
+  -I <dir>              Add a package search root (repeatable)
+  -L <dir>              Add a library search path (repeatable)
+  -l <lib>              Link a library (repeatable)
+  -Xlink <args>         Pass space-separated arguments to the linker
+
+Target options:
+  -target <triple>      Set the LLVM target triple
+  -sysroot <path>       Set the target sysroot
+  -cpu <name>           Set the LLVM target CPU
+  -features <list>      Set LLVM target features
+  -target-abi <name>    Set the target-specific ABI
+  -relocation-model <model>
+                        Set default, static, pic, or dynamic-no-pic
+  -code-model <model>   Set default, tiny, small, kernel, medium, or large
+`, name, name, name, name, name)
 }
 
 func printVersion() {
@@ -522,6 +568,25 @@ func finaliseArgs(args *Args) error {
 		args.packageRoot = args.baseDir
 	}
 	args.mainModule = packagePathFromDirectory(args.packageRoot, args.baseDir)
+	if args.install {
+		if args.output != "" {
+			return fmt.Errorf("-o cannot be used with install")
+		}
+		if args.outputType != OutputUnspecified && args.outputType != OutputExecutable {
+			return fmt.Errorf("install only supports executable output")
+		}
+		info, err := os.Stat(args.installPath)
+		if err != nil || !info.IsDir() {
+			return fmt.Errorf("install path is not a directory: %s", args.installPath)
+		}
+		installPath, err := filepath.Abs(args.installPath)
+		if err != nil {
+			return fmt.Errorf("failed to get absolute install path: %v", err)
+		}
+		args.installPath = installPath
+		args.outputType = OutputExecutable
+		args.output = filepath.Join(installPath, defaultExecutableName(args.outputName, args.target))
+	}
 	for i, path := range args.packagePaths {
 		info, err := os.Stat(path)
 		if err != nil || !info.IsDir() {

@@ -18,6 +18,10 @@ import (
 )
 
 func main() {
+	if len(os.Args) == 1 {
+		printUsage()
+		return
+	}
 	args, err := parseArgs()
 	check(err)
 	if args.cpuProfile != "" {
