@@ -113,7 +113,10 @@
     {
       "name": "match diagnostics",
       "positive": ["types/aggregates"],
-      "negative": ["diagnostics/non_exhaustive_match"]
+      "negative": [
+        "diagnostics/non_exhaustive_match",
+        "diagnostics/missing_match_arm_comma"
+      ]
     },
     {
       "name": "aggregate diagnostics",

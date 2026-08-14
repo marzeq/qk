@@ -1,11 +1,13 @@
-Error: <CASE>/main.qk:8:17
+Error: <CASE>/main.qk:7:3
+   5 | let main() {
    6 |   let choice: Choice = .First
    7 |   match choice {
+     |   ^^^^^^^^^^^^^^
    8 |     .First => {}
-     |                 ^
+     | ^^^^^^^^^^^^^^^^
    9 |   }
-     | ^
+     | ^^^
   10 | }
   11 | 
 
-expected ',' after match arm
+match is not exhaustive; add the missing cases or a '_' arm

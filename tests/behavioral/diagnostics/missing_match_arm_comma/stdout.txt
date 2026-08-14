@@ -1,0 +1,18 @@
+Error: <CASE>/main.qk:8:15
+   6 |   let choice: Choice = .First
+   7 |   match choice {
+   8 |     .First => 1
+     |               ^
+   9 |     .Second => 2
+  10 |   }
+
+expected ',' after match arm
+Error: <CASE>/main.qk:9:13
+   7 |   match choice {
+   8 |     .First => 1
+   9 |     .Second => 2
+     |             ^^
+  10 |   }
+  11 | }
+
+expected ';' or '\n' to end statement

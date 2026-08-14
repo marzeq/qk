@@ -1823,6 +1823,7 @@ func (p *Parser) ParseMatch(expression bool) (*MatchNode, error) {
 		for p.Match(tokeniser.TokenNewline) {
 			p.Inc()
 		}
+		bodyStartsWithBlock := p.Match(tokeniser.TokenOpenCurly)
 		var body ExpressionNode
 		if !expression && p.Match(tokeniser.TokenOpenCurly) {
 			body, err = p.ParseBlock()
@@ -1838,7 +1839,11 @@ func (p *Parser) ParseMatch(expression bool) (*MatchNode, error) {
 		if p.Match(tokeniser.TokenCloseCurly) {
 			break
 		}
-		if !p.Expect(tokeniser.TokenComma) {
+		_, blockBody := body.(*BlockNode)
+		blockBody = blockBody && bodyStartsWithBlock
+		if p.Match(tokeniser.TokenComma) {
+			p.Inc()
+		} else if !blockBody {
 			return nil, shared.NewError(p.PrevLoc(), "expected ',' after match arm")
 		}
 		for p.Match(tokeniser.TokenNewline) {

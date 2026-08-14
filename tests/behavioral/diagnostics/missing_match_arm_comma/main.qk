@@ -1,0 +1,11 @@
+module main
+
+let Choice = type enum { First, Second }
+
+let main() {
+  let choice: Choice = .First
+  match choice {
+    .First => 1
+    .Second => 2
+  }
+}

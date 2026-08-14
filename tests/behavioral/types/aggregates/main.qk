@@ -15,9 +15,9 @@ let CRecursiveParents = type alias std.collections.DynamicArray<DRecursiveParent
 let DRecursiveParent = type union(@auto) { List(ARecursiveList) }
 
 let result_value(result: Result): i32 = match result {
-  .Ok(value) => value,
-  .Error(message=text) => @len(text).(i32),
-  .Cancelled => -1,
+  .Ok(value) => { value }
+  .Error(message=text) => { @len(text).(i32) }
+  .Cancelled => { -1 }
 }
 
 let main() {
@@ -31,6 +31,11 @@ let main() {
   permissions.Write = false
   let result = Result.Ok(42)
   let recursive = Recursive.Leaf
+  match direction {
+    .North => { assert(false, "wrong direction") }
+    .East => { assert(true, "right direction") }
+    .South | .West => {}
+  }
   assert(point.x == 6 && pointer.y == 3, "struct and pointer")
   assert(@len(array) == 4 && @len(slice) == 2 && slice[0] == 2, "arrays and slices")
   assert(direction == .East && permissions.Read && !permissions.Write, "enum and flags")
