@@ -1,0 +1,266 @@
+module std.fs
+
+when TargetHasFilesystem {
+import std.alloc
+import std.error
+import std.io
+import std.libc
+import std.strings
+
+pub let DirectoryEntryKind = type enum {
+  Unknown,
+  File,
+  Directory,
+  Symlink,
+  Other,
+}
+
+pub let DirectoryEntryKind.format(
+  self,
+  writer: *mut dyn std.io.Writer,
+): std.error.Error {
+  let value: str = match self {
+    .Unknown => "Unknown",
+    .File => "File",
+    .Directory => "Directory",
+    .Symlink => "Symlink",
+    .Other => "Other",
+  }
+  let _, error = std.io.write_all(writer, value.([]u8))
+  return error
+}
+
+// Directory iteration is streaming, non-recursive, and has unspecified order.
+// The caller owns the builder passed to next; each call clears it before
+// returning and a produced basename remains valid until the caller changes it.
+let DirectoryIteratorNativeData = type
+  when OS == .Windows { [40]u64 }
+  else { u8 }
+
+let directory_iterator_native_data(): DirectoryIteratorNativeData {
+  when OS == .Windows { return [0; 40] }
+  else { return 0 }
+}
+
+pub let DirectoryIterator = type struct {
+  handle: *void,
+  opened: bool,
+  exhausted: bool,
+  failed: bool,
+  first_pending: bool,
+  failure: std.error.Error,
+  // WIN32_FIND_DATAA is 320 bytes and requires four-byte alignment.
+  native_data: DirectoryIteratorNativeData,
+}
+
+let directory_iterator_empty(): DirectoryIterator = .{
+  handle=nil,
+  opened=false,
+  exhausted=false,
+  failed=false,
+  first_pending=false,
+  failure=std.error.Error.none(),
+  native_data=directory_iterator_native_data(),
+}
+
+let directory_iterator_fail(
+  iterator: *mut DirectoryIterator,
+  error: std.error.Error,
+): (DirectoryEntryKind, bool, std.error.Error) {
+  iterator.failed = true
+  iterator.failure = error
+  return .Unknown, false, error
+}
+
+when OS == .Windows {
+  let windows_find_data(
+    iterator: *mut DirectoryIterator,
+  ): *mut std.libc.WindowsFindData =
+    iterator.native_data.&mut.(*mut std.libc.WindowsFindData)
+
+  let windows_entry_kind(data: *std.libc.WindowsFindData): DirectoryEntryKind {
+    if (data.file_attributes & std.libc.FileAttributeReparsePoint) != 0 {
+      if data.reserved_0 == std.libc.IoReparseTagSymlink { return .Symlink }
+      return .Other
+    }
+    if (data.file_attributes & std.libc.FileAttributeDirectory) != 0 {
+      return .Directory
+    }
+    return .File
+  }
+}
+
+pub let DirectoryIterator.open(
+  path: str,
+): (DirectoryIterator, std.error.Error) {
+  let mut result = directory_iterator_empty()
+  let mut lc = std.alloc.LibcAllocator.init()
+  let allocator = lc.&mut.(*mut dyn std.alloc.Allocator)
+
+  when OS == .Windows {
+    if @len(path) == 0 { return result, std.error.Error.invalid_data() }
+    let mut pattern = std.strings.StringBuilder.init(allocator)
+    if !pattern.append(path.([]u8)) {
+      return result, std.error.Error.out_of_memory()
+    }
+    if path[@len(path) - 1] != '\\' && path[@len(path) - 1] != '/' {
+      if !pattern.append("\\".([]u8)) {
+        pattern.deinit()
+        return result, std.error.Error.out_of_memory()
+      }
+    }
+    if !pattern.append("*".([]u8)) {
+      pattern.deinit()
+      return result, std.error.Error.out_of_memory()
+    }
+    let c_pattern = pattern.as_str().to_cstr(allocator)
+    if c_pattern == nil {
+      pattern.deinit()
+      return result, std.error.Error.out_of_memory()
+    }
+    let c_path = path.to_cstr(allocator)
+    if c_path == nil {
+      allocator.free_bytes(c_pattern, @len(pattern.as_str()) + 1, @alignof(u8))
+      pattern.deinit()
+      return result, std.error.Error.out_of_memory()
+    }
+    let attributes = std.libc.get_file_attributes(c_path)
+    let attributes_error = std.libc.get_last_error()
+    allocator.free_bytes(c_path, @len(path) + 1, @alignof(u8))
+    if attributes == std.libc.InvalidFileAttributes {
+      allocator.free_bytes(c_pattern, @len(pattern.as_str()) + 1, @alignof(u8))
+      pattern.deinit()
+      return result, std.error.Error.from_code(attributes_error.(i32))
+    }
+    if (attributes & std.libc.FileAttributeDirectory) == 0 {
+      allocator.free_bytes(c_pattern, @len(pattern.as_str()) + 1, @alignof(u8))
+      pattern.deinit()
+      return result, std.error.Error.invalid_data()
+    }
+
+    let handle = std.libc.find_first_file(c_pattern, windows_find_data(result.&mut))
+    let error_code = std.libc.get_last_error()
+    allocator.free_bytes(c_pattern, @len(pattern.as_str()) + 1, @alignof(u8))
+    pattern.deinit()
+    if handle == (~0.(usz)).(*void) {
+      if error_code == std.libc.ErrorFileNotFound || error_code == std.libc.ErrorNoMoreFiles {
+        result.opened = true
+        result.exhausted = true
+        return result, std.error.Error.none()
+      }
+      return result, std.error.Error.from_code(error_code.(i32))
+    }
+    result.handle = handle
+    result.opened = true
+    result.first_pending = true
+    return result, std.error.Error.none()
+  } else {
+    let c_path = path.to_cstr(allocator)
+    if c_path == nil { return result, std.error.Error.out_of_memory() }
+    let directory = std.libc.opendir(c_path)
+    let error = if directory == nil { std.error.last_error() } else { std.error.Error.none() }
+    allocator.free_bytes(c_path, @len(path) + 1, @alignof(u8))
+    if directory == nil { return result, error }
+    result.handle = directory.(*void)
+    result.opened = true
+    return result, std.error.Error.none()
+  }
+}
+
+pub let DirectoryIterator.next(
+  *mut self,
+  name: *mut std.strings.StringBuilder,
+): (DirectoryEntryKind, bool, std.error.Error) {
+  name.clear()
+  if !self.opened {
+    return .Unknown, false, std.error.Error.invalid_handle()
+  }
+  if self.exhausted { return .Unknown, false, std.error.Error.none() }
+  if self.failed { return .Unknown, false, self.failure }
+
+  when OS == .Windows {
+    for true {
+      let data = windows_find_data(self)
+      if self.first_pending {
+        self.first_pending = false
+      } else if std.libc.find_next_file(self.handle, data) == 0 {
+        let error_code = std.libc.get_last_error()
+        if error_code == std.libc.ErrorNoMoreFiles {
+          self.exhausted = true
+          return .Unknown, false, std.error.Error.none()
+        }
+        return directory_iterator_fail(
+          self,
+          std.error.Error.from_code(error_code.(i32)),
+        )
+      }
+
+      let mut length: usz = 0
+      for data.file_name[length] != 0 { length += 1 }
+      let bytes = data.file_name.&.(*u8)[0:length]
+      let is_dot = length == 1 && bytes[0] == '.'
+      let is_dot_dot = length == 2 && bytes[0] == '.' && bytes[1] == '.'
+      if is_dot || is_dot_dot { continue }
+      if !name.append(bytes) {
+        return directory_iterator_fail(self, std.error.Error.out_of_memory())
+      }
+      return windows_entry_kind(data), true, std.error.Error.none()
+    }
+  } else {
+    for true {
+      std.libc.errno_location().* = 0
+      let entry = std.libc.readdir(self.handle.(*std.libc.DIR))
+      if entry == nil {
+        let error_code = std.libc.errno_location().*
+        if error_code == 0 {
+          self.exhausted = true
+          return .Unknown, false, std.error.Error.none()
+        }
+        return directory_iterator_fail(
+          self,
+          std.error.Error.from_code(error_code),
+        )
+      }
+
+      let mut length: usz = 0
+      for entry.name[length] != 0 { length += 1 }
+      let bytes = entry.name.&.(*u8)[0:length]
+      let is_dot = length == 1 && bytes[0] == '.'
+      let is_dot_dot = length == 2 && bytes[0] == '.' && bytes[1] == '.'
+      if is_dot || is_dot_dot { continue }
+      if !name.append(bytes) {
+        return directory_iterator_fail(self, std.error.Error.out_of_memory())
+      }
+
+      let kind: DirectoryEntryKind = match entry.entry_type {
+        0 => .Unknown,
+        4 => .Directory,
+        8 => .File,
+        10 => .Symlink,
+        _ => .Other,
+      }
+      return kind, true, std.error.Error.none()
+    }
+  }
+  return .Unknown, false, std.error.Error.no_progress()
+}
+
+pub let DirectoryIterator.close(*mut self): std.error.Error {
+  let handle = self.handle
+  self.handle = nil
+  self.opened = false
+  self.first_pending = false
+  if handle == nil { return std.error.Error.none() }
+
+  when OS == .Windows {
+    if std.libc.find_close(handle) == 0 {
+      return std.error.Error.from_code(std.libc.get_last_error().(i32))
+    }
+  } else {
+    if std.libc.closedir(handle.(*std.libc.DIR)) != 0 {
+      return std.error.last_error()
+    }
+  }
+  return std.error.Error.none()
+}
+}
