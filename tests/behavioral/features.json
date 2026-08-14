@@ -115,7 +115,8 @@
       "positive": ["types/aggregates"],
       "negative": [
         "diagnostics/non_exhaustive_match",
-        "diagnostics/missing_match_arm_comma"
+        "diagnostics/missing_match_arm_comma",
+        "diagnostics/match_pattern_arity"
       ]
     },
     {

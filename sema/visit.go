@@ -424,7 +424,9 @@ func (a *Analyser) visitIf(n *parser.IfNode) {
 }
 
 func (a *Analyser) visitMatch(n *parser.MatchNode) {
-	a.visitExpression(n.Subject)
+	for _, subject := range n.Subjects {
+		a.visitExpression(subject)
+	}
 	previous := a.current
 	a.current = symbols.NewScope(previous)
 	defer func() { a.current = previous }()
@@ -438,13 +440,15 @@ func (a *Analyser) visitMatch(n *parser.MatchNode) {
 		arm := &n.Arms[armIndex]
 		armScope := symbols.NewScope(a.current)
 		a.current = armScope
-		for _, binding := range matchPatternBindings(arm.Pattern) {
-			if binding.Name == "_" {
-				continue
-			}
-			symbol := symbols.NewVariable(binding.Name, nil)
-			if a.defineSymbol(symbol, arm.Pattern) {
-				binding.Symbol = symbol
+		for _, pattern := range arm.Patterns {
+			for _, binding := range matchPatternBindings(pattern) {
+				if binding.Name == "_" {
+					continue
+				}
+				symbol := symbols.NewVariable(binding.Name, nil)
+				if a.defineSymbol(symbol, pattern) {
+					binding.Symbol = symbol
+				}
 			}
 		}
 		if arm.Guard != nil {

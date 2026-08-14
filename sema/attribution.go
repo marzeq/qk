@@ -2009,13 +2009,21 @@ func (a *Attributor) attributeIf(n *parser.IfNode) {
 }
 
 func (a *Attributor) attributeMatch(n *parser.MatchNode) {
-	a.attributeExpr(n.Subject)
+	for _, subject := range n.Subjects {
+		a.attributeExpr(subject)
+	}
 	if n.Binding != nil {
-		n.Binding.Type = n.Subject.GetType()
+		n.Binding.Type = n.Subjects[0].GetType()
 	}
 	for i := range n.Arms {
 		arm := &n.Arms[i]
-		a.attributeMatchPattern(arm.Pattern, n.Subject.GetType())
+		for patternIndex, pattern := range arm.Patterns {
+			subjectIndex := patternIndex
+			if len(arm.Patterns) == 1 && pattern.Kind == parser.MatchPatternWildcard {
+				subjectIndex = 0
+			}
+			a.attributeMatchPattern(pattern, n.Subjects[subjectIndex].GetType())
+		}
 		if arm.Guard != nil {
 			a.attributeExpr(arm.Guard)
 		}
@@ -2025,9 +2033,11 @@ func (a *Attributor) attributeMatch(n *parser.MatchNode) {
 		n.SetType(types.PrimitiveVoid)
 		return
 	}
-	if types.HasError(n.Subject.GetType()) {
-		n.SetType(types.ErrorType{})
-		return
+	for _, subject := range n.Subjects {
+		if types.HasError(subject.GetType()) {
+			n.SetType(types.ErrorType{})
+			return
+		}
 	}
 	for i := range n.Arms {
 		arm := &n.Arms[i]

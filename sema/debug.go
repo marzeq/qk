@@ -109,7 +109,9 @@ func (w *debugWalker) walkNode(node parser.Node) {
 		}
 
 	case *parser.MatchNode:
-		w.walkExpr(n.Subject)
+		for _, subject := range n.Subjects {
+			w.walkExpr(subject)
+		}
 		for _, arm := range n.Arms {
 			if arm.Guard != nil {
 				w.walkExpr(arm.Guard)
@@ -237,7 +239,9 @@ func (w *debugWalker) walkExpr(expr parser.ExpressionNode) {
 		}
 
 	case *parser.MatchNode:
-		w.walkExpr(n.Subject)
+		for _, subject := range n.Subjects {
+			w.walkExpr(subject)
+		}
 		for _, arm := range n.Arms {
 			if arm.Guard != nil {
 				w.walkExpr(arm.Guard)

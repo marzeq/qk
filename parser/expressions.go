@@ -1781,12 +1781,27 @@ func (p *Parser) ParseMatch(expression bool) (*MatchNode, error) {
 	for p.Match(tokeniser.TokenNewline) {
 		p.Inc()
 	}
-	subject, err := p.ParseExpression()
-	if err != nil {
-		return nil, err
+	var subjects []ExpressionNode
+	for {
+		subject, err := p.ParseExpression()
+		if err != nil {
+			return nil, err
+		}
+		subjects = append(subjects, subject)
+		if !p.Match(tokeniser.TokenComma) {
+			break
+		}
+		p.Inc()
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
 	}
-	node := &MatchNode{Subject: subject, Expression: expression}
+	node := &MatchNode{Subjects: subjects, Expression: expression}
+	var err error
 	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordAs) {
+		if len(subjects) != 1 {
+			return nil, shared.NewError(p.CurrLoc(), "a multi-subject match cannot use an 'as' binding")
+		}
 		p.Inc()
 		binding, ok := p.ExpectGet(tokeniser.TokenIdentifier)
 		if !ok {
@@ -1805,9 +1820,20 @@ func (p *Parser) ParseMatch(expression bool) (*MatchNode, error) {
 	}
 	for !p.Match(tokeniser.TokenCloseCurly) {
 		armBegin := p.CurrLoc()
-		pattern, err := p.parseMatchPattern()
-		if err != nil {
-			return nil, err
+		var patterns []*MatchPatternNode
+		for {
+			pattern, err := p.parseMatchPattern()
+			if err != nil {
+				return nil, err
+			}
+			patterns = append(patterns, pattern)
+			if !p.Match(tokeniser.TokenComma) {
+				break
+			}
+			p.Inc()
+			for p.Match(tokeniser.TokenNewline) {
+				p.Inc()
+			}
 		}
 		var guard ExpressionNode
 		if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordIf) {
@@ -1819,6 +1845,9 @@ func (p *Parser) ParseMatch(expression bool) (*MatchNode, error) {
 		}
 		if !p.Expect(tokeniser.TokenFatArrow) {
 			return nil, shared.NewError(p.PrevLoc(), "expected '=>' after match pattern")
+		}
+		if len(patterns) != len(subjects) && !(len(patterns) == 1 && patterns[0].Kind == MatchPatternWildcard) {
+			return nil, shared.NewError(armBegin, "match arm has %d patterns for %d subjects", len(patterns), len(subjects))
 		}
 		for p.Match(tokeniser.TokenNewline) {
 			p.Inc()
@@ -1834,7 +1863,7 @@ func (p *Parser) ParseMatch(expression bool) (*MatchNode, error) {
 			return nil, err
 		}
 		node.Arms = append(node.Arms, MatchArmNode{
-			Pattern: pattern, Guard: guard, Body: body, Loc: armBegin.WithEnd(body.GetLoc()),
+			Patterns: patterns, Guard: guard, Body: body, Loc: armBegin.WithEnd(body.GetLoc()),
 		})
 		if p.Match(tokeniser.TokenCloseCurly) {
 			break

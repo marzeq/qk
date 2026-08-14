@@ -1,0 +1,8 @@
+module main
+
+let main() {
+  match true, false {
+    true => {}
+    _ => {}
+  }
+}

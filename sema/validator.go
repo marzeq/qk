@@ -892,16 +892,27 @@ func (v *Validator) validateIfExpression(n *parser.IfNode, expected types.Type) 
 }
 
 func (v *Validator) validateMatch(n *parser.MatchNode, expected types.Type) {
-	v.validateValueExpr(n.Subject)
-	subjectType := n.Subject.GetType()
-	poisoned := types.HasError(subjectType)
-	covered := map[string]bool{}
-	wildcard := false
+	subjectTypes := make([]types.Type, len(n.Subjects))
+	poisoned := false
+	for i, subject := range n.Subjects {
+		v.validateValueExpr(subject)
+		subjectTypes[i] = subject.GetType()
+		poisoned = poisoned || types.HasError(subjectTypes[i])
+	}
+	domains := v.matchCoverageDomains(subjectTypes, n.Arms)
+	var covered []matchCoverageRow
 	for i := range n.Arms {
 		arm := &n.Arms[i]
-		v.validateMatchPattern(arm.Pattern, subjectType)
-		if !poisoned && (wildcard || v.matchPatternFullyCovered(arm.Pattern, covered)) {
-			v.errorf(arm.Pattern, "match arm is unreachable because an earlier arm already covers its pattern")
+		for patternIndex, pattern := range arm.Patterns {
+			subjectIndex := patternIndex
+			if len(arm.Patterns) == 1 && pattern.Kind == parser.MatchPatternWildcard {
+				subjectIndex = 0
+			}
+			v.validateMatchPattern(pattern, subjectTypes[subjectIndex])
+		}
+		row := v.matchCoverageRow(arm.Patterns, len(subjectTypes))
+		if !poisoned && matchCoverageContains(covered, row, domains) {
+			v.errorf(arm.Patterns[0], "match arm is unreachable because an earlier arm already covers its pattern")
 		}
 		if arm.Guard != nil {
 			v.validateExpr(arm.Guard)
@@ -910,7 +921,7 @@ func (v *Validator) validateMatch(n *parser.MatchNode, expected types.Type) {
 				v.errorf(arm.Guard, "match arm guard must be bool")
 			}
 		} else {
-			v.recordMatchCoverage(arm.Pattern, covered, &wildcard)
+			covered = append(covered, row)
 		}
 		if n.Expression {
 			if !parser.NodeFallsThrough(arm.Body) {
@@ -924,14 +935,16 @@ func (v *Validator) validateMatch(n *parser.MatchNode, expected types.Type) {
 			v.validateStatement(arm.Body)
 		}
 		poisoned = poisoned || types.HasError(arm.Body.GetType())
-		for _, binding := range matchPatternBindings(arm.Pattern) {
-			v.warnIfUnused(binding.Symbol, binding.Loc, shared.WarningUnusedVariable, "match binding")
+		for _, pattern := range arm.Patterns {
+			for _, binding := range matchPatternBindings(pattern) {
+				v.warnIfUnused(binding.Symbol, binding.Loc, shared.WarningUnusedVariable, "match binding")
+			}
 		}
 	}
 	if n.Binding != nil {
 		v.warnIfUnused(n.Binding, n.BindingLoc, shared.WarningUnusedVariable, "match subject binding")
 	}
-	if !poisoned && !v.matchIsExhaustive(subjectType, covered, wildcard) {
+	if !poisoned && !matchCoverageExhaustive(covered, domains) {
 		v.errorf(n, "match is not exhaustive; add the missing cases or a '_' arm")
 	}
 	if !n.Expression {
@@ -1013,44 +1026,174 @@ func (v *Validator) validateMatchPattern(pattern *parser.MatchPatternNode, subje
 	}
 }
 
-func (v *Validator) recordMatchCoverage(pattern *parser.MatchPatternNode, covered map[string]bool, wildcard *bool) {
+type matchCoveragePattern struct {
+	wildcard bool
+	keys     map[string]bool
+}
+
+type matchCoverageRow []matchCoveragePattern
+
+func (v *Validator) matchCoverageRow(patterns []*parser.MatchPatternNode, subjectCount int) matchCoverageRow {
+	row := make(matchCoverageRow, subjectCount)
+	if len(patterns) == 1 && patterns[0].Kind == parser.MatchPatternWildcard {
+		for i := range row {
+			row[i].wildcard = true
+		}
+		return row
+	}
+	for i, pattern := range patterns {
+		row[i] = v.matchCoveragePattern(pattern)
+	}
+	return row
+}
+
+func (v *Validator) matchCoveragePattern(pattern *parser.MatchPatternNode) matchCoveragePattern {
+	result := matchCoveragePattern{keys: map[string]bool{}}
 	if pattern == nil {
-		return
+		return result
 	}
 	switch pattern.Kind {
 	case parser.MatchPatternWildcard:
-		*wildcard = true
-	case parser.MatchPatternVariant:
-		covered[v.matchPatternCoverageKey(pattern)] = true
-	case parser.MatchPatternLiteral:
-		if key := v.matchPatternCoverageKey(pattern); key != "" {
-			covered[key] = true
-		}
-	case parser.MatchPatternAlternative:
-		for _, alternative := range pattern.Alternatives {
-			v.recordMatchCoverage(alternative, covered, wildcard)
-		}
-	}
-}
-
-func (v *Validator) matchPatternFullyCovered(pattern *parser.MatchPatternNode, covered map[string]bool) bool {
-	if pattern == nil {
-		return false
-	}
-	switch pattern.Kind {
+		result.wildcard = true
 	case parser.MatchPatternVariant, parser.MatchPatternLiteral:
-		key := v.matchPatternCoverageKey(pattern)
-		return key != "" && covered[key]
-	case parser.MatchPatternAlternative:
-		if len(pattern.Alternatives) == 0 {
-			return false
+		if key := v.matchPatternCoverageKey(pattern); key != "" {
+			result.keys[key] = true
 		}
+	case parser.MatchPatternRange:
+		result.keys[fmt.Sprintf("range:%s:%d", pattern.Loc.FilePath, pattern.Loc.Offset)] = true
+	case parser.MatchPatternAlternative:
 		for _, alternative := range pattern.Alternatives {
-			if !v.matchPatternFullyCovered(alternative, covered) {
-				return false
+			part := v.matchCoveragePattern(alternative)
+			result.wildcard = result.wildcard || part.wildcard
+			for key := range part.keys {
+				result.keys[key] = true
 			}
 		}
+	}
+	return result
+}
+
+func (v *Validator) matchCoverageDomains(subjectTypes []types.Type, arms []parser.MatchArmNode) [][]string {
+	domains := make([][]string, len(subjectTypes))
+	seen := make([]map[string]bool, len(subjectTypes))
+	for i, subjectType := range subjectTypes {
+		seen[i] = map[string]bool{}
+		if info, tagged := types.TaggedUnion(subjectType); tagged {
+			for _, variant := range info.Variants {
+				key := "variant-value:" + variant.TagValue
+				seen[i][key] = true
+				domains[i] = append(domains[i], key)
+			}
+		} else if enumType, ok := types.Underlying(subjectType).(types.EnumType); ok {
+			for _, value := range enumType.Values {
+				key := "variant-value:" + value
+				seen[i][key] = true
+				domains[i] = append(domains[i], key)
+			}
+		} else if subjectType.Equals(types.PrimitiveBool) {
+			domains[i] = append(domains[i], "bool:true", "bool:false")
+			seen[i]["bool:true"], seen[i]["bool:false"] = true, true
+		} else {
+			domains[i] = append(domains[i], "other")
+			seen[i]["other"] = true
+		}
+	}
+	for _, arm := range arms {
+		if len(arm.Patterns) == 1 && arm.Patterns[0].Kind == parser.MatchPatternWildcard {
+			continue
+		}
+		for i, pattern := range arm.Patterns {
+			coverage := v.matchCoveragePattern(pattern)
+			for key := range coverage.keys {
+				if !seen[i][key] {
+					seen[i][key] = true
+					domains[i] = append(domains[i], key)
+				}
+			}
+		}
+	}
+	return domains
+}
+
+func matchCoverageContains(covered []matchCoverageRow, target matchCoverageRow, domains [][]string) bool {
+	if matchCoverageHasWildcardRow(covered) {
 		return true
+	}
+	budget := 65536
+	found, fullyCovered := false, true
+	var visit func(int, []string)
+	visit = func(dimension int, point []string) {
+		if !fullyCovered || budget == 0 {
+			fullyCovered = false
+			return
+		}
+		if dimension == len(domains) {
+			budget--
+			found = true
+			if !matchCoveragePointCovered(covered, point) {
+				fullyCovered = false
+			}
+			return
+		}
+		for _, value := range domains[dimension] {
+			if target[dimension].wildcard || target[dimension].keys[value] {
+				visit(dimension+1, append(point, value))
+			}
+		}
+	}
+	visit(0, nil)
+	return found && fullyCovered
+}
+
+func matchCoverageExhaustive(covered []matchCoverageRow, domains [][]string) bool {
+	if matchCoverageHasWildcardRow(covered) {
+		return true
+	}
+	budget := 65536
+	exhaustive := true
+	var visit func(int, []string)
+	visit = func(dimension int, point []string) {
+		if !exhaustive || budget == 0 {
+			exhaustive = false
+			return
+		}
+		if dimension == len(domains) {
+			budget--
+			if !matchCoveragePointCovered(covered, point) {
+				exhaustive = false
+			}
+			return
+		}
+		for _, value := range domains[dimension] {
+			visit(dimension+1, append(point, value))
+		}
+	}
+	visit(0, nil)
+	return exhaustive
+}
+
+func matchCoverageHasWildcardRow(rows []matchCoverageRow) bool {
+	for _, row := range rows {
+		allWildcard := true
+		for _, pattern := range row {
+			allWildcard = allWildcard && pattern.wildcard
+		}
+		if allWildcard {
+			return true
+		}
+	}
+	return false
+}
+
+func matchCoveragePointCovered(rows []matchCoverageRow, point []string) bool {
+	for _, row := range rows {
+		matches := true
+		for i, value := range point {
+			matches = matches && (row[i].wildcard || row[i].keys[value])
+		}
+		if matches {
+			return true
+		}
 	}
 	return false
 }
@@ -1077,32 +1220,6 @@ func (v *Validator) matchPatternCoverageKey(pattern *parser.MatchPatternNode) st
 		return fmt.Sprintf("integer:%d", literal.Value)
 	}
 	return ""
-}
-
-func (v *Validator) matchIsExhaustive(subjectType types.Type, covered map[string]bool, wildcard bool) bool {
-	if wildcard {
-		return true
-	}
-	if info, tagged := types.TaggedUnion(subjectType); tagged {
-		for _, variant := range info.Variants {
-			if !covered["variant-value:"+variant.TagValue] {
-				return false
-			}
-		}
-		return true
-	}
-	if enumType, ok := types.Underlying(subjectType).(types.EnumType); ok {
-		for _, value := range enumType.Values {
-			if !covered["variant-value:"+value] {
-				return false
-			}
-		}
-		return true
-	}
-	if subjectType.Equals(types.PrimitiveBool) {
-		return covered["bool:true"] && covered["bool:false"]
-	}
-	return false
 }
 
 func (v *Validator) validateFor(n *parser.ForNode) {

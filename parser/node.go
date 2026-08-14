@@ -831,16 +831,16 @@ type MatchPatternNode struct {
 func (n MatchPatternNode) GetLoc() shared.Location { return n.Loc }
 
 type MatchArmNode struct {
-	Pattern *MatchPatternNode
-	Guard   ExpressionNode
-	Body    ExpressionNode
-	Loc     shared.Location
+	Patterns []*MatchPatternNode
+	Guard    ExpressionNode
+	Body     ExpressionNode
+	Loc      shared.Location
 }
 
 func (n MatchArmNode) GetLoc() shared.Location { return n.Loc }
 
 type MatchNode struct {
-	Subject     ExpressionNode
+	Subjects    []ExpressionNode
 	BindingName string
 	BindingLoc  shared.Location
 	Binding     *symbols.Symbol

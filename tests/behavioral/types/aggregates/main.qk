@@ -20,6 +20,20 @@ let result_value(result: Result): i32 = match result {
   .Cancelled => { -1 }
 }
 
+let results_equal(left: Result, right: Result): bool = match left, right {
+  .Ok(left_value), .Ok(right_value) => left_value == right_value,
+  .Error(message=left_text), .Error(message=right_text) => @len(left_text) == @len(right_text),
+  .Cancelled, .Cancelled => true,
+  _ => false,
+}
+
+let bool_pair_code(left: bool, right: bool): i32 = match left, right {
+  true, true => 0,
+  true, false => 1,
+  false, true => 2,
+  false, false => 3,
+}
+
 let main() {
   let mut point = Point.{ x=2, y=3 }
   let pointer = point.&mut
@@ -40,6 +54,9 @@ let main() {
   assert(@len(array) == 4 && @len(slice) == 2 && slice[0] == 2, "arrays and slices")
   assert(direction == .East && permissions.Read && !permissions.Write, "enum and flags")
   assert(result_value(result) == 42, "tagged union")
+  assert(results_equal(result, Result.Ok(42)), "multi-subject match equal")
+  assert(!results_equal(result, Result.Cancelled), "multi-subject match fallback")
+  assert(bool_pair_code(false, true) == 2, "exhaustive multi-subject match")
   let _ = recursive
   std.io.println("types ok")
 }

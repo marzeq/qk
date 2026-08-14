@@ -1,0 +1,18 @@
+Error: <CASE>/main.qk:5:5
+   3 | let main() {
+   4 |   match true, false {
+   5 |     true => {}
+     |     ^^^^
+   6 |     _ => {}
+   7 |   }
+
+match arm has 1 patterns for 2 subjects
+Error: <CASE>/main.qk:6:7
+   4 |   match true, false {
+   5 |     true => {}
+   6 |     _ => {}
+     |       ^^
+   7 |   }
+   8 | }
+
+expected ';' or '\n' to end statement

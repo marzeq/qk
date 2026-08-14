@@ -2621,11 +2621,18 @@ func (g *Generator) generateMatch(node *parser.MatchNode) ir.Operand {
 	g.currentEnv = NewEnv(previousEnv)
 	defer func() { g.currentEnv = previousEnv }()
 
-	subjectSlot := g.currentFunction.NewSlot(node.Subject.GetType(), "match.subject")
-	g.Emit(ir.Alloca{Slot: subjectSlot})
-	g.Emit(ir.Store{Slot: subjectSlot, Value: g.GenerateExpr(node.Subject)})
+	subjectSlots := make([]ir.SlotID, len(node.Subjects))
+	for i, subject := range node.Subjects {
+		name := "match.subject"
+		if len(node.Subjects) != 1 {
+			name = fmt.Sprintf("match.subject.%d", i)
+		}
+		subjectSlots[i] = g.currentFunction.NewSlot(subject.GetType(), name)
+		g.Emit(ir.Alloca{Slot: subjectSlots[i]})
+		g.Emit(ir.Store{Slot: subjectSlots[i], Value: g.GenerateExpr(subject)})
+	}
 	if node.Binding != nil {
-		g.currentEnv.Variables[node.Binding] = subjectSlot
+		g.currentEnv.Variables[node.Binding] = subjectSlots[0]
 	}
 
 	var resultSlot ir.SlotID
@@ -2641,13 +2648,13 @@ func (g *Generator) generateMatch(node *parser.MatchNode) ir.Operand {
 		setupBlock := g.currentFunction.NewBlock(fmt.Sprintf("match.arm.%d.setup", index))
 		bodyBlock := g.currentFunction.NewBlock(fmt.Sprintf("match.arm.%d.body", index))
 		nextBlock := g.currentFunction.NewBlock(fmt.Sprintf("match.arm.%d.next", index))
-		condition := g.generateMatchPatternCondition(arm.Pattern, subjectSlot, node.Subject.GetType())
+		condition := g.generateMatchArmCondition(arm.Patterns, subjectSlots, node.Subjects)
 		g.Emit(ir.Branch{Cond: condition, Then: setupBlock.ID, Else: nextBlock.ID})
 
 		g.currentBlock = setupBlock
 		armEnv := NewEnv(g.currentEnv)
 		g.currentEnv = armEnv
-		g.bindMatchPattern(arm.Pattern, subjectSlot, node.Subject.GetType())
+		g.bindMatchArmPatterns(arm.Patterns, subjectSlots, node.Subjects)
 		if arm.Guard != nil {
 			guard := g.GenerateExpr(arm.Guard)
 			g.Emit(ir.Branch{Cond: guard, Then: bodyBlock.ID, Else: nextBlock.ID})
@@ -2689,6 +2696,27 @@ func (g *Generator) generateMatch(node *parser.MatchNode) ir.Operand {
 		g.Emit(ir.Unreachable{})
 	}
 	return ir.Operand{}
+}
+
+func (g *Generator) generateMatchArmCondition(patterns []*parser.MatchPatternNode, subjectSlots []ir.SlotID, subjects []parser.ExpressionNode) ir.Operand {
+	if len(patterns) == 1 && patterns[0].Kind == parser.MatchPatternWildcard {
+		return ir.BoolConstOperand(true)
+	}
+	condition := ir.BoolConstOperand(true)
+	for i, pattern := range patterns {
+		part := g.generateMatchPatternCondition(pattern, subjectSlots[i], subjects[i].GetType())
+		condition = g.emitBinaryOperation(parser.BinaryOpBitwiseAnd, condition, part, types.PrimitiveBool)
+	}
+	return condition
+}
+
+func (g *Generator) bindMatchArmPatterns(patterns []*parser.MatchPatternNode, subjectSlots []ir.SlotID, subjects []parser.ExpressionNode) {
+	if len(patterns) == 1 && patterns[0].Kind == parser.MatchPatternWildcard {
+		return
+	}
+	for i, pattern := range patterns {
+		g.bindMatchPattern(pattern, subjectSlots[i], subjects[i].GetType())
+	}
 }
 
 func (g *Generator) generateMatchPatternCondition(pattern *parser.MatchPatternNode, subjectSlot ir.SlotID, subjectType types.Type) ir.Operand {
