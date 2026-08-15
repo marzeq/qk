@@ -269,7 +269,7 @@ func (v *Validator) validateNode(node parser.Node) {
 		v.validateAttributes(n, n.Attributes, "declaration", attributes.AttributeTypeForeign)
 		v.finaliseDeclaration(n)
 		if n.Comptime && !isGenericComptimeExpression(n.Value) {
-			v.errorf(n, "parameterized comptime initializer must be a constant integer expression")
+			v.errorf(n, "compile-time binding must resolve to a boolean or integer constant")
 		}
 		if n.Symbol.Type != nil && !types.HasError(n.Symbol.Type) && !types.IsComplete(n.Symbol.Type) {
 			v.errorf(n, "cannot declare a value of incomplete type %v", n.Symbol.Type)

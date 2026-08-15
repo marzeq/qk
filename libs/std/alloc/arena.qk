@@ -4,7 +4,7 @@ when TargetHasLibc {
 
 import std.libc
 
-let ArenaDefaultChunkSize: usz = comptime 64 * 1024
+let $ArenaDefaultChunkSize: usz = 64 * 1024
 
 let ArenaChunk = type struct {
   previous: *mut ArenaChunk,

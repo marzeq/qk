@@ -37,6 +37,12 @@ const (
 // Expand evaluates compile-time declarations and selects compile-time branches,
 // returning the token stream that should continue through the compiler pipeline.
 func Expand(tokens []tokeniser.Token, config Config) ([]tokeniser.Token, error) {
+	if err := validateLinkAttributes(tokens); err != nil {
+		return nil, err
+	}
+	if err := validateWhenPlacements(tokens); err != nil {
+		return nil, err
+	}
 	target := targetFromConfig(config)
 	target.releaseMode = config.ReleaseMode
 	target.bindings = make(map[string]Value)
@@ -85,8 +91,8 @@ func (e *expander) expand() ([]tokeniser.Token, error) {
 			switch e.tokens[e.pos+1].Value {
 			case "compiler_error":
 				return nil, e.compilerError()
-			case "comptime_assert":
-				if err := e.comptimeAssert(); err != nil {
+			case "compiler_assert":
+				if err := e.compilerAssert(); err != nil {
 					return nil, err
 				}
 				continue
@@ -234,6 +240,10 @@ func (e *expander) expandDeclaration() ([]tokeniser.Token, bool, error) {
 	if namePos < len(e.tokens) && e.tokens[namePos].Type == tokeniser.TokenKeyword && e.tokens[namePos].Value == string(tokeniser.KeywordMut) {
 		namePos++
 	}
+	if namePos >= len(e.tokens) || e.tokens[namePos].Type != tokeniser.TokenDollar {
+		return nil, false, nil
+	}
+	namePos++
 	if namePos >= len(e.tokens) || e.tokens[namePos].Type != tokeniser.TokenIdentifier {
 		return nil, false, nil
 	}
@@ -249,10 +259,10 @@ func (e *expander) expandDeclaration() ([]tokeniser.Token, bool, error) {
 		}
 		equals++
 	}
-	if equals+1 >= len(e.tokens) || e.tokens[equals].Type != tokeniser.TokenEquals || e.tokens[equals+1].Type != tokeniser.TokenIdentifier || e.tokens[equals+1].Value != "comptime" {
+	if equals+1 >= len(e.tokens) || e.tokens[equals].Type != tokeniser.TokenEquals {
 		return nil, false, nil
 	}
-	exprStart := equals + 2
+	exprStart := equals + 1
 	end, parens, squares := exprStart, 0, 0
 	for end < len(e.tokens) {
 		tok := e.tokens[end]
@@ -273,7 +283,7 @@ func (e *expander) expandDeclaration() ([]tokeniser.Token, bool, error) {
 	}
 	name := e.tokens[namePos]
 	if end == exprStart {
-		return nil, true, shared.NewError(name.Loc, "expected expression after comptime")
+		return nil, true, shared.NewError(name.Loc, "expected expression for compile-time binding")
 	}
 	expr, err := parseCondition(e.tokens[exprStart:end], name.Loc)
 	if err != nil {
@@ -289,7 +299,6 @@ func (e *expander) expandDeclaration() ([]tokeniser.Token, bool, error) {
 	}
 	rewritten := append([]tokeniser.Token(nil), e.tokens[start:equals]...)
 	rewritten = append(rewritten, e.tokens[equals])
-	rewritten = append(rewritten, e.tokens[equals+1])
 	rewritten = append(rewritten, literal)
 	e.target.bindings[name.Value] = value
 	e.pos = end
@@ -306,21 +315,96 @@ func whenContinuesPrevious(tokens []tokeniser.Token) bool {
 	}
 	previous := tokens[pos]
 	if previous.Type == tokeniser.TokenKeyword {
-		return previous.Value == string(tokeniser.KeywordType)
+		return previous.Value == string(tokeniser.KeywordType) || previous.Value == string(tokeniser.KeywordReturn)
 	}
 	switch previous.Type {
-	case tokeniser.TokenEquals, tokeniser.TokenComma, tokeniser.TokenColon,
-		tokeniser.TokenOpenParen, tokeniser.TokenOpenSquare,
-		tokeniser.TokenPlus, tokeniser.TokenMinus, tokeniser.TokenAsterisk,
-		tokeniser.TokenSlash, tokeniser.TokenPercent, tokeniser.TokenAmpersand,
-		tokeniser.TokenPipe, tokeniser.TokenCaret, tokeniser.TokenShiftLeft,
-		tokeniser.TokenShiftRight, tokeniser.TokenEqualsEquals, tokeniser.TokenNotEquals,
-		tokeniser.TokenLess, tokeniser.TokenLessEquals, tokeniser.TokenGreater,
-		tokeniser.TokenGreaterEquals, tokeniser.TokenArrow, tokeniser.TokenFatArrow:
+	case tokeniser.TokenEquals, tokeniser.TokenFatArrow:
 		return true
 	default:
 		return false
 	}
+}
+
+func validateWhenPlacements(tokens []tokeniser.Token) error {
+	for pos, tok := range tokens {
+		if tok.Type != tokeniser.TokenKeyword || tok.Value != string(tokeniser.KeywordWhen) {
+			continue
+		}
+		previous := pos - 1
+		for previous >= 0 && tokens[previous].Type == tokeniser.TokenNewline {
+			previous--
+		}
+		if previous >= 0 && tokens[previous].Type == tokeniser.TokenKeyword &&
+			tokens[previous].Value == string(tokeniser.KeywordElse) {
+			continue
+		}
+		if insideLinkAttribute(tokens, pos) || previous < 0 {
+			continue
+		}
+		immediate := tokens[pos-1].Type
+		if immediate == tokeniser.TokenNewline || immediate == tokeniser.TokenSemicolon ||
+			immediate == tokeniser.TokenOpenCurly || immediate == tokeniser.TokenCloseCurly {
+			if insideDelimitedExpression(tokens, pos) {
+				return shared.NewError(tok.Loc, "'when' cannot splice an element into a delimited expression")
+			}
+			continue
+		}
+		before := tokens[previous]
+		if before.Type == tokeniser.TokenEquals || before.Type == tokeniser.TokenFatArrow ||
+			before.Type == tokeniser.TokenKeyword &&
+				(before.Value == string(tokeniser.KeywordType) || before.Value == string(tokeniser.KeywordReturn)) {
+			continue
+		}
+		return shared.NewError(tok.Loc, "'when' must select a complete declaration, statement, expression, or @link item group")
+	}
+	return nil
+}
+
+func insideDelimitedExpression(tokens []tokeniser.Token, pos int) bool {
+	parens, squares := 0, 0
+	for index := pos - 1; index >= 0; index-- {
+		switch tokens[index].Type {
+		case tokeniser.TokenCloseParen:
+			parens++
+		case tokeniser.TokenOpenParen:
+			if parens == 0 {
+				return true
+			}
+			parens--
+		case tokeniser.TokenCloseSquare:
+			squares++
+		case tokeniser.TokenOpenSquare:
+			if squares == 0 {
+				return true
+			}
+			squares--
+		case tokeniser.TokenOpenCurly, tokeniser.TokenSemicolon:
+			if parens == 0 && squares == 0 {
+				return false
+			}
+		}
+	}
+	return false
+}
+
+func insideLinkAttribute(tokens []tokeniser.Token, pos int) bool {
+	depth := 0
+	for index := pos - 1; index >= 0; index-- {
+		switch tokens[index].Type {
+		case tokeniser.TokenCloseParen:
+			depth++
+		case tokeniser.TokenOpenParen:
+			if depth != 0 {
+				depth--
+				continue
+			}
+			if index >= 2 && tokens[index-1].Type == tokeniser.TokenIdentifier && tokens[index-1].Value == "link" &&
+				tokens[index-2].Type == tokeniser.TokenAt {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (e *expander) compilerError() error {
@@ -348,12 +432,12 @@ func (e *expander) compilerError() error {
 	return shared.NewError(directive.Loc, "%s", message)
 }
 
-func (e *expander) comptimeAssert() error {
+func (e *expander) compilerAssert() error {
 	directive := e.tokens[e.pos]
 	directive.Loc = directive.Loc.WithEnd(e.tokens[e.pos+1].Loc)
 	e.pos += 2
 	if e.pos >= len(e.tokens) || e.tokens[e.pos].Type != tokeniser.TokenOpenParen {
-		return shared.NewError(directive.Loc, "expected '(' after '@comptime_assert'")
+		return shared.NewError(directive.Loc, "expected '(' after '@compiler_assert'")
 	}
 	e.pos++
 	conditionStart := e.pos
@@ -365,7 +449,7 @@ func (e *expander) comptimeAssert() error {
 			parenDepth++
 		case tokeniser.TokenCloseParen:
 			if parenDepth == 0 && squareDepth == 0 && curlyDepth == 0 {
-				return shared.NewError(directive.Loc, "expected ',' after '@comptime_assert' condition")
+				return shared.NewError(directive.Loc, "expected ',' after '@compiler_assert' condition")
 			}
 			parenDepth--
 		case tokeniser.TokenOpenSquare:
@@ -396,7 +480,7 @@ func (e *expander) comptimeAssert() error {
 					e.pos++
 				}
 				if e.pos >= len(e.tokens) || e.tokens[e.pos].Type != tokeniser.TokenString {
-					return shared.NewError(directive.Loc, "expected a string message in '@comptime_assert'")
+					return shared.NewError(directive.Loc, "expected a string message in '@compiler_assert'")
 				}
 				message := e.tokens[e.pos].Value
 				e.pos++
@@ -404,23 +488,23 @@ func (e *expander) comptimeAssert() error {
 					e.pos++
 				}
 				if e.pos >= len(e.tokens) || e.tokens[e.pos].Type != tokeniser.TokenCloseParen {
-					return shared.NewError(directive.Loc, "expected ')' after '@comptime_assert' message")
+					return shared.NewError(directive.Loc, "expected ')' after '@compiler_assert' message")
 				}
 				e.pos++
 				if !value.boolean {
-					return shared.NewError(directive.Loc, "comptime assertion failed: %s", message)
+					return shared.NewError(directive.Loc, "compiler assertion failed: %s", message)
 				}
 				return nil
 			}
 		case tokeniser.TokenEof:
-			return shared.NewError(directive.Loc, "expected ',' after '@comptime_assert' condition")
+			return shared.NewError(directive.Loc, "expected ',' after '@compiler_assert' condition")
 		}
 		if parenDepth < 0 || squareDepth < 0 || curlyDepth < 0 {
 			return shared.NewError(tok.Loc, "unbalanced delimiter in compile-time assertion")
 		}
 		e.pos++
 	}
-	return shared.NewError(directive.Loc, "expected ',' after '@comptime_assert' condition")
+	return shared.NewError(directive.Loc, "expected ',' after '@compiler_assert' condition")
 }
 
 func (e *expander) expandWhen() ([]tokeniser.Token, error) {

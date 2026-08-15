@@ -193,7 +193,7 @@ def generate(api: dict) -> str:
         '      framework "OpenGL",',
         '      path "./native/macos-universal/libraylib.a",',
         "    } else {",
-        '      compiler_error("Cannot build raylib for this platform.")',
+        '      @compiler_error("Cannot build raylib for this platform.")',
         "    }",
         "  )",
         "",

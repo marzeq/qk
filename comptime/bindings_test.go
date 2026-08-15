@@ -29,16 +29,16 @@ func TestPackageBindingsFingerprintIsScoped(t *testing.T) {
 
 func TestResolvePackageBindingsUsesImportScope(t *testing.T) {
 	sources := map[string]string{
-		"dep.qk":       "module dep\npub let Feature = comptime true\n",
-		"unrelated.qk": "module unrelated\npub let Value = comptime true\n",
-		"app.qk":       "module app\nimport dep d\nlet Enabled = comptime d.Feature\n",
+		"dep.qk":       "module dep\npub let $Feature = true\n",
+		"unrelated.qk": "module unrelated\npub let $Value = true\n",
+		"app.qk":       "module app\nimport dep d\nlet $Enabled = d.Feature\n",
 	}
 	packages := map[string]string{"dep.qk": "dep", "unrelated.qk": "unrelated", "app.qk": "app"}
 	if _, err := ResolvePackageBindings(sources, packages, Config{}); err != nil {
 		t.Fatalf("imported alias was not available to compile-time binding: %v", err)
 	}
 
-	sources["app.qk"] = "module app\nlet Enabled = comptime unrelated.Value\n"
+	sources["app.qk"] = "module app\nlet $Enabled = unrelated.Value\n"
 	if _, err := ResolvePackageBindings(sources, packages, Config{}); err == nil || !strings.Contains(err.Error(), "is not in scope") {
 		t.Fatalf("unimported compile-time binding was accepted: %v", err)
 	}
@@ -46,8 +46,8 @@ func TestResolvePackageBindingsUsesImportScope(t *testing.T) {
 
 func TestResolvePackageBindingsUsesResolvedMountedImport(t *testing.T) {
 	sources := map[string]string{
-		"dep.qk": "module dep\npub let Feature = comptime true\n",
-		"app.qk": "module app\nimport vendor.dep\nlet Enabled = comptime vendor.dep.Feature\n",
+		"dep.qk": "module dep\npub let $Feature = true\n",
+		"app.qk": "module app\nimport vendor.dep\nlet $Enabled = vendor.dep.Feature\n",
 	}
 	packages := map[string]string{"dep.qk": "dep", "app.qk": "app"}
 	resolutions := map[string]map[string]string{"app": {"vendor.dep": "dep"}}

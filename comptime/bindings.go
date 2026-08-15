@@ -232,6 +232,10 @@ func topLevelCompileTimeDeclarations(tokens []tokeniser.Token, module string) []
 		if namePos < len(tokens) && tokens[namePos].Type == tokeniser.TokenKeyword && tokens[namePos].Value == string(tokeniser.KeywordMut) {
 			namePos++
 		}
+		if namePos >= len(tokens) || tokens[namePos].Type != tokeniser.TokenDollar {
+			continue
+		}
+		namePos++
 		if namePos >= len(tokens) || tokens[namePos].Type != tokeniser.TokenIdentifier {
 			continue
 		}
@@ -251,10 +255,10 @@ func topLevelCompileTimeDeclarations(tokens []tokeniser.Token, module string) []
 		if equals >= len(tokens) {
 			continue
 		}
-		if equals+1 >= len(tokens) || tokens[equals+1].Type != tokeniser.TokenIdentifier || tokens[equals+1].Value != "comptime" {
+		if equals+1 >= len(tokens) {
 			continue
 		}
-		end, parens, squares := equals+2, 0, 0
+		end, parens, squares := equals+1, 0, 0
 		for end < len(tokens) {
 			tok := tokens[end]
 			switch tok.Type {
@@ -272,10 +276,10 @@ func topLevelCompileTimeDeclarations(tokens []tokeniser.Token, module string) []
 			}
 			end++
 		}
-		if end == equals+2 {
+		if end == equals+1 {
 			continue
 		}
-		expr, err := parseCondition(tokens[equals+2:end], tokens[namePos].Loc)
+		expr, err := parseCondition(tokens[equals+1:end], tokens[namePos].Loc)
 		if err != nil {
 			continue
 		}

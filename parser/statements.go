@@ -539,9 +539,6 @@ func (p *Parser) parseLinkAttribute() (attributes.Attribute, error) {
 			p.Inc()
 		}
 		if p.Match(tokeniser.TokenCloseParen) {
-			if len(links) == 0 {
-				return nil, shared.NewError(p.CurrLoc(), "@link requires at least one link")
-			}
 			p.Inc()
 			break
 		}
@@ -985,6 +982,11 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 				p.Inc()
 				mutable = true
 			}
+			if p.Match(tokeniser.TokenDollar) {
+				p.PopPos()
+				node, err := p.ParseDeclaration()
+				return node, true, err
+			}
 			if p.Match(tokeniser.TokenOpenParen) {
 				p.PopPos()
 				if mutable {
@@ -1231,6 +1233,14 @@ func (p *Parser) ParseDeclaration() (*DeclarationNode, error) {
 		p.Inc()
 		mutable = true
 	}
+	compileTime := false
+	if p.Match(tokeniser.TokenDollar) {
+		p.Inc()
+		compileTime = true
+	}
+	if mutable && compileTime {
+		return nil, shared.NewError(p.PrevLoc(), "compile-time bindings cannot be mutable")
+	}
 
 	ident, ok := p.ExpectGet(tokeniser.TokenIdentifier)
 	if !ok {
@@ -1251,17 +1261,11 @@ func (p *Parser) ParseDeclaration() (*DeclarationNode, error) {
 	var value ExpressionNode
 	var attrs attributes.Attributes
 	var err error
-	comptime := false
 	if p.Match(tokeniser.TokenEquals) {
 		p.Inc()
 		for p.Match(tokeniser.TokenNewline) {
 			p.Inc()
 		}
-		if p.Match(tokeniser.TokenIdentifier) && p.Peek().Value == "comptime" {
-			p.Inc()
-			comptime = true
-		}
-
 		expr, err := p.ParseExpression()
 		if err != nil {
 			return nil, err
@@ -1286,7 +1290,7 @@ func (p *Parser) ParseDeclaration() (*DeclarationNode, error) {
 		TypeNode:   tpe,
 		Mutable:    mutable,
 		Value:      value,
-		Comptime:   comptime,
+		Comptime:   compileTime,
 		Attributes: attrs,
 		Loc:        p.SpanFrom(beginLoc),
 	}, nil

@@ -1,6 +1,6 @@
 module std.time
 
-pub let HasTime = comptime TargetHasLibc
+pub let $HasTime = TargetHasLibc
 
 when HasTime {
 import std.ctypes

@@ -3143,6 +3143,15 @@ func (g *Generator) generateAddressOfExpr(expr parser.ExpressionNode) ir.Operand
 		if ident.Symbol == nil {
 			panic("identifier symbol is nil")
 		}
+		if ident.Symbol.InlineComptime {
+			value := g.generateIdentifierExpr(ident)
+			slot := g.currentFunction.NewSlot(ident.GetType(), ident.Name+".materialized")
+			g.Emit(ir.Alloca{Slot: slot})
+			g.Emit(ir.Store{Slot: slot, Value: value})
+			addr := g.currentFunction.NewValueOfType(types.PointerType{Base: ident.GetType()})
+			g.Emit(ir.AddressOf{Dest: addr, Slot: slot})
+			return ir.ValueOperand(addr, types.PointerType{Base: ident.GetType()})
+		}
 
 		slot, ok := g.currentEnv.Lookup(ident.Symbol)
 		if !ok {
@@ -3592,6 +3601,9 @@ func (g *Generator) generateIdentifierExpr(node *parser.IdentifierNode) ir.Opera
 	if node.Symbol.InlineComptime {
 		if types.HasUntyped(node.GetType()) {
 			panic("untyped compile-time integer reached IR generation")
+		}
+		if types.Underlying(node.GetType()).Equals(types.PrimitiveBool) {
+			return ir.BoolConstOperand(node.Symbol.ComptimeInteger == "1")
 		}
 		if types.IsFloat(node.GetType()) {
 			return ir.FloatConstOperand(node.Symbol.ComptimeInteger, node.GetType())

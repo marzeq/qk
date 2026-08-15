@@ -1150,32 +1150,32 @@ These builtins are intentionally unavailable for auto-tagged unions. Mutable poi
 
 # Compile-time selection
 
-QK expands compile-time declarations and `when` branches before ordinary parsing and semantic analysis. This makes target and configuration selection capable of changing declarations and even types.
+QK has an explicit compile-time stage for target and configuration selection. Compile-time bindings, `when` branches, and metadata collections can change declarations, values, types, and native link requirements.
 
 ## Compile-time values
 
-Prefix an initializer expression with `comptime` to require compile-time evaluation:
+Prefix a binding name with `$` to require compile-time evaluation:
 
 ```qk
-let BufferSize: usz = comptime 4 * 1024
-let HasFiles = comptime !NoHasFies
+let $BufferSize: usz = 4 * 1024
+let $HasFiles = !NoHasFiles
 ```
 
-Compile-time values may be boolean or integer. Untyped integer bindings stay untyped, have no addressable runtime storage, and are materialised separately in each typed use.
+Compile-time values may be boolean or integer. They have no persistent addressable runtime storage and are materialised as constants at each runtime use; a temporary is created only when a consuming operation requires an address. Untyped integer bindings remain untyped until their use supplies a concrete numeric type.
 
 Module-level compile-time bindings may be public and referenced through imported module names. Local bindings are visible in lexical source order.
 
-Parameterized type-level calculations use ordinary parameterized bindings; they do not need the `comptime` initializer marker:
+Parameterized calculations use the same `$` binder syntax:
 
 ```qk
 let StorageSize($T: type) = @sizeof(T)
 ```
 
-Each concrete argument list produces an independently specialized binding. The `comptime` marker remains for non-parameterized module and local values that must participate in early token-stream expansion, such as `when` conditions.
+Each concrete argument list produces an independently specialized binding. There is no separate initializer keyword: `$` consistently marks compile-time bindings and parameters.
 
 ## `when`
 
-`when` chooses one branch during compile-time expansion:
+`when` chooses one branch during compile-time evaluation:
 
 ```qk
 when OS == .Windows {
@@ -1185,7 +1185,7 @@ when OS == .Windows {
 }
 ```
 
-It can appear at module or local scope. `else when` chains are supported.
+It can select a complete declaration, statement, or expression. `else when` chains are supported. It cannot insert fragments such as part of a parameter list, argument list, sequence literal, or individual attribute entry.
 
 The built-in configuration values are:
 
@@ -1215,10 +1215,10 @@ when PointerBits != 32 && PointerBits != 64 {
 
 Unselected directives have no effect. This makes the directive useful for rejecting unsupported target configurations.
 
-`@comptime_assert(condition, "message")` evaluates its condition during the same expansion phase. A false condition stops compilation with `comptime assertion failed: ` followed by the message, while a true assertion is removed before parsing:
+`@compiler_assert(condition, "message")` evaluates its condition during the same compile-time stage. A false condition stops compilation with `compiler assertion failed: ` followed by the message, while a true assertion contributes no runtime code:
 
 ```qk
-@comptime_assert(PointerBits == 64, "this package requires a 64-bit target")
+@compiler_assert(PointerBits == 64, "this package requires a 64-bit target")
 ```
 
 # Attributes and foreign interfaces
@@ -1276,6 +1276,24 @@ module graphics @link(
 ```
 
 `system` names a system library, `search` adds a library search directory, `path` links one explicit file, and `framework` selects an Apple framework. Link requirements are separate from import dependencies.
+
+An `@link` body is a structured compile-time collection. `when` may select groups of complete link entries; an unselected group contributes nothing:
+
+```qk
+module graphics @link(
+  when OS == .Linux {
+    system "X11",
+    path "vendor/linux/libgraphics.a",
+  } else when OS == .Windows {
+    system "gdi32",
+    path "vendor/windows/graphics.lib",
+  } else {
+    @compiler_error("unsupported graphics target")
+  }
+)
+```
+
+Every branch must contain only complete `system`, `search`, `path`, or `framework` entries, nested link-item `when` groups, or `@compiler_error`. This preserves conditional native metadata without giving `when` general token-splicing behavior.
 
 ## Optimisation attributes
 

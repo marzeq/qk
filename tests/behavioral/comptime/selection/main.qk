@@ -2,9 +2,10 @@ module main
 
 import std.io
 
-let Base = comptime 6
-let Product = comptime Base * 7
-let Bits: usz = comptime PointerBits
+let $Base = 6
+let $Product = Base * 7
+let $Bits: usz = PointerBits
+let $Enabled = true
 
 when ReleaseMode == .Release {
   let mode(): str = "release"
@@ -14,14 +15,15 @@ when ReleaseMode == .Release {
   @compiler_error("unknown release mode")
 }
 
-@comptime_assert(PointerBits == 32 || PointerBits == 64, "pointer width")
+@compiler_assert(PointerBits == 32 || PointerBits == 64, "pointer width")
 
 let main() {
-  let local: i32 = comptime Product + 1
+  let $local: i32 = Product + 1
+  assert(Enabled, "compile-time boolean")
   when OS == .Linux || OS == .MacOS || OS == .Windows {
-    assert(local == 43, "comptime arithmetic")
+    assert(local == 43, "compile-time arithmetic")
   } else {
-    assert(local == 43, "portable comptime arithmetic")
+    assert(local == 43, "portable compile-time arithmetic")
   }
   std.io.println("{} {}", mode(), Bits)
 }

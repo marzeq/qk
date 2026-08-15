@@ -8,6 +8,7 @@ import (
 	"github.com/marzeq/qk/attributes"
 	"github.com/marzeq/qk/parser"
 	"github.com/marzeq/qk/symbols"
+	"github.com/marzeq/qk/tokeniser"
 	"github.com/marzeq/qk/types"
 )
 
@@ -558,21 +559,24 @@ func (a *Analyser) finishGenericTypeAlias(n *parser.TypeAliasNode) {
 	}
 }
 
-func untypedComptimeInteger(n *parser.DeclarationNode) (string, bool) {
-	if !n.Comptime || n.TypeNode != nil {
+func compileTimeLiteral(n *parser.DeclarationNode) (string, bool) {
+	if !n.Comptime {
 		return "", false
 	}
-	literal, ok := n.Value.(*parser.IntegerLiteralNode)
-	if !ok {
+	switch literal := n.Value.(type) {
+	case *parser.IntegerLiteralNode:
+		return literal.Value, true
+	case *parser.BoolLiteralNode:
+		if literal.Value == string(tokeniser.KeywordTrue) {
+			return "1", true
+		}
+		return "0", true
+	default:
 		return "", false
 	}
-	return literal.Value, true
 }
 
 func (a *Analyser) collectGlobalVariable(n *parser.DeclarationNode) {
-	if len(n.GenericParameters) != 0 && !n.Comptime {
-		a.errorf(n, "parameterized value bindings require a comptime initializer")
-	}
 	if len(n.GenericParameters) != 0 && n.Attributes.Get(attributes.AttributeTypeForeign) != nil {
 		a.errorf(n, "parameterized values cannot be foreign declarations")
 	}
@@ -602,7 +606,7 @@ func (a *Analyser) collectGlobalVariable(n *parser.DeclarationNode) {
 		GenericParameters: genericParameters,
 		Template:          len(genericParameters) != 0,
 	}
-	if value, ok := untypedComptimeInteger(n); ok && len(genericParameters) == 0 {
+	if value, ok := compileTimeLiteral(n); ok && len(genericParameters) == 0 {
 		sym.InlineComptime = true
 		sym.ComptimeInteger = value
 	}

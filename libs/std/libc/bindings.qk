@@ -1,16 +1,15 @@
 module std.libc
+  @link(
+    when TargetHasLibc {
+      when Environment == .MSVC { system "ucrt", }
+      else when OS == .Windows { system "msvcrt", }
+      else { system "c", }
+
+      when OS == .Windows { system "kernel32", }
+    }
+  )
 
 when TargetHasLibc {
-  when Environment == .MSVC {
-    @link(system "ucrt")
-  } else when OS == .Windows {
-    @link(system "msvcrt")
-  }
-  when OS == .Windows {
-    @link(system "kernel32")
-  } else {
-    @link(system "c")
-  }
 
 import std.ctypes
 
@@ -230,7 +229,7 @@ when OS == .Windows {
   pub let readdir(directory: *DIR): *mut Dirent @foreign
 }
 
-pub let EOF: std.ctypes.int = comptime -1
+pub let $EOF: std.ctypes.int = -1
 
 when OS == .Windows {
   pub let fileno(stream: *FILE): std.ctypes.int @foreign(symbol "_fileno")
