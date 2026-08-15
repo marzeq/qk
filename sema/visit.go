@@ -154,6 +154,9 @@ func (a *Analyser) visitLocalDeclaration(n *parser.DeclarationNode) {
 	if value, ok := compileTimeLiteral(n); ok {
 		sym.InlineComptime = true
 		sym.ComptimeInteger = value
+		if sym.Type == nil {
+			sym.Type = compileTimeLiteralType(n.Value)
+		}
 	}
 
 	if n.Value != nil {

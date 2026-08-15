@@ -566,6 +566,8 @@ func compileTimeLiteral(n *parser.DeclarationNode) (string, bool) {
 	switch literal := n.Value.(type) {
 	case *parser.IntegerLiteralNode:
 		return literal.Value, true
+	case *parser.FloatLiteralNode:
+		return literal.Value, true
 	case *parser.BoolLiteralNode:
 		if literal.Value == string(tokeniser.KeywordTrue) {
 			return "1", true
@@ -609,6 +611,9 @@ func (a *Analyser) collectGlobalVariable(n *parser.DeclarationNode) {
 	if value, ok := compileTimeLiteral(n); ok && len(genericParameters) == 0 {
 		sym.InlineComptime = true
 		sym.ComptimeInteger = value
+		if sym.Type == nil {
+			sym.Type = compileTimeLiteralType(n.Value)
+		}
 	}
 
 	if a.defineSymbol(sym, n) {
@@ -619,6 +624,19 @@ func (a *Analyser) collectGlobalVariable(n *parser.DeclarationNode) {
 				trusted: a.currentTrustedStandardLibrary, specializations: make(map[string]*parser.DeclarationNode),
 			}
 		}
+	}
+}
+
+func compileTimeLiteralType(value parser.ExpressionNode) types.Type {
+	switch value.(type) {
+	case *parser.IntegerLiteralNode:
+		return types.UntypedInt{}
+	case *parser.FloatLiteralNode:
+		return types.UntypedFloat{}
+	case *parser.BoolLiteralNode:
+		return types.PrimitiveBool
+	default:
+		return nil
 	}
 }
 

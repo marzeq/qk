@@ -47,16 +47,20 @@ func runFrontend(
 	var sourceOrder []string
 	for _, name := range order {
 		partials := make([]*loader.PartialModuleInfo, 0, len(origins[name]))
+		roots := make([]*parser.RootNode, 0, len(origins[name]))
 		for _, origin := range origins[name] {
-			fileConfig := config
 			root, err := parseSource(origin, sources[origin])
 			if err != nil {
 				return nil, err
 			}
 			resolveRootImports(root, importResolutions[name])
-			if err := loader.SelectCompileTime(root, name, fileConfig); err != nil {
-				return nil, err
-			}
+			roots = append(roots, root)
+		}
+		if err := loader.SelectCompileTimeRoots(roots, name, config); err != nil {
+			return nil, err
+		}
+		for index, root := range roots {
+			origin := origins[name][index]
 			partial, err := loader.CollectModuleInfo(root, trustedSources[origin])
 			if err != nil {
 				return nil, err

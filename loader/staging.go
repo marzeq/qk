@@ -35,16 +35,18 @@ type stageKind uint8
 const (
 	stageBool stageKind = iota
 	stageInteger
+	stageFloat
 	stageEnum
 	stageEnumLiteral
 )
 
 type stageValue struct {
-	kind    stageKind
-	boolean bool
-	integer *big.Int
-	domain  string
-	name    string
+	kind     stageKind
+	boolean  bool
+	integer  *big.Int
+	floating string
+	domain   string
+	name     string
 }
 
 type stageSelector struct {
@@ -65,6 +67,7 @@ func SelectCompileTime(root *parser.RootNode, module string, config StageConfig)
 		bindings: make(map[string]stageValue), evaluated: make(map[parser.ExpressionNode]stageValue),
 		unresolved: make(map[parser.ExpressionNode]struct{}),
 	}
+	selector.primeBindings(root.Body)
 	body, err := selector.selectBody(root.Body)
 	if err != nil {
 		return err
@@ -86,6 +89,53 @@ func SelectCompileTime(root *parser.RootNode, module string, config StageConfig)
 		return fmt.Errorf("compile-time selection left an unresolved when condition")
 	}
 	return nil
+}
+
+// SelectCompileTimeRoots selects a module's parsed files together, preserving
+// same-module compile-time visibility independently of file discovery order.
+func SelectCompileTimeRoots(roots []*parser.RootNode, module string, config StageConfig) error {
+	if len(roots) == 0 {
+		return nil
+	}
+	combined := &parser.RootNode{Loc: roots[0].Loc}
+	owners := make(map[string]*parser.RootNode, len(roots))
+	for _, root := range roots {
+		combined.Body = append(combined.Body, root.Body...)
+		owners[root.Loc.FilePath] = root
+		root.Body = nil
+	}
+	if err := SelectCompileTime(combined, module, config); err != nil {
+		return err
+	}
+	for _, node := range combined.Body {
+		owner := owners[node.GetLoc().FilePath]
+		if owner == nil {
+			owner = roots[0]
+		}
+		owner.Body = append(owner.Body, node)
+	}
+	return nil
+}
+
+func (s *stageSelector) primeBindings(body []parser.Node) {
+	remaining := make(map[*parser.DeclarationNode]bool)
+	for _, node := range body {
+		if declaration, ok := node.(*parser.DeclarationNode); ok && declaration.Comptime {
+			remaining[declaration] = true
+		}
+	}
+	for progress := true; progress; {
+		progress = false
+		for declaration := range remaining {
+			value, resolved, err := s.evaluate(declaration.Value)
+			if err != nil || !resolved {
+				continue
+			}
+			s.bindings[declaration.Name] = value
+			delete(remaining, declaration)
+			progress = true
+		}
+	}
 }
 
 func (s *stageSelector) selectBody(body []parser.Node) ([]parser.Node, error) {
@@ -392,6 +442,15 @@ func (s *stageSelector) selectType(typeNode parser.TypeNode) (parser.TypeNode, e
 	}
 	var err error
 	switch node := typeNode.(type) {
+	case *parser.NamedTypeNode:
+		for index := range node.TypeArguments {
+			if err != nil {
+				break
+			}
+			node.TypeArguments[index], err = s.selectType(node.TypeArguments[index])
+		}
+	case *parser.ReprTypeNode:
+		node.Operand, err = s.selectType(node.Operand)
 	case *parser.PointerTypeNode:
 		node.BaseType, err = s.selectType(node.BaseType)
 	case *parser.SliceTypeNode:
@@ -400,6 +459,7 @@ func (s *stageSelector) selectType(typeNode parser.TypeNode) (parser.TypeNode, e
 		node.ElementType, err = s.selectType(node.ElementType)
 		if err == nil {
 			node.Length, err = s.selectExpression(node.Length)
+			node.Length = s.inlineStageExpression(node.Length)
 		}
 	case *parser.DynTypeNode:
 		node.TraitType, err = s.selectType(node.TraitType)
@@ -420,8 +480,52 @@ func (s *stageSelector) selectType(typeNode parser.TypeNode) (parser.TypeNode, e
 			}
 			node.Types[index], err = s.selectType(node.Types[index])
 		}
+	case *parser.StructTypeNode:
+		for index := range node.Fields {
+			if err != nil {
+				break
+			}
+			node.Fields[index].Type, err = s.selectType(node.Fields[index].Type)
+		}
+	case *parser.FlagsTypeNode:
+		node.Underlying, err = s.selectType(node.Underlying)
+	case *parser.UnionTypeNode:
+		node.TagType, err = s.selectType(node.TagType)
+		for index := range node.Fields {
+			if err != nil {
+				break
+			}
+			node.Fields[index].Type, err = s.selectType(node.Fields[index].Type)
+		}
+		for variantIndex := range node.Variants {
+			for fieldIndex := range node.Variants[variantIndex].Fields {
+				if err != nil {
+					break
+				}
+				field := &node.Variants[variantIndex].Fields[fieldIndex]
+				field.Type, err = s.selectType(field.Type)
+			}
+		}
 	}
 	return typeNode, err
+}
+
+func (s *stageSelector) inlineStageExpression(expression parser.ExpressionNode) parser.ExpressionNode {
+	switch node := expression.(type) {
+	case *parser.IdentifierNode:
+		if value, found := s.bindings[node.Name]; found &&
+			(value.kind == stageBool || value.kind == stageInteger || value.kind == stageFloat) {
+			return stageLiteral(value, node.Loc)
+		}
+	case *parser.UnaryOpNode:
+		node.Operand = s.inlineStageExpression(node.Operand)
+	case *parser.BinaryOpNode:
+		node.Operand1 = s.inlineStageExpression(node.Operand1)
+		node.Operand2 = s.inlineStageExpression(node.Operand2)
+	case *parser.CastNode:
+		node.Operand = s.inlineStageExpression(node.Operand)
+	}
+	return expression
 }
 
 func (s *stageSelector) selectWhen(node *parser.WhenNode) ([]parser.Node, bool, error) {
@@ -553,6 +657,9 @@ func stageLiteral(value stageValue, loc shared.Location) parser.ExpressionNode {
 		}
 		return &parser.BoolLiteralNode{Value: text, Loc: loc}
 	}
+	if value.kind == stageFloat {
+		return &parser.FloatLiteralNode{Value: value.floating, Loc: loc}
+	}
 	return &parser.IntegerLiteralNode{Value: value.integer.String(), Loc: loc}
 }
 
@@ -569,6 +676,8 @@ func (s *stageSelector) evaluate(node parser.ExpressionNode) (stageValue, bool, 
 			return stageValue{}, false, shared.NewError(node.Loc, "invalid compile-time integer")
 		}
 		return stageValue{kind: stageInteger, integer: value}, true, nil
+	case *parser.FloatLiteralNode:
+		return stageValue{kind: stageFloat, floating: node.Value}, true, nil
 	case *parser.EnumLiteralNode:
 		return stageValue{kind: stageEnumLiteral, name: node.Variant}, true, nil
 	case *parser.IdentifierNode:
@@ -588,6 +697,15 @@ func (s *stageSelector) evaluate(node parser.ExpressionNode) (stageValue, bool, 
 		}
 		if node.Op == parser.UnaryOpNegate && operand.kind == stageInteger {
 			return stageValue{kind: stageInteger, integer: new(big.Int).Neg(operand.integer)}, true, nil
+		}
+		if node.Op == parser.UnaryOpNegate && operand.kind == stageFloat {
+			value := operand.floating
+			if strings.HasPrefix(value, "-") {
+				value = strings.TrimPrefix(value, "-")
+			} else {
+				value = "-" + value
+			}
+			return stageValue{kind: stageFloat, floating: value}, true, nil
 		}
 		return stageValue{}, false, shared.NewError(node.Loc, "invalid compile-time unary operation")
 	case *parser.BinaryOpNode:
@@ -684,6 +802,9 @@ func stageEqual(left, right stageValue) bool {
 	if left.kind == stageInteger {
 		return left.integer.Cmp(right.integer) == 0
 	}
+	if left.kind == stageFloat {
+		return left.floating == right.floating
+	}
 	return left.domain == right.domain && left.name == right.name
 }
 
@@ -746,11 +867,16 @@ func (s *stageSelector) targetValue(name string) (stageValue, bool) {
 
 func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 	staged := &parser.RootNode{Loc: root.Loc}
+	hasModule := false
 	for _, node := range root.Body {
 		switch node := node.(type) {
 		case *parser.WhenNode, *parser.CompilerDirectiveNode, *parser.ImportNode:
 			continue
 		case *parser.ModuleNode:
+			if hasModule {
+				continue
+			}
+			hasModule = true
 			copy := *node
 			copy.Attributes = nil
 			staged.Body = append(staged.Body, &copy)

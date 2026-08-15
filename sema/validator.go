@@ -3312,6 +3312,12 @@ func staticIntegerValue(expr parser.ExpressionNode) (*big.Int, bool) {
 		}
 		value, ok := new(big.Int).SetString(n.Value, base)
 		return value, ok
+	case *parser.IdentifierNode:
+		if n.Symbol == nil || !n.Symbol.InlineComptime || n.Symbol.ComptimeInteger == "" {
+			return nil, false
+		}
+		value, ok := new(big.Int).SetString(n.Symbol.ComptimeInteger, 0)
+		return value, ok
 	case *parser.UnaryOpNode:
 		if n.Op != parser.UnaryOpNegate {
 			return nil, false
