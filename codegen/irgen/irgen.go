@@ -59,6 +59,7 @@ type Generator struct {
 	lambdaFunctions             []*parser.FunctionDefNode
 	queuedLambdas               map[*symbols.Symbol]bool
 	templateMode                bool
+	currentSourceOrigin         *ir.SourceOrigin
 }
 
 type dynamicGlobalInitializer struct {
@@ -79,7 +80,14 @@ func (g *Generator) Emit(instruction ir.Instr) {
 	if g.currentBlockHasTerminator() {
 		panic("cannot emit instruction after block terminator")
 	}
+	index := len(g.currentBlock.Instr)
 	g.currentBlock.Instr = append(g.currentBlock.Instr, instruction)
+	if g.currentSourceOrigin != nil {
+		if g.currentFunction.Origins == nil {
+			g.currentFunction.Origins = make(map[ir.InstructionLocation]ir.SourceOrigin)
+		}
+		g.currentFunction.Origins[ir.InstructionLocation{Block: g.currentBlock.ID, Index: index}] = *g.currentSourceOrigin
+	}
 }
 
 func (g *Generator) Generate(root *parser.RootNode) *ir.Module {
@@ -919,7 +927,7 @@ func (g *Generator) GenerateNode(node parser.Node) {
 	case *parser.ForEachNode:
 		g.generateForEach(n)
 	case *parser.FunctionCallNode:
-		g.generateFunctionCallExpr(n)
+		g.generateSourceFunctionCall(n)
 	case parser.ExpressionNode:
 		g.GenerateExpr(n)
 	default:
@@ -1697,7 +1705,7 @@ func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
 		if n.TaggedUnionType != nil {
 			return g.generateTaggedUnionConstructor(n)
 		}
-		return g.generateFunctionCallExpr(n)
+		return g.generateSourceFunctionCall(n)
 	case *parser.InlineAsmNode:
 		return g.generateInlineAsmExpr(n)
 	case *parser.FieldAccessNode:
@@ -3396,6 +3404,8 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 			Signature:   callSig,
 			Generic:     genericReference,
 			Requirement: requirementReference,
+			SourceName:  sourceCallName(node.Callee),
+			SourceLoc:   sourceCallLoc(node),
 		})
 		if node.Symbol != nil && node.Symbol.Name == "panic" {
 			g.Emit(ir.Unreachable{})
@@ -3404,8 +3414,41 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 	}
 
 	dst := g.currentFunction.NewValueOfType(node.GetType())
-	g.Emit(ir.Call{Dest: dst, Name: name, Callee: callee, Args: args, Signature: callSig, Generic: genericReference, Requirement: requirementReference})
+	g.Emit(ir.Call{
+		Dest: dst, Name: name, Callee: callee, Args: args, Signature: callSig,
+		Generic: genericReference, Requirement: requirementReference,
+		SourceName: sourceCallName(node.Callee), SourceLoc: sourceCallLoc(node),
+	})
 	return ir.ValueOperand(dst, node.GetType())
+}
+
+func (g *Generator) generateSourceFunctionCall(node *parser.FunctionCallNode) ir.Operand {
+	previous := g.currentSourceOrigin
+	origin := ir.SourceOrigin{Name: sourceCallName(node.Callee), Loc: sourceCallLoc(node)}
+	g.currentSourceOrigin = &origin
+	value := g.generateFunctionCallExpr(node)
+	g.currentSourceOrigin = previous
+	return value
+}
+
+func sourceCallName(callee parser.ExpressionNode) string {
+	loc := callee.GetLoc()
+	source := []rune(loc.SourceText)
+	if len(source) != 0 && loc.Offset >= 0 && loc.EndOffset >= loc.Offset && loc.EndOffset <= len(source) {
+		return string(source[loc.Offset:loc.EndOffset])
+	}
+	if identifier, ok := callee.(*parser.IdentifierNode); ok {
+		return identifier.Name
+	}
+	return "call"
+}
+
+func sourceCallLoc(call *parser.FunctionCallNode) shared.Location {
+	loc := call.Callee.GetLoc()
+	if loc.FilePath != "" {
+		return loc
+	}
+	return call.Loc
 }
 
 func (g *Generator) callMatchesSpecialization(node *parser.FunctionCallNode, constants map[int]symbols.SpecializationConstant) bool {

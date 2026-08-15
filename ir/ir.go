@@ -3,6 +3,7 @@ package ir
 import (
 	"fmt"
 	"github.com/marzeq/qk/attributes"
+	"github.com/marzeq/qk/shared"
 	"github.com/marzeq/qk/types"
 	"reflect"
 )
@@ -104,6 +105,16 @@ type Block struct {
 	Instr []Instr
 }
 
+type InstructionLocation struct {
+	Block BlockID
+	Index int
+}
+
+type SourceOrigin struct {
+	Name string
+	Loc  shared.Location
+}
+
 type Parameter struct {
 	Index int
 	Name  string
@@ -141,6 +152,7 @@ type Function struct {
 	Slots      []Slot
 	Attributes attributes.Attributes
 	Values     map[ValueID]types.Type
+	Origins    map[InstructionLocation]SourceOrigin
 
 	Blocks []*Block
 	Entry  BlockID
@@ -154,6 +166,7 @@ func NewFunction(name string, linkage Linkage, attributes attributes.Attributes)
 	return &Function{
 		Name:       name,
 		Values:     make(map[ValueID]types.Type),
+		Origins:    make(map[InstructionLocation]SourceOrigin),
 		Linkage:    linkage,
 		Attributes: attributes,
 	}
@@ -527,6 +540,8 @@ type Call struct {
 	Signature   FunctionSignature
 	Generic     *GenericReference
 	Requirement *TraitRequirementReference
+	SourceName  string
+	SourceLoc   shared.Location
 }
 
 func (Call) isInstr() {}

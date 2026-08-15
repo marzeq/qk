@@ -1,6 +1,7 @@
 package loader
 
 import (
+	"errors"
 	"fmt"
 	"math/big"
 	"strconv"
@@ -949,9 +950,9 @@ func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 		return errors[0]
 	}
 	PropagateSpecializationDemands(modules, order)
-	irModules, errors := GenerateIRModules(modules, s.module, order, false, false)
-	if len(errors) != 0 {
-		return errors[0]
+	irModules, irErrors := GenerateIRModules(modules, s.module, order, false, false)
+	if len(irErrors) != 0 {
+		return irErrors[0]
 	}
 	templates := make(map[string][]ir.GenericTemplate, len(order))
 	for _, name := range order {
@@ -974,6 +975,10 @@ func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 	moduleIR := irModules[s.module]
 	if moduleIR.Initializer != "" {
 		if _, err := evaluator.Run(moduleIR.Initializer); err != nil {
+			var unavailable *ir.CompileTimeUnavailableError
+			if errors.As(err, &unavailable) && unavailable.SourceLoc.FilePath != "" {
+				return stageUnavailableDiagnostic(unavailable)
+			}
 			if len(names) == 1 {
 				for expression := range names {
 					return shared.NewError(expression.GetLoc(), err.Error())
@@ -1001,6 +1006,31 @@ func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 		}
 	}
 	return nil
+}
+
+func stageUnavailableDiagnostic(unavailable *ir.CompileTimeUnavailableError) error {
+	if len(unavailable.CallStack) == 0 {
+		return shared.NewError(unavailable.SourceLoc, unavailable.Error())
+	}
+	root := unavailable.CallStack[len(unavailable.CallStack)-1]
+	cause := ir.SourceOrigin{Name: unavailable.SourceName, Loc: unavailable.SourceLoc}
+	if cause.Loc.FilePath != root.Loc.FilePath {
+		for _, call := range unavailable.CallStack[:len(unavailable.CallStack)-1] {
+			if call.Loc.FilePath == root.Loc.FilePath {
+				cause = call
+				break
+			}
+		}
+	}
+	if sameStageLocation(root.Loc, cause.Loc) {
+		return shared.NewError(cause.Loc, "%s is not available in a compile-time context", cause.Name)
+	}
+	return shared.NewError(root.Loc, "%s cannot be evaluated at compile time", root.Name).
+		WithNote(cause.Loc, "evaluation reaches %s, which is not available in a compile-time context", cause.Name)
+}
+
+func sameStageLocation(left, right shared.Location) bool {
+	return left.FilePath == right.FilePath && left.Offset == right.Offset && left.EndOffset == right.EndOffset
 }
 
 func (s *stageSelector) stageModules(staged *parser.RootNode) (map[string]*ModuleInfo, []string, error) {

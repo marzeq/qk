@@ -12,6 +12,12 @@ type Error struct {
 	loc         Location
 	isWarning   bool
 	warningKind WarningKind
+	notes       []DiagnosticNote
+}
+
+type DiagnosticNote struct {
+	message string
+	loc     Location
 }
 
 type WarningKind string
@@ -42,6 +48,12 @@ func (err Error) WarningKind() WarningKind { return err.warningKind }
 
 func (err Error) AsError() Error {
 	err.isWarning = false
+	return err
+}
+
+// WithNote adds a source-located explanation to a primary diagnostic.
+func (err Error) WithNote(loc Location, message string, a ...any) Error {
+	err.notes = append(err.notes, DiagnosticNote{loc: loc, message: fmt.Sprintf(message, a...)})
 	return err
 }
 
@@ -135,6 +147,12 @@ func (err Error) Error() string {
 	}
 
 	fmt.Fprintf(&b, "\n%s", err.message)
+	for _, note := range err.notes {
+		formatted := NewWarning("", note.loc, note.message).Error()
+		formatted = strings.Replace(formatted, "Warning: ", "Note: ", 1)
+		b.WriteString("\n\n")
+		b.WriteString(formatted)
+	}
 	return b.String()
 }
 

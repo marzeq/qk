@@ -1,13 +1,32 @@
 package ir
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
 	"strconv"
 
+	"github.com/marzeq/qk/shared"
 	"github.com/marzeq/qk/types"
 )
+
+// CompileTimeUnavailableError represents an operation outside the evaluator's
+// capabilities. Calls add the innermost source-level call site while this error
+// unwinds, allowing the frontend to report language syntax instead of IR names.
+type CompileTimeUnavailableError struct {
+	SourceName string
+	SourceLoc  shared.Location
+	Detail     string
+	CallStack  []SourceOrigin
+}
+
+func (e *CompileTimeUnavailableError) Error() string {
+	if e.SourceName != "" {
+		return fmt.Sprintf("%s is not available in a compile-time context", e.SourceName)
+	}
+	return e.Detail
+}
 
 // EvalValue is the compile-time representation of a value carried by regular
 // QK IR. The interpreter deliberately starts with the scalar and aggregate
@@ -73,7 +92,7 @@ func (e *Evaluator) Run(name string, arguments ...EvalValue) (EvalValue, error) 
 func (e *Evaluator) run(name string, arguments []EvalValue, depth int) (EvalValue, error) {
 	function := e.Functions[name]
 	if function == nil {
-		return EvalValue{}, fmt.Errorf("compile-time call reached unavailable function %q", name)
+		return EvalValue{}, &CompileTimeUnavailableError{Detail: fmt.Sprintf("compile-time call reached unavailable function %q", name)}
 	}
 	if depth >= e.MaxDepth {
 		return EvalValue{}, fmt.Errorf("compile-time call depth exceeded while evaluating %q", name)
@@ -105,7 +124,7 @@ func (e *Evaluator) run(name string, arguments []EvalValue, depth int) (EvalValu
 			return EvalValue{}, fmt.Errorf("compile-time execution entered missing block %d in %q", block, name)
 		}
 		jumped := false
-		for _, instruction := range current.Instr {
+		for instructionIndex, instruction := range current.Instr {
 			switch instruction := instruction.(type) {
 			case Alloca:
 				value := zeroEvalValue(frame.slotType(instruction.Slot))
@@ -331,7 +350,10 @@ func (e *Evaluator) run(name string, arguments []EvalValue, depth int) (EvalValu
 				frame.values[instruction.Dest] = value
 			case Call:
 				if instruction.Callee != nil || instruction.Generic != nil || instruction.Requirement != nil {
-					return EvalValue{}, fmt.Errorf("compile-time execution reached unsupported indirect or unresolved call in %q", name)
+					return EvalValue{}, annotateUnavailable(
+						&CompileTimeUnavailableError{Detail: "indirect or unresolved calls are not available in a compile-time context"},
+						instruction,
+					)
 				}
 				args := make([]EvalValue, len(instruction.Args))
 				for index, argument := range instruction.Args {
@@ -343,6 +365,10 @@ func (e *Evaluator) run(name string, arguments []EvalValue, depth int) (EvalValu
 				}
 				value, err := e.run(instruction.Name, args, depth+1)
 				if err != nil {
+					var unavailable *CompileTimeUnavailableError
+					if errors.As(err, &unavailable) {
+						return EvalValue{}, annotateUnavailable(unavailable, instruction)
+					}
 					return EvalValue{}, fmt.Errorf("in compile-time call to %s: %w", instruction.Name, err)
 				}
 				if instruction.Dest != 0 {
@@ -368,7 +394,12 @@ func (e *Evaluator) run(name string, arguments []EvalValue, depth int) (EvalValu
 			case Unreachable:
 				return EvalValue{}, fmt.Errorf("compile-time execution reached unreachable code in %q", name)
 			default:
-				return EvalValue{}, fmt.Errorf("instruction %T is unavailable during compile-time evaluation of %q", instruction, name)
+				unavailable := &CompileTimeUnavailableError{Detail: fmt.Sprintf("instruction %T is unavailable during compile-time evaluation", instruction)}
+				if origin, ok := frame.function.Origins[InstructionLocation{Block: current.ID, Index: instructionIndex}]; ok {
+					unavailable.SourceName = origin.Name
+					unavailable.SourceLoc = origin.Loc
+				}
+				return EvalValue{}, unavailable
 			}
 			if jumped {
 				break
@@ -444,8 +475,28 @@ func (e *Evaluator) operand(operand Operand, frame *evalFrame) (EvalValue, error
 		}
 		return value, nil
 	default:
-		return EvalValue{}, fmt.Errorf("operand kind %d is unavailable during compile-time evaluation", operand.Kind)
+		return EvalValue{}, &CompileTimeUnavailableError{Detail: fmt.Sprintf("operand kind %d is unavailable during compile-time evaluation", operand.Kind)}
 	}
+}
+
+func annotateUnavailable(err *CompileTimeUnavailableError, call Call) error {
+	if call.SourceLoc.FilePath == "" {
+		return err
+	}
+	annotated := *err
+	if annotated.SourceLoc.FilePath == "" {
+		annotated.SourceName = call.SourceName
+		annotated.SourceLoc = call.SourceLoc
+		return &annotated
+	}
+	if !sameEvalLocation(annotated.SourceLoc, call.SourceLoc) {
+		annotated.CallStack = append(append([]SourceOrigin(nil), err.CallStack...), SourceOrigin{Name: call.SourceName, Loc: call.SourceLoc})
+	}
+	return &annotated
+}
+
+func sameEvalLocation(left, right shared.Location) bool {
+	return left.FilePath == right.FilePath && left.Offset == right.Offset && left.EndOffset == right.EndOffset
 }
 
 func zeroEvalValue(typ types.Type) EvalValue {

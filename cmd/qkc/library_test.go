@@ -102,11 +102,47 @@ func TestCompileTimeEvaluationRejectsExecutedForeignCall(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = runFrontend(&Args{mainModule: "."}, loader.StageConfig{}, sources, sourcePackages, trustedSources, importResolutions, false, false)
-	if err == nil || !strings.Contains(err.Error(), "compile-time call reached unavailable function") {
+	if err == nil || !strings.Contains(err.Error(), "std.libc.putchar is not available in a compile-time context") {
 		t.Fatalf("expected executed foreign call to be rejected, got %v", err)
 	}
 	if !strings.Contains(err.Error(), mainPath+":3:") {
 		t.Fatalf("compile-time rejection did not point at the staged expression: %v", err)
+	}
+}
+
+func TestCompileTimeEvaluationPointsAtNestedUnavailableCall(t *testing.T) {
+	repositoryRoot := filepath.Clean(filepath.Join("..", ".."))
+	libraryRoot := filepath.Join(repositoryRoot, "libs")
+	projectRoot := t.TempDir()
+	mainPath := filepath.Join(projectRoot, "main.qk")
+	source := `module main
+import std.io
+import std.math
+let sum(x, y: i32) = {
+  let result = x + y
+  std.io.print("{}", result)
+  result
+}
+let $Answer = sum(1, 2)
+let $Other = std.math.sqrt(16.0)
+let main() {}
+`
+	if err := os.WriteFile(mainPath, []byte(source), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, sources, sourcePackages, trustedSources, importResolutions, err := discoverSourcePackages(
+		".", projectRoot, "", []string{libraryRoot, projectRoot}, nil, libraryRoot, true,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = runFrontend(&Args{mainModule: "."}, loader.StageConfig{}, sources, sourcePackages, trustedSources, importResolutions, false, false)
+	if err == nil || !strings.Contains(err.Error(), "sum cannot be evaluated at compile time") ||
+		!strings.Contains(err.Error(), "evaluation reaches std.io.print, which is not available in a compile-time context") {
+		t.Fatalf("expected nested print call to be rejected, got %v", err)
+	}
+	if !strings.Contains(err.Error(), mainPath+":9:15") || !strings.Contains(err.Error(), "Note: "+mainPath+":6:3") {
+		t.Fatalf("compile-time rejection did not show the call origin and unavailable operation: %v", err)
 	}
 }
 
