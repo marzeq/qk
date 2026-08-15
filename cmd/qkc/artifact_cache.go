@@ -16,7 +16,7 @@ import (
 	"github.com/marzeq/qk/attributes"
 )
 
-const artifactCacheVersion = 4
+const artifactCacheVersion = 5
 const artifactCompilerABI = "qk-staged-bindings-v4"
 const artifactMagic = "QKARTF01"
 const buildSnapshotMagic = "QKBUILD1"

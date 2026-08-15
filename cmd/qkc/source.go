@@ -10,7 +10,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/marzeq/qk/comptime"
 	"github.com/marzeq/qk/parser"
 	"github.com/marzeq/qk/tokeniser"
 )
@@ -68,17 +67,12 @@ func resolvePackageDirectory(root, path string) (string, bool, error) {
 	return current, true, nil
 }
 
-func parseSource(path, source string, config comptime.Config) (*parser.RootNode, error) {
+func parseSource(path, source string) (*parser.RootNode, error) {
 	t := tokeniser.NewTokeniser(source, path)
 	toks, err := t.Tokenise()
 	if err != nil {
 		return nil, err
 	}
-	toks, err = comptime.Expand(toks, config)
-	if err != nil {
-		return nil, err
-	}
-
 	p := parser.NewParser(toks)
 	return p.Parse()
 }

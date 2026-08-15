@@ -678,6 +678,13 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 
 		return expr, nil
 	}
+	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordWhen) {
+		node, err := p.parseWhen(WhenExpression)
+		if err != nil {
+			return nil, err
+		}
+		return node, nil
+	}
 	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordMatch) {
 		return p.ParseMatch(true)
 	}
@@ -1359,6 +1366,12 @@ func (p *Parser) ParseIdent() (*IdentifierNode, error) {
 }
 
 func (p *Parser) ParseType() (TypeNode, error) {
+	for p.Match(tokeniser.TokenNewline) {
+		p.Inc()
+	}
+	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordWhen) {
+		return p.parseWhen(WhenType)
+	}
 	if p.MatchBuiltin("reprof") {
 		begin := p.CurrLoc()
 		p.ConsumeBuiltin("reprof")

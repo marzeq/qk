@@ -268,9 +268,6 @@ func (v *Validator) validateNode(node parser.Node) {
 		}
 		v.validateAttributes(n, n.Attributes, "declaration", attributes.AttributeTypeForeign)
 		v.finaliseDeclaration(n)
-		if n.Comptime && !isGenericComptimeExpression(n.Value) {
-			v.errorf(n, "compile-time binding must resolve to a boolean or integer constant")
-		}
 		if n.Symbol.Type != nil && !types.HasError(n.Symbol.Type) && !types.IsComplete(n.Symbol.Type) {
 			v.errorf(n, "cannot declare a value of incomplete type %v", n.Symbol.Type)
 		}
@@ -380,30 +377,6 @@ func (v *Validator) validateStatement(node parser.Node) {
 	}
 
 	v.errorf(node, "expression result is unused; assign it to '_' to discard it")
-}
-
-func isGenericComptimeExpression(node parser.ExpressionNode) bool {
-	switch node := node.(type) {
-	case *parser.IntegerLiteralNode, *parser.BoolLiteralNode, *parser.CharLiteralNode,
-		*parser.SizeOfNode:
-		return true
-	case *parser.CastNode:
-		return isGenericComptimeExpression(node.Operand)
-	case *parser.UnaryOpNode:
-		switch node.Op {
-		case parser.UnaryOpNegate, parser.UnaryOpBitwiseNot, parser.UnaryOpLogicalNot:
-			return isGenericComptimeExpression(node.Operand)
-		}
-	case *parser.BinaryOpNode:
-		switch node.Op {
-		case parser.BinaryOpAdd, parser.BinaryOpSubtract, parser.BinaryOpMultiply,
-			parser.BinaryOpDivide, parser.BinaryOpModulo, parser.BinaryOpBitwiseAnd,
-			parser.BinaryOpBitwiseOr, parser.BinaryOpBitwiseXor, parser.BinaryOpShiftLeft,
-			parser.BinaryOpShiftRight:
-			return isGenericComptimeExpression(node.Operand1) && isGenericComptimeExpression(node.Operand2)
-		}
-	}
-	return false
 }
 
 func (v *Validator) validateAttributes(node parser.Node, attrs attributes.Attributes, entity string, allowed ...attributes.AttributeType) {

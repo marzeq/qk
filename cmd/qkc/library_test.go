@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/marzeq/qk/comptime"
+	"github.com/marzeq/qk/loader"
 )
 
 func TestLibraryTreeThroughCompilerFrontend(t *testing.T) {
@@ -41,11 +41,7 @@ func TestLibraryTreeThroughCompilerFrontend(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	config := comptime.Config{}
-	config.ModuleBindings, err = comptime.ResolvePackageBindingsWithImports(sources, sourcePackages, importResolutions, config)
-	if err != nil {
-		t.Fatal(err)
-	}
+	config := loader.StageConfig{}
 	args := &Args{mainModule: "."}
 	if _, err := runFrontend(args, config, sources, sourcePackages, trustedSources, importResolutions, false, false); err != nil {
 		t.Fatal(err)

@@ -196,6 +196,9 @@ func (p *Parser) Parse() (*RootNode, error) {
 func (p *Parser) parseTopLevel() (Node, error) {
 	startLoc := p.CurrLoc()
 	e := shared.NewError(startLoc, "expected function definition, constant definition, type alias or import statement")
+	if p.MatchBuiltin("compiler_error") || p.MatchBuiltin("compiler_assert") {
+		return p.parseCompilerDirective()
+	}
 	if !p.Match(tokeniser.TokenKeyword) {
 		return nil, e
 	}
@@ -217,6 +220,8 @@ func (p *Parser) parseTopLevel() (Node, error) {
 		node, err = p.ParseImport()
 	case string(tokeniser.KeywordModule):
 		node, err = p.ParseModule()
+	case string(tokeniser.KeywordWhen):
+		node, err = p.parseWhen(WhenDeclarations)
 	default:
 		return nil, e
 	}

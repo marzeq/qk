@@ -485,6 +485,10 @@ func (p *Parser) parseAttributes(defaultName string) (attributes.Attributes, err
 		for p.Match(tokeniser.TokenNewline) {
 			p.Inc()
 		}
+		if p.MatchBuiltin("compiler_error") || p.MatchBuiltin("compiler_assert") {
+			p.pos = pos
+			break
+		}
 		if !p.Match(tokeniser.TokenAt) {
 			p.pos = pos
 			break
@@ -532,56 +536,19 @@ func (p *Parser) parseLinkAttribute() (attributes.Attribute, error) {
 	if !p.Expect(tokeniser.TokenOpenParen) {
 		return nil, shared.NewError(p.PrevLoc(), "expected '(' after @link")
 	}
-
-	links := []attributes.Link{}
-	for {
-		for p.Match(tokeniser.TokenNewline) {
-			p.Inc()
-		}
-		if p.Match(tokeniser.TokenCloseParen) {
-			p.Inc()
-			break
-		}
-
-		kindTok, ok := p.ExpectGet(tokeniser.TokenIdentifier)
-		if !ok {
-			return nil, shared.NewError(p.PrevLoc(), "expected 'system', 'path', 'search', or 'framework' in @link")
-		}
-		var kind attributes.LinkKind
-		switch kindTok.Value {
-		case "system":
-			kind = attributes.LinkSystem
-		case "path":
-			kind = attributes.LinkPath
-		case "search":
-			kind = attributes.LinkSearchPath
-		case "framework":
-			kind = attributes.LinkFramework
-		default:
-			return nil, shared.NewError(kindTok.Loc, "unknown @link entry kind %q; expected 'system', 'path', 'search', or 'framework'", kindTok.Value)
-		}
-		value, ok := p.ExpectGet(tokeniser.TokenString)
-		if !ok {
-			return nil, shared.NewError(p.PrevLoc(), "expected string after %s in @link", kindTok.Value)
-		}
-		if value.Value == "" {
-			return nil, shared.NewError(value.Loc, "@link values cannot be empty")
-		}
-		links = append(links, attributes.Link{Kind: kind, Value: value.Value})
-
-		for p.Match(tokeniser.TokenNewline) {
-			p.Inc()
-		}
-		if p.Match(tokeniser.TokenComma) {
-			p.Inc()
-			continue
-		}
-		if !p.Match(tokeniser.TokenCloseParen) {
-			return nil, shared.NewError(p.CurrLoc(), "expected ',' or ')' in @link")
-		}
+	items, conditional, err := p.parseLinkItems(tokeniser.TokenCloseParen)
+	if err != nil {
+		return nil, err
 	}
-
-	return attributes.ModuleAttributeLink{Links: links}, nil
+	p.Inc()
+	if !conditional {
+		links := make([]attributes.Link, 0, len(items))
+		for _, item := range items {
+			links = append(links, *item.Link)
+		}
+		return attributes.ModuleAttributeLink{Links: links}, nil
+	}
+	return ParsedLinkAttribute{Items: items}, nil
 }
 
 func (p *Parser) parseInlineAttribute() (attributes.Attribute, error) {
@@ -970,6 +937,10 @@ func (p *Parser) parseModulePath() (string, string, error) {
 }
 
 func (p *Parser) ParseStatement() (Node, bool, error) {
+	if p.MatchBuiltin("compiler_error") || p.MatchBuiltin("compiler_assert") {
+		node, err := p.parseCompilerDirective()
+		return node, true, err
+	}
 	if p.Match(tokeniser.TokenKeyword) {
 		kw := p.Peek().Value
 		switch kw {
@@ -1076,6 +1047,9 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 			return node, false, err
 		case string(tokeniser.KeywordFor):
 			node, err := p.ParseForLoop()
+			return node, false, err
+		case string(tokeniser.KeywordWhen):
+			node, err := p.parseWhen(WhenStatements)
 			return node, false, err
 		default:
 			return nil, false, shared.NewError(p.CurrLoc(), "unexpected keyword: %s", kw)

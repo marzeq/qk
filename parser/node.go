@@ -23,6 +23,69 @@ type RootNode struct {
 	Loc  shared.Location
 }
 
+type WhenContext uint8
+
+const (
+	WhenDeclarations WhenContext = iota
+	WhenStatements
+	WhenExpression
+	WhenType
+)
+
+type WhenBranchNode struct {
+	Condition ExpressionNode
+	Body      []Node
+	Value     Node
+	Loc       shared.Location
+}
+
+type WhenNode struct {
+	Branches  []WhenBranchNode
+	ElseBody  []Node
+	ElseValue Node
+	Context   WhenContext
+	Loc       shared.Location
+	Type      types.Type
+}
+
+func (n WhenNode) GetLoc() shared.Location { return n.Loc }
+func (n *WhenNode) SetType(t types.Type)   { n.Type = t }
+func (n *WhenNode) GetType() types.Type    { return n.Type }
+func (n WhenNode) _type()                  {}
+
+type CompilerDirectiveNode struct {
+	Name      string
+	Condition ExpressionNode
+	Message   string
+	NameLoc   shared.Location
+	Loc       shared.Location
+}
+
+func (n CompilerDirectiveNode) GetLoc() shared.Location { return n.Loc }
+
+type LinkItemNode struct {
+	Link      *attributes.Link
+	When      *LinkWhenNode
+	Directive *CompilerDirectiveNode
+}
+
+type LinkWhenBranchNode struct {
+	Condition ExpressionNode
+	Items     []LinkItemNode
+}
+
+type LinkWhenNode struct {
+	Branches  []LinkWhenBranchNode
+	ElseItems []LinkItemNode
+	Loc       shared.Location
+}
+
+type ParsedLinkAttribute struct {
+	Items []LinkItemNode
+}
+
+func (a ParsedLinkAttribute) GetType() attributes.AttributeType { return attributes.AttributeTypeLink }
+
 func (n RootNode) GetLoc() shared.Location { return n.Loc }
 
 type IdentifierNode struct {

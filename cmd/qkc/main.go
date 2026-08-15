@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"runtime/pprof"
 
-	"github.com/marzeq/qk/comptime"
 	"github.com/marzeq/qk/ir"
 	"github.com/marzeq/qk/loader"
 	"github.com/marzeq/qk/parser"
@@ -36,14 +35,15 @@ func main() {
 			check(profile.Close())
 		}()
 	}
-	releaseMode := comptime.ReleaseModeDebug
+	releaseMode := loader.StageDebug
 	if args.release {
-		releaseMode = comptime.ReleaseModeRelease
+		releaseMode = loader.StageRelease
 	}
-	comptimeConfig := comptime.Config{
+	comptimeConfig := loader.StageConfig{
 		TargetTriple: args.target,
 		Sysroot:      args.sysroot,
 		ReleaseMode:  releaseMode,
+		NoStdlib:     args.noStdlib,
 	}
 	libraryRoot := ""
 	if args.noStdlib {
@@ -91,10 +91,6 @@ func main() {
 			return
 		}
 	}
-	comptimeConfig.ModuleBindings, err = comptime.ResolvePackageBindingsWithImports(
-		compileTimeSources, sourcePackagePaths, importResolutions, comptimeConfig,
-	)
-	check(err)
 	frontend, err := runFrontend(
 		args, comptimeConfig, compileTimeSources, sourcePackagePaths, trustedSources, importResolutions, args.verbose, args.debug,
 	)

@@ -5,7 +5,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/marzeq/qk/comptime"
 	"github.com/marzeq/qk/ir"
 	"github.com/marzeq/qk/loader"
 	"github.com/marzeq/qk/parser"
@@ -25,13 +24,13 @@ type frontendResult struct {
 
 func runFrontend(
 	args *Args,
-	config comptime.Config,
+	config loader.StageConfig,
 	sources, sourcePackages map[string]string,
 	trustedSources map[string]bool,
 	importResolutions map[string]map[string]string,
 	verbose, debug bool,
 ) (*frontendResult, error) {
-	graphModules, origins, err := sourceModuleGraph(sources, sourcePackages, trustedSources, importResolutions, config, args.noStdlib)
+	graphModules, origins, err := sourceModuleGraph(sources, sourcePackages, trustedSources, importResolutions, args.noStdlib)
 	if err != nil {
 		return nil, err
 	}
@@ -50,12 +49,14 @@ func runFrontend(
 		partials := make([]*loader.PartialModuleInfo, 0, len(origins[name]))
 		for _, origin := range origins[name] {
 			fileConfig := config
-			fileConfig.PackagePath = name
-			root, err := parseSource(origin, sources[origin], fileConfig)
+			root, err := parseSource(origin, sources[origin])
 			if err != nil {
 				return nil, err
 			}
 			resolveRootImports(root, importResolutions[name])
+			if err := loader.SelectCompileTime(root, name, fileConfig); err != nil {
+				return nil, err
+			}
 			partial, err := loader.CollectModuleInfo(root, trustedSources[origin])
 			if err != nil {
 				return nil, err
@@ -110,7 +111,7 @@ func runFrontend(
 	return result, nil
 }
 
-func sourceModuleGraph(sources, sourcePackages map[string]string, trustedSources map[string]bool, importResolutions map[string]map[string]string, config comptime.Config, noStdlib bool) (map[string]*loader.ModuleInfo, map[string][]string, error) {
+func sourceModuleGraph(sources, sourcePackages map[string]string, trustedSources map[string]bool, importResolutions map[string]map[string]string, noStdlib bool) (map[string]*loader.ModuleInfo, map[string][]string, error) {
 	modules := make(map[string]*loader.ModuleInfo)
 	origins := make(map[string][]string)
 	paths := make([]string, 0, len(sources))
@@ -124,12 +125,6 @@ func sourceModuleGraph(sources, sourcePackages map[string]string, trustedSources
 			return nil, nil, fmt.Errorf("source %s has no canonical module path", origin)
 		}
 		tokens, err := tokeniser.NewTokeniser(sources[origin], origin).Tokenise()
-		if err != nil {
-			return nil, nil, err
-		}
-		fileConfig := config
-		fileConfig.PackagePath = name
-		tokens, err = comptime.Expand(tokens, fileConfig)
 		if err != nil {
 			return nil, nil, err
 		}
