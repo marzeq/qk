@@ -285,6 +285,12 @@ func (g *Generator) tryGenerateComptimeInitializer(expr parser.ExpressionNode) (
 
 func (g *Generator) tryGenerateGlobalInitializer(expr parser.ExpressionNode) (ir.Operand, bool) {
 	switch node := expr.(type) {
+	case *parser.BlockNode:
+		result, ok := parser.BlockResult(node)
+		if !ok || len(node.Body) != 1 {
+			return ir.Operand{}, false
+		}
+		return g.tryGenerateGlobalInitializer(result)
 	case *parser.NoInitializerNode:
 		return ir.ZeroConstOperand(node.GetType()), true
 	case *parser.IntegerLiteralNode:
