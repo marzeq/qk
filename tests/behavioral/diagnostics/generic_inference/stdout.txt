@@ -1,9 +1,9 @@
-Error: <CASE>/main.qk:3:20
-   1 | module main
-   2 | 
-   3 | let make<T>(): T = ---
-     |                    ^^^
+Error: <CASE>/main.qk:6:3
    4 | 
    5 | let main() {
+   6 |   make()
+     |   ^^^^^^
+   7 | }
+   8 | 
 
-'---' is only valid as a declaration initializer, a struct field initializer, or the final struct initializer entry
+cannot infer type argument T

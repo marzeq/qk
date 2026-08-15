@@ -1,6 +1,6 @@
 module main
 
-let make<T>(): T = ---
+let make($T: type): *T = nil
 
 let main() {
   make()

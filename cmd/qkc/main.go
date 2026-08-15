@@ -243,7 +243,7 @@ func main() {
 		case *parser.FunctionDefNode:
 			if fn.Name == "main" {
 				if len(fn.GenericParameters) != 0 {
-					fatal("%v", shared.NewError(fn.Loc, "main function must not be generic"))
+					fatal("%v", shared.NewError(fn.Loc, "main function cannot have compile-time type parameters"))
 				}
 				if len(fn.Args) != 0 {
 					fatal("%v", shared.NewError(fn.Loc, "main function must not have arguments"))

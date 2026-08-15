@@ -6,18 +6,18 @@ import std.collections
 import std.strings
 
 pub let Path = type struct {
-  bytes: std.collections.DynamicArray<u8>,
+  bytes: std.collections.DynamicArray(u8),
 }
 
 pub let Path.init(allocator: *mut dyn std.alloc.Allocator): Path = .{
-  bytes=std.collections.DynamicArray<u8>.init(allocator),
+  bytes=std.collections.DynamicArray(u8).init(allocator),
 }
 
 pub let Path.with_capacity(
   allocator: *mut dyn std.alloc.Allocator,
   capacity: usz,
 ): (Path, bool) {
-  let bytes, success = std.collections.DynamicArray<u8>.with_capacity(
+  let bytes, success = std.collections.DynamicArray(u8).with_capacity(
     allocator,
     capacity,
   )
@@ -28,7 +28,7 @@ pub let Path.from_str(
   allocator: *mut dyn std.alloc.Allocator,
   value: str,
 ): (Path, bool) {
-  let bytes, success = std.collections.DynamicArray<u8>.from_slice(
+  let bytes, success = std.collections.DynamicArray(u8).from_slice(
     allocator,
     value.([]u8),
   )

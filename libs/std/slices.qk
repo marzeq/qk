@@ -2,9 +2,9 @@ module std
 
 import std.alloc
 
-pub let ([]T).is_empty<T>(self): bool = @len(self) == 0
+pub let ([]$T).is_empty(self): bool = @len(self) == 0
 
-pub let ([]T).contains<T: PartialEq>(self, value: T): bool {
+pub let ([]$T: PartialEq).contains(self, value: T): bool {
   let mut index: usz = 0
   for index < @len(self) {
     if self[index] == value { return true }
@@ -13,7 +13,7 @@ pub let ([]T).contains<T: PartialEq>(self, value: T): bool {
   return false
 }
 
-pub let ([]T).find<T: PartialEq>(self, value: T): (usz, bool) {
+pub let ([]$T: PartialEq).find(self, value: T): (usz, bool) {
   let mut index: usz = 0
   for index < @len(self) {
     if self[index] == value { return index, true }
@@ -22,7 +22,7 @@ pub let ([]T).find<T: PartialEq>(self, value: T): (usz, bool) {
   return 0, false
 }
 
-pub let ([]T).starts_with<T: PartialEq>(self, prefix: []T): bool {
+pub let ([]$T: PartialEq).starts_with(self, prefix: []T): bool {
   if @len(prefix) > @len(self) { return false }
   let mut index: usz = 0
   for index < @len(prefix) {
@@ -32,7 +32,7 @@ pub let ([]T).starts_with<T: PartialEq>(self, prefix: []T): bool {
   return true
 }
 
-pub let ([]T).ends_with<T: PartialEq>(self, suffix: []T): bool {
+pub let ([]$T: PartialEq).ends_with(self, suffix: []T): bool {
   if @len(suffix) > @len(self) { return false }
   let offset = @len(self) - @len(suffix)
   let mut index: usz = 0
@@ -43,9 +43,9 @@ pub let ([]T).ends_with<T: PartialEq>(self, suffix: []T): bool {
   return true
 }
 
-pub let ([]mut T).as_const<T>(self): []T = self
+pub let ([]mut $T).as_const(self): []T = self
 
-pub let ([]mut T).fill<T>(self, value: T): void {
+pub let ([]mut $T).fill(self, value: T): void {
   let mut index: usz = 0
   for index < @len(self) {
     self[index] = value
@@ -53,7 +53,7 @@ pub let ([]mut T).fill<T>(self, value: T): void {
   }
 }
 
-pub let ([]mut T).swap<T>(self, left: usz, right: usz): void {
+pub let ([]mut $T).swap(self, left: usz, right: usz): void {
   if left >= @len(self) || right >= @len(self) {
     panic("slice swap index out of bounds")
   }
@@ -62,7 +62,7 @@ pub let ([]mut T).swap<T>(self, left: usz, right: usz): void {
   self[right] = temporary
 }
 
-pub let ([]mut T).reverse<T>(self): void {
+pub let ([]mut $T).reverse(self): void {
   let mut left: usz = 0
   let mut right = @len(self)
   for left < right {
@@ -75,8 +75,8 @@ pub let ([]mut T).reverse<T>(self): void {
   }
 }
 
-pub let ([]T).reversed<T>(self, alloc: *mut dyn std.alloc.Allocator): ([]T, bool) {
-  let mut result, allocated = std.alloc.allocate<T>(alloc, @len(self))
+pub let ([]$T).reversed(self, alloc: *mut dyn std.alloc.Allocator): ([]T, bool) {
+  let mut result, allocated = std.alloc.allocate(T, alloc, @len(self))
   if !allocated { return [], false }
   let mut index: usz = 0
   for index < @len(self) {
@@ -86,8 +86,8 @@ pub let ([]T).reversed<T>(self, alloc: *mut dyn std.alloc.Allocator): ([]T, bool
   return result, true
 }
 
-pub let ([]mut T).reversed<T>(self, alloc: *mut dyn std.alloc.Allocator): ([]mut T, bool) {
-  let mut result, allocated = std.alloc.allocate<T>(alloc, @len(self))
+pub let ([]mut $T).reversed(self, alloc: *mut dyn std.alloc.Allocator): ([]mut T, bool) {
+  let mut result, allocated = std.alloc.allocate(T, alloc, @len(self))
   if !allocated { return [], false }
   let mut index: usz = 0
   for index < @len(self) {

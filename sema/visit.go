@@ -124,7 +124,7 @@ func (a *Analyser) visitBlock(n *parser.BlockNode) {
 
 func (a *Analyser) visitLocalDeclaration(n *parser.DeclarationNode) {
 	if len(n.GenericParameters) != 0 {
-		a.errorf(n, "generic bindings may only be declared at module scope")
+		a.errorf(n, "parameterized bindings may only be declared at module scope")
 		return
 	}
 	if n.Attributes.Get(attributes.AttributeTypeForeign) != nil {

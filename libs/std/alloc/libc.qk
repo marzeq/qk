@@ -108,14 +108,13 @@ pub let LibcAllocator.resize_bytes(
   return replacement, true
 }
 
-pub let LibcAllocator.new<T>(*mut self): (*mut T, bool) =
-  self.allocate<T>(1)
+pub let LibcAllocator.new(*mut self, $T: type): (*mut T, bool) =
+  self.allocate(T, 1)
 
-pub let LibcAllocator.allocate<T>(
-  *mut self,
+pub let LibcAllocator.allocate(*mut self, $T: type,
   count: usz,
 ): (*mut T, bool) {
-  let size, valid = checked_size<T>(count)
+  let size, valid = checked_size(T, count)
   if !valid {
     return nil, false
   }
@@ -124,25 +123,23 @@ pub let LibcAllocator.allocate<T>(
   return result.(*mut T), allocated
 }
 
-pub let LibcAllocator.free<T>(
-  *mut self,
+pub let LibcAllocator.free(*mut self, $T: type,
   ptr: *mut T,
   count: usz,
 ): void {
-  let size, valid = checked_size<T>(count)
+  let size, valid = checked_size(T, count)
   if valid {
     self.free_bytes(ptr, size, @alignof(T))
   }
 }
 
-pub let LibcAllocator.resize<T>(
-  *mut self,
+pub let LibcAllocator.resize(*mut self, $T: type,
   ptr: *mut T,
   old_count: usz,
   new_count: usz,
 ): (*mut T, bool) {
-  let old_size, valid_old_size = checked_size<T>(old_count)
-  let new_size, valid_new_size = checked_size<T>(new_count)
+  let old_size, valid_old_size = checked_size(T, old_count)
+  let new_size, valid_new_size = checked_size(T, new_count)
   if !valid_old_size || !valid_new_size {
     return nil, false
   }

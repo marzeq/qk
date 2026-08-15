@@ -414,14 +414,13 @@ pub let Arena.resize_bytes(
   return replacement, true
 }
 
-pub let Arena.new<T>(*mut self): (*mut T, bool) =
-  self.allocate<T>(1)
+pub let Arena.new(*mut self, $T: type): (*mut T, bool) =
+  self.allocate(T, 1)
 
-pub let Arena.allocate<T>(
-  *mut self,
+pub let Arena.allocate(*mut self, $T: type,
   count: usz,
 ): (*mut T, bool) {
-  let size, valid = checked_size<T>(count)
+  let size, valid = checked_size(T, count)
   if !valid {
     return nil, false
   }
@@ -430,11 +429,10 @@ pub let Arena.allocate<T>(
   return result.(*mut T), allocated
 }
 
-pub let Arena.allocate_zeroed<T>(
-  *mut self,
+pub let Arena.allocate_zeroed(*mut self, $T: type,
   count: usz,
 ): (*mut T, bool) {
-  let size, valid = checked_size<T>(count)
+  let size, valid = checked_size(T, count)
   if !valid {
     return nil, false
   }
@@ -450,15 +448,14 @@ pub let Arena.allocate_zeroed<T>(
   return result.(*mut T), true
 }
 
-pub let Arena.new_zeroed<T>(*mut self): (*mut T, bool) =
-  self.allocate_zeroed<T>(1)
+pub let Arena.new_zeroed(*mut self, $T: type): (*mut T, bool) =
+  self.allocate_zeroed(T, 1)
 
-pub let Arena.duplicate<T>(
-  *mut self,
+pub let Arena.duplicate(*mut self, $T: type,
   source: *T,
   count: usz,
 ): (*mut T, bool) {
-  let size, valid = checked_size<T>(count)
+  let size, valid = checked_size(T, count)
   if !valid {
     return nil, false
   }
@@ -492,12 +489,11 @@ pub let Arena.duplicate_bytes(
   return result, true
 }
 
-pub let Arena.free<T>(
-  *mut self,
+pub let Arena.free(*mut self, $T: type,
   ptr: *mut T,
   count: usz,
 ): void {
-  let size, valid = checked_size<T>(count)
+  let size, valid = checked_size(T, count)
   if !valid {
     return
   }
@@ -505,14 +501,13 @@ pub let Arena.free<T>(
   self.free_bytes(ptr, size, @alignof(T))
 }
 
-pub let Arena.resize<T>(
-  *mut self,
+pub let Arena.resize(*mut self, $T: type,
   ptr: *mut T,
   old_count: usz,
   new_count: usz,
 ): (*mut T, bool) {
-  let old_size, valid_old_size = checked_size<T>(old_count)
-  let new_size, valid_new_size = checked_size<T>(new_count)
+  let old_size, valid_old_size = checked_size(T, old_count)
+  let new_size, valid_new_size = checked_size(T, new_count)
   if !valid_old_size || !valid_new_size {
     return nil, false
   }

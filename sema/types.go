@@ -75,7 +75,7 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 		}
 		if info, ok := a.aliases[t.Name]; ok && t.ModName == "" {
 			if len(t.TypeArguments) != 0 {
-				a.errorf(t, "non-generic type %q does not accept type arguments", t.Name)
+				a.errorf(t, "non-parameterized type %q does not accept type arguments", t.Name)
 				return types.ErrorType{}
 			}
 			return a.resolveAlias(info, t, indirect)
@@ -90,7 +90,7 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 			if sym.Template {
 				info := a.genericAliases[sym]
 				if info == nil {
-					a.errorf(t, "unsupported generic type %q", t.Name)
+					a.errorf(t, "unsupported parameterized type %q", t.Name)
 					return types.ErrorType{}
 				}
 				// The generic representation decides whether a recursive argument is
@@ -104,7 +104,7 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 				return specialization.TypeInfo
 			}
 			if len(t.TypeArguments) != 0 {
-				a.errorf(t, "non-generic type %q does not accept type arguments", t.Name)
+				a.errorf(t, "non-parameterized type %q does not accept type arguments", t.Name)
 				return types.ErrorType{}
 			}
 			return sym.TypeInfo
@@ -133,7 +133,7 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 		if sym.Template {
 			info := a.genericAliases[sym]
 			if info == nil {
-				a.errorf(t, "unsupported generic type %q", t.Name)
+				a.errorf(t, "unsupported parameterized type %q", t.Name)
 				return types.ErrorType{}
 			}
 			arguments := a.resolveGenericArgumentsAt(t.TypeArguments, true)
@@ -144,7 +144,7 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 			return specialization.TypeInfo
 		}
 		if len(t.TypeArguments) != 0 {
-			a.errorf(t, "non-generic type %q does not accept type arguments", t.Name)
+			a.errorf(t, "non-parameterized type %q does not accept type arguments", t.Name)
 			return types.ErrorType{}
 		}
 

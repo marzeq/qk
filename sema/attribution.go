@@ -303,7 +303,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		}
 		if n.Symbol != nil && n.Symbol.Template {
 			if len(n.ResolvedTypeArgs) == 0 {
-				a.errorf(n, "generic binding %q requires type arguments", n.Symbol.Name)
+				a.errorf(n, "parameterized binding %q requires type arguments", n.Symbol.Name)
 				n.SetType(types.ErrorType{})
 			} else if a.templatesOnly || hasTypeParameters(n.ResolvedTypeArgs) {
 				if a.analyser.checkGenericArguments(n, n.Symbol.GenericParameters, n.ResolvedTypeArgs) {
@@ -475,6 +475,13 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		}
 
 	case *parser.FunctionCallNode:
+		if n.CompileTimeApplication != nil {
+			if n.CompileTimeApplication.Symbol.Kind == symbols.SymbolKindVariable {
+				a.attributeExpr(n.CompileTimeApplication)
+				n.SetType(n.CompileTimeApplication.GetType())
+			}
+			break
+		}
 		if n.TaggedUnionType != nil {
 			for _, arg := range n.Args {
 				a.attributeExpr(arg)
@@ -537,6 +544,21 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 				}
 			}
 		}
+		if n.Symbol != nil && n.Symbol.Template {
+			arguments, remaining, explicit, valid := a.analyser.explicitCallTypeArguments(n.Symbol.GenericParameters, n.Symbol.Signature, n.Args, false, n)
+			if !valid {
+				n.SetType(types.ErrorType{})
+				break
+			}
+			if explicit {
+				n.Args = remaining
+				n.Symbol = dependentGenericFunctionSymbol(n.Symbol, arguments)
+				if n.Name != nil {
+					n.Name.Symbol = n.Symbol
+					n.Name.ResolvedTypeArgs = arguments
+				}
+			}
+		}
 		if n.Symbol != nil {
 			a.attributeFunctionDefinition(n.Symbol)
 		}
@@ -560,7 +582,11 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 			arguments := []types.Type(nil)
 			var err error
 			if n.Name != nil && len(n.Name.ResolvedTypeArgs) != 0 {
-				arguments = n.Name.ResolvedTypeArgs
+				arguments, err = inferGenericArgumentsPartial(
+					template.GenericParameters, template.Signature.Parameters, expressionTypes(n.Args),
+					template.Signature.TypedVariadic, n.VariadicExpansion,
+				)
+				arguments = preserveResolvedTypeArguments(template.GenericParameters, n.Name.ResolvedTypeArgs, arguments)
 			} else {
 				arguments, err = inferGenericArgumentsPartial(
 					template.GenericParameters, template.Signature.Parameters, expressionTypes(n.Args),
@@ -769,7 +795,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 			a.attributeFunctionDefinition(ident.Symbol)
 			if ident.Symbol.Template {
 				if len(ident.ResolvedTypeArgs) == 0 {
-					a.errorf(n, "generic binding %q requires type arguments", ident.Symbol.Name)
+					a.errorf(n, "parameterized binding %q requires type arguments", ident.Symbol.Name)
 					n.SetType(types.ErrorType{})
 					break
 				}
@@ -1161,7 +1187,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 	}
 
 	if node.GetType() == nil {
-		panic("expression without type")
+		panic(fmt.Sprintf("expression without type: %T at %v", node, node.GetLoc()))
 	}
 }
 
@@ -1475,6 +1501,9 @@ func resolvedTypeIdentifier(expr parser.ExpressionNode) *parser.IdentifierNode {
 	if field, ok := expr.(*parser.FieldAccessNode); ok && field.ResolvedIdentifier != nil && field.ResolvedIdentifier.Symbol.Kind == symbols.SymbolKindType {
 		return field.ResolvedIdentifier
 	}
+	if call, ok := expr.(*parser.FunctionCallNode); ok && call.CompileTimeApplication != nil && call.CompileTimeApplication.Symbol.Kind == symbols.SymbolKindType {
+		return call.CompileTimeApplication
+	}
 	return nil
 }
 
@@ -1491,6 +1520,9 @@ func (a *Attributor) attributeMethodCall(n *parser.FunctionCallNode) bool {
 		n.SetType(types.ErrorType{})
 		return true
 	}
+	if resolvedTypeIdentifier(member.Subject) != nil {
+		return false
+	}
 	if view := staticTraitView(member.Subject); view != nil {
 		return a.attributeStaticTraitMethodCall(n, member, view)
 	}
@@ -1506,7 +1538,7 @@ func (a *Attributor) attributeMethodCall(n *parser.FunctionCallNode) bool {
 				return true
 			}
 			if len(requirement.GenericParameters) != 0 {
-				a.errorf(n, "generic trait method %q cannot be called dynamically", requirement.Name)
+				a.errorf(n, "parameterized trait method %q cannot be called dynamically", requirement.Name)
 				n.SetType(types.ErrorType{})
 				return true
 			}
@@ -1553,6 +1585,17 @@ func (a *Attributor) attributeMethodCall(n *parser.FunctionCallNode) bool {
 		a.errorf(n, "method %q is not public", member.Field.Name)
 		n.SetType(types.ErrorType{})
 		return true
+	}
+	if method.Template {
+		arguments, remaining, explicit, valid := a.analyser.explicitCallTypeArguments(method.GenericParameters, method.Signature, n.Args, true, n)
+		if !valid {
+			n.SetType(types.ErrorType{})
+			return true
+		}
+		if explicit {
+			n.Args = remaining
+			method = dependentGenericFunctionSymbol(method, arguments)
+		}
 	}
 	if method.Template && len(member.Field.TypeArguments) != 0 {
 		arguments := a.analyser.resolveGenericArguments(member.Field.TypeArguments)

@@ -148,12 +148,19 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 	var genericParameters []GenericParameterNode
 	if p.Match(tokeniser.TokenOpenParen) {
 		p.Inc()
+		previousCaptureMode := p.allowTypeCapture
+		p.allowTypeCapture = true
 		methodOwnerType, err = p.ParseType()
+		p.allowTypeCapture = previousCaptureMode
 		if err != nil {
 			return nil, err
 		}
 		if !p.Expect(tokeniser.TokenCloseParen) {
 			return nil, shared.NewError(p.PrevLoc(), "expected ')' after method owner type")
+		}
+		genericParameters, err = capturedTypeParameters(methodOwnerType)
+		if err != nil {
+			return nil, err
 		}
 		if !p.Expect(tokeniser.TokenDot) {
 			return nil, shared.NewError(p.PrevLoc(), "expected '.' after method owner type")
@@ -163,34 +170,20 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 		if !ok {
 			return nil, shared.NewError(p.PrevLoc(), "expected method name after '.'")
 		}
-		genericParameters, err = p.parseGenericParameters()
-		if err != nil {
-			return nil, err
-		}
 	} else {
 		var ok bool
 		name, ok = p.ExpectGet(tokeniser.TokenIdentifier)
 		if !ok {
 			return nil, shared.NewError(p.PrevLoc(), "expected function name")
 		}
-		leadingGenericParameters, parseErr := p.parseGenericParameters()
-		if parseErr != nil {
-			return nil, parseErr
-		}
-		genericParameters = leadingGenericParameters
 		if p.Match(tokeniser.TokenDot) {
 			p.Inc()
 			methodOwner = name.Value
-			methodOwnerGenericParameters = leadingGenericParameters
 			methodName, ok := p.ExpectGet(tokeniser.TokenIdentifier)
 			if !ok {
 				return nil, shared.NewError(p.PrevLoc(), "expected method name after '.'")
 			}
 			name = methodName
-			genericParameters, err = p.parseGenericParameters()
-			if err != nil {
-				return nil, err
-			}
 		}
 	}
 
@@ -261,6 +254,26 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 				p.Inc()
 			}
 			break
+		}
+
+		if parameter, matched, parseErr := p.parseTypeParameter(); matched || parseErr != nil {
+			if parseErr != nil {
+				return nil, parseErr
+			}
+			for _, existing := range genericParameters {
+				if existing.Name == parameter.Name {
+					return nil, shared.NewError(parameter.Loc, "duplicate type parameter %q", parameter.Name)
+				}
+			}
+			genericParameters = append(genericParameters, parameter)
+			if !p.Match(tokeniser.TokenComma) {
+				if !p.Match(tokeniser.TokenCloseParen) {
+					return nil, shared.NewError(p.CurrLoc(), "expected ',' or ')' after type parameter")
+				}
+			} else {
+				p.Inc()
+			}
+			continue
 		}
 
 		mutable := false
@@ -794,9 +807,26 @@ func (p *Parser) ParseTypeAlias() (*TypeAliasNode, error) {
 		return nil, shared.NewError(p.PrevLoc(), "expected type alias name")
 	}
 
-	genericParameters, err := p.parseGenericParameters()
-	if err != nil {
-		return nil, err
+	genericParameters := []GenericParameterNode{}
+	if p.Match(tokeniser.TokenOpenParen) {
+		p.Inc()
+		for !p.Match(tokeniser.TokenCloseParen) {
+			parameter, matched, err := p.parseTypeParameter()
+			if err != nil {
+				return nil, err
+			}
+			if !matched {
+				return nil, shared.NewError(p.CurrLoc(), "type-producing bindings only accept parameters of type 'type'")
+			}
+			genericParameters = append(genericParameters, parameter)
+			if !p.Match(tokeniser.TokenComma) {
+				break
+			}
+			p.Inc()
+		}
+		if !p.Expect(tokeniser.TokenCloseParen) {
+			return nil, shared.NewError(p.PrevLoc(), "expected ')' after type parameters")
+		}
 	}
 
 	if !p.Expect(tokeniser.TokenEquals) {
@@ -969,17 +999,14 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 				return nil, false, shared.NewError(p.PrevLoc(), "expected name")
 			}
 
-			if p.Match(tokeniser.TokenLess) {
-				if err := p.skipGenericParameterLookahead(); err != nil {
-					p.PopPos()
-					return nil, false, err
-				}
-			}
-
 			switch {
 			case p.Match(tokeniser.TokenOpenParen):
-				// let fn(...) = ...
 				p.PopPos()
+				if p.bindingParametersIntroduce("type") {
+					node, err := p.ParseTypeAlias()
+					return node, true, err
+				}
+				// let fn(...) = ...
 				if mutable {
 					node, err := p.ParseDeclaration()
 					return node, true, err
@@ -1109,6 +1136,46 @@ expressionStatement:
 	return expr, true, nil
 }
 
+func (p *Parser) bindingParametersIntroduce(initializer string) bool {
+	p.PushPos()
+	defer p.PopPos()
+	if !p.Match(tokeniser.TokenKeyword) || p.Peek().Value != string(tokeniser.KeywordLet) {
+		return false
+	}
+	p.Inc()
+	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordMut) {
+		p.Inc()
+	}
+	if !p.Expect(tokeniser.TokenIdentifier) || !p.Match(tokeniser.TokenOpenParen) {
+		return false
+	}
+	depth := 0
+	for !p.Match(tokeniser.TokenEof) {
+		switch p.Peek().Type {
+		case tokeniser.TokenOpenParen:
+			depth++
+		case tokeniser.TokenCloseParen:
+			depth--
+			if depth == 0 {
+				p.Inc()
+				for p.Match(tokeniser.TokenNewline) {
+					p.Inc()
+				}
+				if !p.Match(tokeniser.TokenEquals) {
+					return false
+				}
+				p.Inc()
+				for p.Match(tokeniser.TokenNewline) {
+					p.Inc()
+				}
+				return p.Peek().Value == initializer
+			}
+		}
+		p.Inc()
+	}
+	return false
+}
+
 func (p *Parser) tokenContinuesExpression() bool {
 	if p.Match(tokeniser.TokenOpenParen, tokeniser.TokenOpenSquare, tokeniser.TokenDot,
 		tokeniser.TokenAsterisk, tokeniser.TokenSlash, tokeniser.TokenPercent,
@@ -1122,31 +1189,6 @@ func (p *Parser) tokenContinuesExpression() bool {
 		return true
 	}
 	return false
-}
-
-func (p *Parser) skipGenericParameterLookahead() error {
-	depth := 0
-	for {
-		switch {
-		case p.Match(tokeniser.TokenLess):
-			depth++
-		case p.Match(tokeniser.TokenGreater):
-			depth--
-			if depth == 0 {
-				p.Inc()
-				return nil
-			}
-		case p.Match(tokeniser.TokenShiftRight):
-			depth -= 2
-			if depth <= 0 {
-				p.Inc()
-				return nil
-			}
-		case p.Match(tokeniser.TokenEof, tokeniser.TokenNewline, tokeniser.TokenSemicolon):
-			return shared.NewError(p.CurrLoc(), "unterminated generic parameter list")
-		}
-		p.Inc()
-	}
 }
 
 func (p *Parser) ParseDefer() (*DeferNode, error) {
@@ -1195,14 +1237,6 @@ func (p *Parser) ParseDeclaration() (*DeclarationNode, error) {
 		return nil, shared.NewError(p.PrevLoc(), "expected name")
 	}
 
-	genericParameters, err := p.parseGenericParameters()
-	if err != nil {
-		return nil, err
-	}
-	if mutable && len(genericParameters) != 0 {
-		return nil, shared.NewError(ident.Loc, "generic bindings cannot be mutable")
-	}
-
 	var tpe TypeNode
 	if p.Match(tokeniser.TokenColon) {
 		p.Inc()
@@ -1216,6 +1250,7 @@ func (p *Parser) ParseDeclaration() (*DeclarationNode, error) {
 
 	var value ExpressionNode
 	var attrs attributes.Attributes
+	var err error
 	comptime := false
 	if p.Match(tokeniser.TokenEquals) {
 		p.Inc()
@@ -1245,77 +1280,109 @@ func (p *Parser) ParseDeclaration() (*DeclarationNode, error) {
 	if value == nil && attrs.Get(attributes.AttributeTypeForeign) != nil && tpe == nil {
 		return nil, shared.NewError(ident.Loc, "external declaration requires a type annotation")
 	}
-	if len(genericParameters) != 0 && !comptime {
-		return nil, shared.NewError(ident.Loc, "generic value bindings require a comptime initializer")
-	}
-
 	return &DeclarationNode{
-		Name:              ident.Value,
-		NameLoc:           ident.Loc,
-		GenericParameters: genericParameters,
-		TypeNode:          tpe,
-		Mutable:           mutable,
-		Value:             value,
-		Comptime:          comptime,
-		Attributes:        attrs,
-		Loc:               p.SpanFrom(beginLoc),
+		Name:       ident.Value,
+		NameLoc:    ident.Loc,
+		TypeNode:   tpe,
+		Mutable:    mutable,
+		Value:      value,
+		Comptime:   comptime,
+		Attributes: attrs,
+		Loc:        p.SpanFrom(beginLoc),
 	}, nil
 }
 
-func (p *Parser) parseGenericParameters() ([]GenericParameterNode, error) {
-	if !p.Match(tokeniser.TokenLess) {
-		return nil, nil
+// parseTypeParameter recognizes a compile-time type parameter in an ordinary
+// binding argument list. Constraints use type(Trait), for example
+// $T: type(PartialEq).
+func (p *Parser) parseTypeParameter() (GenericParameterNode, bool, error) {
+	p.PushPos()
+	begin := p.CurrLoc()
+	if !p.Match(tokeniser.TokenDollar) {
+		p.PopPos()
+		return GenericParameterNode{}, false, nil
 	}
 	p.Inc()
-	var parameters []GenericParameterNode
-	seen := make(map[string]bool)
-	for {
-		for p.Match(tokeniser.TokenNewline) {
-			p.Inc()
-		}
-		name, ok := p.ExpectGet(tokeniser.TokenIdentifier)
-		if !ok {
-			return nil, shared.NewError(p.PrevLoc(), "expected generic type parameter name")
-		}
-		if seen[name.Value] {
-			return nil, shared.NewError(name.Loc, "duplicate generic type parameter %q", name.Value)
-		}
-		seen[name.Value] = true
-		parameter := GenericParameterNode{Name: name.Value, Loc: name.Loc}
-		if p.Match(tokeniser.TokenColon) {
-			p.Inc()
-			constraint, err := p.ParseType()
-			if err != nil {
-				return nil, err
-			}
-			parameter.Constraint = constraint
-			parameter.Loc = name.Loc.WithEnd(constraint.GetLoc())
-		}
-		parameters = append(parameters, parameter)
-		for p.Match(tokeniser.TokenNewline) {
-			p.Inc()
-		}
-		if p.consumeGenericClose() {
-			break
-		}
-		if !p.Expect(tokeniser.TokenComma) {
-			return nil, shared.NewError(p.PrevLoc(), "expected ',' or '>' in generic parameter list")
-		}
+	name, ok := p.ExpectGet(tokeniser.TokenIdentifier)
+	if !ok {
+		p.PopPos()
+		return GenericParameterNode{}, true, shared.NewError(begin, "expected type parameter name after '$'")
 	}
-	return parameters, nil
+	if !p.Expect(tokeniser.TokenColon) || !p.Match(tokeniser.TokenKeyword) ||
+		p.Peek().Value != string(tokeniser.KeywordType) {
+		p.PopPos()
+		return GenericParameterNode{}, true, shared.NewError(name.Loc, "compile-time parameter %q must have type 'type'", name.Value)
+	}
+	p.Inc()
+	parameter := GenericParameterNode{Name: name.Value, Loc: p.SpanFrom(begin)}
+	if p.Match(tokeniser.TokenOpenParen) {
+		p.Inc()
+		constraint, err := p.ParseType()
+		if err != nil {
+			p.CommitPos()
+			return GenericParameterNode{}, true, err
+		}
+		if !p.Expect(tokeniser.TokenCloseParen) {
+			p.CommitPos()
+			return GenericParameterNode{}, true, shared.NewError(p.PrevLoc(), "expected ')' after type parameter constraint")
+		}
+		parameter.Constraint = constraint
+		parameter.Loc = p.SpanFrom(begin)
+	}
+	p.CommitPos()
+	return parameter, true, nil
 }
 
-func (p *Parser) consumeGenericClose() bool {
-	if p.Match(tokeniser.TokenGreater) {
-		p.Inc()
-		return true
+func capturedTypeParameters(owner TypeNode) ([]GenericParameterNode, error) {
+	var result []GenericParameterNode
+	seen := make(map[string]bool)
+	var visit func(TypeNode) error
+	visit = func(node TypeNode) error {
+		switch n := node.(type) {
+		case *NamedTypeNode:
+			if n.Capture {
+				if !seen[n.Name] {
+					seen[n.Name] = true
+					result = append(result, GenericParameterNode{Name: n.Name, Constraint: n.CaptureConstraint, Loc: n.Loc})
+				} else if n.CaptureConstraint != nil {
+					return shared.NewError(n.Loc, "constraint for repeated type capture %q must be declared on its first occurrence", n.Name)
+				}
+			}
+			for _, argument := range n.TypeArguments {
+				if err := visit(argument); err != nil {
+					return err
+				}
+			}
+		case *PointerTypeNode:
+			return visit(n.BaseType)
+		case *SliceTypeNode:
+			return visit(n.ElementType)
+		case *ArrayTypeNode:
+			return visit(n.ElementType)
+		case *DynTypeNode:
+			return visit(n.TraitType)
+		case *ReprTypeNode:
+			return visit(n.Operand)
+		case *FunctionTypeNode:
+			for _, parameter := range n.Parameters {
+				if err := visit(parameter); err != nil {
+					return err
+				}
+			}
+			return visit(n.ReturnType)
+		case *MultipleReturnTypeNode:
+			for _, item := range n.Types {
+				if err := visit(item); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
 	}
-	if p.Match(tokeniser.TokenShiftRight) {
-		p.tokens[p.pos].Type = tokeniser.TokenGreater
-		p.tokens[p.pos].Value = ">"
-		return true
+	if err := visit(owner); err != nil {
+		return nil, err
 	}
-	return false
+	return result, nil
 }
 
 func (p *Parser) parseMultiDeclaration() (*MultiDeclarationNode, error) {

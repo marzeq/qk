@@ -581,7 +581,7 @@ let user: UserId = raw.(UserId)
 let Byte = type alias u8
 ```
 
-Aliases and defined types may be generic. Defined generic types have distinct identities for each concrete argument list, while a transparent alias retains the identity of its substituted target.
+Aliases and defined types may be parameterized by compile-time types. Defined parameterized types have distinct identities for each concrete argument list, while a transparent alias retains the identity of its substituted target.
 
 ## Arrays
 
@@ -922,67 +922,70 @@ let counter = Counter.init(10)
 
 Ordinary modules may attach methods only to nominal types they own. The trusted standard library also supplies methods for primitive types, pointers, slices, `str`, and `cstr`.
 
-## Methods on generic and structural owners
+## Methods on type-producing and structural owners
 
-A generic nominal owner uses a parenthesised owner pattern, and all binders follow the method name:
+A parameterized nominal owner uses a parenthesised owner pattern. `$T` captures the concrete type argument from the receiver:
 
 ```qk
-let Box<T> = type struct {
+let Box($T: type) = type struct {
   value: T,
 }
 
-let (Box<T>).get<T>(self): T = self.value
+let (Box($T)).get(self): T = self.value
 ```
 
 The same syntax describes standard-library methods on structural types:
 
 ```qk
-let ([]T).first<T>(self): T = self[0]
-let (*mut T).write<T>(self, value: T): void { self.* = value }
+let ([]$T).first(self): T = self[0]
+let (*mut $T).write(self, value: T): void { self.* = value }
 ```
 
-Owner parameters form the leading part of the method's generic parameter list in first-appearance order. A call normally infers them from the receiver or from typed value parameters.
+Owner captures form the leading part of the method's compile-time type parameter list in first-appearance order. A call normally infers them from the receiver or from typed value parameters.
 
-Static generic calls can qualify the owner as `Box<i32>.init(...)`. They may instead put a complete argument list after the method name, as in `Box.init<i32>(...)`, and a method with extra parameters may provide only that method-specific suffix when owner arguments are inferred.
+Static calls can qualify the owner as `Box(i32).init(...)`. When a method-specific type cannot be inferred, supply it before the runtime arguments.
 
-# Generics
+# Compile-time type parameters
 
-Top-level functions, methods, types, and compile-time values may declare type parameters after their binding name:
+Functions, methods, and type-producing bindings declare type parameters in their ordinary argument lists. `$` marks a compile-time type binder:
 
 ```qk
-let identity<T>(value: T): T = value
+let identity($T: type, value: T): T = value
 
-let Pair<T, U> = type struct {
+let Pair($T: type, $U: type) = type struct {
   first: T,
   second: U,
 }
 ```
 
-Calls infer type arguments structurally from typed arguments:
+Calls may infer type arguments structurally from typed arguments:
 
 ```qk
 let value: i32 = identity(42)
 ```
 
-They may also supply arguments explicitly:
+The same parameter can instead be supplied explicitly before runtime arguments:
 
 ```qk
-let value = identity<i32>(42)
-let pair: Pair<i32, str> = .{ first=1, second="one" }
+let allocate($T: type, count: usz): []mut T {
+  return []
+}
+let bytes = allocate(u8, 16)
+let pair: Pair(i32, str) = .{ first=1, second="one" }
 ```
 
 Untyped numeric literals do not choose an arbitrary default type for an otherwise unresolved parameter. Add an expected type or an explicit type argument when inference has no concrete evidence.
 
 Inference first uses typed arguments, then an expected result type from a declaration, assignment, return, or enclosing call. Result context fills only still-unresolved parameters and never overrides explicit or argument-derived choices.
 
-Generic tagged-union owners may be inferred from typed payloads when every owner parameter appears there. Otherwise, qualify the constructor with the required arguments.
+Parameterized tagged-union owners may be inferred from typed payloads when every owner parameter appears there. Otherwise, qualify the constructor with the required arguments.
 
 ## Constraints
 
 A type parameter may require a trait:
 
 ```qk
-let maximum<T: std.PartialOrd>(left: T, right: T): T {
+let maximum($T: type(std.PartialOrd), left: T, right: T): T {
   if left.gt(right) {
     return left
   }
@@ -990,11 +993,11 @@ let maximum<T: std.PartialOrd>(left: T, right: T): T {
 }
 ```
 
-The generic body is checked once under the symbolic constraint, so it may use only the operations that the constraint guarantees. Each concrete specialization keeps `T` in exactly the declared by-value or pointer representation.
+The parameterized body is checked once under the symbolic constraint, so it may use only the operations that the constraint guarantees. Each concrete specialization keeps `T` in exactly the declared by-value or pointer representation.
 
 Constraints use structural conformance. A type satisfies a trait when its method set has compatible methods, even when the implementing methods are private.
 
-Generic runtime value bindings are not supported. A generic value must be compile-time evaluable, as described later in this guide.
+Parameterized bindings use function-like semantics: their compile-time arguments select a concrete specialization, and an expression body may produce either a runtime value or a compile-time result.
 
 # Traits
 
@@ -1027,7 +1030,7 @@ let PartialEq = type trait {
 }
 ```
 
-Trait requirements may themselves be generic and may constrain their method type parameters. Traits that use `Self` outside the receiver or declare generic methods can be used as static constraints and views, but not as dynamic trait objects.
+Trait requirements may themselves have compile-time type parameters and may constrain them. Traits that use `Self` outside the receiver or declare parameterized methods can be used as static constraints and views, but not as dynamic trait objects.
 
 ## `Any`
 
@@ -1162,13 +1165,13 @@ Compile-time values may be boolean or integer. Untyped integer bindings stay unt
 
 Module-level compile-time bindings may be public and referenced through imported module names. Local bindings are visible in lexical source order.
 
-Generic compile-time values are permitted:
+Parameterized type-level calculations use ordinary parameterized bindings; they do not need the `comptime` initializer marker:
 
 ```qk
-let StorageSize<T> = comptime @sizeof(T)
+let StorageSize($T: type) = @sizeof(T)
 ```
 
-Each concrete argument list has independent specialization state. Ordinary generic runtime values remain forbidden.
+Each concrete argument list produces an independently specialized binding. The `comptime` marker remains for non-parameterized module and local values that must participate in early token-stream expansion, such as `when` conditions.
 
 ## `when`
 
@@ -1408,7 +1411,7 @@ The installed standard library is divided into small `std` packages. Features th
 
 ## Core methods
 
-The root `std` package defines the common structural traits used by generic code, including arithmetic, comparison, and bitwise traits. It also provides trusted methods for numeric primitives, pointers, slices, `str`, and `cstr`.
+The root `std` package defines the common structural traits used by parameterized code, including arithmetic, comparison, and bitwise traits. It also provides trusted methods for numeric primitives, pointers, slices, `str`, and `cstr`.
 
 Immutable and mutable slices provide search, prefix and suffix checks, filling, swapping, reversing, and allocator-backed reversed copies. Strings provide length-aware search, containment, trimming, reading, and hosted C-string conversion.
 
@@ -1430,7 +1433,7 @@ Hosted builds provide `std.alloc.LibcAllocator`. `std.alloc.Arena` is also hoste
 
 ## Collections and strings
 
-`std.collections.DynamicArray<T>` is an allocator-backed growable array. It supports reserving, appending, inserting, removing, clearing, slice views, and explicit `deinit`.
+`std.collections.DynamicArray(T)` is an allocator-backed growable array. It supports reserving, appending, inserting, removing, clearing, slice views, and explicit `deinit`.
 
 `std.strings.StringBuilder` is an allocator-backed builder that also implements reader, writer, and formatter traits. `std.strings` provides split iteration, replacement, and integer parsing in addition to the root string methods. Mutable `str` and `cstr` bindings are consuming `std.io.Reader` implementations.
 

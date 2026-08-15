@@ -10,9 +10,10 @@ import (
 )
 
 type Parser struct {
-	pos      int
-	tokens   []tokeniser.Token
-	posStack []int
+	pos              int
+	tokens           []tokeniser.Token
+	posStack         []int
+	allowTypeCapture bool
 }
 
 func NewParser(tokens []tokeniser.Token) *Parser {

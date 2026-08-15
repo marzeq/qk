@@ -3,4 +3,4 @@ module model
 import std.collections
 
 pub let Item = type struct { value: i32 }
-pub let Children = type alias std.collections.DynamicArray<Item>
+pub let Children = type alias std.collections.DynamicArray(Item)

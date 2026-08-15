@@ -1,15 +1,15 @@
 module std
 
-pub let (*T).is_nil<T>(self): bool = self == nil
+pub let (*$T).is_nil(self): bool = self == nil
 
-pub let (*mut T).as_const<T>(self): *T = self
+pub let (*mut $T).as_const(self): *T = self
 
-pub let (*T).as_slice<T>(self, length: usz): []T {
+pub let (*$T).as_slice(self, length: usz): []T {
   if self == nil { return self[:0] }
   return self[:length]
 }
 
-pub let (*mut T).as_slice<T>(self, length: usz): []mut T {
+pub let (*mut $T).as_slice(self, length: usz): []mut T {
   if self == nil { return self[:0] }
   return self[:length]
 }

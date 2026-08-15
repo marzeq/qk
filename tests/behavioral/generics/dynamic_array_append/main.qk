@@ -9,7 +9,7 @@ let main() {
   let mut arena = std.alloc.Arena.init()
   defer arena.deinit()
 
-  let mut values = std.collections.DynamicArray<i32>.init(arena.as_allocator())
+  let mut values = std.collections.DynamicArray(i32).init(arena.as_allocator())
   assert(values.append(1), "append failed")
   let first, present = values.first()
   assert(values.length() == 1 && present && first == 1, "wrong appended value")

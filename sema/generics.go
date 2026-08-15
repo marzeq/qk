@@ -89,7 +89,7 @@ func (a *Analyser) makeGenericParameters(name string, nodes []parser.GenericPara
 			continue
 		}
 		if _, ok := types.Underlying(constraint).(types.TraitType); !ok {
-			a.errorf(node, "generic constraint must be a trait type, got %v", constraint)
+			a.errorf(node, "type parameter constraint must be a trait type, got %v", constraint)
 			constraint = types.ErrorType{}
 		}
 		parameters[i].Constraint = constraint
@@ -197,7 +197,7 @@ func (a *Analyser) checkGenericArguments(node parser.Node, parameters []types.Ty
 
 func (a *Analyser) checkGenericArgumentsFrom(node parser.Node, parameters []types.TypeParameter, arguments []types.Type, start int) bool {
 	if len(parameters) != len(arguments) {
-		a.errorf(node, "generic binding expects %d type arguments, got %d", len(parameters), len(arguments))
+		a.errorf(node, "parameterized binding expects %d type arguments, got %d", len(parameters), len(arguments))
 		return false
 	}
 	valid := true
@@ -259,7 +259,7 @@ func (a *Analyser) withDefinitionContext(module string, trusted bool, bindings m
 
 func (a *Analyser) specializeGenericAlias(info *genericAliasInfo, arguments []types.Type, use parser.Node, indirect bool) *symbols.Symbol {
 	if info == nil {
-		a.errorf(use, "generic type metadata is unavailable")
+		a.errorf(use, "parameterized type metadata is unavailable")
 		return nil
 	}
 	if !a.checkGenericArguments(use, info.parameters, arguments) {
@@ -285,7 +285,7 @@ func (a *Analyser) specializeGenericAlias(info *genericAliasInfo, arguments []ty
 					},
 				}
 			}
-			a.errorf(use, "circular generic type definition detected")
+			a.errorf(use, "circular parameterized type definition detected")
 			return nil
 		}
 		return existing.symbol
@@ -312,13 +312,13 @@ func (a *Analyser) specializeGenericAlias(info *genericAliasInfo, arguments []ty
 		if types.HasError(resolved) {
 			// Type resolution already reported the primary error.
 		} else if info.node.Transparent && types.IsOpaque(resolved) {
-			a.errorf(info.node, "opaque generic type %q cannot be a transparent alias", info.node.Name)
+			a.errorf(info.node, "opaque parameterized type %q cannot be a transparent alias", info.node.Name)
 		} else if _, trait := underlying.(types.TraitType); trait {
 			if info.node.Transparent {
-				a.errorf(info.node, "generic trait %q cannot be a transparent alias", info.node.Name)
+				a.errorf(info.node, "parameterized trait %q cannot be a transparent alias", info.node.Name)
 			}
 		} else if _, opaque := underlying.(types.OpaqueType); !opaque && !types.IsComplete(underlying) {
-			a.errorf(info.node, "generic type %q contains an incomplete type by value", info.node.Name)
+			a.errorf(info.node, "parameterized type %q contains an incomplete type by value", info.node.Name)
 		}
 	})
 	specialization.state = aliasResolved
@@ -700,7 +700,7 @@ func (a *Analyser) instantiateFunctionSymbol(
 		method := methods[original.RequirementSlot]
 		if method.Template {
 			if len(substituted.TypeArguments) != len(method.GenericParameters) || hasTypeParameters(substituted.TypeArguments) {
-				a.errorf(use, "cannot resolve generic trait method %q type arguments", method.Name)
+				a.errorf(use, "cannot resolve parameterized trait method %q type arguments", method.Name)
 				cloned[original] = substituted
 				return substituted
 			}
@@ -788,6 +788,17 @@ func inferGenericArgumentsPartial(
 	typedVariadic, variadicExpansion bool,
 ) ([]types.Type, error) {
 	return inferGenericArgumentsForCall(parameters, patterns, actuals, nil, nil, typedVariadic, variadicExpansion, true)
+}
+
+// preserveResolvedTypeArguments keeps explicit or argument-derived choices
+// fixed while inference fills parameter slots that are still symbolic.
+func preserveResolvedTypeArguments(parameters []types.TypeParameter, fixed, inferred []types.Type) []types.Type {
+	for i := range inferred {
+		if i < len(fixed) && i < len(parameters) && fixed[i] != nil && !fixed[i].Equals(parameters[i]) {
+			inferred[i] = fixed[i]
+		}
+	}
+	return inferred
 }
 
 func inferGenericArgumentsWithResult(

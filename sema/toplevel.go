@@ -62,7 +62,7 @@ func (a *Analyser) resolveBodies(root *parser.RootNode) {
 		case *parser.FunctionDefNode:
 			a.visitFunction(n)
 		case *parser.DeclarationNode:
-			if len(n.GenericParameters) != 0 {
+			if len(n.GenericParameters) != 0 || n.Symbol != nil && n.Symbol.TemplateSymbol != nil {
 				continue
 			}
 			if n.Value != nil {
@@ -75,10 +75,10 @@ func (a *Analyser) resolveBodies(root *parser.RootNode) {
 func (a *Analyser) collectFunctionSignature(n *parser.FunctionDefNode) {
 	if n.IsGeneric() {
 		if n.Attributes.Get(attributes.AttributeTypeForeign) != nil {
-			a.errorf(n, "generic functions cannot be foreign declarations")
+			a.errorf(n, "parameterized functions cannot be foreign declarations")
 		}
 		if n.Attributes.Get(attributes.AttributeTypeExport) != nil {
-			a.errorf(n, "generic functions cannot be exported")
+			a.errorf(n, "parameterized functions cannot be exported")
 		}
 	}
 	if n.HasMethodOwner() {
@@ -155,7 +155,7 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 		return
 	}
 	if len(n.MethodOwnerGenericParameters) != 0 {
-		a.errorf(n, "generic method owners use the form (Type<T>).%s<T>(...)", n.Name)
+		a.errorf(n, "parameterized method owners use a captured type pattern such as (Type($T)).%s(...)", n.Name)
 		return
 	}
 	var ownerType types.Type
@@ -171,7 +171,7 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 		}
 		ownerType = a.resolveAlias(info, n, false)
 	} else if ownerSymbol, ok := a.current.Resolve(n.MethodOwner); ok && ownerSymbol.Kind == symbols.SymbolKindType && ownerSymbol.Template {
-		a.errorf(n, "generic method owner %q requires a parenthesized type pattern", n.MethodOwner)
+		a.errorf(n, "parameterized method owner %q requires a parenthesized type pattern", n.MethodOwner)
 		return
 	} else if builtin, ok := a.universe.Resolve(n.MethodOwner); ok && builtin.Kind == symbols.SymbolKindType {
 		if len(n.MethodOwnerGenericParameters) != 0 {
@@ -285,12 +285,12 @@ func (a *Analyser) collectPatternMethodSignature(n *parser.FunctionDefNode) {
 	}
 	ownerParameters := methodOwnerTypeParameters(ownerType)
 	if len(ownerParameters) > len(genericParameters) {
-		a.errorf(n, "method owner type %v uses undeclared generic parameters", ownerType)
+		a.errorf(n, "method owner type %v uses undeclared type captures", ownerType)
 		return
 	}
 	for i, ownerParameter := range ownerParameters {
 		if !ownerParameter.Equals(genericParameters[i]) {
-			a.errorf(n, "generic parameters used by method owner %v must be declared first and in owner order", ownerType)
+			a.errorf(n, "type captures used by method owner %v must be declared first and in owner order", ownerType)
 			return
 		}
 	}
@@ -571,10 +571,10 @@ func untypedComptimeInteger(n *parser.DeclarationNode) (string, bool) {
 
 func (a *Analyser) collectGlobalVariable(n *parser.DeclarationNode) {
 	if len(n.GenericParameters) != 0 && !n.Comptime {
-		a.errorf(n, "generic value bindings require a comptime initializer")
+		a.errorf(n, "parameterized value bindings require a comptime initializer")
 	}
 	if len(n.GenericParameters) != 0 && n.Attributes.Get(attributes.AttributeTypeForeign) != nil {
-		a.errorf(n, "generic values cannot be foreign declarations")
+		a.errorf(n, "parameterized values cannot be foreign declarations")
 	}
 	genericParameters := a.makeGenericParameters(n.Name, n.GenericParameters)
 	previousBindings := a.typeParameterBindings

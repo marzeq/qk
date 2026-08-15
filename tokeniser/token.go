@@ -76,6 +76,7 @@ const (
 	TokenArrow
 	TokenFatArrow
 	TokenAt
+	TokenDollar
 )
 
 type KeywordKind string
@@ -118,6 +119,8 @@ func (t Token) String() string {
 		return "\\n"
 	case TokenKeyword:
 		return "kw(" + t.Value + ")"
+	case TokenDollar:
+		return "$"
 	case TokenIdentifier:
 		return "ident(" + t.Value + ")"
 	case TokenNumber:

@@ -236,6 +236,11 @@ func topLevelCompileTimeDeclarations(tokens []tokeniser.Token, module string) []
 			continue
 		}
 		equals := namePos + 1
+		if equals < len(tokens) && tokens[equals].Type == tokeniser.TokenOpenParen {
+			// Parameterized compile-time bindings are specialized by semantic
+			// analysis rather than eagerly evaluated as module constants.
+			continue
+		}
 		for equals < len(tokens) && tokens[equals].Type != tokeniser.TokenEquals && tokens[equals].Type != tokeniser.TokenNewline {
 			if tokens[equals].Type == tokeniser.TokenLess {
 				equals = len(tokens)

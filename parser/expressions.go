@@ -328,31 +328,6 @@ func (p *Parser) ParsePostfix() (ExpressionNode, error) {
 
 	for {
 		switch {
-		case p.Match(tokeniser.TokenLess):
-			typeArguments, ok, err := p.tryParseTypeArguments()
-			if err != nil {
-				return nil, err
-			}
-			if !ok {
-				return expr, nil
-			}
-			switch target := expr.(type) {
-			case *IdentifierNode:
-				if len(target.TypeArguments) != 0 {
-					return nil, shared.NewError(target.Loc, "generic arguments already specified")
-				}
-				target.TypeArguments = typeArguments
-				target.Loc = p.SpanFrom(target.Loc)
-			case *FieldAccessNode:
-				if len(target.Field.TypeArguments) != 0 {
-					return nil, shared.NewError(target.Field.Loc, "generic arguments already specified")
-				}
-				target.Field.TypeArguments = typeArguments
-				target.Field.Loc = p.SpanFrom(target.Field.Loc)
-				target.Loc = p.SpanFrom(target.Loc)
-			default:
-				return nil, shared.NewError(expr.GetLoc(), "type arguments require a named binding")
-			}
 		case p.Match(tokeniser.TokenDot) && p.Next().Type == tokeniser.TokenOpenCurly:
 			qualified, ok := expr.(*IdentifierNode)
 			if !ok {
@@ -364,6 +339,25 @@ func (p *Parser) ParsePostfix() (ExpressionNode, error) {
 			p.Inc()
 			return p.ParseStructLiteral(qualified)
 		case p.Match(tokeniser.TokenOpenParen):
+			// A type-producing binding uses ordinary call syntax. Before a
+			// structural literal the following '.{' makes that interpretation
+			// unambiguous, so retain the arguments on the type identifier.
+			p.PushPos()
+			typeArguments, typeErr := p.parseCallTypeArguments()
+			if typeErr == nil && p.Match(tokeniser.TokenDot) && p.Next().Type == tokeniser.TokenOpenCurly {
+				qualified, ok := expr.(*IdentifierNode)
+				if !ok {
+					qualified, ok = dottedIdentifier(expr)
+				}
+				if ok {
+					p.CommitPos()
+					qualified.TypeArguments = typeArguments
+					qualified.Loc = p.SpanFrom(qualified.Loc)
+					expr = qualified
+					continue
+				}
+			}
+			p.PopPos()
 			call, err := p.ParseCall(expr)
 			if err != nil {
 				return nil, err
@@ -534,42 +528,6 @@ func dottedIdentifier(expr ExpressionNode) (*IdentifierNode, bool) {
 			return nil, false
 		}
 	}
-}
-
-func (p *Parser) tryParseTypeArguments() ([]TypeNode, bool, error) {
-	p.PushPos()
-	p.Inc()
-	var arguments []TypeNode
-	for {
-		for p.Match(tokeniser.TokenNewline) {
-			p.Inc()
-		}
-		argument, err := p.ParseType()
-		if err != nil {
-			p.PopPos()
-			return nil, false, nil
-		}
-		arguments = append(arguments, argument)
-		for p.Match(tokeniser.TokenNewline) {
-			p.Inc()
-		}
-		if p.consumeGenericClose() {
-			break
-		}
-		if !p.Match(tokeniser.TokenComma) {
-			p.PopPos()
-			return nil, false, nil
-		}
-		p.Inc()
-	}
-	switch p.Peek().Type {
-	case tokeniser.TokenIdentifier, tokeniser.TokenNumber, tokeniser.TokenFloat, tokeniser.TokenString,
-		tokeniser.TokenCString, tokeniser.TokenChar:
-		p.PopPos()
-		return nil, false, nil
-	}
-	p.CommitPos()
-	return arguments, true, nil
 }
 
 func (p *Parser) ParseComparison() (ExpressionNode, error) {
@@ -802,11 +760,6 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 		if err != nil {
 			return nil, err
 		}
-
-		if p.Match(tokeniser.TokenOpenParen) {
-			return p.ParseFunctionCall(ident)
-		}
-
 		return ident, nil
 	}
 
@@ -1505,10 +1458,7 @@ func (p *Parser) ParseTraitType() (*TraitTypeNode, error) {
 			return nil, shared.NewError(name.Loc, "duplicate trait method %q", name.Value)
 		}
 		seen[name.Value] = struct{}{}
-		genericParameters, err := p.parseGenericParameters()
-		if err != nil {
-			return nil, err
-		}
+		genericParameters := []GenericParameterNode{}
 		if !p.Expect(tokeniser.TokenOpenParen) {
 			return nil, shared.NewError(p.PrevLoc(), "expected '('")
 		}
@@ -1543,6 +1493,16 @@ func (p *Parser) ParseTraitType() (*TraitTypeNode, error) {
 			}
 			if p.Match(tokeniser.TokenCloseParen) {
 				break
+			}
+			if parameter, matched, parseErr := p.parseTypeParameter(); matched || parseErr != nil {
+				if parseErr != nil {
+					return nil, parseErr
+				}
+				genericParameters = append(genericParameters, parameter)
+				if p.Match(tokeniser.TokenComma) {
+					p.Inc()
+				}
+				continue
 			}
 			arg, err := p.ParseIdent()
 			if err != nil {
@@ -1603,6 +1563,7 @@ func (p *Parser) ParseTraitType() (*TraitTypeNode, error) {
 			}
 		}
 		var body Node
+		var err error
 		expressionBody := false
 		if p.Match(tokeniser.TokenOpenCurly) {
 			body, err = p.ParseBlock()
@@ -2421,6 +2382,14 @@ func (p *Parser) ParseFunctionType() (*FunctionTypeNode, error) {
 
 func (p *Parser) ParseNamedType() (*NamedTypeNode, error) {
 	beginLoc := p.CurrLoc()
+	capture := false
+	if p.Match(tokeniser.TokenDollar) {
+		if !p.allowTypeCapture {
+			return nil, shared.NewError(p.CurrLoc(), "type captures are only valid in method owner patterns")
+		}
+		capture = true
+		p.Inc()
+	}
 	ident, err := p.ParseIdent()
 	if err != nil {
 		return nil, err
@@ -2430,17 +2399,33 @@ func (p *Parser) ParseNamedType() (*NamedTypeNode, error) {
 		node := &NamedTypeNode{
 			ModName: "",
 			Name:    ident.Name,
+			Capture: capture,
 			Loc:     p.SpanFrom(beginLoc),
 		}
-		if p.Match(tokeniser.TokenLess) {
-			arguments, err := p.parseTypeArguments()
+		if p.Match(tokeniser.TokenOpenParen) {
+			if capture {
+				return nil, shared.NewError(node.Loc, "captured type parameter %q cannot accept type arguments", node.Name)
+			}
+			arguments, err := p.parseCallTypeArguments()
 			if err != nil {
 				return nil, err
 			}
 			node.TypeArguments = arguments
 			node.Loc = p.SpanFrom(beginLoc)
 		}
+		if capture && p.Match(tokeniser.TokenColon) {
+			p.Inc()
+			constraint, err := p.ParseType()
+			if err != nil {
+				return nil, err
+			}
+			node.CaptureConstraint = constraint
+			node.Loc = p.SpanFrom(beginLoc)
+		}
 		return node, nil
+	}
+	if capture {
+		return nil, shared.NewError(beginLoc, "captured type parameter cannot be module-qualified")
 	}
 	parts := []string{ident.Name}
 	for p.Match(tokeniser.TokenDot) {
@@ -2457,8 +2442,8 @@ func (p *Parser) ParseNamedType() (*NamedTypeNode, error) {
 		Name:    parts[len(parts)-1],
 		Loc:     p.SpanFrom(beginLoc),
 	}
-	if p.Match(tokeniser.TokenLess) {
-		arguments, err := p.parseTypeArguments()
+	if p.Match(tokeniser.TokenOpenParen) {
+		arguments, err := p.parseCallTypeArguments()
 		if err != nil {
 			return nil, err
 		}
@@ -2468,14 +2453,18 @@ func (p *Parser) ParseNamedType() (*NamedTypeNode, error) {
 	return node, nil
 }
 
-func (p *Parser) parseTypeArguments() ([]TypeNode, error) {
-	if !p.Expect(tokeniser.TokenLess) {
-		return nil, shared.NewError(p.PrevLoc(), "expected '<'")
+func (p *Parser) parseCallTypeArguments() ([]TypeNode, error) {
+	if !p.Expect(tokeniser.TokenOpenParen) {
+		return nil, shared.NewError(p.PrevLoc(), "expected '('")
 	}
 	var arguments []TypeNode
 	for {
 		for p.Match(tokeniser.TokenNewline) {
 			p.Inc()
+		}
+		if p.Match(tokeniser.TokenCloseParen) {
+			p.Inc()
+			return arguments, nil
 		}
 		argument, err := p.ParseType()
 		if err != nil {
@@ -2485,12 +2474,12 @@ func (p *Parser) parseTypeArguments() ([]TypeNode, error) {
 		for p.Match(tokeniser.TokenNewline) {
 			p.Inc()
 		}
-		if p.consumeGenericClose() {
-			break
+		if p.Match(tokeniser.TokenCloseParen) {
+			p.Inc()
+			return arguments, nil
 		}
 		if !p.Expect(tokeniser.TokenComma) {
-			return nil, shared.NewError(p.PrevLoc(), "expected ',' or '>' in type argument list")
+			return nil, shared.NewError(p.PrevLoc(), "expected ',' or ')' in type argument list")
 		}
 	}
-	return arguments, nil
 }

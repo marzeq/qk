@@ -659,6 +659,10 @@ func (t *Tokeniser) Tokenise() ([]Token, error) {
 			t.AddToken(TokenAt, t.GetLoc())
 			t.Inc()
 			continue
+		case '$':
+			t.AddToken(TokenDollar, t.GetLoc())
+			t.Inc()
+			continue
 		case '.':
 			loc := t.GetLoc()
 			if t.Next() == '.' {

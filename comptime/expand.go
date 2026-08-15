@@ -238,6 +238,11 @@ func (e *expander) expandDeclaration() ([]tokeniser.Token, bool, error) {
 		return nil, false, nil
 	}
 	equals := namePos + 1
+	if equals < len(e.tokens) && e.tokens[equals].Type == tokeniser.TokenOpenParen {
+		// Functions and parameterized compile-time bindings remain for the
+		// parser and semantic specialization pipeline.
+		return nil, false, nil
+	}
 	for equals < len(e.tokens) && e.tokens[equals].Type != tokeniser.TokenEquals && e.tokens[equals].Type != tokeniser.TokenNewline && e.tokens[equals].Type != tokeniser.TokenSemicolon {
 		if e.tokens[equals].Type == tokeniser.TokenLess {
 			return nil, false, nil

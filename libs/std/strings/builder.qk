@@ -150,7 +150,7 @@ pub let StringBuilder.ensure_capacity(
     }
   }
 
-  let resized, success = std.alloc.resize<u8>(
+  let resized, success = std.alloc.resize(u8,
     self.allocator,
     self.ptr[0:self.capacity],
     new_capacity,
@@ -218,7 +218,7 @@ pub let StringBuilder.clear(*mut self): void {
 }
 
 pub let StringBuilder.deinit(*mut self): void {
-  std.alloc.free<u8>(self.allocator, self.ptr[0:self.capacity])
+  std.alloc.free(u8, self.allocator, self.ptr[0:self.capacity])
   self.ptr = nil
   self.count = 0
   self.capacity = 0

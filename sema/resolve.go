@@ -85,7 +85,7 @@ func (a *Analyser) rejectLambdaCapture(n *parser.IdentifierNode, sym *symbols.Sy
 func (a *Analyser) resolveGenericIdentifier(n *parser.IdentifierNode, sym *symbols.Symbol) (*symbols.Symbol, bool) {
 	if !sym.Template {
 		if len(n.TypeArguments) != 0 {
-			a.errorf(n, "non-generic binding %q does not accept type arguments", sym.Name)
+			a.errorf(n, "non-parameterized binding %q does not accept type arguments", sym.Name)
 			return nil, false
 		}
 		n.Symbol = sym
@@ -126,8 +126,23 @@ func (a *Analyser) resolveFunctionCall(n *parser.FunctionCallNode) {
 		if !ok {
 			return
 		}
+		if a.resolveCompileTimeApplication(n, sym, n.Name) {
+			return
+		}
 		if sym.Kind == symbols.SymbolKindFunction {
 			n.Symbol = sym
+			if sym.Template {
+				arguments, remaining, explicit, valid := a.explicitCallTypeArguments(sym.GenericParameters, sym.Signature, n.Args, false, n)
+				if !valid {
+					return
+				}
+				if explicit {
+					n.Args = remaining
+					n.Name.ResolvedTypeArgs = arguments
+					n.Symbol = dependentGenericFunctionSymbol(sym, arguments)
+					n.Name.Symbol = n.Symbol
+				}
+			}
 		} else {
 			n.Name = nil
 		}
@@ -135,6 +150,9 @@ func (a *Analyser) resolveFunctionCall(n *parser.FunctionCallNode) {
 		a.visitExpression(n.Callee)
 		if field, ok := n.Callee.(*parser.FieldAccessNode); ok && field.ResolvedIdentifier != nil {
 			sym := field.ResolvedIdentifier.Symbol
+			if a.resolveCompileTimeApplication(n, sym, field.ResolvedIdentifier) {
+				return
+			}
 			if sym.Kind == symbols.SymbolKindFunction {
 				n.Symbol = sym
 				n.Name = field.ResolvedIdentifier
@@ -144,6 +162,166 @@ func (a *Analyser) resolveFunctionCall(n *parser.FunctionCallNode) {
 
 	for _, arg := range n.Args {
 		a.visitExpression(arg)
+	}
+}
+
+func (a *Analyser) resolveCompileTimeApplication(
+	call *parser.FunctionCallNode,
+	template *symbols.Symbol,
+	name *parser.IdentifierNode,
+) bool {
+	if !template.Template || template.Kind != symbols.SymbolKindType && template.Kind != symbols.SymbolKindVariable {
+		return false
+	}
+	typeArguments := make([]parser.TypeNode, len(call.Args))
+	for i, argument := range call.Args {
+		typeNode, valid := expressionAsTypeNode(argument)
+		if !valid {
+			a.errorf(argument, "compile-time binding %q requires type arguments", template.Name)
+			return true
+		}
+		typeArguments[i] = typeNode
+	}
+	application := &parser.IdentifierNode{
+		Name: name.Name, Module: name.Module, TypeArguments: typeArguments, Loc: call.Loc,
+	}
+	resolved, valid := a.resolveGenericIdentifier(application, template)
+	if !valid {
+		return true
+	}
+	application.Symbol = resolved
+	call.CompileTimeApplication = application
+	call.Symbol = resolved
+	if resolved.Kind == symbols.SymbolKindType {
+		call.SetType(resolved.TypeInfo)
+	} else {
+		call.SetType(resolved.Type)
+	}
+	call.Args = nil
+	return true
+}
+
+func (a *Analyser) explicitCallTypeArguments(
+	parameters []types.TypeParameter,
+	signature *symbols.FunctionSignature,
+	arguments []parser.ExpressionNode,
+	receiverOmitted bool,
+	use parser.Node,
+) ([]types.Type, []parser.ExpressionNode, bool, bool) {
+	if len(parameters) == 0 || signature == nil {
+		return nil, arguments, false, true
+	}
+	required := signature.RequiredParameters
+	maximum := len(signature.Parameters)
+	if receiverOmitted {
+		required--
+		maximum--
+	}
+	validRuntimeArity := func(count int) bool {
+		if signature.Variadic || signature.TypedVariadic {
+			return count >= required
+		}
+		return count >= required && count <= maximum
+	}
+	explicitCount := 0
+	limit := min(len(parameters), len(arguments))
+	for count := limit; count > 0; count-- {
+		if !validRuntimeArity(len(arguments) - count) {
+			continue
+		}
+		allTypes := true
+		for _, argument := range arguments[:count] {
+			if _, ok := expressionAsTypeNode(argument); !ok {
+				allTypes = false
+				break
+			}
+		}
+		if allTypes {
+			explicitCount = count
+			break
+		}
+	}
+	if explicitCount == 0 {
+		return nil, arguments, false, true
+	}
+
+	result := make([]types.Type, len(parameters))
+	for i, parameter := range parameters {
+		result[i] = parameter
+		if i < explicitCount {
+			node, _ := expressionAsTypeNode(arguments[i])
+			result[i] = a.resolveTypeNode(node)
+		}
+	}
+	return result, arguments[explicitCount:], true, true
+}
+
+func expressionAsTypeNode(expression parser.ExpressionNode) (parser.TypeNode, bool) {
+	switch n := expression.(type) {
+	case *parser.IdentifierNode:
+		return &parser.NamedTypeNode{ModName: n.Module, Name: n.Name, TypeArguments: n.TypeArguments, Loc: n.Loc}, true
+	case *parser.FieldAccessNode:
+		parts := []string{n.Field.Name}
+		subject := n.Subject
+		for {
+			switch current := subject.(type) {
+			case *parser.IdentifierNode:
+				parts = append([]string{current.Name}, parts...)
+				if len(parts) < 2 {
+					return nil, false
+				}
+				return &parser.NamedTypeNode{ModName: strings.Join(parts[:len(parts)-1], "."), Name: parts[len(parts)-1], TypeArguments: n.Field.TypeArguments, Loc: n.Loc}, true
+			case *parser.FieldAccessNode:
+				parts = append([]string{current.Field.Name}, parts...)
+				subject = current.Subject
+			default:
+				return nil, false
+			}
+		}
+	case *parser.FunctionCallNode:
+		name := n.Name
+		if name == nil {
+			var ok bool
+			name, ok = expressionAsDottedTypeName(n.Callee)
+			if !ok {
+				return nil, false
+			}
+		}
+		arguments := make([]parser.TypeNode, len(n.Args))
+		for i, argument := range n.Args {
+			converted, ok := expressionAsTypeNode(argument)
+			if !ok {
+				return nil, false
+			}
+			arguments[i] = converted
+		}
+		return &parser.NamedTypeNode{ModName: name.Module, Name: name.Name, TypeArguments: arguments, Loc: n.Loc}, true
+	default:
+		return nil, false
+	}
+}
+
+func expressionAsDottedTypeName(expression parser.ExpressionNode) (*parser.IdentifierNode, bool) {
+	field, ok := expression.(*parser.FieldAccessNode)
+	if !ok {
+		return nil, false
+	}
+	parts := []string{field.Field.Name}
+	subject := field.Subject
+	for {
+		switch current := subject.(type) {
+		case *parser.IdentifierNode:
+			parts = append([]string{current.Name}, parts...)
+			if len(parts) < 2 {
+				return nil, false
+			}
+			return &parser.IdentifierNode{Name: parts[len(parts)-1], Module: strings.Join(parts[:len(parts)-1], "."), Loc: field.Loc}, true
+		case *parser.FieldAccessNode:
+			parts = append([]string{current.Field.Name}, parts...)
+			subject = current.Subject
+		default:
+			return nil, false
+		}
 	}
 }
 

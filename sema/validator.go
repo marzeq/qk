@@ -269,7 +269,7 @@ func (v *Validator) validateNode(node parser.Node) {
 		v.validateAttributes(n, n.Attributes, "declaration", attributes.AttributeTypeForeign)
 		v.finaliseDeclaration(n)
 		if n.Comptime && !isGenericComptimeExpression(n.Value) {
-			v.errorf(n, "comptime generic initializer must be a constant integer expression")
+			v.errorf(n, "parameterized comptime initializer must be a constant integer expression")
 		}
 		if n.Symbol.Type != nil && !types.HasError(n.Symbol.Type) && !types.IsComplete(n.Symbol.Type) {
 			v.errorf(n, "cannot declare a value of incomplete type %v", n.Symbol.Type)
@@ -1428,6 +1428,9 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		n.SetType(types.ErrorType{})
 
 	case *parser.FunctionCallNode:
+		if n.CompileTimeApplication != nil {
+			return
+		}
 		if !v.completeGenericCall(n, nil) {
 			return
 		}
@@ -2083,7 +2086,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			return
 		}
 		if n.MethodSymbol != nil && n.MethodSymbol.Template {
-			v.errorf(n, "generic method %q requires type arguments when used as a value", n.Field.Name)
+			v.errorf(n, "parameterized method %q requires type arguments when used as a value", n.Field.Name)
 			return
 		}
 		if n.IsEnumValue || n.IsFlagValue || n.IsFlagTest || n.MethodSymbol != nil || n.ResolvedIdentifier != nil || n.ModulePath != "" {
@@ -3182,6 +3185,7 @@ func (v *Validator) completeGenericCall(call *parser.FunctionCallNode, expected 
 		call.SetType(types.ErrorType{})
 		return false
 	}
+	arguments = preserveResolvedTypeArguments(template.GenericParameters, call.Symbol.TypeArguments, arguments)
 	for i, argument := range arguments {
 		if i < len(template.GenericParameters) && argument.Equals(template.GenericParameters[i]) {
 			v.errorf(call, "cannot infer type argument %s", template.GenericParameters[i].Name)

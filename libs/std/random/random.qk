@@ -58,7 +58,7 @@ pub let Random.next_f64(*mut self): f64 =
 // size requires.
 // This is a raw C-style operation: types with invalid bit patterns remain the
 // caller's responsibility.
-pub let Random.fill<T>(*mut self, values: []mut T): void {
+pub let Random.fill(*mut self, $T: type, values: []mut T): void {
   for let mut value_index: usz = 0; value_index < @len(values); value_index += 1 {
     let bytes = values[value_index].&mut.(*mut u8)[0:@sizeof(T)]
     let mut offset: usz = 0
@@ -74,7 +74,7 @@ pub let Random.fill<T>(*mut self, values: []mut T): void {
   }
 }
 
-pub let Random.shuffle<T>(*mut self, values: []mut T): void {
+pub let Random.shuffle(*mut self, $T: type, values: []mut T): void {
   let mut remaining = @len(values)
   for remaining > 1 {
     let index = self.less_than(remaining.(u64))

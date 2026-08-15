@@ -91,6 +91,11 @@ type NamedTypeNode struct {
 	ModName       string
 	Name          string
 	TypeArguments []TypeNode
+	// Capture marks a type-pattern binding such as $T in a method owner.
+	// Captures are converted to declaration-scoped generic parameters before
+	// semantic type resolution.
+	Capture           bool
+	CaptureConstraint TypeNode
 
 	Loc shared.Location
 }
@@ -383,6 +388,10 @@ type FunctionCallNode struct {
 	Loc    shared.Location
 	Symbol *symbols.Symbol
 	Method bool
+	Type   types.Type
+	// CompileTimeApplication is populated when call syntax invokes a
+	// type-producing or compile-time value binding, such as DynamicArray(T).
+	CompileTimeApplication *IdentifierNode
 
 	TraitCall bool
 	TraitSlot int
@@ -448,8 +457,17 @@ func (n *InlineAsmNode) SetType(t types.Type)   { n.Type = t }
 func (n *InlineAsmNode) GetType() types.Type    { return n.Type }
 
 func (n FunctionCallNode) GetLoc() shared.Location { return n.Loc }
-func (n *FunctionCallNode) SetType(t types.Type)   {}
+func (n *FunctionCallNode) SetType(t types.Type)   { n.Type = t }
 func (n *FunctionCallNode) GetType() types.Type {
+	if n.Type != nil {
+		return n.Type
+	}
+	if n.CompileTimeApplication != nil && n.CompileTimeApplication.Symbol != nil {
+		if n.CompileTimeApplication.Symbol.Kind == symbols.SymbolKindType {
+			return n.CompileTimeApplication.Symbol.TypeInfo
+		}
+		return n.CompileTimeApplication.Symbol.Type
+	}
 	if n.TaggedUnionType != nil {
 		return n.TaggedUnionType
 	}

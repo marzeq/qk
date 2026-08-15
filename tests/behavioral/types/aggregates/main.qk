@@ -7,11 +7,11 @@ let Point = type struct { x: i32, y: i32 }
 let Direction = type enum { North, East, South, West }
 let Permission = type flags(u8) { Read, Write, Execute }
 let Result = type union(@auto) { Ok(i32), Error(message: str), Cancelled }
-let RecursiveChildren = type alias std.collections.DynamicArray<Recursive>
+let RecursiveChildren = type alias std.collections.DynamicArray(Recursive)
 let Recursive = type union(@auto) { Leaf, Branch(children: RecursiveChildren) }
-let ARecursiveList = type struct { items: std.collections.DynamicArray<BRecursiveItem> }
+let ARecursiveList = type struct { items: std.collections.DynamicArray(BRecursiveItem) }
 let BRecursiveItem = type struct { parents: CRecursiveParents }
-let CRecursiveParents = type alias std.collections.DynamicArray<DRecursiveParent>
+let CRecursiveParents = type alias std.collections.DynamicArray(DRecursiveParent)
 let DRecursiveParent = type union(@auto) { List(ARecursiveList) }
 
 let result_value(result: Result): i32 = match result {

@@ -1,7 +1,7 @@
 module main
 
-let Box<T> = type struct { value: T }
-let Children = type alias Box<Node>
+let Box($T: type) = type struct { value: T }
+let Children = type alias Box(Node)
 let Node = type union(@auto) { Next(child: Children) }
 
 let main() {}

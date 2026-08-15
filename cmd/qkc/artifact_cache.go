@@ -16,8 +16,8 @@ import (
 	"github.com/marzeq/qk/attributes"
 )
 
-const artifactCacheVersion = 2
-const artifactCompilerABI = "qk-lowered-artifacts-v2"
+const artifactCacheVersion = 3
+const artifactCompilerABI = "qk-comptime-type-parameters-v3"
 const artifactMagic = "QKARTF01"
 const buildSnapshotMagic = "QKBUILD1"
 const maxArtifactField = 1 << 30
@@ -61,7 +61,7 @@ func newArtifactCache(args *Args) (*artifactCache, error) {
 	} {
 		writeHashString(hash, value)
 	}
-	return &artifactCache{root: filepath.Join(root, "artifacts-v2", hex.EncodeToString(hash.Sum(nil)))}, nil
+	return &artifactCache{root: filepath.Join(root, "artifacts-v3", hex.EncodeToString(hash.Sum(nil)))}, nil
 }
 
 func writeHashString(writer io.Writer, value string) {
@@ -108,7 +108,7 @@ func specializationOwnerHash(moduleHashes map[string]string) string {
 	}
 	sort.Strings(names)
 	hash := sha256.New()
-	writeHashString(hash, "generic-specializations-v1")
+	writeHashString(hash, "comptime-type-specializations-v2")
 	for _, name := range names {
 		writeHashString(hash, name)
 		writeHashString(hash, moduleHashes[name])

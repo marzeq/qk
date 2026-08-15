@@ -2,15 +2,21 @@ module main
 
 import std.io
 
-let Pair<T, U> = type struct { first: T, second: U }
-let identity<T>(value: T): T = value
-let Box<T> = type struct { value: T }
+let Pair($T: type, $U: type) = type struct { first: T, second: U }
+let identity($T: type, value: T): T = value
+let Box($T: type) = type struct { value: T }
+let type_size($T: type): usz = @sizeof(T)
+let Size($T: type) = @sizeof(T)
 
 let main() {
   let number: i32 = identity(42)
+  let explicit = identity(i32, 42)
   let text = "generic"
-  let pair: Pair<i32, str> = .{ first=number, second=text }
-  let box: Box<i32> = .{ value=pair.first }
-  assert(box.value == 42 && pair.second.eq("generic"), "generic values")
+  let pair: Pair(i32, str) = .{ first=number, second=text }
+  let box: Box(i32) = .{ value=pair.first }
+  let nested: Box(Box(i32)) = .{ value=box }
+  assert(box.value == 42 && explicit == 42 && pair.second.eq("generic"), "generic values")
+  assert(nested.value.value == 42 && type_size(Box(i32)) > 0, "type arguments")
+  assert(Size(i32) == 4, "parameterized compile-time values")
   std.io.println("generics ok")
 }
