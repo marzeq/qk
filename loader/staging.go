@@ -13,6 +13,7 @@ import (
 	"github.com/marzeq/qk/shared"
 	qktarget "github.com/marzeq/qk/target"
 	"github.com/marzeq/qk/tokeniser"
+	"github.com/marzeq/qk/types"
 )
 
 type StageReleaseMode uint8
@@ -45,6 +46,7 @@ type stageValue struct {
 	boolean  bool
 	integer  *big.Int
 	floating string
+	typ      types.Type
 	domain   string
 	name     string
 }
@@ -190,8 +192,12 @@ func (s *stageSelector) selectNode(node parser.Node) ([]parser.Node, error) {
 			} else if resolved {
 				s.bindings[node.Name] = value
 				node.Value = stageLiteral(value, node.Value.GetLoc())
+				if node.TypeNode == nil {
+					node.TypeNode = stageTypeNode(value, node.NameLoc)
+				}
 			} else {
 				s.needsIR = true
+				s.unresolved[node.Value] = struct{}{}
 			}
 		}
 		var err error
@@ -663,6 +669,14 @@ func stageLiteral(value stageValue, loc shared.Location) parser.ExpressionNode {
 	return &parser.IntegerLiteralNode{Value: value.integer.String(), Loc: loc}
 }
 
+func stageTypeNode(value stageValue, loc shared.Location) parser.TypeNode {
+	primitive, ok := types.Underlying(value.typ).(types.PrimitiveType)
+	if !ok || primitive == types.PrimitiveVoid {
+		return nil
+	}
+	return &parser.NamedTypeNode{Name: string(primitive), Loc: loc}
+}
+
 func (s *stageSelector) evaluate(node parser.ExpressionNode) (stageValue, bool, error) {
 	if value, ok := s.evaluated[node]; ok {
 		return value, true, nil
@@ -867,6 +881,7 @@ func (s *stageSelector) targetValue(name string) (stageValue, bool) {
 
 func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 	staged := &parser.RootNode{Loc: root.Loc}
+	reachableFunctions := s.reachableStageFunctions(root)
 	hasModule := false
 	for _, node := range root.Body {
 		switch node := node.(type) {
@@ -880,6 +895,10 @@ func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 			copy := *node
 			copy.Attributes = nil
 			staged.Body = append(staged.Body, &copy)
+		case *parser.FunctionDefNode:
+			if reachableFunctions[node] {
+				staged.Body = append(staged.Body, node)
+			}
 		default:
 			staged.Body = append(staged.Body, node)
 		}
@@ -929,6 +948,121 @@ func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 	return nil
 }
 
+func (s *stageSelector) reachableStageFunctions(root *parser.RootNode) map[*parser.FunctionDefNode]bool {
+	definitions := make(map[string][]*parser.FunctionDefNode)
+	for _, node := range root.Body {
+		if function, ok := node.(*parser.FunctionDefNode); ok {
+			definitions[function.Name] = append(definitions[function.Name], function)
+		}
+	}
+	names := make(map[string]bool)
+	for expression := range s.unresolved {
+		collectStageCalls(expression, names)
+	}
+	result := make(map[*parser.FunctionDefNode]bool)
+	for progress := true; progress; {
+		progress = false
+		for name := range names {
+			for _, function := range definitions[name] {
+				if result[function] {
+					continue
+				}
+				result[function] = true
+				collectStageCalls(function.Body, names)
+				progress = true
+			}
+		}
+	}
+	return result
+}
+
+func collectStageCalls(node parser.Node, names map[string]bool) {
+	if node == nil {
+		return
+	}
+	switch node := node.(type) {
+	case *parser.FunctionCallNode:
+		if identifier, ok := node.Callee.(*parser.IdentifierNode); ok {
+			names[identifier.Name] = true
+		}
+		collectStageCalls(node.Callee, names)
+		for _, argument := range node.Args {
+			collectStageCalls(argument, names)
+		}
+	case *parser.BlockNode:
+		for _, child := range node.Body {
+			collectStageCalls(child, names)
+		}
+	case *parser.DeclarationNode:
+		collectStageCalls(node.Value, names)
+	case *parser.MultiDeclarationNode:
+		collectStageCalls(node.Value, names)
+	case *parser.AssignmentNode:
+		collectStageCalls(node.Value, names)
+	case *parser.ControlKeywordNode:
+		collectStageCalls(node.ReturnValue, names)
+		for _, value := range node.ReturnValues {
+			collectStageCalls(value, names)
+		}
+	case *parser.DeferNode:
+		collectStageCalls(node.Action, names)
+	case *parser.IfNode:
+		collectStageCalls(node.IfBranch.Condition, names)
+		collectStageCalls(node.IfBranch.Node, names)
+		for _, branch := range node.ElseIfBranches {
+			collectStageCalls(branch.Condition, names)
+			collectStageCalls(branch.Node, names)
+		}
+		if node.ElseBranch != nil {
+			collectStageCalls(node.ElseBranch, names)
+		}
+	case *parser.ForNode:
+		for _, child := range node.ExprsOrStmts {
+			collectStageCalls(child, names)
+		}
+		collectStageCalls(node.Body, names)
+	case *parser.RangeForNode:
+		collectStageCalls(node.Start, names)
+		collectStageCalls(node.End, names)
+		collectStageCalls(node.Body, names)
+	case *parser.ForEachNode:
+		collectStageCalls(node.Iterable, names)
+		collectStageCalls(node.Body, names)
+	case *parser.MatchNode:
+		for _, subject := range node.Subjects {
+			collectStageCalls(subject, names)
+		}
+		for _, arm := range node.Arms {
+			collectStageCalls(arm.Guard, names)
+			collectStageCalls(arm.Body, names)
+		}
+	case *parser.UnaryOpNode:
+		collectStageCalls(node.Operand, names)
+	case *parser.BinaryOpNode:
+		collectStageCalls(node.Operand1, names)
+		collectStageCalls(node.Operand2, names)
+	case *parser.IndexExprNode:
+		collectStageCalls(node.Subject, names)
+		collectStageCalls(node.Index, names)
+	case *parser.SliceExprNode:
+		collectStageCalls(node.Subject, names)
+		collectStageCalls(node.Start, names)
+		collectStageCalls(node.End, names)
+	case *parser.CastNode:
+		collectStageCalls(node.Operand, names)
+	case *parser.StructLiteralNode:
+		for _, field := range node.Fields {
+			collectStageCalls(field.R, names)
+		}
+	case *parser.SliceLiteralNode:
+		for _, element := range node.Elements {
+			collectStageCalls(element, names)
+		}
+		collectStageCalls(node.RepeatValue, names)
+		collectStageCalls(node.RepeatAmount, names)
+	}
+}
+
 func findEvaluatedGlobal(globals map[string]ir.EvalValue, sourceName string) (ir.EvalValue, bool) {
 	suffix := "_global_" + sourceName
 	for name, value := range globals {
@@ -941,7 +1075,7 @@ func findEvaluatedGlobal(globals map[string]ir.EvalValue, sourceName string) (ir
 
 func stageValueFromIR(value ir.EvalValue) stageValue {
 	if value.Integer == nil {
-		return stageValue{kind: stageBool, boolean: value.Boolean}
+		return stageValue{kind: stageBool, boolean: value.Boolean, typ: value.Type}
 	}
-	return stageValue{kind: stageInteger, integer: new(big.Int).Set(value.Integer)}
+	return stageValue{kind: stageInteger, integer: new(big.Int).Set(value.Integer), typ: value.Type}
 }

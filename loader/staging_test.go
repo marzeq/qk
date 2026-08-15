@@ -136,3 +136,36 @@ func TestCompileTimeBindingsAreVisibleAcrossModuleFiles(t *testing.T) {
 		t.Fatalf("%v\nprovider symbol: %#v\nuse symbol: %#v", errors[0], declaration.Symbol, identifier.Symbol)
 	}
 }
+
+func TestLocalCompileTimeCallDoesNotStageUnrelatedImportedRuntimeCode(t *testing.T) {
+	source := `
+module test
+import std.io
+let sum(x, y: i32): i32 = x + y
+let main() {
+  let $x = sum(1, 2)
+  std.io.print("The sum is: {}\n", x)
+}
+`
+	tokens, err := tokeniser.NewTokeniser(source, "local_staging.qk").Tokenise()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := parser.NewParser(tokens).Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := SelectCompileTime(root, "test", StageConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	main := root.Body[3].(*parser.FunctionDefNode)
+	binding := main.Body.(*parser.BlockNode).Body[0].(*parser.DeclarationNode)
+	literal, ok := binding.Value.(*parser.IntegerLiteralNode)
+	if !ok || literal.Value != "3" {
+		t.Fatalf("expected evaluated local binding 3, got %#v", binding.Value)
+	}
+	bindingType, ok := binding.TypeNode.(*parser.NamedTypeNode)
+	if !ok || bindingType.Name != "i32" {
+		t.Fatalf("expected evaluated local binding to retain i32, got %#v", binding.TypeNode)
+	}
+}
