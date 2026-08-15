@@ -115,6 +115,9 @@ func (a *Analyser) resolveGenericIdentifier(n *parser.IdentifierNode, sym *symbo
 }
 
 func (a *Analyser) resolveFunctionCall(n *parser.FunctionCallNode) {
+	if n.CompileTimeApplication != nil {
+		return
+	}
 	if a.resolveTaggedUnionConstructor(n) {
 		for _, arg := range n.Args {
 			a.visitExpression(arg)
@@ -342,6 +345,11 @@ func (a *Analyser) resolveTaggedUnionConstructor(n *parser.FunctionCallNode) boo
 		a.visitExpression(owner)
 		if owner.ResolvedIdentifier != nil {
 			symbol = owner.ResolvedIdentifier.Symbol
+		}
+	case *parser.FunctionCallNode:
+		a.visitExpression(owner)
+		if owner.CompileTimeApplication != nil {
+			symbol = owner.CompileTimeApplication.Symbol
 		}
 	}
 	if symbol == nil || symbol.Kind != symbols.SymbolKindType {

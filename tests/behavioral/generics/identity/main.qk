@@ -5,8 +5,14 @@ import std.io
 let Pair($T: type, $U: type) = type struct { first: T, second: U }
 let identity($T: type, value: T): T = value
 let Box($T: type) = type struct { value: T }
+let Option($T: type) = type union(@auto) { Some(T), None }
 let type_size($T: type): usz = @sizeof(T)
 let Size($T: type) = @sizeof(T)
+
+let option_value(option: Option(i32)): i32 = match option {
+  .Some(value) => value,
+  .None => -1,
+}
 
 let main() {
   let number: i32 = identity(42)
@@ -15,8 +21,11 @@ let main() {
   let pair: Pair(i32, str) = .{ first=number, second=text }
   let box: Box(i32) = .{ value=pair.first }
   let nested: Box(Box(i32)) = .{ value=box }
+  let some = Option(i32).Some(5)
+  let none = Option(i32).None
   assert(box.value == 42 && explicit == 42 && pair.second.eq("generic"), "generic values")
   assert(nested.value.value == 42 && type_size(Box(i32)) > 0, "type arguments")
+  assert(option_value(some) == 5 && option_value(none) == -1, "generic union constructors")
   assert(Size(i32) == 4, "parameterized compile-time values")
   std.io.println("generics ok")
 }
