@@ -45,6 +45,7 @@ func runFrontend(
 	}
 	analyser := sema.NewAnalyser()
 	var sourceOrder []string
+	stageModules := make(map[string]*loader.ModuleInfo)
 	for _, name := range order {
 		partials := make([]*loader.PartialModuleInfo, 0, len(origins[name]))
 		roots := make([]*parser.RootNode, 0, len(origins[name]))
@@ -56,7 +57,11 @@ func runFrontend(
 			resolveRootImports(root, importResolutions[name])
 			roots = append(roots, root)
 		}
-		if err := loader.SelectCompileTimeRoots(roots, name, config); err != nil {
+		environment := &loader.StageEnvironment{
+			Modules: stageModules, Order: sourceOrder,
+			TrustedStandardLibrary: len(origins[name]) != 0 && trustedSources[origins[name][0]],
+		}
+		if err := loader.SelectCompileTimeRootsWithEnvironment(roots, name, config, environment); err != nil {
 			return nil, err
 		}
 		for index, root := range roots {
@@ -79,6 +84,11 @@ func runFrontend(
 		}
 		if !args.noStdlib && name != "std" && !strings.HasPrefix(name, "std.") && !containsString(info.Imports, "std") {
 			info.Imports = append(info.Imports, "std")
+		}
+		stageModules[name] = &loader.ModuleInfo{
+			Path: name, Name: info.Name, Imports: append([]string(nil), info.Imports...),
+			Root:                   parser.CloneSyntax(info.Root).(*parser.RootNode),
+			TrustedStandardLibrary: info.TrustedStandardLibrary,
 		}
 		analyser.DeclareModule(info.Root, name, info.TrustedStandardLibrary)
 		if len(analyser.Errors()) != 0 {

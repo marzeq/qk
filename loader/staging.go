@@ -3,10 +3,10 @@ package loader
 import (
 	"fmt"
 	"math/big"
+	"strconv"
 	"strings"
 
 	"github.com/marzeq/qk/attributes"
-	"github.com/marzeq/qk/codegen/irgen"
 	"github.com/marzeq/qk/ir"
 	"github.com/marzeq/qk/parser"
 	"github.com/marzeq/qk/sema"
@@ -29,6 +29,16 @@ type StageConfig struct {
 	ReleaseMode  StageReleaseMode
 	NoLibc       bool
 	NoStdlib     bool
+}
+
+// StageEnvironment supplies already selected dependency modules to compile-time
+// evaluation. Staging clones these modules before running the ordinary semantic
+// and IR pipelines, so it gets normal import resolution without mutating the
+// frontend's real semantic state.
+type StageEnvironment struct {
+	Modules                map[string]*ModuleInfo
+	Order                  []string
+	TrustedStandardLibrary bool
 }
 
 type stageKind uint8
@@ -59,15 +69,20 @@ type stageSelector struct {
 	unresolved  map[parser.ExpressionNode]struct{}
 	needsIR     bool
 	syntheticID int
+	environment *StageEnvironment
 }
 
 // SelectCompileTime lowers unresolved staged expressions through the ordinary
 // semantic and IR pipelines, evaluates them, and removes parsed when nodes.
 func SelectCompileTime(root *parser.RootNode, module string, config StageConfig) error {
+	return selectCompileTime(root, module, config, nil)
+}
+
+func selectCompileTime(root *parser.RootNode, module string, config StageConfig, environment *StageEnvironment) error {
 	selector := &stageSelector{
 		config: config, module: module,
 		bindings: make(map[string]stageValue), evaluated: make(map[parser.ExpressionNode]stageValue),
-		unresolved: make(map[parser.ExpressionNode]struct{}),
+		unresolved: make(map[parser.ExpressionNode]struct{}), environment: environment,
 	}
 	selector.primeBindings(root.Body)
 	body, err := selector.selectBody(root.Body)
@@ -96,6 +111,12 @@ func SelectCompileTime(root *parser.RootNode, module string, config StageConfig)
 // SelectCompileTimeRoots selects a module's parsed files together, preserving
 // same-module compile-time visibility independently of file discovery order.
 func SelectCompileTimeRoots(roots []*parser.RootNode, module string, config StageConfig) error {
+	return SelectCompileTimeRootsWithEnvironment(roots, module, config, nil)
+}
+
+// SelectCompileTimeRootsWithEnvironment selects a module while making its
+// already selected dependencies available through ordinary imports.
+func SelectCompileTimeRootsWithEnvironment(roots []*parser.RootNode, module string, config StageConfig, environment *StageEnvironment) error {
 	if len(roots) == 0 {
 		return nil
 	}
@@ -106,7 +127,7 @@ func SelectCompileTimeRoots(roots []*parser.RootNode, module string, config Stag
 		owners[root.Loc.FilePath] = root
 		root.Body = nil
 	}
-	if err := SelectCompileTime(combined, module, config); err != nil {
+	if err := selectCompileTime(combined, module, config, environment); err != nil {
 		return err
 	}
 	for _, node := range combined.Body {
@@ -885,8 +906,12 @@ func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 	hasModule := false
 	for _, node := range root.Body {
 		switch node := node.(type) {
-		case *parser.WhenNode, *parser.CompilerDirectiveNode, *parser.ImportNode:
+		case *parser.WhenNode, *parser.CompilerDirectiveNode:
 			continue
+		case *parser.ImportNode:
+			if s.environment != nil {
+				staged.Body = append(staged.Body, node)
+			}
 		case *parser.ModuleNode:
 			if hasModule {
 				continue
@@ -915,15 +940,45 @@ func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 		})
 	}
 
+	modules, order, err := s.stageModules(staged)
+	if err != nil {
+		return err
+	}
 	analyser := sema.NewAnalyser()
-	info := &ModuleInfo{Path: s.module, Name: s.module, Root: staged}
-	if errors, _ := RunSemanticModule(info, analyser, false, false); len(errors) != 0 {
+	if errors, _ := RunSemanticPipeline(modules, analyser, order, false, false); len(errors) != 0 {
 		return errors[0]
 	}
-	moduleIR := (&irgen.Generator{ModuleName: s.module, MainModule: s.module}).Generate(staged)
-	evaluator := ir.NewEvaluator(moduleIR)
+	PropagateSpecializationDemands(modules, order)
+	irModules, errors := GenerateIRModules(modules, s.module, order, false, false)
+	if len(errors) != 0 {
+		return errors[0]
+	}
+	templates := make(map[string][]ir.GenericTemplate, len(order))
+	for _, name := range order {
+		templates[name] = GenerateModuleGenericTemplateIR(modules[name])
+	}
+	specializations, err := ExtractGenericSpecializations(irModules, templates, analyser.ModuleInterfaces())
+	if err != nil {
+		return err
+	}
+	allIR := make([]*ir.Module, 0, len(order)+1)
+	for _, name := range order {
+		if moduleIR := irModules[name]; moduleIR != nil {
+			allIR = append(allIR, moduleIR)
+		}
+	}
+	if specializations != nil {
+		allIR = append(allIR, specializations)
+	}
+	evaluator := ir.NewEvaluator(allIR...)
+	moduleIR := irModules[s.module]
 	if moduleIR.Initializer != "" {
 		if _, err := evaluator.Run(moduleIR.Initializer); err != nil {
+			if len(names) == 1 {
+				for expression := range names {
+					return shared.NewError(expression.GetLoc(), err.Error())
+				}
+			}
 			return err
 		}
 	}
@@ -946,6 +1001,38 @@ func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 		}
 	}
 	return nil
+}
+
+func (s *stageSelector) stageModules(staged *parser.RootNode) (map[string]*ModuleInfo, []string, error) {
+	modules := make(map[string]*ModuleInfo)
+	var order []string
+	if s.environment != nil {
+		for _, name := range s.environment.Order {
+			dependency := s.environment.Modules[name]
+			if dependency == nil || name == s.module {
+				continue
+			}
+			modules[name] = &ModuleInfo{
+				Path: name, Name: dependency.Name,
+				Imports:                append([]string(nil), dependency.Imports...),
+				Root:                   parser.CloneSyntax(dependency.Root).(*parser.RootNode),
+				TrustedStandardLibrary: dependency.TrustedStandardLibrary,
+			}
+			order = append(order, name)
+		}
+	}
+	trusted := s.environment != nil && s.environment.TrustedStandardLibrary
+	currentRoot := parser.CloneSyntax(staged).(*parser.RootNode)
+	partial, err := CollectModuleInfo(currentRoot, trusted)
+	if err != nil {
+		return nil, nil, err
+	}
+	modules[s.module] = &ModuleInfo{
+		Path: s.module, Name: partial.Name, Imports: partial.Imports, Root: currentRoot,
+		TrustedStandardLibrary: trusted,
+	}
+	order = append(order, s.module)
+	return modules, order, nil
 }
 
 func (s *stageSelector) reachableStageFunctions(root *parser.RootNode) map[*parser.FunctionDefNode]bool {
@@ -1074,6 +1161,9 @@ func findEvaluatedGlobal(globals map[string]ir.EvalValue, sourceName string) (ir
 }
 
 func stageValueFromIR(value ir.EvalValue) stageValue {
+	if value.Float != nil {
+		return stageValue{kind: stageFloat, floating: strconv.FormatFloat(*value.Float, 'g', -1, 64), typ: value.Type}
+	}
 	if value.Integer == nil {
 		return stageValue{kind: stageBool, boolean: value.Boolean, typ: value.Type}
 	}

@@ -59,3 +59,21 @@ func TestEvaluatorRejectsOnlyExecutedUnavailableInstruction(t *testing.T) {
 		t.Fatalf("expected executed unsupported instruction, got %v", err)
 	}
 }
+
+func TestEvaluatorReportsUnavailableExternalCallWhenExecuted(t *testing.T) {
+	external := NewFunction("external", LinkageExternal, nil)
+	external.Signature = FunctionSignature{ReturnType: types.PrimitiveI32}
+	caller := NewFunction("caller", LinkageInternal, nil)
+	caller.Signature = FunctionSignature{ReturnType: types.PrimitiveI32}
+	entry := caller.NewBlock("entry")
+	caller.Entry = entry.ID
+	result := caller.NewValueOfType(types.PrimitiveI32)
+	entry.Instr = []Instr{
+		Call{Dest: result, Name: "external"},
+		Return{HasValue: true, Value: ValueOperand(result, types.PrimitiveI32)},
+	}
+	_, err := NewEvaluator(&Module{Functions: []*Function{external, caller}}).Run("caller")
+	if err == nil || !strings.Contains(err.Error(), "unavailable function") {
+		t.Fatalf("expected unavailable external call error, got %v", err)
+	}
+}
