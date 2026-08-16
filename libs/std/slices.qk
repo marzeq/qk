@@ -96,3 +96,93 @@ pub let ([]mut $T).reversed(self, alloc: *mut dyn std.alloc.Allocator): ([]mut T
   }
   return result, true
 }
+
+pub let ([]mut $T: PartialOrd).sort(self): void {
+  if @len(self) < 2 {
+    return
+  }
+
+  let mut stack_left: [64]usz = [---; 64]
+  let mut stack_right: [64]usz = [---; 64]
+  let mut stack_size: usz = 0
+
+  stack_left[stack_size] = 0
+  stack_right[stack_size] = @len(self) - 1
+  stack_size += 1
+
+  for stack_size > 0 {
+    stack_size -= 1
+
+    let mut left = stack_left[stack_size]
+    let mut right = stack_right[stack_size]
+
+    for left < right {
+      let mut i = left
+      let mut j = right
+
+      let pivot = self[left + (right - left) / 2]
+
+      for {
+        for self[i].lt(pivot) {
+          i += 1
+        }
+
+        for pivot.lt(self[j]) {
+          if j == 0 { break }
+          j -= 1
+        }
+
+        if i > j { break }
+
+        if i != j {
+          let temporary = self[i]
+          self[i] = self[j]
+          self[j] = temporary
+        }
+
+        i += 1
+
+        if j == 0 { break }
+        j -= 1
+
+        if i > j { break }
+      }
+
+      // Process the smaller partition immediately and push the larger
+      // one. This keeps explicit stack usage O(log n).
+      let left_size =
+        if j >= left { j - left + 1 }
+        else { 0 }
+
+      let right_size =
+        if i <= right { right - i + 1 }
+        else { 0 }
+
+      if left_size < right_size {
+        if i < right {
+          stack_left[stack_size] = i
+          stack_right[stack_size] = right
+          stack_size += 1
+        }
+
+        if left < j {
+          right = j
+        } else {
+          break
+        }
+      } else {
+        if left < j {
+          stack_left[stack_size] = left
+          stack_right[stack_size] = j
+          stack_size += 1
+        }
+
+        if i < right {
+          left = i
+        } else {
+          break
+        }
+      }
+    }
+  }
+}
