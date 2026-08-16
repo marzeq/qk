@@ -1,36 +1,39 @@
 module std.io
 
-import std.error
 import std.strings
 
 pub let Writer = type trait {
-  let write(*mut self, bytes: []u8): (usz, std.error.Error)
+  let write(*mut self, bytes: []u8): Result(usz, Error)
 
   let write_builder(
     *mut self,
     builder: *std.strings.StringBuilder,
-  ): (usz, std.error.Error) = self.write(builder.as_str().([]u8))
+  ): Result(usz, Error) = self.write(builder.as_str().([]u8))
 }
 
 pub let Reader = type trait {
-  let read(*mut self, buffer: []mut u8): (usz, std.error.Error)
+  let read(*mut self, buffer: []mut u8): Result(usz, Error)
 
   let read_to_builder(
     *mut self,
     builder: *mut std.strings.StringBuilder,
-  ): (usz, std.error.Error) {
+  ): Result(usz, Error) {
     let mut total: usz = 0
     let mut buffer: [4096]u8 = ---
     for true {
-      let count, error = self.read(buffer[:])
-      if error.is_error() { return total, error }
-      if count == 0 { return total, std.error.Error.none() }
-      let written, write_error = builder.write(buffer[0:count])
+      let count = match self.read(buffer[:]) {
+        .Ok(value) => value,
+        .Err(error) => { return .Err(error) },
+      }
+      if count == 0 { return .Ok(total) }
+      let written = match builder.write(buffer[0:count]) {
+        .Ok(value) => value,
+        .Err(error) => { return .Err(error) },
+      }
       total += written
-      if write_error.is_error() { return total, write_error }
-      if written != count { return total, std.error.Error.no_progress() }
+      if written != count { return .Err(Error.NoProgress) }
     }
-    return total, std.error.Error.none()
+    return .Ok(total)
   }
 }
 
@@ -42,13 +45,13 @@ pub let ConsoleReader = type struct {
   descriptor: i32,
 }
 
-pub let ConsoleReader.read(*mut self, buffer: []mut u8): (usz, std.error.Error) {
-  if @len(buffer) == 0 { return 0, std.error.Error.none() }
+pub let ConsoleReader.read(*mut self, buffer: []mut u8): Result(usz, Error) {
+  if @len(buffer) == 0 { return .Ok(0) }
   let buffer_ptr: *mut u8 = buffer[:]
 
   when OS == .Windows {
     let handle = _get_std_handle(-10)
-    if handle == nil { return 0, std.error.Error.invalid_handle() }
+    if handle == nil { return .Err(Error.InvalidHandle) }
     let mut read: u32 = 0
     let ok = _read_file(
       handle,
@@ -57,8 +60,8 @@ pub let ConsoleReader.read(*mut self, buffer: []mut u8): (usz, std.error.Error) 
       read.&mut,
       nil,
     )
-    if ok == 0 { return 0, std.error.Error.io_failed() }
-    return read.(usz), std.error.Error.none()
+    if ok == 0 { return .Err(Error.IoFailed) }
+    return .Ok(read.(usz))
   } else when Arch == .X86_64 {
     let syscall: u64 =
       when OS == .Linux { 0 }
@@ -79,8 +82,8 @@ pub let ConsoleReader.read(*mut self, buffer: []mut u8): (usz, std.error.Error) 
       clobber "r11",
       clobber "memory",
       volatile)
-    if result < 0 { return 0, std.error.Error.from_code((-result).(i32)) }
-    return result.(usz), std.error.Error.none()
+    if result < 0 { return .Err(Error.Native((-result).(i32))) }
+    return .Ok(result.(usz))
   } else when Arch == .AArch64 {
     let syscall: u64 =
       when OS == .Linux { 63 }
@@ -100,8 +103,8 @@ pub let ConsoleReader.read(*mut self, buffer: []mut u8): (usz, std.error.Error) 
         in @len(buffer) "{x2}",
         clobber "memory",
         volatile)
-      if result < 0 { return 0, std.error.Error.from_code((-result).(i32)) }
-      return result.(usz), std.error.Error.none()
+      if result < 0 { return .Err(Error.Native((-result).(i32))) }
+      return .Ok(result.(usz))
     } else {
       let result = @asm(
         "svc #0",
@@ -112,21 +115,21 @@ pub let ConsoleReader.read(*mut self, buffer: []mut u8): (usz, std.error.Error) 
         in @len(buffer) "{x2}",
         clobber "memory",
         volatile)
-      if result < 0 { return 0, std.error.Error.from_code((-result).(i32)) }
-      return result.(usz), std.error.Error.none()
+      if result < 0 { return .Err(Error.Native((-result).(i32))) }
+      return .Ok(result.(usz))
     }
   } else {
-    return 0, std.error.Error.io_failed()
+    return .Err(Error.IoFailed)
   }
 }
 
-pub let ConsoleWriter.write(*mut self, bytes: []u8): (usz, std.error.Error) {
-  if @len(bytes) == 0 { return 0, std.error.Error.none() }
+pub let ConsoleWriter.write(*mut self, bytes: []u8): Result(usz, Error) {
+  if @len(bytes) == 0 { return .Ok(0) }
   let bytes_ptr: *u8 = bytes[:]
 
   when OS == .Windows {
     let handle = _get_std_handle(if self.descriptor == 1 { -11 } else { -12 })
-    if handle == nil { return 0, std.error.Error.invalid_handle() }
+    if handle == nil { return .Err(Error.InvalidHandle) }
     let mut written: u32 = 0
     let ok = _write_file(
       handle,
@@ -135,8 +138,8 @@ pub let ConsoleWriter.write(*mut self, bytes: []u8): (usz, std.error.Error) {
       written.&mut,
       nil,
     )
-    if ok == 0 { return 0, std.error.Error.io_failed() }
-    return written.(usz), std.error.Error.none()
+    if ok == 0 { return .Err(Error.IoFailed) }
+    return .Ok(written.(usz))
   } else when Arch == .X86_64 {
     let syscall: u64 =
       when OS == .Linux { 1 }
@@ -157,8 +160,8 @@ pub let ConsoleWriter.write(*mut self, bytes: []u8): (usz, std.error.Error) {
       clobber "r11",
       clobber "memory",
       volatile)
-    if result < 0 { return 0, std.error.Error.from_code((-result).(i32)) }
-    return result.(usz), std.error.Error.none()
+    if result < 0 { return .Err(Error.Native((-result).(i32))) }
+    return .Ok(result.(usz))
   } else when Arch == .AArch64 {
     let syscall: u64 =
       when OS == .Linux { 64 }
@@ -178,8 +181,8 @@ pub let ConsoleWriter.write(*mut self, bytes: []u8): (usz, std.error.Error) {
         in @len(bytes) "{x2}",
         clobber "memory",
         volatile)
-      if result < 0 { return 0, std.error.Error.from_code((-result).(i32)) }
-      return result.(usz), std.error.Error.none()
+      if result < 0 { return .Err(Error.Native((-result).(i32))) }
+      return .Ok(result.(usz))
     } else {
       let result = @asm(
         "svc #0",
@@ -190,11 +193,11 @@ pub let ConsoleWriter.write(*mut self, bytes: []u8): (usz, std.error.Error) {
         in @len(bytes) "{x2}",
         clobber "memory",
         volatile)
-      if result < 0 { return 0, std.error.Error.from_code((-result).(i32)) }
-      return result.(usz), std.error.Error.none()
+      if result < 0 { return .Err(Error.Native((-result).(i32))) }
+      return .Ok(result.(usz))
     }
   } else {
-    return 0, std.error.Error.io_failed()
+    return .Err(Error.IoFailed)
   }
 }
 
@@ -225,6 +228,7 @@ import std
 import std.alloc
 import std.ctypes
 import std.libc
+import std.os
 
 pub let FileWriter = type struct {
   handle: *void,
@@ -237,16 +241,16 @@ pub let FileReader = type struct {
 pub let FileWriter.open(
   path: str,
   append: bool = false,
-): (FileWriter, std.error.Error) {
+): Result(FileWriter, Error) {
   let mut lc = std.alloc.LibcAllocator.init()
   let allocator = lc.&mut.(*mut dyn std.alloc.Allocator)
   let c_path = path.to_cstr(allocator)
-  if c_path == nil { return .{ handle=nil }, std.error.Error.out_of_memory() }
+  if c_path == nil { return .Err(Error.OutOfMemory) }
 
   let file = std.libc.fopen(c_path, if append { c"ab" } else { c"wb" })
-  let error = if file == nil { std.error.last_error() } else { std.error.Error.none() }
   allocator.free_bytes(c_path, @len(path) + 1, @alignof(u8))
-  return .{ handle=file.(*void) }, error
+  if file == nil { return .Err(std.os.last_error()) }
+  return .Ok(.{ handle=file.(*void) })
 }
 
 pub let FileWriter.is_open(*self): bool = self.handle != nil
@@ -254,58 +258,60 @@ pub let FileWriter.is_open(*self): bool = self.handle != nil
 pub let FileWriter.write(
   *mut self,
   bytes: []u8,
-): (usz, std.error.Error) {
-  if self.handle == nil { return 0, std.error.Error.invalid_handle() }
-  if @len(bytes) == 0 { return 0, std.error.Error.none() }
+): Result(usz, Error) {
+  if self.handle == nil { return .Err(Error.InvalidHandle) }
+  if @len(bytes) == 0 { return .Ok(0) }
 
   let file = self.handle.(*std.libc.FILE)
   let count = std.libc.write(std.libc.fileno(file), bytes[:], @len(bytes))
-  if count < 0 { return 0, std.error.last_error() }
-  return count.(usz), std.error.Error.none()
+  if count < 0 { return .Err(std.os.last_error()) }
+  return .Ok(count.(usz))
 }
 
 pub let FileWriter.write_all(
   *mut self,
   bytes: []u8,
-): (usz, std.error.Error) {
+): Result(usz, Error) {
   let mut written: usz = 0
   for written < @len(bytes) {
-    let count, error = self.write(bytes[written:])
-    if error.is_error() { return written, error }
-    if count == 0 { return written, std.error.Error.no_progress() }
+    let count = match self.write(bytes[written:]) {
+      .Ok(value) => value,
+      .Err(error) => { return .Err(error) },
+    }
+    if count == 0 { return .Err(Error.NoProgress) }
     written += count
   }
-  return written, std.error.Error.none()
+  return .Ok(written)
 }
 
-pub let FileWriter.flush(*mut self): std.error.Error {
-  if self.handle == nil { return std.error.Error.invalid_handle() }
+pub let FileWriter.flush(*mut self): Result(Unit, Error) {
+  if self.handle == nil { return .Err(Error.InvalidHandle) }
   if std.libc.fflush(self.handle.(*std.libc.FILE)) != 0 {
-    return std.error.last_error()
+    return .Err(std.os.last_error())
   }
-  return std.error.Error.none()
+  return .Ok(Unit.{})
 }
 
-pub let FileWriter.close(*mut self): std.error.Error {
-  if self.handle == nil { return std.error.Error.none() }
+pub let FileWriter.close(*mut self): Result(Unit, Error) {
+  if self.handle == nil { return .Ok(Unit.{}) }
   let file = self.handle.(*std.libc.FILE)
   self.handle = nil
-  if std.libc.fclose(file) != 0 { return std.error.last_error() }
-  return std.error.Error.none()
+  if std.libc.fclose(file) != 0 { return .Err(std.os.last_error()) }
+  return .Ok(Unit.{})
 }
 
 pub let FileReader.open(
   path: str,
-): (FileReader, std.error.Error) {
+): Result(FileReader, Error) {
   let mut lc = std.alloc.LibcAllocator.init()
   let allocator = lc.&mut.(*mut dyn std.alloc.Allocator)
   let c_path = path.to_cstr(allocator)
-  if c_path == nil { return .{ handle=nil }, std.error.Error.out_of_memory() }
+  if c_path == nil { return .Err(Error.OutOfMemory) }
 
   let file = std.libc.fopen(c_path, c"rb")
-  let error = if file == nil { std.error.last_error() } else { std.error.Error.none() }
   allocator.free_bytes(c_path, @len(path) + 1, @alignof(u8))
-  return .{ handle=file.(*void) }, error
+  if file == nil { return .Err(std.os.last_error()) }
+  return .Ok(.{ handle=file.(*void) })
 }
 
 pub let FileReader.is_open(*self): bool = self.handle != nil
@@ -313,9 +319,9 @@ pub let FileReader.is_open(*self): bool = self.handle != nil
 pub let FileReader.read(
   *mut self,
   buffer: []mut u8,
-): (usz, std.error.Error) {
-  if self.handle == nil { return 0, std.error.Error.invalid_handle() }
-  if @len(buffer) == 0 { return 0, std.error.Error.none() }
+): Result(usz, Error) {
+  if self.handle == nil { return .Err(Error.InvalidHandle) }
+  if @len(buffer) == 0 { return .Ok(0) }
   let buffer_ptr: *mut u8 = buffer[:]
 
   let count = std.libc.read(
@@ -323,50 +329,54 @@ pub let FileReader.read(
     buffer_ptr,
     @len(buffer),
   )
-  if count < 0 { return 0, std.error.last_error() }
-  return count.(usz), std.error.Error.none()
+  if count < 0 { return .Err(std.os.last_error()) }
+  return .Ok(count.(usz))
 }
 
-pub let FileReader.format(self, writer: *mut dyn Writer): std.error.Error {
+pub let FileReader.format(self, writer: *mut dyn Writer): Result(Unit, Error) {
   let mut reader = self
   let mut buffer: [4096]u8 = ---
 
   for true {
-    let count, read_error = reader.read(buffer[:])
-    if read_error.is_error() { return read_error }
-    if count == 0 { return std.error.Error.none() }
-    let written, write_error = write_all(writer, buffer[0:count])
-    if write_error.is_error() { return write_error }
-    if written != count { return std.error.Error.no_progress() }
+    let count = match reader.read(buffer[:]) {
+      .Ok(value) => value,
+      .Err(error) => { return .Err(error) },
+    }
+    if count == 0 { return .Ok(Unit.{}) }
+    let written = match write_all(writer, buffer[0:count]) {
+      .Ok(value) => value,
+      .Err(error) => { return .Err(error) },
+    }
+    if written != count { return .Err(Error.NoProgress) }
   }
-  return std.error.Error.none()
+  return .Ok(Unit.{})
 }
 
-pub let FileReader.close(*mut self): std.error.Error {
-  if self.handle == nil { return std.error.Error.none() }
+pub let FileReader.close(*mut self): Result(Unit, Error) {
+  if self.handle == nil { return .Ok(Unit.{}) }
   let file = self.handle.(*std.libc.FILE)
   self.handle = nil
-  if std.libc.fclose(file) != 0 { return std.error.last_error() }
-  return std.error.Error.none()
+  if std.libc.fclose(file) != 0 { return .Err(std.os.last_error()) }
+  return .Ok(Unit.{})
 }
 
 pub let FileReader.read_line(
   *mut self,
   buffer: []mut u8,
-): (usz, std.error.Error) {
-  if self.handle == nil { return 0, std.error.Error.invalid_handle() }
-  if @len(buffer) == 0 { return 0, std.error.Error.none() }
+): Result(usz, Error) {
+  if self.handle == nil { return .Err(Error.InvalidHandle) }
+  if @len(buffer) == 0 { return .Ok(0) }
 
   let file = self.handle.(*std.libc.FILE)
   let c_buffer: *mut u8 = buffer[:]
   let line = std.libc.fgets(c_buffer.(*mut std.ctypes.char), @len(buffer).(i32), file)
   if line == nil {
-    if std.libc.feof(file) != 0 { return 0, std.error.Error.none() }
-    return 0, std.error.last_error()
+    if std.libc.feof(file) != 0 { return .Ok(0) }
+    return .Err(std.os.last_error())
   }
 
   let count = std.libc.strnlen(c_buffer, @len(buffer)).(usz)
-  return count, std.error.Error.none()
+  return .Ok(count)
 }
 
 }
@@ -374,13 +384,15 @@ pub let FileReader.read_line(
 pub let write_all(
   writer: *mut dyn Writer,
   bytes: []u8,
-): (usz, std.error.Error) {
+): Result(usz, Error) {
   let mut written: usz = 0
   for written < @len(bytes) {
-    let count, error = writer.write(bytes[written:])
-    if error.is_error() { return written, error }
-    if count == 0 { return written, std.error.Error.no_progress() }
+    let count = match writer.write(bytes[written:]) {
+      .Ok(value) => value,
+      .Err(error) => { return .Err(error) },
+    }
+    if count == 0 { return .Err(Error.NoProgress) }
     written += count
   }
-  return written, std.error.Error.none()
+  return .Ok(written)
 }

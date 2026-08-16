@@ -120,6 +120,13 @@ func (a *Analyser) DeclareModule(root *parser.RootNode, path string, trustedStan
 	}
 
 	a.collectTopLevel(root)
+	if path == "builtin" {
+		for _, name := range []string{"Unit", "Error", "Option", "Result"} {
+			if symbol, ok := mod.Scope.Symbols[name]; ok {
+				_ = a.universe.Define(symbol)
+			}
+		}
+	}
 }
 
 // AnalyseModuleBody resolves one implementation against the interfaces

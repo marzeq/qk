@@ -1,18 +1,17 @@
 module std.io
 
-import std.error
 
-let write_format_error(writer: *mut dyn Writer): std.error.Error {
+let write_format_error(writer: *mut dyn Writer): Result(Unit, Error) {
   let error = "<?>".format(writer)
-  if error.is_error() { return error }
-  return std.error.Error.invalid_data()
+  if error.is_err() { return error }
+  return .Err(Error.InvalidData)
 }
 
 let format_print_argument(
   writer: *mut dyn Writer,
   index: usz,
   arguments: []*dyn Any,
-): std.error.Error {
+): Result(Unit, Error) {
   if index >= @len(arguments) { return write_format_error(writer) }
   let formatted, ok = arguments[index].(*dyn Format)
   if !ok { return write_format_error(writer) }
@@ -23,7 +22,7 @@ let format_character_argument(
   writer: *mut dyn Writer,
   index: usz,
   arguments: []*dyn Any,
-): std.error.Error {
+): Result(Unit, Error) {
   if index >= @len(arguments) { return write_format_error(writer) }
   let character, ok = arguments[index].(u8)
   if !ok { return write_format_error(writer) }
@@ -34,7 +33,7 @@ let format_hex_value(
   writer: *mut dyn Writer,
   value: u64,
   uppercase: bool,
-): std.error.Error {
+): Result(Unit, Error) {
   let digits = if uppercase { "0123456789ABCDEF" } else { "0123456789abcdef" }
   let mut buffer: [16]u8 = ---
   let mut cursor = @len(buffer)
@@ -53,7 +52,7 @@ let format_hex_argument(
   index: usz,
   arguments: []*dyn Any,
   uppercase: bool,
-): std.error.Error {
+): Result(Unit, Error) {
   if index >= @len(arguments) { return write_format_error(writer) }
   let argument = arguments[index]
   let value_u8, is_u8 = argument.(u8)
@@ -73,7 +72,7 @@ let format_general_float_argument(
   writer: *mut dyn Writer,
   index: usz,
   arguments: []*dyn Any,
-): std.error.Error {
+): Result(Unit, Error) {
   if index >= @len(arguments) { return write_format_error(writer) }
   let value_f32, is_f32 = arguments[index].(f32)
   if is_f32 { return write_f64_general(writer, value_f32.(f64)) }
@@ -87,7 +86,7 @@ let format_specified_argument(
   index: usz,
   specifier: u8,
   arguments: []*dyn Any,
-): std.error.Error {
+): Result(Unit, Error) {
   if specifier == 'g' { return format_general_float_argument(writer, index, arguments) }
   if specifier == 'c' { return format_character_argument(writer, index, arguments) }
   if specifier == 'x' { return format_hex_argument(writer, index, arguments, false) }
@@ -99,7 +98,7 @@ pub let wprint(
   writer: *mut dyn Writer,
   format: str,
   arguments: ...*dyn Any
-): std.error.Error {
+): Result(Unit, Error) {
   let mut format_index: usz = 0
   let mut argument_index: usz = 0
 
@@ -107,13 +106,13 @@ pub let wprint(
     let character = format[format_index]
     if character == '}' && format_index + 1 < @len(format) && format[format_index + 1] == '}' {
       let error = write_byte(writer, '}')
-      if error.is_error() { return error }
+      if error.is_err() { return error }
       format_index += 2
       continue
     }
     if character != '{' {
       let error = write_byte(writer, character)
-      if error.is_error() { return error }
+      if error.is_err() { return error }
       format_index += 1
       continue
     }
@@ -122,13 +121,13 @@ pub let wprint(
     }
     if format[format_index + 1] == '{' {
       let error = write_byte(writer, '{')
-      if error.is_error() { return error }
+      if error.is_err() { return error }
       format_index += 2
       continue
     }
     if format[format_index + 1] == '}' {
       let error = format_print_argument(writer, argument_index, arguments)
-      if error.is_error() { return error }
+      if error.is_err() { return error }
       argument_index += 1
       format_index += 2
       continue
@@ -137,7 +136,7 @@ pub let wprint(
       let specifier = format[format_index + 1]
       if specifier == 'g' || specifier == 'c' || specifier == 'x' || specifier == 'X' {
         let error = format_specified_argument(writer, argument_index, specifier, arguments)
-        if error.is_error() { return error }
+        if error.is_err() { return error }
         argument_index += 1
         format_index += 3
         continue
@@ -147,7 +146,7 @@ pub let wprint(
       let specifier = format[format_index + 2]
       if specifier == 'g' || specifier == 'c' || specifier == 'x' || specifier == 'X' {
         let error = format_specified_argument(writer, argument_index, specifier, arguments)
-        if error.is_error() { return error }
+        if error.is_err() { return error }
         argument_index += 1
         format_index += 4
         continue
@@ -165,7 +164,7 @@ pub let wprint(
     if has_digit && cursor < @len(format) {
       if format[cursor] == '}' {
         let error = format_print_argument(writer, selected, arguments)
-        if error.is_error() { return error }
+        if error.is_err() { return error }
         argument_index = selected + 1
         format_index = cursor + 1
         continue
@@ -174,7 +173,7 @@ pub let wprint(
         let specifier = format[cursor + 1]
         if specifier == 'g' || specifier == 'c' || specifier == 'x' || specifier == 'X' {
           let error = format_specified_argument(writer, selected, specifier, arguments)
-          if error.is_error() { return error }
+          if error.is_err() { return error }
           argument_index = selected + 1
           format_index = cursor + 3
           continue
@@ -183,26 +182,26 @@ pub let wprint(
     }
 
     let error = write_byte(writer, '{')
-    if error.is_error() { return error }
+    if error.is_err() { return error }
     format_index += 1
   }
-  return std.error.Error.none()
+  return .Ok(Unit.{})
 }
 
 pub let wprintln(
   writer: *mut dyn Writer,
   format: str,
   arguments: ...*dyn Any
-): std.error.Error {
+): Result(Unit, Error) {
   let error = wprint(writer, format, arguments...)
-  if error.is_error() { return error }
+  if error.is_err() { return error }
   return write_byte(writer, '\n')
 }
 
-pub let print(format: str, arguments: ...*dyn Any): std.error.Error =
+pub let print(format: str, arguments: ...*dyn Any): Result(Unit, Error) =
   wprint(stdout.&mut.(*mut dyn Writer), format, arguments...)
 
-pub let println(format: str, arguments: ...*dyn Any): std.error.Error =
+pub let println(format: str, arguments: ...*dyn Any): Result(Unit, Error) =
   wprintln(stdout.&mut.(*mut dyn Writer), format, arguments...)
 
 when TargetHasFilesystem {
@@ -210,17 +209,17 @@ when TargetHasFilesystem {
     file: *mut FileWriter,
     format: str,
     arguments: ...*dyn Any
-  ): std.error.Error = wprint(file.(*mut dyn Writer), format, arguments...)
+  ): Result(Unit, Error) = wprint(file.(*mut dyn Writer), format, arguments...)
 
   pub let fprintln(
     file: *mut FileWriter,
     format: str,
     arguments: ...*dyn Any
-  ): std.error.Error = wprintln(file.(*mut dyn Writer), format, arguments...)
+  ): Result(Unit, Error) = wprintln(file.(*mut dyn Writer), format, arguments...)
 }
 
-pub let eprint(format: str, arguments: ...*dyn Any): std.error.Error =
+pub let eprint(format: str, arguments: ...*dyn Any): Result(Unit, Error) =
   wprint(stderr.&mut.(*mut dyn Writer), format, arguments...)
 
-pub let eprintln(format: str, arguments: ...*dyn Any): std.error.Error =
+pub let eprintln(format: str, arguments: ...*dyn Any): Result(Unit, Error) =
   wprintln(stderr.&mut.(*mut dyn Writer), format, arguments...)

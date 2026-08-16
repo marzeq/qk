@@ -1,6 +1,7 @@
 package main
 
 import (
+	_ "embed"
 	"fmt"
 	"sort"
 	"strings"
@@ -11,6 +12,11 @@ import (
 	"github.com/marzeq/qk/sema"
 	"github.com/marzeq/qk/tokeniser"
 )
+
+const builtinModule = "builtin"
+
+//go:embed builtin.qk
+var builtinSource string
 
 type frontendResult struct {
 	modules    map[string]*loader.ModuleInfo
@@ -30,6 +36,13 @@ func runFrontend(
 	importResolutions map[string]map[string]string,
 	verbose, debug bool,
 ) (*frontendResult, error) {
+	sources = cloneStringMap(sources)
+	sourcePackages = cloneStringMap(sourcePackages)
+	trustedSources = cloneBoolMap(trustedSources)
+	const builtinOrigin = "<builtin>"
+	sources[builtinOrigin] = builtinSource
+	sourcePackages[builtinOrigin] = builtinModule
+	trustedSources[builtinOrigin] = false
 	graphModules, origins, err := sourceModuleGraph(sources, sourcePackages, trustedSources, importResolutions, args.noStdlib)
 	if err != nil {
 		return nil, err
@@ -82,7 +95,7 @@ func runFrontend(
 		if info == nil {
 			return nil, fmt.Errorf("module %q has no source", name)
 		}
-		if !args.noStdlib && name != "std" && !strings.HasPrefix(name, "std.") && !containsString(info.Imports, "std") {
+		if !args.noStdlib && name != builtinModule && name != "std" && !strings.HasPrefix(name, "std.") && !containsString(info.Imports, "std") {
 			info.Imports = append(info.Imports, "std")
 		}
 		stageModules[name] = &loader.ModuleInfo{
@@ -125,6 +138,22 @@ func runFrontend(
 	return result, nil
 }
 
+func cloneStringMap(source map[string]string) map[string]string {
+	result := make(map[string]string, len(source)+1)
+	for key, value := range source {
+		result[key] = value
+	}
+	return result
+}
+
+func cloneBoolMap(source map[string]bool) map[string]bool {
+	result := make(map[string]bool, len(source)+1)
+	for key, value := range source {
+		result[key] = value
+	}
+	return result
+}
+
 func sourceModuleGraph(sources, sourcePackages map[string]string, trustedSources map[string]bool, importResolutions map[string]map[string]string, noStdlib bool) (map[string]*loader.ModuleInfo, map[string][]string, error) {
 	modules := make(map[string]*loader.ModuleInfo)
 	origins := make(map[string][]string)
@@ -164,7 +193,10 @@ func sourceModuleGraph(sources, sourcePackages map[string]string, trustedSources
 		origins[name] = append(origins[name], origin)
 	}
 	for name, module := range modules {
-		if !noStdlib && name != "std" && !strings.HasPrefix(name, "std.") && !containsString(module.Imports, "std") {
+		if name != builtinModule && !containsString(module.Imports, builtinModule) {
+			module.Imports = append(module.Imports, builtinModule)
+		}
+		if !noStdlib && name != builtinModule && name != "std" && !strings.HasPrefix(name, "std.") && !containsString(module.Imports, "std") {
 			module.Imports = append(module.Imports, "std")
 		}
 	}

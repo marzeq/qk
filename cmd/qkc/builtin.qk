@@ -1,0 +1,228 @@
+module builtin
+
+pub let Unit = type struct {}
+
+pub let Error = type union(@auto) {
+  OutOfMemory,
+  InvalidHandle,
+  NoProgress,
+  InvalidData,
+  OutOfRange,
+  IoFailed,
+  NotFound,
+  Native(i32),
+  Message(str),
+}
+
+pub let Error.message(self): str = match self {
+  .OutOfMemory => "out of memory",
+  .InvalidHandle => "invalid handle",
+  .NoProgress => "operation made no progress",
+  .InvalidData => "invalid data",
+  .OutOfRange => "value out of range",
+  .IoFailed => "input/output operation failed",
+  .NotFound => "not found",
+  .Native(_) => "native error",
+  .Message(message) => message,
+}
+
+pub let Error.native_code(self): Option(i32) = match self {
+  .Native(code) => .Some(code),
+  _ => .None,
+}
+
+pub let Option($T: type) = type union(@auto) {
+  Some(T),
+  None,
+}
+
+pub let Result($T: type, $E: type) = type union(@auto) {
+  Ok(T),
+  Err(E),
+}
+
+pub let (Option($T)).is_some(self): bool = match self {
+  .Some(_) => true,
+  .None => false,
+}
+
+pub let (Option($T)).is_none(self): bool = !self.is_some()
+
+pub let (Option($T)).as_ref(*self): Option(*T) = match self.* {
+  .Some(value) => .Some(value.&),
+  .None => .None,
+}
+
+pub let (Option($T)).expect(self, message: str): T = match self {
+  .Some(value) => value,
+  .None => { panic(message) },
+}
+
+pub let (Option($T)).unwrap(self): T = self.expect("called Option.unwrap on None")
+
+pub let (Option($T)).unwrap_or(self, fallback: T): T = match self {
+  .Some(value) => value,
+  .None => fallback,
+}
+
+pub let (Option($T)).unwrap_or_else(self, fallback: *(): T): T = match self {
+  .Some(value) => value,
+  .None => fallback(),
+}
+
+pub let (Option($T)).map(self, $U: type, transform: *(T): U): Option(U) = match self {
+  .Some(value) => Option(U).Some(transform(value)),
+  .None => Option(U).None,
+}
+
+pub let (Option($T)).map_or(self, $U: type, fallback: U, transform: *(T): U): U = match self {
+  .Some(value) => transform(value),
+  .None => fallback,
+}
+
+pub let (Option($T)).map_or_else(
+  self,
+  $U: type,
+  fallback: *(): U,
+  transform: *(T): U,
+): U = match self {
+  .Some(value) => transform(value),
+  .None => fallback(),
+}
+
+pub let (Option($T)).and_then(self, $U: type, transform: *(T): Option(U)): Option(U) = match self {
+  .Some(value) => transform(value),
+  .None => Option(U).None,
+}
+
+pub let (Option($T)).filter(self, predicate: *(T): bool): Option(T) = match self {
+  .Some(value) => if predicate(value) { self } else { Option(T).None },
+  .None => self,
+}
+
+pub let (Option($T)).inspect(self, inspect: *(T): void): Option(T) = match self {
+  .Some(value) => { inspect(value); self },
+  .None => self,
+}
+
+pub let (Option($T)).or(self, fallback: Option(T)): Option(T) = match self {
+  .Some(_) => self,
+  .None => fallback,
+}
+
+pub let (Option($T)).or_else(self, fallback: *(): Option(T)): Option(T) = match self {
+  .Some(_) => self,
+  .None => fallback(),
+}
+
+pub let (Option($T)).xor(self, other: Option(T)): Option(T) = match self, other {
+  .Some(_), .None => self,
+  .None, .Some(_) => other,
+  _ => Option(T).None,
+}
+
+pub let (Option($T)).ok_or(self, $E: type, error: E): Result(T, E) = match self {
+  .Some(value) => Result(T, E).Ok(value),
+  .None => Result(T, E).Err(error),
+}
+
+pub let (Option($T)).ok_or_else(self, $E: type, error: *(): E): Result(T, E) = match self {
+  .Some(value) => Result(T, E).Ok(value),
+  .None => Result(T, E).Err(error()),
+}
+
+pub let (Result($T, $E)).is_ok(self): bool = match self {
+  .Ok(_) => true,
+  .Err(_) => false,
+}
+
+pub let (Result($T, $E)).is_err(self): bool = !self.is_ok()
+
+pub let (Result($T, $E)).as_ref(*self): Result(*T, *E) = match self.* {
+  .Ok(value) => .Ok(value.&),
+  .Err(error) => .Err(error.&),
+}
+
+pub let (Result($T, $E)).ok(self): Option(T) = match self {
+  .Ok(value) => Option(T).Some(value),
+  .Err(_) => Option(T).None,
+}
+
+pub let (Result($T, $E)).err(self): Option(E) = match self {
+  .Ok(_) => Option(E).None,
+  .Err(error) => Option(E).Some(error),
+}
+
+pub let (Result($T, $E)).expect(self, message: str): T = match self {
+  .Ok(value) => value,
+  .Err(_) => { panic(message) },
+}
+
+pub let (Result($T, $E)).unwrap(self): T = self.expect("called Result.unwrap on Err")
+
+pub let (Result($T, $E)).expect_err(self, message: str): E = match self {
+  .Ok(_) => { panic(message) },
+  .Err(error) => error,
+}
+
+pub let (Result($T, $E)).unwrap_err(self): E = self.expect_err("called Result.unwrap_err on Ok")
+
+pub let (Result($T, $E)).unwrap_or(self, fallback: T): T = match self {
+  .Ok(value) => value,
+  .Err(_) => fallback,
+}
+
+pub let (Result($T, $E)).unwrap_or_else(self, fallback: *(E): T): T = match self {
+  .Ok(value) => value,
+  .Err(error) => fallback(error),
+}
+
+pub let (Result($T, $E)).map(self, $U: type, transform: *(T): U): Result(U, E) = match self {
+  .Ok(value) => Result(U, E).Ok(transform(value)),
+  .Err(error) => Result(U, E).Err(error),
+}
+
+pub let (Result($T, $E)).map_or(self, $U: type, fallback: U, transform: *(T): U): U = match self {
+  .Ok(value) => transform(value),
+  .Err(_) => fallback,
+}
+
+pub let (Result($T, $E)).map_or_else(
+  self,
+  $U: type,
+  fallback: *(E): U,
+  transform: *(T): U,
+): U = match self {
+  .Ok(value) => transform(value),
+  .Err(error) => fallback(error),
+}
+
+pub let (Result($T, $E)).map_err(self, $F: type, transform: *(E): F): Result(T, F) = match self {
+  .Ok(value) => Result(T, F).Ok(value),
+  .Err(error) => Result(T, F).Err(transform(error)),
+}
+
+pub let (Result($T, $E)).inspect(self, inspect: *(T): void): Result(T, E) = match self {
+  .Ok(value) => { inspect(value); self },
+  .Err(_) => self,
+}
+
+pub let (Result($T, $E)).inspect_err(self, inspect: *(E): void): Result(T, E) = match self {
+  .Ok(_) => self,
+  .Err(error) => { inspect(error); self },
+}
+
+pub let (Result($T, $E)).and_then(self, $U: type, transform: *(T): Result(U, E)): Result(U, E) = match self {
+  .Ok(value) => transform(value),
+  .Err(error) => Result(U, E).Err(error),
+}
+
+pub let (Result($T, $E)).or(self, $F: type, fallback: Result(T, F)): Result(T, F) = match self {
+  .Ok(value) => Result(T, F).Ok(value),
+  .Err(_) => fallback,
+}
+
+pub let (Result($T, $E)).or_else(self, $F: type, fallback: *(E): Result(T, F)): Result(T, F) = match self {
+  .Ok(value) => Result(T, F).Ok(value),
+  .Err(error) => fallback(error),
+}

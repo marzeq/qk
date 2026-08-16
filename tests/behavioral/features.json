@@ -158,6 +158,11 @@
       "negativeNotApplicable": true
     },
     {
+      "name": "builtin option result and errors",
+      "positive": ["types/builtin_option_result"],
+      "negativeNotApplicable": true
+    },
+    {
       "name": "attributes and foreign declarations",
       "positive": ["ffi/declarations"],
       "negative": ["diagnostics/invalid_attribute"]

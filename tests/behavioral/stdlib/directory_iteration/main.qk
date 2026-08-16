@@ -6,13 +6,11 @@ import std.io
 import std.strings
 
 let main() {
-  let mut missing, missing_error = std.fs.DirectoryIterator.open("testdata/directory/missing")
-  assert(missing_error.is_error(), "missing directory open")
-  assert(missing.close().is_none(), "close failed open")
+  let missing = std.fs.DirectoryIterator.open("testdata/directory/missing")
+  assert(missing.is_err(), "missing directory open")
 
-  let mut file, file_error = std.fs.DirectoryIterator.open("testdata/directory/alpha.txt")
-  assert(file_error.is_error(), "file opened as directory")
-  assert(file.close().is_none(), "close rejected file open")
+  let file = std.fs.DirectoryIterator.open("testdata/directory/alpha.txt")
+  assert(file.is_err(), "file opened as directory")
 
   let mut lc = std.alloc.LibcAllocator.init()
   let allocator = lc.&mut.(*mut dyn std.alloc.Allocator)
@@ -23,44 +21,33 @@ let main() {
     "{}",
     std.fs.DirectoryEntryKind.Directory,
   )
-  assert(format_error.is_none() && name.as_str().eq("Directory"), "entry kind format")
+  assert(format_error.is_ok() && name.as_str().eq("Directory"), "entry kind format")
   name.clear()
 
-  assert(std.fs.create_directory("empty-directory").is_none(), "create empty directory")
-  let mut empty, empty_error = std.fs.DirectoryIterator.open("empty-directory")
-  assert(empty_error.is_none(), "empty directory open")
+  assert(std.fs.create_directory("empty-directory").is_ok(), "create empty directory")
+  let mut empty = std.fs.DirectoryIterator.open("empty-directory").unwrap()
   assert(name.append("stale entry name".([]u8)), "prepare stale name")
-  let empty_kind, empty_found, empty_next_error = empty.next(name.&mut)
-  assert(
-    empty_kind == .Unknown && !empty_found && empty_next_error.is_none(),
-    "empty directory exhaustion",
-  )
+  assert(empty.next(name.&mut).unwrap().is_none(), "empty directory exhaustion")
   assert(@len(name.as_str()) == 0, "exhaustion clears builder")
-  let repeated_kind, repeated_found, repeated_error = empty.next(name.&mut)
-  assert(
-    repeated_kind == .Unknown && !repeated_found && repeated_error.is_none(),
-    "exhaustion is sticky",
-  )
-  assert(empty.close().is_none(), "close after exhaustion")
-  assert(empty.close().is_none(), "double close")
-  assert(std.fs.remove_directory("empty-directory").is_none(), "remove empty directory")
-  let _, closed_found, closed_error = empty.next(name.&mut)
-  assert(!closed_found && closed_error.is_error(), "next after close")
+  assert(empty.next(name.&mut).unwrap().is_none(), "exhaustion is sticky")
+  assert(empty.close().is_ok(), "close after exhaustion")
+  assert(empty.close().is_ok(), "double close")
+  assert(std.fs.remove_directory("empty-directory").is_ok(), "remove empty directory")
+  assert(empty.next(name.&mut).is_err(), "next after close")
 
-  let mut iterator, open_error = std.fs.DirectoryIterator.open("testdata/directory")
-  assert(open_error.is_none(), "directory open")
+  let mut iterator = std.fs.DirectoryIterator.open("testdata/directory").unwrap()
   let mut saw_alpha = false
   let mut saw_hidden = false
   let mut saw_nested = false
   let mut count: usz = 0
   for true {
     assert(name.append("a much longer stale entry name".([]u8)), "prepare reused builder")
-    let kind, found, next_error = iterator.next(name.&mut)
-    assert(next_error.is_none(), "directory enumeration error")
-    if !found {
-      assert(kind == .Unknown && @len(name.as_str()) == 0, "exhaustion convention")
+    let next = iterator.next(name.&mut).unwrap()
+    if next.is_none() {
+      assert(@len(name.as_str()) == 0, "exhaustion convention")
       break
     }
+    let kind = next.unwrap()
 
     let entry_name = name.as_str()
     assert(!entry_name.eq(".") && !entry_name.eq(".."), "synthetic entry returned")
@@ -83,9 +70,8 @@ let main() {
     count += 1
   }
   assert(count == 3 && saw_alpha && saw_hidden && saw_nested, "entry set")
-  assert(iterator.close().is_none(), "close enumerated directory")
+  assert(iterator.close().is_ok(), "close enumerated directory")
 
-  let mut early, early_error = std.fs.DirectoryIterator.open("testdata/directory")
-  assert(early_error.is_none(), "early-close open")
-  assert(early.close().is_none(), "close before exhaustion")
+  let mut early = std.fs.DirectoryIterator.open("testdata/directory").unwrap()
+  assert(early.close().is_ok(), "close before exhaustion")
 }

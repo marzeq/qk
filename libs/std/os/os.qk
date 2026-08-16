@@ -3,9 +3,14 @@ module std.os
 pub let mut args: []str = ---
 pub let mut env: [][2]str = ---
 
+when TargetHasLibc {
+  import std.libc
+
+  pub let last_error(): Error = Error.Native(std.libc.errno_location().*)
+}
+
 when TargetHasEnvironment {
   import std.alloc
-  import std.error
   import std.strings
 
   let environment_name_matches(entry: [2]str, name: str): bool {
@@ -30,15 +35,15 @@ when TargetHasEnvironment {
   pub let getenv_owned(
     allocator: *mut dyn std.alloc.Allocator,
     name: str,
-  ): (std.strings.StringBuilder, std.error.Error) {
+  ): Result(std.strings.StringBuilder, Error) {
     let value, found = getenv(name)
     let mut result = std.strings.StringBuilder.init(allocator)
-    if !found { return result, std.error.Error.not_found() }
+    if !found { return .Err(Error.NotFound) }
     if !result.append(value.([]u8)) {
       result.deinit()
-      return std.strings.StringBuilder.init(allocator), std.error.Error.out_of_memory()
+      return .Err(Error.OutOfMemory)
     }
-    return result, std.error.Error.none()
+    return .Ok(result)
   }
 
 }

@@ -19,7 +19,6 @@ pub let cstr.to_str(self): str =
   self[:strlen(self)].(str)
 
 import std.alloc
-import std.error
 
 pub let str.is_empty(self): bool = @len(self) == 0
 
@@ -90,7 +89,7 @@ pub let str.trim_end(self): str {
 
 pub let str.trim(self): str = self.trim_start().trim_end()
 
-pub let str.read(*mut self, buffer: []mut u8): (usz, std.error.Error) {
+pub let str.read(*mut self, buffer: []mut u8): Result(usz, Error) {
   let count = if @len(buffer) < @len(self.*) { @len(buffer) } else { @len(self.*) }
 
   let mut index: usz = 0
@@ -99,12 +98,12 @@ pub let str.read(*mut self, buffer: []mut u8): (usz, std.error.Error) {
     index += 1
   }
   self.* = self.*[count:]
-  return count, std.error.Error.none()
+  return .Ok(count)
 }
 
-pub let cstr.read(*mut self, buffer: []mut u8): (usz, std.error.Error) {
+pub let cstr.read(*mut self, buffer: []mut u8): Result(usz, Error) {
   if self.* == nil {
-    return 0, std.error.Error.none()
+    return .Ok(0)
   }
 
   let mut count: usz = 0
@@ -113,7 +112,7 @@ pub let cstr.read(*mut self, buffer: []mut u8): (usz, std.error.Error) {
     count += 1
   }
   self.* = self.* + count.(isz)
-  return count, std.error.Error.none()
+  return .Ok(count)
 }
 
 // important: due to us not being able to guarantee that self contains a null terminator,

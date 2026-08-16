@@ -1,7 +1,6 @@
 module main
 
 import (
-  std.error
   std.fs
   std.io
   std.os
@@ -23,14 +22,16 @@ let is_whitespace(byte: u8): bool =
   byte == ' ' || byte == '\t' || byte == '\n' ||
   byte == '\r' || byte == '\v' || byte == '\f'
 
-let count(reader: *mut dyn std.io.Reader): (Counts, std.error.Error) {
+let count(reader: *mut dyn std.io.Reader): Result(Counts, Error) {
   let mut result: Counts = .{ lines=0, words=0, bytes=0 }
   let mut in_word = false
   let mut buffer: [4096]u8 = ---
 
   for true {
-    let read, error = reader.read(buffer[:])
-    if error.is_error() { return result, error }
+    let read = match reader.read(buffer[:]) {
+      .Ok(value) => value,
+      .Err(error) => { return .Err(error) },
+    }
     if read == 0 { break }
 
     result.bytes += read
@@ -46,7 +47,7 @@ let count(reader: *mut dyn std.io.Reader): (Counts, std.error.Error) {
     }
   }
 
-  return result, std.error.Error.none()
+  return .Ok(result)
 }
 
 let add(total: *mut Counts, counts: Counts): void {
@@ -95,8 +96,8 @@ let output_width(first_file: usz): usz {
   for index in first_file..@len(std.os.args) {
     let path = std.os.args[index]
     if path.eq("-") { return 7 }
-    let size, error = std.fs.file_size(path)
-    if error.is_none() { total_size += size }
+    let size = std.fs.file_size(path)
+    if size.is_ok() { total_size += size.unwrap() }
   }
   return digit_count(total_size)
 }
@@ -164,12 +165,12 @@ let main() {
   let width = output_width(first_file)
 
   if first_file == @len(std.os.args) {
-    let counts, error = count(std.io.stdin.&mut.(*mut dyn std.io.Reader))
-    if error.is_error() {
-      std.io.eprintln("wc: stdin: {}", error.message())
+    let result = count(std.io.stdin.&mut.(*mut dyn std.io.Reader))
+    if result.is_err() {
+      std.io.eprintln("wc: stdin: {}", result.unwrap_err().message())
       std.os.exit(1)
     }
-    print_counts(counts, options, "", false, width)
+    print_counts(result.unwrap(), options, "", false, width)
     return
   }
 
@@ -180,35 +181,38 @@ let main() {
   for index in first_file..@len(std.os.args) {
     let path = std.os.args[index]
     if path.eq("-") {
-      let counts, error = count(std.io.stdin.&mut.(*mut dyn std.io.Reader))
-      if error.is_error() {
-        std.io.eprintln("wc: stdin: {}", error.message())
+      let result = count(std.io.stdin.&mut.(*mut dyn std.io.Reader))
+      if result.is_err() {
+        std.io.eprintln("wc: stdin: {}", result.unwrap_err().message())
         failed = true
         continue
       }
+      let counts = result.unwrap()
       print_counts(counts, options, path, true, width)
       add(total.&mut, counts)
       continue
     }
 
-    let mut file, error = std.io.FileReader.open(path)
-    if error.is_error() {
-      std.io.eprintln("wc: {}: {}", path, error.message())
+    let open_result = std.io.FileReader.open(path)
+    if open_result.is_err() {
+      std.io.eprintln("wc: {}: {}", path, open_result.unwrap_err().message())
       failed = true
       continue
     }
+    let mut file = open_result.unwrap()
 
-    let counts, read_error = count(file.&mut.(*mut dyn std.io.Reader))
-    let close_error = file.close()
-    if read_error.is_error() {
-      std.io.eprintln("wc: {}: {}", path, read_error.message())
+    let read_result = count(file.&mut.(*mut dyn std.io.Reader))
+    let close_result = file.close()
+    if read_result.is_err() {
+      std.io.eprintln("wc: {}: {}", path, read_result.unwrap_err().message())
       failed = true
       continue
     }
-    if close_error.is_error() {
-      std.io.eprintln("wc: {}: {}", path, close_error.message())
+    if close_result.is_err() {
+      std.io.eprintln("wc: {}: {}", path, close_result.unwrap_err().message())
       failed = true
     }
+    let counts = read_result.unwrap()
     print_counts(counts, options, path, true, width)
     add(total.&mut, counts)
   }
