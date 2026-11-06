@@ -156,7 +156,7 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 		return
 	}
 	if len(n.MethodOwnerGenericParameters) != 0 {
-		a.errorf(n, "parameterized method owners use a captured type pattern such as (Type($T)).%s(...)", n.Name)
+		a.errorf(n, "parameterized method owners use a capture such as Type($).%s(...)", n.Name)
 		return
 	}
 	var ownerType types.Type
@@ -172,7 +172,7 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 		}
 		ownerType = a.resolveAlias(info, n, false)
 	} else if ownerSymbol, ok := a.current.Resolve(n.MethodOwner); ok && ownerSymbol.Kind == symbols.SymbolKindType && ownerSymbol.Template {
-		a.errorf(n, "parameterized method owner %q requires a parenthesized type pattern", n.MethodOwner)
+		a.errorf(n, "parameterized method owner %q requires a capture such as %s($).%s(...)", n.MethodOwner, n.MethodOwner, n.Name)
 		return
 	} else if builtin, ok := a.universe.Resolve(n.MethodOwner); ok && builtin.Kind == symbols.SymbolKindType {
 		if len(n.MethodOwnerGenericParameters) != 0 {
@@ -270,6 +270,51 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 }
 
 func (a *Analyser) collectPatternMethodSignature(n *parser.FunctionDefNode) {
+	implicitCapture := false
+	if owner, ok := n.MethodOwnerType.(*parser.NamedTypeNode); ok {
+		for _, argument := range owner.TypeArguments {
+			capture, ok := argument.(*parser.NamedTypeNode)
+			if !ok || !capture.Capture || capture.Name != "" {
+				continue
+			}
+			if len(owner.TypeArguments) != 1 || owner.ModName != "" {
+				a.errorf(capture, "implicit type capture must be the sole argument of a local parameterized type")
+				return
+			}
+			ownerSymbol, exists := a.current.Resolve(owner.Name)
+			if !exists || ownerSymbol.Kind != symbols.SymbolKindType || !ownerSymbol.Template {
+				a.errorf(capture, "implicit type capture requires a parameterized type, got %q", owner.Name)
+				return
+			}
+			owner.TypeArguments = make([]parser.TypeNode, len(ownerSymbol.GenericParameters))
+			ownerParameters := make([]parser.GenericParameterNode, len(ownerSymbol.GenericParameters))
+			for i, parameter := range ownerSymbol.GenericParameters {
+				for _, methodParameter := range n.GenericParameters {
+					if methodParameter.Name == parameter.Name {
+						a.errorf(methodParameter, "method type parameter %q conflicts with an implicit owner capture", parameter.Name)
+						return
+					}
+				}
+				owner.TypeArguments[i] = &parser.NamedTypeNode{Name: parameter.Name, Capture: true, Loc: capture.Loc}
+				var constraint parser.TypeNode
+				if alias := a.genericAliases[ownerSymbol]; alias != nil {
+					constraint = alias.node.GenericParameters[i].Constraint
+				}
+				ownerParameters[i] = parser.GenericParameterNode{Name: parameter.Name, Constraint: constraint, Loc: capture.Loc}
+			}
+			n.GenericParameters = append(ownerParameters, n.GenericParameters...)
+			implicitCapture = true
+			break
+		}
+	}
+	if implicitCapture {
+		if n.Attributes.Get(attributes.AttributeTypeForeign) != nil {
+			a.errorf(n, "parameterized functions cannot be foreign declarations")
+		}
+		if n.Attributes.Get(attributes.AttributeTypeExport) != nil {
+			a.errorf(n, "parameterized functions cannot be exported")
+		}
+	}
 	genericParameters := a.makeGenericParameters(n.Name, n.GenericParameters)
 	previousBindings := a.typeParameterBindings
 	if len(genericParameters) != 0 {

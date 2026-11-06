@@ -815,7 +815,7 @@ The programmer is responsible for knowing which field is meaningful. Untagged un
 They use the same aggregate literal syntax as structs:
 
 ```qk
-let bits = NumberBits.{ integer=0x3f800000 }
+let bits = NumberBits.{ integer=0xdeadbeef }
 ```
 
 An anonymous union may appear directly inside a struct. Its fields are promoted into the containing struct's field namespace while sharing storage.
@@ -924,24 +924,23 @@ Ordinary modules may attach methods only to nominal types they own. The trusted 
 
 ## Methods on type-producing and structural owners
 
-A parameterized nominal owner uses a parenthesised owner pattern. `$T` captures the concrete type argument from the receiver:
+A parameterized nominal owner uses `$` to capture all of its type parameters by their declared names:
 
 ```qk
 let Box($T: type) = type struct {
   value: T,
 }
 
-let (Box($T)).get(self): T = self.value
+let Box($).get(self): T = self.value
 ```
 
-The same syntax describes standard-library methods on structural types:
+Name a capture to rename it within the method. Here, `Box`'s `T` is called `Foo` in `renamed`:
 
 ```qk
-let ([]$T).first(self): T = self[0]
-let (*mut $T).write(self, value: T): void { self.* = value }
+let Box($Foo).renamed(self): Foo = self.value
 ```
 
-Owner captures form the leading part of the method's compile-time type parameter list in first-appearance order. A call normally infers them from the receiver or from typed value parameters.
+Owner captures form the leading part of the method's compile-time type parameter list in owner order. A call normally infers them from the receiver or from typed value parameters.
 
 Static calls can qualify the owner as `Box(i32).init(...)`. When a method-specific type cannot be inferred, supply it before the runtime arguments.
 

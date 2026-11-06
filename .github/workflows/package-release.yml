@@ -85,15 +85,17 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Install LLVM and LLD
-        run: brew install llvm lld
+      - name: Install LLVM 22
+        run: brew install llvm@22
 
       - name: Build release archive
         env:
           LLVM_CONFIG: ${{ runner.temp }}/llvm-config
           RELEASE_VERSION: ${{ inputs.version }}
         run: |
-          ln -s "$(brew --prefix llvm)/bin/llvm-config" "$LLVM_CONFIG"
+          llvm_prefix=$(brew --prefix llvm@22)
+          ln -s "$llvm_prefix/bin/llvm-config" "$LLVM_CONFIG"
+          export CC="$llvm_prefix/bin/clang" CXX="$llvm_prefix/bin/clang++"
           scripts/package-release-macos.sh "$RELEASE_VERSION" dist
 
       - name: Upload macOS archive
@@ -123,14 +125,20 @@ jobs:
           update: true
           install: >-
             mingw-w64-ucrt-x86_64-go
-            mingw-w64-ucrt-x86_64-clang
-            mingw-w64-ucrt-x86_64-llvm
-            mingw-w64-ucrt-x86_64-lld
+            mingw-w64-ucrt-x86_64-clang22
+            mingw-w64-ucrt-x86_64-llvm22
+            mingw-w64-ucrt-x86_64-lld22
+            mingw-w64-ucrt-x86_64-zstd
 
       - name: Build release archive
         env:
           RELEASE_VERSION: ${{ inputs.version }}
-        run: scripts/package-release-windows.sh "$RELEASE_VERSION" dist
+        run: |
+          export PATH="/ucrt64/opt/llvm22/bin:$PATH"
+          export LLVM_CONFIG=/ucrt64/opt/llvm22/bin/llvm-config
+          export CC=/ucrt64/opt/llvm22/bin/clang
+          export CXX=/ucrt64/opt/llvm22/bin/clang++
+          scripts/package-release-windows.sh "$RELEASE_VERSION" dist
 
       - name: Upload Windows archive
         uses: actions/upload-artifact@v7

@@ -44,8 +44,8 @@ if ! static_llvm_system_libraries=$($llvm_config --link-static --system-libs all
   echo "could not determine LLVM's static system-library dependencies" >&2
   exit 1
 fi
-zstd_dll="${llvm_prefix}/bin/libzstd.dll"
-zstd_license="${llvm_prefix}/share/licenses/zstd/LICENSE"
+zstd_dll="${MINGW_PREFIX:-/ucrt64}/bin/libzstd.dll"
+zstd_license="${MINGW_PREFIX:-/ucrt64}/share/licenses/zstd/LICENSE"
 if [[ ! -f $zstd_dll ]]; then
   echo "LLVM's zstd runtime not found: $zstd_dll" >&2
   exit 1

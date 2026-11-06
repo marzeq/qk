@@ -158,6 +158,13 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 		if !p.Expect(tokeniser.TokenCloseParen) {
 			return nil, shared.NewError(p.PrevLoc(), "expected ')' after method owner type")
 		}
+		if nominal, ok := methodOwnerType.(*NamedTypeNode); ok && len(nominal.TypeArguments) != 0 {
+			for _, argument := range nominal.TypeArguments {
+				if capture, ok := argument.(*NamedTypeNode); ok && capture.Capture {
+					return nil, shared.NewError(nominal.Loc, "parameterized nominal method owner uses Type($).method(...) without outer parentheses")
+				}
+			}
+		}
 		genericParameters, err = capturedTypeParameters(methodOwnerType)
 		if err != nil {
 			return nil, err
@@ -172,11 +179,51 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 		}
 	} else {
 		var ok bool
+		ownerStart := p.pos
 		name, ok = p.ExpectGet(tokeniser.TokenIdentifier)
 		if !ok {
 			return nil, shared.NewError(p.PrevLoc(), "expected function name")
 		}
-		if p.Match(tokeniser.TokenDot) {
+		ownerApplication := false
+		if p.Match(tokeniser.TokenOpenParen) {
+			depth := 0
+			for i := p.pos; i < len(p.tokens); i++ {
+				switch p.tokens[i].Type {
+				case tokeniser.TokenOpenParen:
+					depth++
+				case tokeniser.TokenCloseParen:
+					depth--
+					if depth == 0 {
+						ownerApplication = i+1 < len(p.tokens) && p.tokens[i+1].Type == tokeniser.TokenDot
+						break
+					}
+				}
+				if depth == 0 {
+					break
+				}
+			}
+		}
+		if ownerApplication {
+			p.pos = ownerStart
+			previousCaptureMode := p.allowTypeCapture
+			p.allowTypeCapture = true
+			methodOwnerType, err = p.ParseType()
+			p.allowTypeCapture = previousCaptureMode
+			if err != nil {
+				return nil, err
+			}
+			genericParameters, err = capturedTypeParameters(methodOwnerType)
+			if err != nil {
+				return nil, err
+			}
+			if !p.Expect(tokeniser.TokenDot) {
+				return nil, shared.NewError(p.PrevLoc(), "expected '.' after method owner type")
+			}
+			name, ok = p.ExpectGet(tokeniser.TokenIdentifier)
+			if !ok {
+				return nil, shared.NewError(p.PrevLoc(), "expected method name after '.'")
+			}
+		} else if p.Match(tokeniser.TokenDot) {
 			p.Inc()
 			methodOwner = name.Value
 			methodName, ok := p.ExpectGet(tokeniser.TokenIdentifier)
@@ -1319,6 +1366,9 @@ func capturedTypeParameters(owner TypeNode) ([]GenericParameterNode, error) {
 		switch n := node.(type) {
 		case *NamedTypeNode:
 			if n.Capture {
+				if n.Name == "" {
+					break
+				}
 				if !seen[n.Name] {
 					seen[n.Name] = true
 					result = append(result, GenericParameterNode{Name: n.Name, Constraint: n.CaptureConstraint, Loc: n.Loc})

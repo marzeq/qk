@@ -25,10 +25,11 @@ let Box($T: type) = type struct { value: T }
 let Size($T: type) = @sizeof(T)
 let identity($T: type, value: T): T = value
 let make_box($T: type, value: T): Box(T) = Box(T).{ value=value }
-let (Box($T)).get(self): T = self.value
+let Box($).get(self): T = self.value
+let Box($Foo).renamed(self): Foo = self.value
 let ([]$T: PartialEq).contains(self, value: T): bool = self[0] == value
 `)
-	if len(root.Body) != 6 {
+	if len(root.Body) != 7 {
 		t.Fatalf("got %d declarations", len(root.Body))
 	}
 	box := root.Body[0].(*TypeAliasNode)
@@ -44,12 +45,26 @@ let ([]$T: PartialEq).contains(self, value: T): bool = self[0] == value
 		t.Fatalf("unexpected function parameters: %#v, args=%d", identity.GenericParameters, len(identity.Args))
 	}
 	method := root.Body[4].(*FunctionDefNode)
-	if len(method.GenericParameters) != 1 || method.GenericParameters[0].Name != "T" {
-		t.Fatalf("unexpected owner captures: %#v", method.GenericParameters)
+	if method.MethodOwnerType == nil || len(method.GenericParameters) != 0 {
+		t.Fatalf("unexpected implicit owner capture: %#v", method)
 	}
-	constrained := root.Body[5].(*FunctionDefNode)
+	renamed := root.Body[5].(*FunctionDefNode)
+	if len(renamed.GenericParameters) != 1 || renamed.GenericParameters[0].Name != "Foo" {
+		t.Fatalf("unexpected renamed owner capture: %#v", renamed.GenericParameters)
+	}
+	constrained := root.Body[6].(*FunctionDefNode)
 	if len(constrained.GenericParameters) != 1 || constrained.GenericParameters[0].Constraint == nil {
 		t.Fatalf("missing captured constraint: %#v", constrained.GenericParameters)
+	}
+}
+
+func TestParameterizedNominalMethodOwnerRejectsOuterParentheses(t *testing.T) {
+	tokens, err := tokeniser.NewTokeniser("let (Box($T)).get(self): T = self.value", "test.qk").Tokenise()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewParser(tokens).Parse(); err == nil {
+		t.Fatal("expected outer parentheses around a nominal owner to be rejected")
 	}
 }
 

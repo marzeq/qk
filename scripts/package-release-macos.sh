@@ -33,10 +33,10 @@ fi
 
 if [[ -n ${LLVM_CONFIG:-} ]]; then
   llvm_config=$LLVM_CONFIG
+elif command -v brew >/dev/null 2>&1 && [[ -x $(brew --prefix llvm@22)/bin/llvm-config ]]; then
+  llvm_config=$(brew --prefix llvm@22)/bin/llvm-config
 elif command -v llvm-config >/dev/null 2>&1; then
   llvm_config=$(command -v llvm-config)
-elif command -v brew >/dev/null 2>&1 && [[ -x $(brew --prefix llvm)/bin/llvm-config ]]; then
-  llvm_config=$(brew --prefix llvm)/bin/llvm-config
 else
   echo "llvm-config not found; install LLVM or set LLVM_CONFIG" >&2
   exit 1

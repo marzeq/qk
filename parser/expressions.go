@@ -2402,6 +2402,9 @@ func (p *Parser) ParseNamedType() (*NamedTypeNode, error) {
 		}
 		capture = true
 		p.Inc()
+		if p.Match(tokeniser.TokenCloseParen) {
+			return &NamedTypeNode{Capture: true, Loc: p.SpanFrom(beginLoc)}, nil
+		}
 	}
 	ident, err := p.ParseIdent()
 	if err != nil {

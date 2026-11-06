@@ -81,9 +81,9 @@ dependencies; they fail instead of falling back to a dynamic release.
 Install Go, Clang/Clang++, LLVM 22 development packages and an archiver. Package names vary.
 
 ```bash
-llvm_prefix=$(llvm-config --prefix) # may need to be llvm-config-22
-export CC=clang # may need to append -22
-export CXX=clang++ # also may need to append -22
+llvm_prefix=$(${LLVM_CONFIG:-llvm-config-22} --prefix)
+export CC="${llvm_prefix}/bin/clang"
+export CXX="${llvm_prefix}/bin/clang++"
 export CGO_ENABLED=1
 export CGO_CXXFLAGS="-I${llvm_prefix}/include"
 export CGO_LDFLAGS="-L${llvm_prefix}/lib"
@@ -99,7 +99,7 @@ Install the Xcode Command Line Tools, Go, and LLVM 22. With Homebrew:
 
 ```bash
 xcode-select --install
-brew install go llvm
+brew install go llvm@22
 source ./scripts/macos-brew-init.sh
 go build ./cmd/qkc
 go test ./...
