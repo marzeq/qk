@@ -15,16 +15,19 @@ import (
 )
 
 type Attributor struct {
-	analyser      *Analyser
-	errors        []error
-	templatesOnly bool
-	functionState map[*symbols.Symbol]functionAttributionState
+	analyser              *Analyser
+	errors                []error
+	templatesOnly         bool
+	functionState         map[*symbols.Symbol]functionAttributionState
+	currentFunction       *parser.FunctionDefNode
+	provisionalReturnUsed map[*symbols.Symbol]bool
 }
 
 func (a *Analyser) NewAttributor() *Attributor {
 	return &Attributor{
-		analyser:      a,
-		functionState: make(map[*symbols.Symbol]functionAttributionState),
+		analyser:              a,
+		functionState:         make(map[*symbols.Symbol]functionAttributionState),
+		provisionalReturnUsed: make(map[*symbols.Symbol]bool),
 	}
 }
 
@@ -115,6 +118,10 @@ func (a *Attributor) attributeNode(node parser.Node) {
 		}
 		a.functionState[n.Symbol] = functionAttributing
 		defer func() { a.functionState[n.Symbol] = functionAttributed }()
+		previousFunction := a.currentFunction
+		a.currentFunction = n
+		defer func() { a.currentFunction = previousFunction }()
+		inferReturn := n.Symbol.Signature.ReturnType == nil
 		restoreSpecialization := a.enterSpecialization(n.Symbol)
 		defer restoreSpecialization()
 		for _, arg := range n.Args {
@@ -136,7 +143,7 @@ func (a *Attributor) attributeNode(node parser.Node) {
 			a.errorf(n, "foreign function must have a return type annotation")
 		}
 
-		if n.Symbol.Signature.ReturnType == nil {
+		if inferReturn {
 			var candidates []returnTypeCandidate
 			for _, ret := range collectFunctionReturnNodesFromNode(n.Body) {
 				if ret.ReturnValue == nil {
@@ -149,7 +156,14 @@ func (a *Attributor) attributeNode(node parser.Node) {
 				body := n.Body.(parser.ExpressionNode)
 				candidates = append(candidates, returnTypeCandidate{node: n, ty: body.GetType()})
 			}
+			provisional := n.Symbol.Signature.ReturnType
 			n.Symbol.Signature.ReturnType = a.mergeReturnTypes(candidates, "inconsistent return types")
+			if a.provisionalReturnUsed[n.Symbol] && provisional != nil &&
+				!types.HasError(n.Symbol.Signature.ReturnType) &&
+				!provisional.Equals(n.Symbol.Signature.ReturnType) {
+				a.errorf(n, "recursive return type differs from the inferred branch type; add a return type annotation")
+				n.Symbol.Signature.ReturnType = types.ErrorType{}
+			}
 
 			if types.HasUntyped(n.Symbol.Signature.ReturnType) {
 				a.errorf(n, "cannot infer function return type from untyped numeric value; add a return type annotation or cast")
@@ -563,6 +577,11 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 			a.attributeFunctionDefinition(n.Symbol)
 		}
 		if n.Symbol != nil && n.Symbol.Signature.ReturnType != nil {
+			if a.currentFunction != nil && n.Symbol == a.currentFunction.Symbol &&
+				a.functionState[n.Symbol] == functionAttributing &&
+				a.currentFunction.RetTypeNode == nil {
+				a.provisionalReturnUsed[n.Symbol] = true
+			}
 			n.SetType(n.Symbol.Signature.ReturnType)
 		} else if n.Symbol != nil {
 			n.SetType(types.PrimitiveVoid)
@@ -2008,6 +2027,19 @@ func (a *Attributor) attributeBlock(n *parser.BlockNode) {
 func (a *Attributor) attributeIf(n *parser.IfNode) {
 	a.attributeExpr(n.IfBranch.Condition)
 	a.attributeNode(n.IfBranch.Node)
+	// An expression-bodied recursive function can use an earlier branch's
+	// concrete result while its later branches are still being attributed.
+	// The complete body determines the final signature after attribution.
+	if a.currentFunction != nil && a.currentFunction.Body == n &&
+		a.currentFunction.RetTypeNode == nil &&
+		a.currentFunction.Symbol.Signature.ReturnType == nil &&
+		parser.NodeFallsThrough(n.IfBranch.Node) {
+		result := n.IfBranch.Node.GetType()
+		if result != nil && !types.HasError(result) && !types.HasUntyped(result) &&
+			!result.Equals(types.PrimitiveVoid) {
+			a.currentFunction.Symbol.Signature.ReturnType = result
+		}
+	}
 	for _, branch := range n.ElseIfBranches {
 		a.attributeExpr(branch.Condition)
 		a.attributeNode(branch.Node)
