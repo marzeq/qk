@@ -154,7 +154,7 @@
     },
     {
       "name": "standard-library core behavior",
-      "positive": ["stdlib/core", "stdlib/directory_iteration"],
+      "positive": ["stdlib/core", "stdlib/directory_iteration", "stdlib/integer_parsing"],
       "negativeNotApplicable": true
     },
     {

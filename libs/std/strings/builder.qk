@@ -45,47 +45,6 @@ pub let SplitIterator.next(*mut self): (str, bool) {
   return result, true
 }
 
-let digit_value(value: u8): (u8, bool) {
-  if value >= '0' && value <= '9' { return value - '0', true }
-  if value >= 'a' && value <= 'z' { return value - 'a' + 10, true }
-  if value >= 'A' && value <= 'Z' { return value - 'A' + 10, true }
-  return 0, false
-}
-
-pub let parse_u64(value: str, base: u8 = 10): (u64, bool) {
-  if @len(value) == 0 || base < 2 || base > 36 { return 0, false }
-
-  let radix = base.(u64)
-  let mut result: u64 = 0
-  let mut index: usz = 0
-  for index < @len(value) {
-    let digit, valid = digit_value(value[index])
-    if !valid || digit >= base { return 0, false }
-    if result > ((~0.(u64)) - digit.(u64)) / radix { return 0, false }
-    result = result * radix + digit.(u64)
-    index += 1
-  }
-  return result, true
-}
-
-pub let parse_i64(value: str, base: u8 = 10): (i64, bool) {
-  if @len(value) == 0 { return 0, false }
-  let negative = value[0] == '-'
-  let start: usz = if negative || value[0] == '+' { 1 } else { 0 }
-  if start == @len(value) { return 0, false }
-
-  let magnitude, valid = parse_u64(value[start:], base)
-  if !valid { return 0, false }
-  let positive_limit = 9223372036854775807.(u64)
-  if negative {
-    if magnitude > positive_limit + 1 { return 0, false }
-    if magnitude == positive_limit + 1 { return (~9223372036854775807.(i64)), true }
-    return -magnitude.(i64), true
-  }
-  if magnitude > positive_limit { return 0, false }
-  return magnitude.(i64), true
-}
-
 pub let replace(
   allocator: *mut dyn std.alloc.Allocator,
   value: str,

@@ -1,0 +1,193 @@
+module main
+
+let main() {
+  {
+    let value, valid = "255".to_u8()
+    assert(value == 255 && valid == true, "255 to_u8")
+  }
+  {
+    let value, valid = "256".to_u8()
+    assert(value == 0 && valid == false, "256 to_u8")
+  }
+  {
+    let value, valid = "65535".to_u16()
+    assert(value == 65535 && valid == true, "65535 to_u16")
+  }
+  {
+    let value, valid = "65536".to_u16()
+    assert(value == 0 && valid == false, "65536 to_u16")
+  }
+  {
+    let value, valid = "4294967295".to_u32()
+    assert(value == 4294967295 && valid == true, "4294967295 to_u32")
+  }
+  {
+    let value, valid = "4294967296".to_u32()
+    assert(value == 0 && valid == false, "4294967296 to_u32")
+  }
+  {
+    let value, valid = "18446744073709551615".to_u64()
+    assert(value == ~0.(u64) && valid == true, "18446744073709551615 to_u64")
+  }
+  {
+    let value, valid = "18446744073709551616".to_u64()
+    assert(value == 0 && valid == false, "18446744073709551616 to_u64")
+  }
+  {
+    let value, valid = "127".to_i8()
+    assert(value == 127 && valid == true, "127 to_i8")
+  }
+  {
+    let value, valid = "-128".to_i8()
+    assert(value == -128 && valid == true, "-128 to_i8")
+  }
+  {
+    let value, valid = "128".to_i8()
+    assert(value == 0 && valid == false, "128 to_i8")
+  }
+  {
+    let value, valid = "-129".to_i8()
+    assert(value == 0 && valid == false, "-129 to_i8")
+  }
+  {
+    let value, valid = "32767".to_i16()
+    assert(value == 32767 && valid == true, "32767 to_i16")
+  }
+  {
+    let value, valid = "-32768".to_i16()
+    assert(value == -32768 && valid == true, "-32768 to_i16")
+  }
+  {
+    let value, valid = "32768".to_i16()
+    assert(value == 0 && valid == false, "32768 to_i16")
+  }
+  {
+    let value, valid = "2147483647".to_i32()
+    assert(value == 2147483647 && valid == true, "2147483647 to_i32")
+  }
+  {
+    let value, valid = "-2147483648".to_i32()
+    assert(value == -2147483648 && valid == true, "-2147483648 to_i32")
+  }
+  {
+    let value, valid = "2147483648".to_i32()
+    assert(value == 0 && valid == false, "2147483648 to_i32")
+  }
+  {
+    let value, valid = "9223372036854775807".to_i64()
+    assert(value == 9223372036854775807.(i64) && valid == true, "9223372036854775807 to_i64")
+  }
+  {
+    let value, valid = "-9223372036854775808".to_i64()
+    assert(value == ~9223372036854775807.(i64) && valid == true, "-9223372036854775808 to_i64")
+  }
+  {
+    let value, valid = "9223372036854775808".to_i64()
+    assert(value == 0 && valid == false, "9223372036854775808 to_i64")
+  }
+  {
+    let value, valid = "-9223372036854775809".to_i64()
+    assert(value == 0 && valid == false, "-9223372036854775809 to_i64")
+  }
+  {
+    let value, valid = "42".to_usz()
+    assert(value == 42 && valid == true, "42 to_usz")
+  }
+  {
+    let value, valid = "-42".to_isz()
+    assert(value == -42 && valid == true, "-42 to_isz")
+  }
+  {
+    let value, valid = c"255".to_u8()
+    assert(value == 255 && valid == true, "c255 to_u8")
+  }
+  {
+    let value, valid = c"65535".to_u16()
+    assert(value == 65535 && valid == true, "c65535 to_u16")
+  }
+  {
+    let value, valid = c"4294967295".to_u32()
+    assert(value == 4294967295 && valid == true, "c4294967295 to_u32")
+  }
+  {
+    let value, valid = c"18446744073709551615".to_u64()
+    assert(value == ~0.(u64) && valid == true, "c18446744073709551615 to_u64")
+  }
+  {
+    let value, valid = c"127".to_i8()
+    assert(value == 127 && valid == true, "c127 to_i8")
+  }
+  {
+    let value, valid = c"-32768".to_i16()
+    assert(value == -32768 && valid == true, "c-32768 to_i16")
+  }
+  {
+    let value, valid = c"2147483647".to_i32()
+    assert(value == 2147483647 && valid == true, "c2147483647 to_i32")
+  }
+  {
+    let value, valid = c"-9223372036854775808".to_i64()
+    assert(value == ~9223372036854775807.(i64) && valid == true, "c-9223372036854775808 to_i64")
+  }
+  {
+    let value, valid = c"42".to_usz()
+    assert(value == 42 && valid == true, "c42 to_usz")
+  }
+  {
+    let value, valid = c"-42".to_isz()
+    assert(value == -42 && valid == true, "c-42 to_isz")
+  }
+  {
+    let value, valid = c"256".to_u8()
+    assert(value == 0 && valid == false, "c256 to_u8")
+  }
+  {
+    let value, valid = c"-129".to_i8()
+    assert(value == 0 && valid == false, "c-129 to_i8")
+  }
+  {
+    let value, valid = "ff".to_u8(16)
+    assert(value == 255 && valid == true, "ff to_u8 base 16")
+  }
+  {
+    let value, valid = c"7F".to_i8(16)
+    assert(value == 127 && valid == true, "c7F to_i8 base 16")
+  }
+  {
+    let value, valid = "+42".to_i32()
+    assert(value == 42 && valid == true, "+42 to_i32")
+  }
+  {
+    let value, valid = "-0".to_i32()
+    assert(value == 0 && valid == true, "-0 to_i32")
+  }
+  {
+    let value, valid = "".to_u32()
+    assert(value == 0 && valid == false, " to_u32")
+  }
+  {
+    let value, valid = "12x".to_u32()
+    assert(value == 0 && valid == false, "12x to_u32")
+  }
+  {
+    let value, valid = " 12".to_i32()
+    assert(value == 0 && valid == false, " 12 to_i32")
+  }
+  {
+    let value, valid = "-1".to_u32()
+    assert(value == 0 && valid == false, "-1 to_u32")
+  }
+  {
+    let value, valid = "12".to_u32(1)
+    assert(value == 0 && valid == false, "12 to_u32 base 1")
+  }
+  {
+    let value, valid = "12".to_u32(37)
+    assert(value == 0 && valid == false, "12 to_u32 base 37")
+  }
+  let null_text: cstr = nil
+  {
+    let value, valid = null_text.to_i64()
+    assert(value == 0 && !valid, "null cstr")
+  }
+}
