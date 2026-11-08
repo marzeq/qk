@@ -5,6 +5,7 @@ import (
 
 	"github.com/marzeq/qk/parser"
 	"github.com/marzeq/qk/tokeniser"
+	"github.com/marzeq/qk/types"
 )
 
 func TestParameterizedNominalMethodOwnerSyntax(t *testing.T) {
@@ -45,5 +46,41 @@ let Box($).keep(self, $U: type, value: U): U = value
 	keep := root.Body[5].(*parser.FunctionDefNode)
 	if len(keep.Symbol.GenericParameters) != 2 || keep.Symbol.GenericParameters[0].Name != "T" || keep.Symbol.GenericParameters[1].Name != "U" {
 		t.Fatalf("method did not preserve its own type parameter after owner captures: %#v", keep.Symbol.GenericParameters)
+	}
+}
+
+func TestRecursiveExpressionBodyInfersReturnFromIfBranch(t *testing.T) {
+	const source = `module main
+let fib(n: usz) =
+  if n <= 1 { n }
+  else { fib(n - 1) + fib(n - 2) }
+let main() { let result: usz = fib(8) }
+`
+	tokens, err := tokeniser.NewTokeniser(source, "recursive_return.qk").Tokenise()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := parser.NewParser(tokens).Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	analyser := NewAnalyser()
+	analyser.AnalyseModule(root, "main", false)
+	if errs := analyser.Errors(); len(errs) != 0 {
+		t.Fatal(errs)
+	}
+	attributor := analyser.NewAttributor()
+	attributor.AttributeModule(root)
+	if errs := attributor.Errors(); len(errs) != 0 {
+		t.Fatal(errs)
+	}
+	fib := root.Body[1].(*parser.FunctionDefNode)
+	if got := fib.Symbol.Signature.ReturnType; !got.Equals(types.PrimitiveUsz) {
+		t.Fatalf("inferred return type = %v, want usz", got)
+	}
+	validator := analyser.NewValidator()
+	validator.ValidateModule(root)
+	if errs := validator.Errors(); len(errs) != 0 {
+		t.Fatal(errs)
 	}
 }
