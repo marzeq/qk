@@ -163,6 +163,13 @@ func main() {
 		specializationMetadata[name] = unit
 		order = append(order, name)
 	}
+	if args.outputType == OutputExecutable {
+		if !args.freestanding && !args.noStdlib {
+			pruneUnreachableIR(irModules, "__qk_0_3_std2_os_global_args", "__qk_0_3_std2_os_global_env")
+		} else {
+			pruneUnreachableIR(irModules)
+		}
+	}
 	requestedModuleLinks := linksForUsedForeignSymbols(
 		frontend.partials, irModules, args.outputType == OutputObject || args.outputType == OutputStaticLibrary,
 	)

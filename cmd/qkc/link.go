@@ -89,11 +89,18 @@ func fileForeignSymbols(root *parser.RootNode) []string {
 }
 
 func reachableNativeSymbols(modules map[string]*ir.Module, rootAllExternal bool) map[string]bool {
+	_, referenced := reachableIRSymbols(modules, rootAllExternal)
+	return referenced
+}
+
+// reachableIRSymbols follows direct calls, function constants, and global
+// references across module boundaries from the definitions retained by a build.
+func reachableIRSymbols(modules map[string]*ir.Module, rootAllExternal bool, additionalRoots ...string) (map[string]bool, map[string]bool) {
 	functions := map[string]*ir.Function{}
 	functionModules := map[string]*ir.Module{}
 	globals := map[string]*ir.Global{}
 	globalModules := map[string]*ir.Module{}
-	queue := []string{}
+	queue := append([]string(nil), additionalRoots...)
 	for _, module := range modules {
 		for _, fn := range module.Functions {
 			functions[fn.Name] = fn
@@ -155,7 +162,30 @@ func reachableNativeSymbols(modules map[string]*ir.Module, rootAllExternal bool)
 			}
 		}
 	}
-	return referenced
+	return visited, referenced
+}
+
+// pruneUnreachableIR removes definitions that cannot contribute to an
+// executable. Do this before LLVM emission so optimization does not have to
+// parse and process every function in imported library modules.
+func pruneUnreachableIR(modules map[string]*ir.Module, additionalRoots ...string) {
+	reachable, _ := reachableIRSymbols(modules, false, additionalRoots...)
+	for _, module := range modules {
+		functions := module.Functions[:0]
+		for _, fn := range module.Functions {
+			if reachable[fn.Name] {
+				functions = append(functions, fn)
+			}
+		}
+		module.Functions = functions
+		globals := module.Globals[:0]
+		for _, global := range module.Globals {
+			if reachable[global.Name] {
+				globals = append(globals, global)
+			}
+		}
+		module.Globals = globals
+	}
 }
 
 func operandSymbolReferences(operand ir.Operand) []string {
