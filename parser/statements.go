@@ -574,6 +574,23 @@ func (p *Parser) parseAttribute(defaultName string) (attributes.Attribute, error
 		return p.parseExportAttribute(defaultName)
 	case attributes.AttributeTypePacked:
 		return p.parsePackedAttribute()
+	case attributes.AttributeTypeFreestanding:
+		if p.Match(tokeniser.TokenOpenParen) {
+			return nil, shared.NewError(p.CurrLoc(), "@freestanding takes no arguments")
+		}
+		return attributes.ModuleAttributeFreestanding{}, nil
+	case attributes.AttributeTypeEntry:
+		if !p.Expect(tokeniser.TokenOpenParen) {
+			return nil, shared.NewError(p.PrevLoc(), "expected '(' after @entry")
+		}
+		symbol, ok := p.ExpectGet(tokeniser.TokenString)
+		if !ok || symbol.Value == "" {
+			return nil, shared.NewError(p.PrevLoc(), "@entry requires a non-empty symbol string")
+		}
+		if !p.Expect(tokeniser.TokenCloseParen) {
+			return nil, shared.NewError(p.PrevLoc(), "expected ')' after @entry symbol")
+		}
+		return attributes.ModuleAttributeEntry{Symbol: symbol.Value}, nil
 	default:
 		return nil, shared.NewError(nameIdent.Loc, "unknown attribute: %s", nameIdent.Name)
 	}

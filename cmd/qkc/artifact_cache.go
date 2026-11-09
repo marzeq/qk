@@ -80,6 +80,7 @@ func buildInputHash(args *Args, sources, sourcePackages map[string]string) strin
 	hash := sha256.New()
 	for _, value := range []string{args.mainModule, args.target, args.sysroot, args.cpu, args.features, args.targetABI,
 		fmt.Sprint(args.release), fmt.Sprint(args.debug), fmt.Sprint(args.outputType), string(args.optLevel),
+		fmt.Sprint(args.freestanding), args.entry,
 		args.relocation, args.codeModel, args.manifestPath, args.manifestData,
 		fmt.Sprint(artifactCacheVersion), artifactCompilerABI} {
 		writeHashString(hash, value)

@@ -3,13 +3,15 @@ package attributes
 type AttributeType string
 
 const (
-	AttributeTypeNoReturn AttributeType = "noreturn"
-	AttributeTypeInline   AttributeType = "inline"
-	AttributeTypeNoInline AttributeType = "noinline"
-	AttributeTypeForeign  AttributeType = "foreign"
-	AttributeTypeLink     AttributeType = "link"
-	AttributeTypeExport   AttributeType = "export"
-	AttributeTypePacked   AttributeType = "packed"
+	AttributeTypeNoReturn     AttributeType = "noreturn"
+	AttributeTypeInline       AttributeType = "inline"
+	AttributeTypeNoInline     AttributeType = "noinline"
+	AttributeTypeForeign      AttributeType = "foreign"
+	AttributeTypeLink         AttributeType = "link"
+	AttributeTypeExport       AttributeType = "export"
+	AttributeTypePacked       AttributeType = "packed"
+	AttributeTypeEntry        AttributeType = "entry"
+	AttributeTypeFreestanding AttributeType = "freestanding"
 )
 
 type Attribute interface {
@@ -74,6 +76,14 @@ type ModuleAttributeLink struct {
 }
 
 func (a ModuleAttributeLink) GetType() AttributeType { return AttributeTypeLink }
+
+type ModuleAttributeEntry struct{ Symbol string }
+
+func (a ModuleAttributeEntry) GetType() AttributeType { return AttributeTypeEntry }
+
+type ModuleAttributeFreestanding struct{}
+
+func (a ModuleAttributeFreestanding) GetType() AttributeType { return AttributeTypeFreestanding }
 
 type FunctionAttributeExport struct {
 	As  string

@@ -1,7 +1,9 @@
 module std.os
 
-pub let mut args: []str = ---
-pub let mut env: [][2]str = ---
+when TargetHasEnvironment {
+  pub let mut args: []str = ---
+  pub let mut env: [][2]str = ---
+}
 
 when TargetHasLibc {
   import std.libc
@@ -49,48 +51,8 @@ when TargetHasEnvironment {
 }
 
 when TargetHasProcessExit {
-  when OS == .Windows {
-    let exit_process(code: u32): void @foreign(symbol "ExitProcess") @noreturn
-
-    pub let exit(code: i32): void @noreturn {
-      exit_process(code.(u32))
-    }
-  } else {
-    pub let exit(code: i32): void @noreturn {
-      let syscall: u64 =
-        when OS == .Linux && Arch == .X86_64 { 60 }
-        else when OS == .Linux && Arch == .AArch64 { 93 }
-        else when OS == .MacOS { 33554433 }
-        else { 1 }
-
-      when Arch == .X86_64 {
-        let _ = @asm(
-          "syscall",
-          out i64 "={rax}",
-          in syscall "{rax}",
-          in code.(i64) "{rdi}",
-          clobber "rcx",
-          clobber "r11",
-          clobber "memory",
-          volatile)
-      } else when Arch == .AArch64 && OS == .MacOS {
-        let _ = @asm(
-          "svc #0x80",
-          out i64 "={x0}",
-          in syscall "{x16}",
-          in code.(i64) "{x0}",
-          clobber "memory",
-          volatile)
-      } else when Arch == .AArch64 {
-        let _ = @asm(
-          "svc #0",
-          out i64 "={x0}",
-          in syscall "{x8}",
-          in code.(i64) "{x0}",
-          clobber "memory",
-          volatile)
-      }
-      for true {}
-    }
+  import std.libc
+  pub let exit(code: i32): void @noreturn {
+    std.libc.exit(code)
   }
 }

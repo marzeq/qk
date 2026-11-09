@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime/pprof"
 
+	"github.com/marzeq/qk/attributes"
 	"github.com/marzeq/qk/ir"
 	"github.com/marzeq/qk/loader"
 	"github.com/marzeq/qk/parser"
@@ -64,6 +65,8 @@ func main() {
 		args.mainModule, args.baseDir, args.file, searchPaths, args.sourceMounts, libraryRoot, !args.noStdlib,
 	)
 	check(err)
+	check(applyMainModuleAttributes(args, compileTimeSources, sourcePackagePaths))
+	comptimeConfig.Freestanding = args.freestanding
 	if args.run && discovered[0].Name != "main" {
 		fatal("cannot run package %q: package must declare module main", discovered[0].Name)
 	}
@@ -71,6 +74,9 @@ func main() {
 		args.outputType = OutputStaticLibrary
 	}
 	check(finaliseOutputArgs(args))
+	if args.freestanding && args.outputType != OutputExecutable {
+		fatal("freestanding mode requires executable output")
+	}
 	if args.outputType == OutputExecutable && discovered[0].Name != "main" {
 		fatal("cannot build executable from package %q: package must declare module main", discovered[0].Name)
 	}
@@ -96,7 +102,35 @@ func main() {
 	)
 	check(err)
 	modules, order := frontend.modules, frontend.order
+	for name, info := range modules {
+		if name == args.mainModule {
+			continue
+		}
+		for _, node := range info.Root.Body {
+			declaration, ok := node.(*parser.ModuleNode)
+			if !ok {
+				continue
+			}
+			if declaration.Attributes.Get(attributes.AttributeTypeEntry) != nil || declaration.Attributes.Get(attributes.AttributeTypeFreestanding) != nil {
+				fatal("@entry and @freestanding are only valid on the main module")
+			}
+		}
+	}
 	irModules, genericTemplates := frontend.irModules, frontend.templates
+	if args.freestanding {
+		foundEntry := false
+		if primary := irModules[args.mainModule]; primary != nil {
+			for _, fn := range primary.Functions {
+				if fn.Name == args.entry && fn.Linkage == ir.LinkageExternal && fn.Visibility == ir.VisibilityDefault && len(fn.Blocks) != 0 {
+					foundEntry = true
+					break
+				}
+			}
+		}
+		if !foundEntry {
+			fatal("freestanding entry %q must be a defined @export function in the main module", args.entry)
+		}
+	}
 	var warnings = frontend.warnings
 	var displayedWarnings []string
 	for _, warning := range warnings {
@@ -132,16 +166,7 @@ func main() {
 	requestedModuleLinks := linksForUsedForeignSymbols(
 		frontend.partials, irModules, args.outputType == OutputObject || args.outputType == OutputStaticLibrary,
 	)
-	probeLibcFreeLink := args.outputType == OutputExecutable && targetIsLinuxX8664(args.target) &&
-		moduleLinksContainLibc(requestedModuleLinks)
 	moduleLinks := requestedModuleLinks
-	if probeLibcFreeLink {
-		// IR reachability is intentionally conservative around vtables and
-		// constant-specialized branches. Let the final section-GC link prove
-		// whether libc is actually needed before committing to the hosted CRT.
-		moduleLinks = withoutLibcLinks(requestedModuleLinks)
-	}
-	linksLibc := moduleLinksContainLibc(moduleLinks)
 
 	llvmOutputs := make(map[string]string, len(irModules))
 	for _, moduleName := range order {
@@ -190,18 +215,14 @@ func main() {
 		mainInitializer = mainIR.Initializer
 		userMain = mainIR.Entry
 	}
-	freestandingRuntime, err := buildFreestandingRuntime(
-		args.target,
-		linksLibc,
-		args.outputType == OutputExecutable,
-		!args.noStdlib,
-		mainInitializer,
-		userMain,
+	hostedRuntime, err := buildHostedRuntime(
+		args.target, args.freestanding, args.outputType == OutputExecutable,
+		!args.noStdlib, mainInitializer, userMain,
 	)
 	check(err)
-	if freestandingRuntime != "" {
-		llvmOutputs["__qk.runtime"] = freestandingRuntime
-		runtimeHash := implementationHash("__qk.runtime", freestandingRuntime)
+	if hostedRuntime != "" {
+		llvmOutputs["__qk.runtime"] = hostedRuntime
+		runtimeHash := implementationHash("__qk.runtime", hostedRuntime)
 		artifact := &cachedArtifact{ImplementationHash: runtimeHash, Objects: make(map[string][]byte)}
 		if cache != nil {
 			path := cache.modulePath(runtimeHash)
@@ -223,8 +244,8 @@ func main() {
 		for _, moduleName := range order {
 			dumpLLVMModule(llvmOutputs[moduleName])
 		}
-		if freestandingRuntime != "" {
-			dumpLLVMModule(freestandingRuntime)
+		if hostedRuntime != "" {
+			dumpLLVMModule(hostedRuntime)
 		}
 	}
 
@@ -237,7 +258,7 @@ func main() {
 	for _, stmt := range mainModule.Root.Body {
 		switch fn := stmt.(type) {
 		case *parser.FunctionDefNode:
-			if fn.Name == "main" {
+			if fn.Name == "main" && !args.freestanding {
 				if len(fn.GenericParameters) != 0 {
 					fatal("%v", shared.NewError(fn.Loc, "main function cannot have compile-time type parameters"))
 				}
@@ -258,7 +279,7 @@ func main() {
 			}
 		}
 	}
-	if !foundMain && args.outputType == OutputExecutable {
+	if !foundMain && args.outputType == OutputExecutable && !args.freestanding {
 		fatal("main function not found in primary package")
 	}
 
@@ -290,8 +311,8 @@ func main() {
 				err = dumpAssemblyFile(buildDir)
 				check(err)
 			}
-			if freestandingRuntime != "" {
-				buildDir, err := emitLLVMFile(freestandingRuntime)
+			if hostedRuntime != "" {
+				buildDir, err := emitLLVMFile(hostedRuntime)
 				check(err)
 				defer os.RemoveAll(buildDir)
 				check(emitAssemblyFile(buildDir, args))
@@ -344,8 +365,8 @@ func main() {
 		}
 		objFiles = append(objFiles, objFile)
 	}
-	if freestandingRuntime != "" {
-		buildDir, err := emitLLVMFile(freestandingRuntime)
+	if hostedRuntime != "" {
+		buildDir, err := emitLLVMFile(hostedRuntime)
 		check(err)
 		buildDirs = append(buildDirs, buildDir)
 		if !args.keepBuildDir {
@@ -359,10 +380,10 @@ func main() {
 		artifact := artifacts["__qk.runtime"]
 		if data := artifact.Objects[objectKey]; len(data) != 0 && os.WriteFile(objFile, data, 0o644) == nil {
 			if args.verbose {
-				fmt.Println("used cached object for freestanding runtime")
+				fmt.Println("used cached object for hosted runtime")
 			}
 		} else {
-			objFile, err = compileLLVMModule(buildDir, "freestanding runtime", freestandingRuntime, args)
+			objFile, err = compileLLVMModule(buildDir, "hosted runtime", hostedRuntime, args)
 			check(err)
 			if data, readErr := os.ReadFile(objFile); readErr == nil {
 				artifact.Objects[objectKey] = data
@@ -393,57 +414,7 @@ func main() {
 		}
 	}
 
-	linkArgs := args
-	if probeLibcFreeLink {
-		// A failed libc-free link is an implementation detail of the probe, not
-		// a user-facing linker failure. Only print the final link invocation.
-		quietProbeArgs := *args
-		quietProbeArgs.verbose = false
-		quietProbeArgs.quietLink = true
-		linkArgs = &quietProbeArgs
-	}
-	err = linkObjects(objFiles, moduleLinks, linkRoots, linkArgs)
-	if err != nil && probeLibcFreeLink {
-		if args.verbose {
-			fmt.Println("libc-free link retained live libc references; retrying with the hosted runtime")
-		}
-		hostedRuntime, runtimeErr := buildFreestandingRuntime(
-			args.target, true, true, !args.noStdlib, mainInitializer, userMain,
-		)
-		check(runtimeErr)
-		buildDir, runtimeErr := emitLLVMFile(hostedRuntime)
-		check(runtimeErr)
-		buildDirs = append(buildDirs, buildDir)
-		if !args.keepBuildDir {
-			defer os.RemoveAll(buildDir)
-		}
-		if args.dumpAsm {
-			check(emitAssemblyFile(buildDir, args))
-			check(dumpAssemblyFile(buildDir))
-		}
-		runtimeObject, runtimeErr := compileLLVMModule(buildDir, "hosted runtime", hostedRuntime, args)
-		check(runtimeErr)
-		if cache != nil {
-			hostedRuntimeHash := implementationHash("__qk.runtime", hostedRuntime)
-			hostedRuntimePath := cache.modulePath(hostedRuntimeHash)
-			hostedArtifact := &cachedArtifact{ImplementationHash: hostedRuntimeHash, Objects: make(map[string][]byte)}
-			if data, readErr := os.ReadFile(runtimeObject); readErr == nil {
-				hostedArtifact.Objects[objectKey] = data
-				if storeErr := storeCachedArtifact(hostedRuntimePath, hostedArtifact); storeErr != nil && args.verbose {
-					fmt.Fprintf(os.Stderr, "warning: failed to update hosted runtime artifact: %v\n", storeErr)
-				} else if storeErr == nil {
-					artifactPaths["__qk.runtime"] = hostedRuntimePath
-				}
-			}
-		}
-		if len(objFiles) == 0 {
-			fatal("hosted runtime retry has no runtime object to replace")
-		}
-		objFiles[len(objFiles)-1] = runtimeObject
-		moduleLinks = requestedModuleLinks
-		_ = os.Remove(args.output)
-		err = linkObjects(objFiles, moduleLinks, linkRoots, args)
-	}
+	err = linkObjects(objFiles, moduleLinks, linkRoots, args)
 	check(err)
 	if cache != nil {
 		storeSuccessfulBuildSnapshot(cache, buildHash, order, artifactPaths, moduleLinks, linkRoots, displayedWarnings, args.verbose)

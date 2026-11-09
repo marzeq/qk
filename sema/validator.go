@@ -100,7 +100,7 @@ func (v *Validator) validateNode(node parser.Node) {
 	case *parser.ImportNode:
 
 	case *parser.ModuleNode:
-		v.validateAttributes(n, n.Attributes, "module", attributes.AttributeTypeLink)
+		v.validateAttributes(n, n.Attributes, "module", attributes.AttributeTypeLink, attributes.AttributeTypeEntry, attributes.AttributeTypeFreestanding)
 
 	case *parser.FunctionDefNode:
 		if n.GenericInstance || (n.IsGeneric() && !v.validatingTemplate) {

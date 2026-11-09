@@ -9,6 +9,26 @@ import (
 	"github.com/marzeq/qk/tokeniser"
 )
 
+func TestFreestandingDisablesHostedCapabilities(t *testing.T) {
+	source := `module test
+when TargetHasLibc || TargetHasFilesystem || TargetHasEnvironment || TargetHasProcessExit {
+  @compiler_error("hosted capability leaked into freestanding mode")
+}
+let retained: i32 = 7
+`
+	tokens, err := tokeniser.NewTokeniser(source, "freestanding.qk").Tokenise()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := parser.NewParser(tokens).Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := SelectCompileTime(root, "test", StageConfig{TargetTriple: "x86_64-unknown-linux-gnu", Freestanding: true}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestCompileTimeFunctionRunsThroughRegularIR(t *testing.T) {
 	source := `
 module test @link(

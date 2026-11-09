@@ -198,11 +198,14 @@ pub let wprintln(
   return write_byte(writer, '\n')
 }
 
+when TargetHasLibc {
 pub let print(format: str, arguments: ...*dyn Any): Result(Unit, Error) =
   wprint(stdout.&mut.(*mut dyn Writer), format, arguments...)
 
 pub let println(format: str, arguments: ...*dyn Any): Result(Unit, Error) =
   wprintln(stdout.&mut.(*mut dyn Writer), format, arguments...)
+
+}
 
 when TargetHasFilesystem {
   pub let fprint(
@@ -218,8 +221,10 @@ when TargetHasFilesystem {
   ): Result(Unit, Error) = wprintln(file.(*mut dyn Writer), format, arguments...)
 }
 
+when TargetHasLibc {
 pub let eprint(format: str, arguments: ...*dyn Any): Result(Unit, Error) =
   wprint(stderr.&mut.(*mut dyn Writer), format, arguments...)
 
 pub let eprintln(format: str, arguments: ...*dyn Any): Result(Unit, Error) =
   wprintln(stderr.&mut.(*mut dyn Writer), format, arguments...)
+}

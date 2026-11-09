@@ -28,7 +28,7 @@ type StageConfig struct {
 	TargetTriple string
 	Sysroot      string
 	ReleaseMode  StageReleaseMode
-	NoLibc       bool
+	Freestanding bool
 	NoStdlib     bool
 }
 
@@ -896,7 +896,7 @@ func (s *stageSelector) targetValue(name string) (stageValue, bool) {
 	case "TargetHasLibc", "TargetHasFilesystem", "TargetHasEnvironment", "TargetHasProcessExit":
 		os, _ := s.targetValue("OS")
 		native := os.name == "Windows" || os.name == "Linux" || os.name == "MacOS" || os.name == "FreeBSD" || os.name == "OpenBSD" || os.name == "NetBSD" || os.name == "DragonFly"
-		return stageValue{kind: stageBool, boolean: native && !(name == "TargetHasLibc" && s.config.NoLibc)}, true
+		return stageValue{kind: stageBool, boolean: native && !s.config.Freestanding}, true
 	}
 	return stageValue{}, false
 }

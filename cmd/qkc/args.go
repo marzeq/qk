@@ -82,6 +82,8 @@ type Args struct {
 	release      bool
 	libraryPath  string
 	noStdlib     bool
+	freestanding bool
+	entry        string
 	noEmit       bool
 	target       string
 	sysroot      string
@@ -343,6 +345,20 @@ func (p *argumentParser) parseCurrent() error {
 		p.args.noStdlib = true
 		p.index++
 
+	case tok == "-freestanding":
+		p.args.freestanding = true
+		p.index++
+
+	case tok == "-entry":
+		value, err := p.nextValue(tok)
+		if err != nil {
+			return err
+		}
+		if value == "" {
+			return fmt.Errorf("-entry requires a non-empty symbol")
+		}
+		p.args.entry = value
+
 	case tok == "-stdlib":
 		value, err := p.nextValue(tok)
 		if err != nil {
@@ -488,6 +504,8 @@ Build options:
   -release              Select .Release for the compile-time ReleaseMode value
   -static               Prefer static libraries when linking
   -no-emit              Check and compile without writing an output file
+  -freestanding         Link without the C runtime or default libraries
+  -entry <symbol>       Set the freestanding executable entry symbol
 
 Diagnostics:
   -warn <mode>          Set warnings to show, off, or error (default: show)

@@ -383,17 +383,6 @@ func moduleLinksContainLibc(moduleLinks []attributes.Link) bool {
 	return false
 }
 
-func withoutLibcLinks(moduleLinks []attributes.Link) []attributes.Link {
-	result := make([]attributes.Link, 0, len(moduleLinks))
-	for _, link := range moduleLinks {
-		if link.Kind == attributes.LinkSystem && isCLibrary(link.Value) {
-			continue
-		}
-		result = append(result, link)
-	}
-	return result
-}
-
 func isCLibrary(library string) bool {
 	switch strings.ToLower(library) {
 	case "c", "system", "msvcrt", "ucrt":
@@ -520,11 +509,17 @@ func buildMSVCLinkArgs(objFiles []string, moduleLinks []attributes.Link, config 
 		args = append(args, "/DLL")
 	}
 	if config.outputType == OutputExecutable {
-		args = append(args, "/ENTRY:mainCRTStartup")
+		if config.freestanding {
+			args = append(args, "/NODEFAULTLIB", "/ENTRY:"+config.entry)
+		} else {
+			args = append(args, "/ENTRY:mainCRTStartup")
+		}
 	}
 	// QK exposes a C-compatible main function on Windows. The MSVC startup
 	// object in libcmt supplies mainCRTStartup and the argc/argv/envp setup.
-	args = append(args, "/DEFAULTLIB:libcmt")
+	if !config.freestanding {
+		args = append(args, "/DEFAULTLIB:libcmt")
+	}
 	for _, directory := range filepath.SplitList(os.Getenv("LIB")) {
 		if directory != "" {
 			args = append(args, "/LIBPATH:"+directory)
@@ -556,7 +551,9 @@ func buildMSVCLinkArgs(objFiles []string, moduleLinks []attributes.Link, config 
 	for _, path := range config.libraryPaths {
 		args = append(args, "/LIBPATH:"+path)
 	}
-	args = append(args, "kernel32.lib")
+	if !config.freestanding {
+		args = append(args, "kernel32.lib")
+	}
 	args = append(args, objFiles...)
 	return args, nil
 }
@@ -586,12 +583,11 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, config *Arg
 	if config.static {
 		args = append(args, "-static")
 	}
-	linksLibc := moduleLinksContainLibc(moduleLinks)
-	if !linksLibc {
-		args = append(args, defaultLibrarySuppressionArgs(config.target, config.outputType)...)
-		if config.outputType == OutputExecutable && targetIsLinuxX8664(config.target) {
-			args = append(args, "-nostartfiles", "-Wl,-e,_start")
+	if config.freestanding {
+		if moduleLinksContainLibc(moduleLinks) {
+			return nil, fmt.Errorf("freestanding build references libc")
 		}
+		args = append(args, "-nostdlib", "-Wl,-e,"+config.entry)
 	}
 	sysroot := config.sysroot
 	if sysroot == "" && targetIsApple(config.target) {
@@ -641,10 +637,6 @@ func buildLinkArgs(objFiles []string, moduleLinks []attributes.Link, config *Arg
 	for _, lib := range config.libs {
 		args = append(args, "-l"+lib)
 	}
-	if targetIsWindows(config.target) {
-		// Panic reporting uses the stable Win32 kernel ABI directly.
-		args = append(args, "-lkernel32")
-	}
 	args = append(args, "-o", config.output)
 	return args, nil
 }
@@ -687,25 +679,6 @@ func hostWindowsToolchainArgs(target, sysroot string) ([]string, error) {
 		}
 	}
 	return args, nil
-}
-
-func defaultLibrarySuppressionArgs(target string, outputType OutputType) []string {
-	if outputType == OutputObject || outputType == OutputWebAssembly {
-		return []string{"-nostdlib"}
-	}
-	// Darwin's loader requires every executable to load libSystem, even when
-	// the program uses only direct syscalls. Clang adds that load command by
-	// default; suppressing its default libraries produces an image that dyld
-	// refuses to launch.
-	if targetIsApple(target) {
-		return nil
-	}
-	if targetIsWindows(target) {
-		// MinGW's CRT supplies the executable entry point and process argument
-		// setup for QK's C-compatible main function.
-		return nil
-	}
-	return []string{"-nolibc"}
 }
 
 func isWindowsGNUTarget(target string) bool {

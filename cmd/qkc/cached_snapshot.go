@@ -51,7 +51,7 @@ func runCachedBuildSnapshot(cache *artifactCache, snapshot *cachedBuildSnapshot,
 		}
 	}
 	if snapshot.Runtime != "" {
-		if err := materialize("freestanding runtime", snapshot.Runtime); err != nil {
+		if err := materialize("hosted runtime", snapshot.Runtime); err != nil {
 			return err
 		}
 	}

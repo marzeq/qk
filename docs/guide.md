@@ -155,7 +155,7 @@ QK's module system is inspired by Go's module system—that is, semantic module 
 module foo.bar
 ```
 
-Just like Go, there is a special `main` module that is the entry point of the program. The `main` module must contain a `main()` function, which is the first function to be executed when the program starts. A project can have multiple main modules, and the convention is to put them in a `cmd` directory. For example, a project with two main modules would have the following structure:
+Just like Go, there is a special `main` module that is the entry point of the program. Hosted `main` modules must contain a `main()` function. Freestanding `main` modules select their own exported entry symbol with `@entry("symbol")` or `-entry symbol`. A project can have multiple main modules, and the convention is to put them in a `cmd` directory. For example, a project with two main modules would have the following structure:
 
 ```
 cmd/
@@ -1143,7 +1143,7 @@ These builtins are intentionally unavailable for auto-tagged unions. Mutable poi
 
 ## `panic` and `assert`
 
-`panic(message)` is a built-in terminating function that accepts `str` and is available in `-nolibc` builds.
+`panic(message)` is a built-in terminating function that accepts `str`.
 
 `assert(condition, message)` accepts a `bool` and a `str`. It returns normally when the condition is true; otherwise it prints `assertion failed: ` followed by the message and terminates the process.
 
@@ -1416,15 +1416,24 @@ Use `-no-emit` to perform compilation checks without producing output. `-dump-ir
 
 `-l`, `-L`, and `-Xlink` add native library, search-path, and linker arguments. `-static` requests static libraries where the target toolchain supports them.
 
-`-nolibc` removes the hosted C runtime while retaining the QK standard-library portions that do not require it. Linux x86-64 freestanding executables use QK's own `_start`, exit by syscall, leave `std.os.args` empty, and provide the memory primitives LLVM may introduce.
+Hosted builds use libc and the platform C runtime. `-freestanding` or `@freestanding` on the `main` module selects a freestanding executable. Set its entry symbol with `@entry("symbol")` on that module or `-entry symbol`; the flag overrides the attribute. The selected symbol must name a function defined in the main module with `@export("symbol")`. For example:
 
-Other freestanding executable targets are currently rejected until they have target-specific startup support. `-nostdlib` is separate: it omits QK's installed library sources altogether.
+```qk
+module main
+  @freestanding
+  @entry("_start")
+let start(): void @export("_start") {
+  for { }
+}
+```
+
+Freestanding links omit the C runtime and default libraries. The program supplies its own startup, termination, and panic support as needed. Hosted standard-library functions for console I/O, files, environment access, process exit, time, and libc allocation are excluded during freestanding staging. Pure standard-library code remains available, including `std.math`. `-nostdlib` omits the installed QK library tree entirely.
 
 Cross-linking requires suitable CRT objects, libraries, and usually a sysroot for the selected target.
 
 # Standard library tour
 
-The installed standard library is divided into small `std` packages. Features that do not require libc remain available under `-nolibc`; hosted streams, files, and the libc allocator are selected out when libc is absent.
+The installed standard library is divided into small `std` packages. Features that do not require libc remain available in freestanding mode; hosted streams, files, and the libc allocator are selected out.
 
 ## Core methods
 
@@ -1458,7 +1467,7 @@ Hosted builds provide `std.alloc.LibcAllocator`. `std.alloc.Arena` is also hoste
 
 `std.io.Reader` and `std.io.Writer` are structural stream traits. Their default `read_to_builder` and `write_builder` methods transfer bytes to or from a `std.strings.StringBuilder`, so implementations only need to supply the core `read` or `write` method. `std.io.Format` lets a value format itself into a writer.
 
-`std.io.wprint` and `wprintln` work with any writer. `print`, `println`, `eprint`, and `eprintln` use libc-free standard streams: Unix-family targets issue target-specific kernel calls with inline assembly, while Windows uses the stable Kernel32 console/file-handle API. Libc-backed file readers, file writers, and file printing are available when `std.io.HasFiles` is true.
+`std.io.wprint` and `wprintln` work with any writer. Hosted `print`, `println`, `eprint`, and `eprintln` write through libc file descriptors. File readers, file writers, and file printing are available when `std.io.HasFiles` is true. Freestanding builds can use the stream traits with program-supplied readers and writers.
 
 Formatting uses `{}` for the next argument and `{N}` for an indexed argument. Floats use trimmed fixed-point output with six fractional digits by default, so values sufficiently close to zero print as `0`; `g` retains general/scientific notation. The other specifiers are `c`, `x`, and `X`. `{{` and `}}` emit literal braces.
 
@@ -1484,4 +1493,4 @@ Prefer the higher-level allocation, stream, filesystem, and string packages when
 
 ## Mathematics
 
-`std.math` provides `PI`, `TAU`, `E`, `PHI`, `SQRT2`, `LN2`, `LN10`, `LOG2E`, and `LOG10E`; floating-point classification, sign, minimum, maximum, decomposition, scaling, remainder, and rounding helpers; angle conversion; and trigonometric, hyperbolic, exponential, logarithmic, power, square-root, cube-root, and hypotenuse functions. `modf` returns the fractional part followed by the integral part, `frexp` returns a normalized fraction followed by its base-two exponent, and `sincos` returns sine followed by cosine. Hosted builds use the target's mathematics library where appropriate; `-nolibc` builds use QK implementations with explicit IEEE-754 special-value handling and no native library dependency.
+`std.math` provides `PI`, `TAU`, `E`, `PHI`, `SQRT2`, `LN2`, `LN10`, `LOG2E`, and `LOG10E`; floating-point classification, sign, minimum, maximum, decomposition, scaling, remainder, and rounding helpers; angle conversion; and trigonometric, hyperbolic, exponential, logarithmic, power, square-root, cube-root, and hypotenuse functions. `modf` returns the fractional part followed by the integral part, `frexp` returns a normalized fraction followed by its base-two exponent, and `sincos` returns sine followed by cosine. Hosted builds use the target's mathematics library where appropriate; freestanding builds use QK implementations with explicit IEEE-754 special-value handling and no native library dependency.
