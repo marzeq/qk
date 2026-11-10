@@ -2500,7 +2500,17 @@ func (p *Parser) parseCallTypeArguments() ([]TypeNode, error) {
 			p.Inc()
 			return arguments, nil
 		}
-		argument, err := p.ParseType()
+		var argument TypeNode
+		var err error
+		if p.Match(tokeniser.TokenDollar) && !p.allowTypeCapture {
+			value, parseErr := p.ParseExpression()
+			err = parseErr
+			if err == nil {
+				argument = &ConstantTypeNode{Value: value, Loc: value.GetLoc()}
+			}
+		} else {
+			argument, err = p.ParseType()
+		}
 		if err != nil {
 			return nil, err
 		}

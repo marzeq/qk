@@ -1180,14 +1180,24 @@ Each concrete argument list produces an independently specialized binding. There
 let identity($T: type, value: T): T = value
 ```
 
-A bare `T: type` means a different thing: it is an ordinary parameter holding a type value. A function with such a parameter can only run during compilation. Type-returning functions that return a type name or call another type-returning function work in type annotations:
+`$enabled: bool` and `$count: i32` retain scalar values during specialization. Each distinct value selects a separate function or method body, and the value remains available inside that body. The call must supply a compile-time value; a runtime variable cannot bind a `$` parameter. A retained scalar parameter can appear alongside an inferred `$T: type` parameter:
+
+```qk
+let choose($enabled: bool, value: i32): i32 =
+  $if enabled { value } else { -value }
+let chosen: i32 = choose($true, 7)
+```
+
+A bare `T: type` means a different thing: it is an ordinary parameter holding a type value. A function with such a parameter can only run during compilation. Type-returning functions can return a type name, call another type-returning function, or select a type with `$if`. Their scalar parameters also receive compile-time values. These calls work in type annotations:
 
 ```qk
 let identity_type(T: type): type = T
 let Number: identity_type(i32) = 7
+let choose_type(T: type, enabled: bool): type = $if enabled { T } else { i64 }
+let Other: choose_type(i32, $false) = 9
 ```
 
-Type values currently have no general operations. Type-returning functions are limited to type parameters and a direct return of a type name or another type-function call. Functions mixing type parameters with other value parameters, and general type-valued computation, are not implemented yet.
+Type values currently have no general operations. Type-returning functions can select among existing types using type names, calls, and `$if`; general type-valued computation is a later stage.
 
 A bare type parameter can also specialize a function that returns an ordinary value. Such a function can only be called from a compile-time expression:
 

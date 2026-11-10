@@ -75,6 +75,10 @@ type stageSelector struct {
 	coreBuildImported bool
 	inFunction        bool
 	genericFunction   *parser.FunctionDefNode
+	genericAlias      *parser.TypeAliasNode
+	specializing      bool
+	stageMinimal      bool
+	stagingAliasName  string
 	typeBindings      map[string]types.Type
 }
 
@@ -264,6 +268,11 @@ func (s *stageSelector) selectNode(node parser.Node) ([]parser.Node, error) {
 			return nil, err
 		}
 	case *parser.TypeAliasNode:
+		previousAlias := s.genericAlias
+		if len(node.GenericParameters) != 0 {
+			s.genericAlias = node
+		}
+		defer func() { s.genericAlias = previousAlias }()
 		var err error
 		node.Type, err = s.selectType(node.Type)
 		if err != nil {
@@ -608,6 +617,17 @@ func (s *stageSelector) selectType(typeNode parser.TypeNode) (parser.TypeNode, e
 	}
 	var err error
 	switch node := typeNode.(type) {
+	case *parser.ConstantTypeNode:
+		if value, resolved, evaluationError := s.evaluate(node.Value); evaluationError != nil {
+			return nil, evaluationError
+		} else if resolved {
+			node.Value = stageLiteral(value, node.Loc)
+		} else if s.genericAlias != nil && !s.specializing {
+			s.genericAlias.DeferredStage = true
+		} else {
+			s.needsIR = true
+			s.unresolved[node.Value] = struct{}{}
+		}
 	case *parser.NamedTypeNode:
 		for index := range node.TypeArguments {
 			if err != nil {
@@ -740,6 +760,8 @@ func (s *stageSelector) selectWhenValue(node *parser.WhenNode) (parser.Node, boo
 			if err == nil {
 				if s.genericFunction != nil {
 					s.genericFunction.DeferredStage = true
+				} else if s.genericAlias != nil && !s.specializing {
+					s.genericAlias.DeferredStage = true
 				} else {
 					s.needsIR = true
 					s.unresolved[branch.Condition] = struct{}{}
@@ -880,6 +902,9 @@ func (s *stageSelector) resolveStageType(node parser.TypeNode) (types.Type, bool
 			return nil, false
 		}
 		if value, ok := s.typeBindings[typed.Name]; ok {
+			if _, constant := value.(types.ConstantType); constant {
+				return nil, false
+			}
 			return value, true
 		}
 		switch typed.Name {
@@ -1171,6 +1196,14 @@ func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 			staged.Body = append(staged.Body, &copy)
 		case *parser.FunctionDefNode:
 			if reachableFunctions[node] {
+				staged.Body = append(staged.Body, node)
+			}
+		case *parser.TypeAliasNode:
+			if node.Name != s.stagingAliasName {
+				staged.Body = append(staged.Body, node)
+			}
+		case *parser.DeclarationNode:
+			if !s.stageMinimal || node.Comptime {
 				staged.Body = append(staged.Body, node)
 			}
 		default:

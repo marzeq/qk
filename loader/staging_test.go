@@ -63,6 +63,44 @@ let value: relay(i32) = 7
 	}
 }
 
+func TestTypeFunctionSelectsWithScalarParameter(t *testing.T) {
+	source := `module test
+let choose(T: type, enabled: bool): type = $if enabled { T } else { i64 }
+let relay(T: type, enabled: bool): type = choose(T, $enabled)
+let is_small(size: usz): bool = size == 4
+let sized(T: type): type = $if is_small(sizeof(T)) { T } else { i64 }
+let first: choose(i32, $true) = 7
+let second: choose(i32, $false) = 9
+let third: relay(i32, $false) = 11
+let fourth: sized(i32) = 13
+`
+	tokens, err := tokeniser.NewTokeniser(source, "type_function_scalar.qk").Tokenise()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := parser.NewParser(tokens).Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := SelectCompileTime(root, "test", StageConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	partial, err := CollectModuleInfo(root, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	partial.Path = "test"
+	modules, err := BuildModules([]*PartialModuleInfo{partial})
+	if err != nil {
+		t.Fatal(err)
+	}
+	analyser := sema.NewAnalyser()
+	ConfigureDeferredStage(analyser, StageConfig{})
+	if errors, _ := RunSemanticModule(modules["test"], analyser, false, false); len(errors) != 0 {
+		t.Fatal(errors[0])
+	}
+}
+
 func TestBareTypeParameterRequiresCompileTimeCall(t *testing.T) {
 	for _, test := range []struct {
 		name, call string

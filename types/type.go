@@ -27,6 +27,7 @@ func DetachForSerialization(value Type) Type {
 		return &AliasRef{Module: value.Module, Name: value.Name}
 	case TypeParameter:
 		value.Constraint = DetachForSerialization(value.Constraint)
+		value.ValueType = DetachForSerialization(value.ValueType)
 		return value
 	case DefinedType:
 		value.Underlying = DetachForSerialization(value.Underlying)
@@ -98,6 +99,7 @@ func SubstituteParameters(value Type, bindings map[string]Type) Type {
 			return replacement
 		}
 		parameter.Constraint = SubstituteParameters(parameter.Constraint, bindings)
+		parameter.ValueType = SubstituteParameters(parameter.ValueType, bindings)
 		return parameter
 	}
 	detached := DetachForSerialization(value)
@@ -307,7 +309,23 @@ type TypeParameter struct {
 	Name       string
 	Index      int
 	Constraint Type
+	ValueType  Type
 }
+
+// ConstantType is a specialization argument for a retained compile-time
+// scalar parameter. It is never a storage type.
+type ConstantType struct {
+	ValueType Type
+	Value     string
+}
+
+func (c ConstantType) Equals(other Type) bool {
+	o, ok := other.(ConstantType)
+	return ok && c.ValueType.Equals(o.ValueType) && c.Value == o.Value
+}
+func (c ConstantType) CanCoerceTo(other Type) bool { return c.Equals(other) }
+func (c ConstantType) CanCastTo(other Type) bool   { return c.Equals(other) }
+func (c ConstantType) String() string              { return c.Value }
 
 func (p TypeParameter) Equals(other Type) bool {
 	o, ok := other.(TypeParameter)
@@ -560,6 +578,8 @@ func Identity(t Type) string {
 		return "trait-self"
 	case TypeParameter:
 		return "param(" + t.Key() + ")"
+	case ConstantType:
+		return "constant(" + Identity(t.ValueType) + ":" + t.Value + ")"
 	case DefinedType:
 		if t.GenericName != "" {
 			arguments := make([]string, len(t.TypeArguments))

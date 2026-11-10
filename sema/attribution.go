@@ -615,6 +615,8 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 			if err != nil {
 				a.errorf(n, "%v", err)
 				n.SetType(types.ErrorType{})
+			} else if !a.analyser.fillRetainedArguments(template, n.Args, arguments, n) {
+				n.SetType(types.ErrorType{})
 			} else if a.templatesOnly || hasTypeParameters(arguments) {
 				if a.analyser.checkGenericArguments(n, template.GenericParameters, arguments) {
 					n.Symbol = dependentGenericFunctionSymbol(template, arguments)

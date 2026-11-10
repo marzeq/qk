@@ -29,35 +29,36 @@ type InterfaceTraitDefault struct {
 }
 
 type InterfaceSymbol struct {
-	Name               string                   `json:"name"`
-	Public             bool                     `json:"public,omitempty"`
-	Kind               string                   `json:"kind"`
-	Type               string                   `json:"type,omitempty"`
-	TypeInfo           *InterfaceType           `json:"type_info,omitempty"`
-	Parameters         []string                 `json:"parameters,omitempty"`
-	ParameterTypes     []*InterfaceType         `json:"parameter_types,omitempty"`
-	ReturnType         string                   `json:"return_type,omitempty"`
-	ReturnTypeInfo     *InterfaceType           `json:"return_type_info,omitempty"`
-	RequiredParameters int                      `json:"required_parameters,omitempty"`
-	Variadic           bool                     `json:"variadic,omitempty"`
-	TypedVariadic      bool                     `json:"typed_variadic,omitempty"`
-	VariadicElement    *InterfaceType           `json:"variadic_element,omitempty"`
-	GenericParameters  []string                 `json:"generic_parameters,omitempty"`
-	GenericTypes       []InterfaceTypeParameter `json:"generic_types,omitempty"`
-	Method             bool                     `json:"method,omitempty"`
-	MethodLookupName   string                   `json:"method_lookup_name,omitempty"`
-	StructuralMethod   bool                     `json:"structural_method,omitempty"`
-	StaticMethod       bool                     `json:"static_method,omitempty"`
-	MethodReceiver     string                   `json:"method_receiver,omitempty"`
-	MethodOwner        *InterfaceType           `json:"method_owner,omitempty"`
-	MethodOwnerModule  string                   `json:"method_owner_module,omitempty"`
-	MethodOwnerName    string                   `json:"method_owner_name,omitempty"`
-	Mutable            bool                     `json:"mutable,omitempty"`
-	Comptime           bool                     `json:"comptime,omitempty"`
-	CompileTimeOnly    bool                     `json:"compile_time_only,omitempty"`
-	InlineComptime     bool                     `json:"inline_comptime,omitempty"`
-	ComptimeInteger    string                   `json:"comptime_integer,omitempty"`
-	Attributes         []InterfaceAttribute     `json:"attributes,omitempty"`
+	Name                    string                   `json:"name"`
+	Public                  bool                     `json:"public,omitempty"`
+	Kind                    string                   `json:"kind"`
+	Type                    string                   `json:"type,omitempty"`
+	TypeInfo                *InterfaceType           `json:"type_info,omitempty"`
+	Parameters              []string                 `json:"parameters,omitempty"`
+	ParameterTypes          []*InterfaceType         `json:"parameter_types,omitempty"`
+	ReturnType              string                   `json:"return_type,omitempty"`
+	ReturnTypeInfo          *InterfaceType           `json:"return_type_info,omitempty"`
+	RequiredParameters      int                      `json:"required_parameters,omitempty"`
+	Variadic                bool                     `json:"variadic,omitempty"`
+	TypedVariadic           bool                     `json:"typed_variadic,omitempty"`
+	VariadicElement         *InterfaceType           `json:"variadic_element,omitempty"`
+	GenericParameters       []string                 `json:"generic_parameters,omitempty"`
+	GenericTypes            []InterfaceTypeParameter `json:"generic_types,omitempty"`
+	ValueParameterPositions []int                    `json:"value_parameter_positions,omitempty"`
+	Method                  bool                     `json:"method,omitempty"`
+	MethodLookupName        string                   `json:"method_lookup_name,omitempty"`
+	StructuralMethod        bool                     `json:"structural_method,omitempty"`
+	StaticMethod            bool                     `json:"static_method,omitempty"`
+	MethodReceiver          string                   `json:"method_receiver,omitempty"`
+	MethodOwner             *InterfaceType           `json:"method_owner,omitempty"`
+	MethodOwnerModule       string                   `json:"method_owner_module,omitempty"`
+	MethodOwnerName         string                   `json:"method_owner_name,omitempty"`
+	Mutable                 bool                     `json:"mutable,omitempty"`
+	Comptime                bool                     `json:"comptime,omitempty"`
+	CompileTimeOnly         bool                     `json:"compile_time_only,omitempty"`
+	InlineComptime          bool                     `json:"inline_comptime,omitempty"`
+	ComptimeInteger         string                   `json:"comptime_integer,omitempty"`
+	Attributes              []InterfaceAttribute     `json:"attributes,omitempty"`
 }
 
 type InterfaceTypeParameter struct {
@@ -65,6 +66,7 @@ type InterfaceTypeParameter struct {
 	Name       string         `json:"name"`
 	Index      int            `json:"index"`
 	Constraint *InterfaceType `json:"constraint,omitempty"`
+	ValueType  *InterfaceType `json:"value_type,omitempty"`
 }
 
 type InterfaceAttribute struct {
@@ -101,6 +103,8 @@ type InterfaceType struct {
 	Owner         string                 `json:"owner,omitempty"`
 	Index         int                    `json:"index,omitempty"`
 	Constraint    *InterfaceType         `json:"constraint,omitempty"`
+	ValueType     *InterfaceType         `json:"value_type,omitempty"`
+	ConstantValue string                 `json:"constant_value,omitempty"`
 }
 
 type InterfaceField struct {
@@ -200,22 +204,23 @@ func (a *Analyser) ModuleInterfaces() map[string]ModuleInterface {
 
 func interfaceSymbol(symbol *symbols.Symbol) InterfaceSymbol {
 	out := InterfaceSymbol{
-		Name:               symbol.Name,
-		Public:             symbol.Public,
-		Kind:               symbolKindName(symbol.Kind),
-		RequiredParameters: 0,
-		Variadic:           symbol.Signature != nil && symbol.Signature.Variadic,
-		TypedVariadic:      symbol.Signature != nil && symbol.Signature.TypedVariadic,
-		Method:             symbol.Method,
-		StaticMethod:       symbol.StaticMethod,
-		MethodReceiver:     receiverName(symbol.MethodReceiver),
-		MethodOwner:        interfaceType(symbol.MethodOwnerType),
-		Mutable:            symbol.Mutable,
-		Comptime:           symbol.Comptime,
-		CompileTimeOnly:    symbol.CompileTimeOnly,
-		InlineComptime:     symbol.InlineComptime,
-		ComptimeInteger:    symbol.ComptimeInteger,
-		Attributes:         interfaceAttributes(symbol.Attributes),
+		Name:                    symbol.Name,
+		Public:                  symbol.Public,
+		Kind:                    symbolKindName(symbol.Kind),
+		RequiredParameters:      0,
+		Variadic:                symbol.Signature != nil && symbol.Signature.Variadic,
+		TypedVariadic:           symbol.Signature != nil && symbol.Signature.TypedVariadic,
+		Method:                  symbol.Method,
+		StaticMethod:            symbol.StaticMethod,
+		MethodReceiver:          receiverName(symbol.MethodReceiver),
+		MethodOwner:             interfaceType(symbol.MethodOwnerType),
+		Mutable:                 symbol.Mutable,
+		Comptime:                symbol.Comptime,
+		CompileTimeOnly:         symbol.CompileTimeOnly,
+		ValueParameterPositions: append([]int(nil), symbol.ValueParameterPositions...),
+		InlineComptime:          symbol.InlineComptime,
+		ComptimeInteger:         symbol.ComptimeInteger,
+		Attributes:              interfaceAttributes(symbol.Attributes),
 	}
 	if symbol.Method && symbol.MethodOwnerType != nil {
 		ownerModule, ownerName, _, nominal := methodOwnerIdentity(symbol.MethodOwnerType)
@@ -257,7 +262,7 @@ func interfaceSymbol(symbol *symbols.Symbol) InterfaceSymbol {
 }
 
 func interfaceTypeParameter(parameter types.TypeParameter) InterfaceTypeParameter {
-	return InterfaceTypeParameter{Owner: parameter.Owner, Name: parameter.Name, Index: parameter.Index, Constraint: interfaceType(parameter.Constraint)}
+	return InterfaceTypeParameter{Owner: parameter.Owner, Name: parameter.Name, Index: parameter.Index, Constraint: interfaceType(parameter.Constraint), ValueType: interfaceType(parameter.ValueType)}
 }
 
 func interfaceAttributes(values attributes.Attributes) []InterfaceAttribute {
@@ -319,7 +324,9 @@ func interfaceType(value types.Type) *InterfaceType {
 	case types.SelfType:
 		return &InterfaceType{Kind: "self"}
 	case types.TypeParameter:
-		return &InterfaceType{Kind: "parameter", Owner: value.Owner, Name: value.Name, Index: value.Index, Constraint: interfaceType(value.Constraint)}
+		return &InterfaceType{Kind: "parameter", Owner: value.Owner, Name: value.Name, Index: value.Index, Constraint: interfaceType(value.Constraint), ValueType: interfaceType(value.ValueType)}
+	case types.ConstantType:
+		return &InterfaceType{Kind: "constant", ValueType: interfaceType(value.ValueType), ConstantValue: value.Value}
 	case types.DefinedType:
 		return &InterfaceType{Kind: "defined", Module: value.Module, Name: value.Name, GenericName: value.GenericName, Underlying: interfaceType(value.Underlying), TypeArguments: interfaceTypes(value.TypeArguments)}
 	case *types.AliasRef:

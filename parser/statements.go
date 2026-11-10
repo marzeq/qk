@@ -323,6 +323,10 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 			continue
 		}
 
+		compileTime := p.Match(tokeniser.TokenDollar)
+		if compileTime {
+			p.Inc()
+		}
 		mutable := false
 		if p.Match(tokeniser.TokenKeyword) {
 			kw := p.Consume().Value
@@ -340,10 +344,14 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 		}
 
 		group := []*FunctionNodeArg{{
-			Name:    arg.Name,
-			Mutable: mutable,
-			Loc:     arg.Loc,
+			Name:        arg.Name,
+			Mutable:     mutable,
+			CompileTime: compileTime,
+			Loc:         arg.Loc,
 		}}
+		if compileTime && mutable {
+			return nil, shared.NewError(arg.Loc, "compile-time parameter cannot be mutable")
+		}
 		if p.Match(tokeniser.TokenEquals) {
 			p.Inc()
 			group[0].Default, err = p.ParseExpression()
@@ -352,6 +360,9 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 			}
 		}
 		for !p.Match(tokeniser.TokenColon) {
+			if compileTime {
+				return nil, shared.NewError(arg.Loc, "compile-time parameter cannot use a grouped declaration")
+			}
 			if !p.Expect(tokeniser.TokenComma) {
 				return nil, shared.NewError(p.PrevLoc(), "expected ':' or ','")
 			}
@@ -391,6 +402,9 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 
 		isTypedVariadic := p.Match(tokeniser.Token3Dots)
 		if isTypedVariadic {
+			if compileTime {
+				return nil, shared.NewError(arg.Loc, "compile-time parameter cannot be variadic")
+			}
 			if len(group) != 1 {
 				return nil, shared.NewError(p.CurrLoc(), "typed variadic parameter cannot use a grouped declaration")
 			}
@@ -421,6 +435,9 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 
 		for _, groupedArg := range group {
 			groupedArg.Type = argType
+		}
+		if compileTime && group[0].Default != nil {
+			return nil, shared.NewError(arg.Loc, "compile-time parameter cannot have a default")
 		}
 		args = append(args, group...)
 		if isTypedVariadic {
@@ -1351,10 +1368,13 @@ func (p *Parser) parseTypeParameter() (GenericParameterNode, bool, error) {
 		p.PopPos()
 		return GenericParameterNode{}, true, shared.NewError(begin, "expected type parameter name after '$'")
 	}
-	if !p.Expect(tokeniser.TokenColon) || !p.Match(tokeniser.TokenKeyword) ||
-		p.Peek().Value != string(tokeniser.KeywordType) {
+	if !p.Expect(tokeniser.TokenColon) {
 		p.PopPos()
-		return GenericParameterNode{}, true, shared.NewError(name.Loc, "compile-time parameter %q must have type 'type'", name.Value)
+		return GenericParameterNode{}, true, shared.NewError(name.Loc, "expected ':' after compile-time parameter %q", name.Value)
+	}
+	if !p.Match(tokeniser.TokenKeyword) || p.Peek().Value != string(tokeniser.KeywordType) {
+		p.PopPos()
+		return GenericParameterNode{}, false, nil
 	}
 	p.Inc()
 	parameter := GenericParameterNode{Name: name.Value, Loc: p.SpanFrom(begin)}

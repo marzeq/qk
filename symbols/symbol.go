@@ -49,13 +49,14 @@ type Symbol struct {
 	// TraitDefaultTemplate and TraitDefaultSelf describe a concrete-facing
 	// facade for a generic default trait method. Specialization prepends the
 	// hidden Self argument and delegates to the underlying default template.
-	TraitDefaultTemplate *Symbol
-	TraitDefaultSelf     types.Type
-	TraitDefault         bool
-	GenericParameters    []types.TypeParameter
-	Template             bool
-	TemplateSymbol       *Symbol
-	TypeArguments        []types.Type
+	TraitDefaultTemplate    *Symbol
+	TraitDefaultSelf        types.Type
+	TraitDefault            bool
+	GenericParameters       []types.TypeParameter
+	ValueParameterPositions []int
+	Template                bool
+	TemplateSymbol          *Symbol
+	TypeArguments           []types.Type
 }
 
 type FunctionSignature struct {

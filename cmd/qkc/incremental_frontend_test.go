@@ -219,16 +219,67 @@ let main() { let size: usz = bytes(i32) }
 	}
 }
 
+func TestRetainedCompileTimeBooleanParameter(t *testing.T) {
+	const path = "main.qk"
+	const source = `module main
+let choose($enabled: bool, value: i32): i32 = $if enabled { value } else { -value }
+let main() {
+  let a: i32 = choose($true, 7)
+  let b: i32 = choose($false, 7)
+}
+`
+	_, err := runFrontend(
+		&Args{mainModule: ".", noStdlib: true},
+		loader.StageConfig{NoStdlib: true},
+		map[string]string{path: source}, map[string]string{path: "."},
+		map[string]bool{path: false}, map[string]map[string]string{".": {}},
+		false, false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestImportedRetainedCompileTimeParameter(t *testing.T) {
+	const libraryPath = "choice/choice.qk"
+	const mainPath = "main.qk"
+	sources := map[string]string{
+		libraryPath: `module choice
+pub let choose($enabled: bool, value: i32): i32 = $if enabled { value } else { -value }
+`,
+		mainPath: `module main
+import choice
+let main() {
+  let first: i32 = choice.choose($true, 7)
+  let second: i32 = choice.choose($false, 7)
+}
+`,
+	}
+	_, err := runFrontend(
+		&Args{mainModule: ".", noStdlib: true}, loader.StageConfig{NoStdlib: true},
+		sources, map[string]string{libraryPath: "choice", mainPath: "."},
+		map[string]bool{libraryPath: false, mainPath: false},
+		map[string]map[string]string{"choice": {}, ".": {}}, false, false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestImportedTypeFunctionInAnnotation(t *testing.T) {
 	const libraryPath = "types/types.qk"
 	const mainPath = "main.qk"
 	sources := map[string]string{
 		libraryPath: `module types
 pub let identity(T: type): type = T
+pub let choose(T: type, enabled: bool): type = $if enabled { T } else { i64 }
 `,
 		mainPath: `module main
 import types
-let main() { let value: types.identity(i32) = 7 }
+let main() {
+  let value: types.identity(i32) = 7
+  let other: types.choose(i32, $false) = 9
+}
 `,
 	}
 	packages := map[string]string{libraryPath: "types", mainPath: "."}
@@ -240,5 +291,22 @@ let main() { let value: types.identity(i32) = 7 }
 	)
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestRetainedParameterRejectsRuntimeArgument(t *testing.T) {
+	const path = "main.qk"
+	const source = `module main
+let choose($enabled: bool, value: i32): i32 = $if enabled { value } else { -value }
+let run(enabled: bool): i32 = choose(enabled, 7)
+let main() {}
+`
+	_, err := runFrontend(
+		&Args{mainModule: ".", noStdlib: true}, loader.StageConfig{NoStdlib: true},
+		map[string]string{path: source}, map[string]string{path: "."},
+		map[string]bool{path: false}, map[string]map[string]string{".": {}}, false, false,
+	)
+	if err == nil || !strings.Contains(err.Error(), "must be known at compile time") {
+		t.Fatalf("expected retained parameter diagnostic, got %v", err)
 	}
 }

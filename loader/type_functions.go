@@ -26,18 +26,23 @@ func lowerTypeFunctions(root *parser.RootNode) error {
 		}
 		parameters := append([]parser.GenericParameterNode(nil), function.GenericParameters...)
 		for _, argument := range function.Args {
-			if !isTypeMarker(argument.Type) {
-				return shared.NewError(argument.Loc, "type-returning functions currently accept only type parameters")
+			valueParameter := !isTypeMarker(argument.Type)
+			if valueParameter && !supportedRetainedParameterType(argument.Type) {
+				return shared.NewError(argument.Loc, "type-returning functions accept type values and compile-time scalar parameters")
 			}
 			if argument.Default != nil || argument.Mutable {
-				return shared.NewError(argument.Loc, "type parameters cannot be mutable or have defaults")
+				return shared.NewError(argument.Loc, "type-function parameters cannot be mutable or have defaults")
 			}
 			for _, parameter := range parameters {
 				if parameter.Name == argument.Name {
 					return shared.NewError(argument.Loc, "duplicate type parameter %q", argument.Name)
 				}
 			}
-			parameters = append(parameters, parser.GenericParameterNode{Name: argument.Name, Loc: argument.Loc})
+			parameter := parser.GenericParameterNode{Name: argument.Name, Loc: argument.Loc}
+			if valueParameter {
+				parameter.ValueType = argument.Type
+			}
+			parameters = append(parameters, parameter)
 		}
 		result := function.Body
 		if block, ok := result.(*parser.BlockNode); ok {
@@ -72,6 +77,17 @@ func lowerBareTypeParameters(function *parser.FunctionDefNode) error {
 	for _, argument := range function.Args {
 		if !isTypeMarker(argument.Type) {
 			seenValue = true
+			if argument.CompileTime {
+				if !supportedRetainedParameterType(argument.Type) {
+					return shared.NewError(argument.Loc, "retained compile-time parameters currently require a scalar bool or integer type")
+				}
+				for _, parameter := range parameters {
+					if parameter.Name == argument.Name {
+						return shared.NewError(argument.Loc, "duplicate compile-time parameter %q", argument.Name)
+					}
+				}
+				parameters = append(parameters, parser.GenericParameterNode{Name: argument.Name, ValueType: argument.Type, Loc: argument.Loc})
+			}
 			arguments = append(arguments, argument)
 			continue
 		}
@@ -97,6 +113,18 @@ func lowerBareTypeParameters(function *parser.FunctionDefNode) error {
 	return nil
 }
 
+func supportedRetainedParameterType(node parser.TypeNode) bool {
+	named, ok := node.(*parser.NamedTypeNode)
+	if !ok || named.ModName != "" || len(named.TypeArguments) != 0 {
+		return false
+	}
+	switch named.Name {
+	case "bool", "i8", "i16", "i32", "i64", "isz", "u8", "u16", "u32", "u64", "usz":
+		return true
+	}
+	return false
+}
+
 func isTypeMarker(node parser.TypeNode) bool {
 	named, ok := node.(*parser.NamedTypeNode)
 	return ok && named.ModName == "" && named.Name == "type" && len(named.TypeArguments) == 0
@@ -104,6 +132,12 @@ func isTypeMarker(node parser.TypeNode) bool {
 
 func returnedTypeExpression(expression parser.ExpressionNode) (parser.TypeNode, bool) {
 	switch node := expression.(type) {
+	case *parser.BlockNode:
+		if len(node.Body) == 1 {
+			if inner, ok := node.Body[0].(parser.ExpressionNode); ok {
+				return returnedTypeExpression(inner)
+			}
+		}
 	case *parser.IdentifierNode:
 		return &parser.NamedTypeNode{Name: node.Name, ModName: node.Module, Loc: node.Loc}, true
 	case *parser.FieldAccessNode:
@@ -120,6 +154,10 @@ func returnedTypeExpression(expression parser.ExpressionNode) (parser.TypeNode, 
 			return nil, false
 		}
 		for _, argument := range node.Args {
+			if prefixed, ok := argument.(*parser.CompileTimeExpressionNode); ok {
+				named.TypeArguments = append(named.TypeArguments, &parser.ConstantTypeNode{Value: prefixed, Loc: prefixed.Loc})
+				continue
+			}
 			typeArgument, ok := returnedTypeExpression(argument)
 			if !ok {
 				return nil, false
@@ -128,6 +166,30 @@ func returnedTypeExpression(expression parser.ExpressionNode) (parser.TypeNode, 
 		}
 		named.Loc = node.Loc
 		return named, true
+	case *parser.WhenNode:
+		converted := parser.CloneSyntax(node).(*parser.WhenNode)
+		converted.Context = parser.WhenType
+		for index := range converted.Branches {
+			value, ok := converted.Branches[index].Value.(parser.ExpressionNode)
+			if !ok {
+				return nil, false
+			}
+			typeValue, ok := returnedTypeExpression(value)
+			if !ok {
+				return nil, false
+			}
+			converted.Branches[index].Value = typeValue
+		}
+		value, ok := converted.ElseValue.(parser.ExpressionNode)
+		if !ok {
+			return nil, false
+		}
+		typeValue, ok := returnedTypeExpression(value)
+		if !ok {
+			return nil, false
+		}
+		converted.ElseValue = typeValue
+		return converted, true
 	}
 	return nil, false
 }

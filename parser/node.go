@@ -166,6 +166,14 @@ type NamedTypeNode struct {
 func (n NamedTypeNode) GetLoc() shared.Location { return n.Loc }
 func (n NamedTypeNode) _type()                  {}
 
+type ConstantTypeNode struct {
+	Value ExpressionNode
+	Loc   shared.Location
+}
+
+func (n ConstantTypeNode) GetLoc() shared.Location { return n.Loc }
+func (n ConstantTypeNode) _type()                  {}
+
 type StructField struct {
 	Name string
 	Type TypeNode
@@ -804,12 +812,13 @@ type ModuleNode struct {
 func (n ModuleNode) GetLoc() shared.Location { return n.Loc }
 
 type FunctionNodeArg struct {
-	Name    string
-	Type    TypeNode
-	Default ExpressionNode
-	Mutable bool
-	Symbol  *symbols.Symbol
-	Loc     shared.Location
+	Name        string
+	Type        TypeNode
+	Default     ExpressionNode
+	Mutable     bool
+	CompileTime bool
+	Symbol      *symbols.Symbol
+	Loc         shared.Location
 }
 
 func (a FunctionNodeArg) GetLoc() shared.Location {
@@ -822,6 +831,7 @@ func (a FunctionNodeArg) GetLoc() shared.Location {
 type GenericParameterNode struct {
 	Name       string
 	Constraint TypeNode
+	ValueType  TypeNode
 	Loc        shared.Location
 }
 
@@ -865,7 +875,18 @@ func (n FunctionDefNode) HasMethodOwner() bool {
 }
 
 func (n FunctionDefNode) IsGeneric() bool {
-	return len(n.MethodOwnerGenericParameters) != 0 || len(n.GenericParameters) != 0
+	if n.GenericInstance || n.Symbol != nil && !n.Symbol.Template {
+		return false
+	}
+	if len(n.MethodOwnerGenericParameters) != 0 || len(n.GenericParameters) != 0 {
+		return true
+	}
+	for _, arg := range n.Args {
+		if arg.CompileTime {
+			return true
+		}
+	}
+	return false
 }
 
 type TypeAliasNode struct {
@@ -873,6 +894,7 @@ type TypeAliasNode struct {
 	GenericParameters []GenericParameterNode
 	Type              TypeNode
 	Transparent       bool
+	DeferredStage     bool
 	Pub               bool
 	Loc               shared.Location
 	Symbol            *symbols.Symbol

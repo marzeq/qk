@@ -93,6 +93,18 @@ func (a *Analyser) visitFunction(n *parser.FunctionDefNode) {
 		if !types.HasTypeParameter(genericOrigin) {
 			genericOrigin = nil
 		}
+		if arg.CompileTime {
+			parameters := n.Symbol.GenericParameters
+			if n.Symbol.TemplateSymbol != nil {
+				parameters = n.Symbol.TemplateSymbol.GenericParameters
+			}
+			for _, parameter := range parameters {
+				if parameter.Name == arg.Name && parameter.ValueType != nil {
+					genericOrigin = parameter
+					break
+				}
+			}
+		}
 		paramSym := &symbols.Symbol{
 			Name:            arg.Name,
 			Kind:            symbols.SymbolKindVariable,

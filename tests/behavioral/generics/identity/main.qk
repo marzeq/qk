@@ -10,6 +10,11 @@ let type_size($T: type): usz = $sizeof(T)
 let size_is_four(size: usz): bool = size == 4
 let size_class($T: type): i32 = $if size_is_four(sizeof(T)) { 1 } else { 2 }
 let selected_only($T: type, value: T): T = $if sizeof(T) == 4 { value } else { missing_name }
+let choose($enabled: bool, value: i32): i32 = $if enabled { value } else { -value }
+let relay_choice($enabled: bool, value: i32): i32 = choose(enabled, value)
+let add_fixed($amount: i32, value: i32): i32 = value + amount
+let Counter = type struct { value: i32 }
+let Counter.select(self, $enabled: bool): i32 = $if enabled { self.value } else { -self.value }
 let Size($T: type) = $sizeof(T)
 
 let option_value(option: Option(i32)): i32 = match option {
@@ -30,6 +35,12 @@ let main() {
   assert(nested.value.value == 42 && type_size(Box(i32)) > 0, "type arguments")
   assert(size_class(i32) == 1 && size_class(i64) == 2, "specialized compile-time branches")
   assert(selected_only(i32, 7) == 7, "unselected branch is not analyzed")
+  assert(choose($true, 7) == 7 && choose($false, 7) == -7, "retained bool specialization")
+  assert(relay_choice($true, 3) == 3 && relay_choice($false, 3) == -3, "retained bool forwarding")
+  assert(add_fixed($2, 5) == 7 && add_fixed($4, 5) == 9, "retained integer specialization")
+  assert(add_fixed($(1 + 2), 5) == 8 && choose($(2 > 1), 7) == 7, "computed retained arguments")
+  let counter: Counter = .{ value=5 }
+  assert(counter.select($true) == 5 && counter.select($false) == -5, "retained method specialization")
   assert(option_value(some) == 5 && option_value(none) == -1, "generic union constructors")
   assert(Size(i32) == 4, "parameterized compile-time values")
   std.io.println("generics ok")

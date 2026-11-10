@@ -3186,6 +3186,13 @@ func (v *Validator) completeGenericCall(call *parser.FunctionCallNode, expected 
 		return false
 	}
 	arguments = preserveResolvedTypeArguments(template.GenericParameters, call.Symbol.TypeArguments, arguments)
+	beforeValueErrors := len(v.analyser.errors)
+	if !v.analyser.fillRetainedArguments(template, call.Args, arguments, call) {
+		v.errors = append(v.errors, v.analyser.errors[beforeValueErrors:]...)
+		v.analyser.errors = v.analyser.errors[:beforeValueErrors]
+		call.SetType(types.ErrorType{})
+		return false
+	}
 	for i, argument := range arguments {
 		if i < len(template.GenericParameters) && argument.Equals(template.GenericParameters[i]) {
 			v.errorf(call, "cannot infer type argument %s", template.GenericParameters[i].Name)

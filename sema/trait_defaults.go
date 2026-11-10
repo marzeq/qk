@@ -131,7 +131,9 @@ func (a *Analyser) templateBindings(symbol *symbols.Symbol) map[string]types.Typ
 		bindings[name] = binding
 	}
 	for _, parameter := range symbol.GenericParameters {
-		bindings[parameter.Name] = parameter
+		if parameter.ValueType == nil {
+			bindings[parameter.Name] = parameter
+		}
 	}
 	return bindings
 }

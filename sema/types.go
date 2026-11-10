@@ -37,6 +37,20 @@ func (a *Analyser) resolveTypeNode(n parser.TypeNode) types.Type {
 
 func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Type {
 	switch t := n.(type) {
+	case *parser.ConstantTypeNode:
+		value := t.Value
+		if prefix, ok := value.(*parser.CompileTimeExpressionNode); ok {
+			value = prefix.Operand
+		}
+		valueType := types.Type(types.UntypedInt{})
+		if _, ok := value.(*parser.BoolLiteralNode); ok {
+			valueType = types.PrimitiveBool
+		}
+		if constant, ok := retainedArgumentValue(value, valueType); ok {
+			return constant
+		}
+		a.errorf(t, "type argument must be a compile-time scalar value")
+		return types.ErrorType{}
 	case *parser.ReprTypeNode:
 		operand := a.resolveTypeNodeAt(t.Operand, indirect)
 		if types.HasError(operand) {

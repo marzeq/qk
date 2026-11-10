@@ -95,7 +95,9 @@ func (a *Analyser) collectPlainFunctionSignature(n *parser.FunctionDefNode) {
 	if len(genericParameters) != 0 {
 		a.typeParameterBindings = make(map[string]types.Type, len(genericParameters))
 		for _, parameter := range genericParameters {
-			a.typeParameterBindings[parameter.Name] = parameter
+			if parameter.ValueType == nil {
+				a.typeParameterBindings[parameter.Name] = parameter
+			}
 		}
 		defer func() { a.typeParameterBindings = previousBindings }()
 	}
@@ -138,6 +140,7 @@ func (a *Analyser) collectPlainFunctionSignature(n *parser.FunctionDefNode) {
 		Template:          len(genericParameters) != 0,
 		CompileTimeOnly:   n.CompileTimeOnly,
 	}
+	setValueParameterPositions(sym, n.Args)
 
 	if a.defineSymbol(sym, n) {
 		n.Symbol = sym
@@ -146,6 +149,25 @@ func (a *Analyser) collectPlainFunctionSignature(n *parser.FunctionDefNode) {
 			a.genericFunctions[sym] = &genericFunctionInfo{
 				node: n, root: a.currentRoot, module: a.currentMod,
 				specializations: make(map[string]*parser.FunctionDefNode),
+			}
+		}
+	}
+}
+
+func setValueParameterPositions(symbol *symbols.Symbol, arguments []*parser.FunctionNodeArg) {
+	if len(symbol.GenericParameters) == 0 {
+		return
+	}
+	symbol.ValueParameterPositions = make([]int, len(symbol.GenericParameters))
+	for index, parameter := range symbol.GenericParameters {
+		symbol.ValueParameterPositions[index] = -1
+		if parameter.ValueType == nil {
+			continue
+		}
+		for position, argument := range arguments {
+			if argument.Name == parameter.Name && argument.CompileTime {
+				symbol.ValueParameterPositions[index] = position
+				break
 			}
 		}
 	}
@@ -215,7 +237,9 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 			a.typeParameterBindings = make(map[string]types.Type, len(genericParameters))
 		}
 		for _, parameter := range methodParameters {
-			a.typeParameterBindings[parameter.Name] = parameter
+			if parameter.ValueType == nil {
+				a.typeParameterBindings[parameter.Name] = parameter
+			}
 		}
 		defer func() { a.typeParameterBindings = previousBindings }()
 	}
@@ -256,6 +280,7 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 		Signature: &symbols.FunctionSignature{Parameters: paramTypes, RequiredParameters: requiredParameters, ReturnType: ret, Variadic: n.HasVariadic, TypedVariadic: n.TypedVariadic},
 		Public:    n.Pub, Attributes: n.Attributes, Method: true, StaticMethod: n.Receiver == parser.MethodReceiverNone,
 		MethodReceiver: receiver, DefinitionModule: a.currentMod, GenericParameters: genericParameters, Template: len(genericParameters) != 0}
+	setValueParameterPositions(sym, n.Args)
 	a.methods[key][n.Name] = sym
 	if n.TypedVariadic {
 		sym.Signature.VariadicElement = types.Underlying(paramTypes[len(paramTypes)-1]).(types.SliceType).Base
@@ -321,7 +346,9 @@ func (a *Analyser) collectPatternMethodSignature(n *parser.FunctionDefNode) {
 	if len(genericParameters) != 0 {
 		a.typeParameterBindings = make(map[string]types.Type, len(genericParameters))
 		for _, parameter := range genericParameters {
-			a.typeParameterBindings[parameter.Name] = parameter
+			if parameter.ValueType == nil {
+				a.typeParameterBindings[parameter.Name] = parameter
+			}
 		}
 		defer func() { a.typeParameterBindings = previousBindings }()
 	}
@@ -377,6 +404,7 @@ func (a *Analyser) collectPatternMethodSignature(n *parser.FunctionDefNode) {
 		Public:    n.Pub, Attributes: n.Attributes, Method: true, StaticMethod: n.Receiver == parser.MethodReceiverNone,
 		MethodReceiver: receiver, MethodOwnerType: ownerType, DefinitionModule: a.currentMod,
 		GenericParameters: genericParameters, Template: len(genericParameters) != 0}
+	setValueParameterPositions(sym, n.Args)
 	if n.TypedVariadic {
 		sym.Signature.VariadicElement = types.Underlying(paramTypes[len(paramTypes)-1]).(types.SliceType).Base
 	}

@@ -3,12 +3,79 @@ package sema
 import (
 	"crypto/sha256"
 	"fmt"
+	"math/big"
 	"strings"
 
 	"github.com/marzeq/qk/parser"
 	"github.com/marzeq/qk/symbols"
 	"github.com/marzeq/qk/types"
 )
+
+func (a *Analyser) fillRetainedArguments(template *symbols.Symbol, values []parser.ExpressionNode, arguments []types.Type, use parser.Node) bool {
+	for index, parameter := range template.GenericParameters {
+		if parameter.ValueType == nil {
+			continue
+		}
+		if index >= len(template.ValueParameterPositions) {
+			a.errorf(use, "missing retained compile-time parameter metadata for %s", parameter.Name)
+			return false
+		}
+		position := template.ValueParameterPositions[index]
+		if position < 0 || position >= len(values) {
+			a.errorf(use, "missing compile-time argument for %s", parameter.Name)
+			return false
+		}
+		argument, ok := retainedArgumentValue(values[position], parameter.ValueType)
+		if !ok {
+			a.errorf(values[position], "argument for $%s must be known at compile time", parameter.Name)
+			return false
+		}
+		arguments[index] = argument
+	}
+	return true
+}
+
+func retainedArgumentValue(expression parser.ExpressionNode, valueType types.Type) (types.Type, bool) {
+	switch node := expression.(type) {
+	case *parser.CompileTimeExpressionNode:
+		return retainedArgumentValue(node.Operand, valueType)
+	case *parser.BoolLiteralNode:
+		if valueType.Equals(types.PrimitiveBool) {
+			return types.ConstantType{ValueType: valueType, Value: node.Value}, true
+		}
+	case *parser.IntegerLiteralNode:
+		if integer, ok := new(big.Int).SetString(node.Value, 0); ok && !valueType.Equals(types.PrimitiveBool) {
+			return types.ConstantType{ValueType: valueType, Value: integer.String()}, true
+		}
+	case *parser.UnaryOpNode:
+		if node.Op == parser.UnaryOpNegate {
+			if positive, ok := retainedArgumentValue(node.Operand, valueType); ok {
+				constant := positive.(types.ConstantType)
+				if integer, ok := new(big.Int).SetString(constant.Value, 10); ok {
+					return types.ConstantType{ValueType: valueType, Value: integer.Neg(integer).String()}, true
+				}
+			}
+		}
+	case *parser.IdentifierNode:
+		if node.Symbol != nil {
+			if parameter, ok := node.Symbol.GenericOrigin.(types.TypeParameter); ok && parameter.ValueType != nil && parameter.ValueType.Equals(valueType) {
+				return parameter, true
+			}
+			if node.Symbol.Comptime && node.Symbol.ComptimeInteger != "" {
+				value := node.Symbol.ComptimeInteger
+				if valueType.Equals(types.PrimitiveBool) {
+					if value == "1" {
+						value = "true"
+					} else if value == "0" {
+						value = "false"
+					}
+				}
+				return types.ConstantType{ValueType: valueType, Value: value}, true
+			}
+		}
+	}
+	return nil, false
+}
 
 type genericFunctionInfo struct {
 	node            *parser.FunctionDefNode
@@ -75,10 +142,18 @@ func (a *Analyser) makeGenericParameters(name string, nodes []parser.GenericPara
 	owner := genericOwner(a.currentMod, name)
 	for i, node := range nodes {
 		parameter := types.TypeParameter{Owner: owner, Name: node.Name, Index: i}
+		if node.ValueType != nil {
+			parameter.ValueType = a.resolveTypeNode(node.ValueType)
+		}
 		parameters[i] = parameter
-		bindings[node.Name] = parameter
+		if node.ValueType == nil {
+			bindings[node.Name] = parameter
+		}
 	}
 	for i, node := range nodes {
+		if node.ValueType != nil {
+			continue
+		}
 		if node.Constraint == nil {
 			continue
 		}
@@ -102,7 +177,9 @@ func (a *Analyser) makeGenericParameters(name string, nodes []parser.GenericPara
 func typeArgumentBindings(parameters []types.TypeParameter, arguments []types.Type) map[string]types.Type {
 	bindings := make(map[string]types.Type, len(parameters))
 	for i, parameter := range parameters {
-		bindings[parameter.Name] = arguments[i]
+		if parameter.ValueType == nil {
+			bindings[parameter.Name] = arguments[i]
+		}
 	}
 	return bindings
 }
@@ -209,6 +286,24 @@ func (a *Analyser) checkGenericArgumentsFrom(node parser.Node, parameters []type
 		if i < start {
 			continue
 		}
+		if parameter.ValueType != nil {
+			switch argument := arguments[i].(type) {
+			case types.ConstantType:
+				if !argument.ValueType.Equals(parameter.ValueType) {
+					a.errorf(node, "compile-time value for %s must have type %v", parameter.Name, parameter.ValueType)
+					valid = false
+				}
+			case types.TypeParameter:
+				if argument.ValueType == nil || !argument.ValueType.Equals(parameter.ValueType) {
+					a.errorf(node, "compile-time value for %s must have type %v", parameter.Name, parameter.ValueType)
+					valid = false
+				}
+			default:
+				a.errorf(node, "compile-time value for %s is not a known scalar", parameter.Name)
+				valid = false
+			}
+			continue
+		}
 		if parameter.Constraint == nil {
 			continue
 		}
@@ -262,6 +357,18 @@ func (a *Analyser) specializeGenericAlias(info *genericAliasInfo, arguments []ty
 		a.errorf(use, "parameterized type metadata is unavailable")
 		return nil
 	}
+	arguments = append([]types.Type(nil), arguments...)
+	for index, parameter := range info.parameters {
+		if index >= len(arguments) || parameter.ValueType == nil {
+			continue
+		}
+		if constant, ok := arguments[index].(types.ConstantType); ok {
+			if _, untyped := constant.ValueType.(types.UntypedInt); untyped {
+				constant.ValueType = parameter.ValueType
+				arguments[index] = constant
+			}
+		}
+	}
 	if !a.checkGenericArguments(use, info.parameters, arguments) {
 		return nil
 	}
@@ -293,8 +400,31 @@ func (a *Analyser) specializeGenericAlias(info *genericAliasInfo, arguments []ty
 	specialization := &genericAliasSpecialization{state: aliasResolving}
 	info.specializations[key] = specialization
 	bindings := typeArgumentBindings(info.parameters, arguments)
+	var selectionError error
 	a.withDefinitionContext(info.module, a.modules[info.module].TrustedStandardLibrary, bindings, func() {
-		resolved := a.resolveTypeNodeAt(info.node.Type, indirect)
+		selectedType := info.node.Type
+		if info.node.DeferredStage {
+			if a.deferredTypeSelector == nil {
+				selectionError = fmt.Errorf("specialization-dependent type selection is unavailable")
+				return
+			}
+			clone := parser.CloneSyntax(info.node).(*parser.TypeAliasNode)
+			clone.Symbol = info.node.Symbol
+			stageBindings := make(map[string]types.Type, len(info.parameters))
+			for name, binding := range bindings {
+				stageBindings[name] = binding
+			}
+			for i, parameter := range info.parameters {
+				if parameter.ValueType != nil {
+					stageBindings[parameter.Name] = arguments[i]
+				}
+			}
+			selectedType, selectionError = a.deferredTypeSelector(clone, info.root, stageBindings)
+			if selectionError != nil {
+				return
+			}
+		}
+		resolved := a.resolveTypeNodeAt(selectedType, indirect)
 		if trait, ok := resolved.(types.TraitType); ok && !info.node.Transparent {
 			trait.Module, trait.Name = info.module, displayName
 			resolved = trait
@@ -321,6 +451,11 @@ func (a *Analyser) specializeGenericAlias(info *genericAliasInfo, arguments []ty
 			a.errorf(info.node, "parameterized type %q contains an incomplete type by value", info.node.Name)
 		}
 	})
+	if selectionError != nil {
+		a.errorf(use, "%v", selectionError)
+		delete(info.specializations, key)
+		return nil
+	}
 	specialization.state = aliasResolved
 	specialization.symbol = &symbols.Symbol{
 		Name: displayName, Kind: symbols.SymbolKindType, TypeInfo: specialization.resolved,
@@ -400,10 +535,19 @@ func (a *Analyser) specializeGenericFunction(template *symbols.Symbol, arguments
 		cloned.DeferredStage = false
 		cloned.MethodOwner = ""
 		bindings := typeArgumentBindings(template.GenericParameters, arguments)
+		stageBindings := make(map[string]types.Type, len(bindings)+len(arguments))
+		for name, binding := range bindings {
+			stageBindings[name] = binding
+		}
+		for i, parameter := range template.GenericParameters {
+			if parameter.ValueType != nil {
+				stageBindings[parameter.Name] = arguments[i]
+			}
+		}
 		var selectionError error
 		trusted := a.modules[info.module].TrustedStandardLibrary
 		a.withDefinitionContext(info.module, trusted, bindings, func() {
-			selectionError = a.deferredStageSelector(cloned, info.root, bindings)
+			selectionError = a.deferredStageSelector(cloned, info.root, stageBindings)
 			if selectionError != nil {
 				return
 			}
@@ -886,6 +1030,10 @@ func inferGenericArgumentsForCall(
 	}
 	arguments := make([]types.Type, len(parameters))
 	for i, parameter := range parameters {
+		if parameter.ValueType != nil {
+			arguments[i] = parameter
+			continue
+		}
 		argument, ok := inferred[parameter.Key()]
 		if !ok {
 			if allowIncomplete {
