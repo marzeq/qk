@@ -60,10 +60,16 @@ func runFrontend(
 		templates: make(map[string][]ir.GenericTemplate), interfaces: make(map[string]sema.ModuleInterface),
 		order: order,
 	}
-	analyser := sema.NewAnalyser()
-	loader.ConfigureDeferredStage(analyser, config)
 	var sourceOrder []string
 	stageModules := make(map[string]*loader.ModuleInfo)
+	analyser := sema.NewAnalyser()
+	loader.ConfigureDeferredStage(analyser, config, func(module string) *loader.StageEnvironment {
+		current := stageModules[module]
+		return &loader.StageEnvironment{
+			Modules: stageModules, Order: sourceOrder,
+			TrustedStandardLibrary: current != nil && current.TrustedStandardLibrary,
+		}
+	})
 	for _, name := range order {
 		partials := make([]*loader.PartialModuleInfo, 0, len(origins[name]))
 		roots := make([]*parser.RootNode, 0, len(origins[name]))

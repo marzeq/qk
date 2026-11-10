@@ -1214,7 +1214,7 @@ $if core.build.os == .Windows {
 
 It can select a complete declaration, statement, type, or expression. `else if` chains use compile-time conditions too. Only the selected branch is checked after parsing. It cannot insert fragments such as part of a parameter list, argument list, sequence literal, or individual attribute entry.
 
-Inside a parameterized function, a `$if` condition can depend on a concrete `$T` argument. The compiler selects the branch for each specialization and analyzes only that branch. For example, `$if sizeof(T) == 4 { ... } else { ... }` can produce different bodies for `f(i32)` and `f(i64)`.
+Inside a parameterized function, a `$if` condition can depend on a concrete `$T` argument. The compiler selects the branch for each specialization and analyzes only that branch. For example, `$if sizeof(T) == 4 { ... } else { ... }` can produce different bodies for `f(i32)` and `f(i64)`. The condition may call a pure QK function, including one from an imported module; such calls run through the compile-time IR evaluator.
 
 The compiler-provided `core.build` package is available with `-nostdlib` and describes the selected target, including during cross compilation. Import it explicitly. Its retained values include:
 

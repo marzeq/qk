@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/marzeq/qk/ir"
@@ -73,26 +74,81 @@ let main() { let result: usz = fib(8) }
 }
 
 func TestImportedGenericCompileTimeBranchSelectsPerInstance(t *testing.T) {
+	const helperPath = "helper/helper.qk"
 	const libraryPath = "choice/choice.qk"
 	const mainPath = "main.qk"
 	sources := map[string]string{
+		helperPath: `module helper
+pub let small(size: usz): bool = size == 4
+`,
 		libraryPath: `module choice
-pub let select($T: type, value: T): T = $if sizeof(T) == 4 { value } else { missing_name }
+import helper
+pub let select($T: type, value: T): T = $if helper.small(sizeof(T)) { value } else { missing_name }
 `,
 		mainPath: `module main
 import choice
 let main() { let selected: i32 = choice.select(7) }
 `,
 	}
-	packages := map[string]string{libraryPath: "choice", mainPath: "."}
-	trusted := map[string]bool{libraryPath: false, mainPath: false}
+	packages := map[string]string{helperPath: "helper", libraryPath: "choice", mainPath: "."}
+	trusted := map[string]bool{helperPath: false, libraryPath: false, mainPath: false}
 	_, err := runFrontend(
 		&Args{mainModule: ".", noStdlib: true},
 		loader.StageConfig{NoStdlib: true}, sources, packages, trusted,
-		map[string]map[string]string{"choice": {}, ".": {}}, false, false,
+		map[string]map[string]string{"helper": {}, "choice": {}, ".": {}}, false, false,
 	)
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestGenericCompileTimeBranchCallsPureFunction(t *testing.T) {
+	const path = "main.qk"
+	const source = `module main
+let small(size: usz): bool = size == 4
+let select($T: type, value: T): T = $if small(sizeof(T)) { value } else { missing_name }
+let main() { let selected: i32 = select(7) }
+`
+	_, err := runFrontend(
+		&Args{mainModule: ".", noStdlib: true},
+		loader.StageConfig{NoStdlib: true},
+		map[string]string{path: source}, map[string]string{path: "."},
+		map[string]bool{path: false}, map[string]map[string]string{".": {}},
+		false, false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGenericCompilerAssertUsesConcreteType(t *testing.T) {
+	const path = "main.qk"
+	const source = `module main
+let require_four($T: type, value: T): T = {
+  $compiler_assert(sizeof(T) == 4, "four byte type required")
+  value
+}
+let main() { let selected: i32 = require_four(7) }
+`
+	_, err := runFrontend(
+		&Args{mainModule: ".", noStdlib: true},
+		loader.StageConfig{NoStdlib: true},
+		map[string]string{path: source}, map[string]string{path: "."},
+		map[string]bool{path: false}, map[string]map[string]string{".": {}},
+		false, false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = runFrontend(
+		&Args{mainModule: ".", noStdlib: true},
+		loader.StageConfig{NoStdlib: true},
+		map[string]string{path: strings.Replace(source, "let selected: i32 = require_four(7)", "let selected: i64 = require_four(7)", 1)},
+		map[string]string{path: "."}, map[string]bool{path: false},
+		map[string]map[string]string{".": {}}, false, false,
+	)
+	if err == nil || !strings.Contains(err.Error(), "four byte type required") {
+		t.Fatalf("expected selected compiler assertion to fail, got %v", err)
 	}
 }
 

@@ -690,12 +690,22 @@ func (s *stageSelector) inlineStageExpression(expression parser.ExpressionNode) 
 		node.Operand2 = s.inlineStageExpression(node.Operand2)
 	case *parser.CastNode:
 		node.Operand = s.inlineStageExpression(node.Operand)
+	case *parser.FunctionCallNode:
+		for index := range node.Args {
+			node.Args[index] = s.inlineStageExpression(node.Args[index])
+		}
+	case *parser.SizeOfNode, *parser.AlignOfNode, *parser.OffsetOfNode:
+		if value, resolved, err := s.evaluate(expression); err == nil && resolved {
+			return stageLiteral(value, expression.GetLoc())
+		}
 	}
 	return expression
 }
 
 func (s *stageSelector) selectWhen(node *parser.WhenNode) ([]parser.Node, bool, error) {
-	for _, branch := range node.Branches {
+	for index := range node.Branches {
+		branch := &node.Branches[index]
+		branch.Condition = s.inlineStageExpression(branch.Condition)
 		value, resolved, err := s.evaluate(branch.Condition)
 		if err != nil {
 			return nil, false, err
@@ -722,7 +732,9 @@ func (s *stageSelector) selectWhen(node *parser.WhenNode) ([]parser.Node, bool, 
 }
 
 func (s *stageSelector) selectWhenValue(node *parser.WhenNode) (parser.Node, bool, error) {
-	for _, branch := range node.Branches {
+	for index := range node.Branches {
+		branch := &node.Branches[index]
+		branch.Condition = s.inlineStageExpression(branch.Condition)
 		condition, resolved, err := s.evaluate(branch.Condition)
 		if err != nil || !resolved {
 			if err == nil {
@@ -813,7 +825,11 @@ func (s *stageSelector) evaluateDirective(node *parser.CompilerDirectiveNode) er
 		return err
 	}
 	if !resolved {
-		s.needsIR = true
+		if s.genericFunction != nil {
+			s.genericFunction.DeferredStage = true
+		} else {
+			s.needsIR = true
+		}
 		s.unresolved[node.Condition] = struct{}{}
 		return nil
 	}
@@ -1185,7 +1201,7 @@ func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 	}
 	analyser := sema.NewAnalyser()
 	analyser.SetStaging(true)
-	ConfigureDeferredStage(analyser, s.config)
+	ConfigureDeferredStage(analyser, s.config, func(string) *StageEnvironment { return s.environment })
 	if errors, _ := RunSemanticPipeline(modules, analyser, order, false, false); len(errors) != 0 {
 		return errors[0]
 	}
@@ -1310,8 +1326,11 @@ func (s *stageSelector) stageModules(staged *parser.RootNode) (map[string]*Modul
 	var order []string
 	if s.environment != nil {
 		for _, name := range s.environment.Order {
+			if name == s.module {
+				break
+			}
 			dependency := s.environment.Modules[name]
-			if dependency == nil || name == s.module {
+			if dependency == nil {
 				continue
 			}
 			modules[name] = &ModuleInfo{
