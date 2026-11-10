@@ -28,7 +28,7 @@ let main() {
   let mut empty = std.fs.DirectoryIterator.open("empty-directory").unwrap()
   assert(name.append("stale entry name".([]u8)), "prepare stale name")
   assert(empty.next(name.&mut).unwrap().is_none(), "empty directory exhaustion")
-  assert(@len(name.as_str()) == 0, "exhaustion clears builder")
+  assert(len(name.as_str()) == 0, "exhaustion clears builder")
   assert(empty.next(name.&mut).unwrap().is_none(), "exhaustion is sticky")
   assert(empty.close().is_ok(), "close after exhaustion")
   assert(empty.close().is_ok(), "double close")
@@ -44,7 +44,7 @@ let main() {
     assert(name.append("a much longer stale entry name".([]u8)), "prepare reused builder")
     let next = iterator.next(name.&mut).unwrap()
     if next.is_none() {
-      assert(@len(name.as_str()) == 0, "exhaustion convention")
+      assert(len(name.as_str()) == 0, "exhaustion convention")
       break
     }
     let kind = next.unwrap()

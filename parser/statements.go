@@ -1001,7 +1001,7 @@ func (p *Parser) parseModulePath() (string, string, error) {
 }
 
 func (p *Parser) ParseStatement() (Node, bool, error) {
-	if p.MatchBuiltin("compiler_error") || p.MatchBuiltin("compiler_assert") {
+	if p.matchCompileDirective() {
 		node, err := p.parseCompilerDirective()
 		return node, true, err
 	}
@@ -1112,12 +1112,13 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 		case string(tokeniser.KeywordFor):
 			node, err := p.ParseForLoop()
 			return node, false, err
-		case string(tokeniser.KeywordWhen):
-			node, err := p.parseWhen(WhenStatements)
-			return node, false, err
 		default:
 			return nil, false, shared.NewError(p.CurrLoc(), "unexpected keyword: %s", kw)
 		}
+	}
+	if p.matchCompileTimeIf() {
+		node, err := p.parseWhen(WhenStatements)
+		return node, false, err
 	}
 
 	if p.Match(tokeniser.TokenOpenCurly) {

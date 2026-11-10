@@ -621,10 +621,10 @@ A mutable slice coerces to an immutable slice. The reverse conversion is forbidd
 
 Slice indexing is also unchecked. The length is available for explicit validation, while slicing an array or slice validates its complete range. Pointer slicing can check only that its start does not exceed its explicit end because a pointer carries no allocation length.
 
-Use `@len(value)` to obtain the `usz` length of an array, slice, or string:
+Use `len(value)` to obtain the `usz` length of an array, slice, or string:
 
 ```qk
-for index in 0..@len(values) {
+for index in 0..len(values) {
   std.io.println("{}", values[index])
 }
 ```
@@ -640,7 +640,7 @@ let suffix = values[2:]
 let all = values[:]
 ```
 
-The subject and explicit bounds are each evaluated once. QK checks `start <= end <= @len(subject)` at runtime when it cannot prove the bounds statically.
+The subject and explicit bounds are each evaluated once. QK checks `start <= end <= len(subject)` at runtime when it cannot prove the bounds statically.
 
 Arrays implicitly borrow as slices when an expected slice type requests it. An immutable pointer can form `pointer[0:count]`, and a mutable pointer forms a mutable slice; pointers require an explicit end because they carry no length.
 
@@ -866,15 +866,15 @@ let Token = type union(TokenKind) {
 }
 ```
 
-Explicitly tagged unions can expose their structural tag-and-payload representation through `@repr(value)` and `@reprof(Type)`. `@repr` returns a representation-preserving value copy, or an immutable pointer view when given an immutable pointer:
+Explicitly tagged unions can expose their structural tag-and-payload representation through `repr(value)` and `repr(Type)`. `repr` returns a representation-preserving value copy, or an immutable pointer view when given an immutable pointer:
 
 ```qk
-let raw: @reprof(Token) = @repr(token)
+let raw: repr(Token) = repr(token)
 ```
 
 Positional raw payload fields are named `_0`, `_1`, and so on. Auto-tagged unions deliberately expose neither a public tag nor raw representation access.
 
-Tagged unions cannot cross the C ABI directly, including through nested aggregate fields. Use the explicit `@reprof(T)` representation at that boundary when its layout is part of the interface.
+Tagged unions cannot cross the C ABI directly, including through nested aggregate fields. Use the explicit `repr(T)` representation at that boundary when its layout is part of the interface.
 
 ## Opaque types
 
@@ -1124,20 +1124,20 @@ Clobber names omit LLVM's surrounding `~{...}` syntax; for example, `clobber "me
 
 ## Layout and length
 
-`@sizeof(T)` and `@alignof(T)` return the target-specific byte size and alignment as `usz`. Both also accept a value expression without evaluating it for side effects solely to discover its type:
+`sizeof(T)` and `alignof(T)` return the target-specific byte size and alignment as `usz`. Both also accept a value expression without evaluating it for side effects solely to discover its type:
 
 ```qk
-let bytes = @sizeof(Header)
-let alignment = @alignof(Header)
+let bytes = $sizeof(Header)
+let alignment = $alignof(Header)
 ```
 
-`@offsetof(T, field)` returns the byte offset of a struct field. It is especially useful when checking foreign layouts.
+`offsetof(T, field)` returns the byte offset of a struct field. It is especially useful when checking foreign layouts.
 
-`@len(value)` returns the length of an array, slice, or string. Array lengths are compile-time constants; slice and string lengths come from their descriptors.
+`len(value)` returns the length of an array, slice, or string. Array lengths are compile-time constants; slice and string lengths come from their descriptors.
 
 ## Representation access
 
-`@repr(value)` and `@reprof(T)` expose the structural representation of an explicitly tagged union. They preserve bits and layout rather than performing a conversion.
+`repr(value)` returns a representation-preserving value or immutable pointer view. In a type position, `repr(T)` names the structural representation type. These operations apply to explicitly tagged unions and preserve their bits and layout.
 
 These builtins are intentionally unavailable for auto-tagged unions. Mutable pointer views are also rejected because raw mutation could violate the relationship between tag and payload.
 
@@ -1149,7 +1149,7 @@ These builtins are intentionally unavailable for auto-tagged unions. Mutable poi
 
 # Compile-time selection
 
-QK has an explicit compile-time stage for target and configuration selection. Compile-time bindings, `when` branches, and metadata collections can change declarations, values, types, and native link requirements.
+QK has an explicit compile-time stage for target and configuration selection. Compile-time bindings, `$if` branches, and metadata collections can change declarations, values, types, and native link requirements.
 
 ## Compile-time values
 
@@ -1157,7 +1157,7 @@ Prefix an expression with `$` to require compile-time evaluation. Use parenthese
 
 ```qk
 let BufferSize: usz = $(4 * 1024)
-let HasFiles = $!NoHasFiles
+let Enabled = $true
 ```
 
 Compile-time expressions may appear wherever a value is expected. A binding initialized with a compile-time expression has no persistent addressable runtime storage and is materialised as a constant at each runtime use; a temporary is created only when a consuming operation requires an address. Untyped integer bindings remain untyped until their use supplies a concrete numeric type.
@@ -1167,57 +1167,75 @@ Module-level compile-time bindings may be public and referenced through imported
 Parameterized calculations use the same `$` binder syntax:
 
 ```qk
-let StorageSize($T: type) = @sizeof(T)
+let StorageSize($T: type) = $sizeof(T)
 ```
 
 Each concrete argument list produces an independently specialized binding. There is no separate initializer keyword: `$` marks compile-time expressions and parameters.
 
-## `when`
-
-`when` chooses one branch during compile-time evaluation:
+`$T: type` is a specialization parameter. Its type argument is chosen at compile time and removed from the runtime function signature; the remaining parameters can still be runtime values:
 
 ```qk
-when OS == .Windows {
+let identity($T: type, value: T): T = value
+```
+
+A bare `T: type` means a different thing: it is an ordinary parameter holding a type value. A function with such a parameter can only run during compilation. This distinction is the basis for future functions that compute types from type values and other compile-time inputs, such as `generate_type_for_json(T: type, json_text: str)`. The current compiler does not yet accept bare `T: type` parameters or type-valued function results.
+
+Function context inference is still pending. The current compiler evaluates ordinary pure functions when a `$` expression or `$if` condition requests them, and reports operations it cannot execute when reached.
+
+## `$if`
+
+`$if` chooses one branch during compile-time evaluation:
+
+```qk
+import core.build
+
+$if core.build.os == .Windows {
   let Separator: u8 = '\\'
 } else {
   let Separator: u8 = '/'
 }
 ```
 
-It can select a complete declaration, statement, or expression. `else when` chains are supported. It cannot insert fragments such as part of a parameter list, argument list, sequence literal, or individual attribute entry.
+It can select a complete declaration, statement, type, or expression. `else if` chains use compile-time conditions too. Only the selected branch is checked after parsing. It cannot insert fragments such as part of a parameter list, argument list, sequence literal, or individual attribute entry.
 
-The built-in configuration values are:
+Currently, `$if` selection happens before generic specialization, so a condition in a parameterized function cannot yet depend on its `$T` argument.
 
-- `OS`, with variants such as `.Windows`, `.Linux`, `.MacOS`, and `.WASI`.
+The compiler-provided `core.build` package is available with `-nostdlib` and describes the selected target, including during cross compilation. Import it explicitly. Its retained values include:
 
-- `Arch`, with variants `.X86`, `.X86_64`, `.ARM32`, `.AArch64`, `.Wasm32`, and `.Wasm64`.
+- `os`, with variants such as `.Windows`, `.Linux`, `.MacOS`, and `.WASI`.
 
-- `Environment`, including `.GNU`, `.MSVC`, `.Musl`, and `.Unknown`.
+- `arch`, with variants `.X86`, `.X86_64`, `.ARM32`, `.AArch64`, `.Wasm32`, and `.Wasm64`.
 
-- `ReleaseMode`, either `.Debug` or `.Release`.
+- `environment`, including `.GNU`, `.MSVC`, `.Musl`, and `.Unknown`.
 
-- `PointerBits`, an integer target pointer width.
+- `release_mode`, either `.Debug` or `.Release`.
 
-- `CCharSigned`, whether plain C `char` is signed for the target ABI.
+- `pointer_bits`, an integer target pointer width.
+
+- `c_char_signed`, whether plain C `char` is signed for the target ABI.
+
+- `freestanding`, and `has_libc`, `has_filesystem`, `has_environment`, and `has_process_exit` capability flags.
 
 Compile-time expressions support booleans, integers, the configuration enum values, logical operations, integer arithmetic and comparison, and references to visible compile-time bindings.
 
 ## Compile-time errors
 
-`@compiler_error("message")` stops compilation when expansion selects it:
+`$compiler_error("message")` stops compilation at the point where it is selected. Inside a `$if` branch, `compiler_error(...)` can be written without the prefix because the branch is already a compile-time context:
 
 ```qk
-when PointerBits != 32 && PointerBits != 64 {
-  @compiler_error("unsupported pointer width")
+import core.build
+
+$if core.build.pointer_bits != 32 && core.build.pointer_bits != 64 {
+  compiler_error("unsupported pointer width")
 }
 ```
 
 Unselected directives have no effect. This makes the directive useful for rejecting unsupported target configurations.
 
-`@compiler_assert(condition, "message")` evaluates its condition during the same compile-time stage. A false condition stops compilation with `compiler assertion failed: ` followed by the message, while a true assertion contributes no runtime code:
+`$compiler_assert(condition, "message")` evaluates its condition during the same compile-time stage. A false condition stops compilation with `compiler assertion failed: ` followed by the message, while a true assertion contributes no runtime code:
 
 ```qk
-@compiler_assert(PointerBits == 64, "this package requires a 64-bit target")
+$compiler_assert(core.build.pointer_bits == 64, "this package requires a 64-bit target")
 ```
 
 # Attributes and foreign interfaces
@@ -1276,23 +1294,24 @@ module graphics @link(
 
 `system` names a system library, `search` adds a library search directory, `path` links one explicit file, and `framework` selects an Apple framework. Link requirements are separate from import dependencies.
 
-An `@link` body is a structured compile-time collection. `when` may select groups of complete link entries; an unselected group contributes nothing:
+An `@link` body is a structured compile-time collection. `$if` may select groups of complete link entries; an unselected group contributes nothing:
 
 ```qk
 module graphics @link(
-  when OS == .Linux {
+  $if core.build.os == .Linux {
     system "X11",
     path "vendor/linux/libgraphics.a",
-  } else when OS == .Windows {
+  } else if core.build.os == .Windows {
     system "gdi32",
     path "vendor/windows/graphics.lib",
   } else {
-    @compiler_error("unsupported graphics target")
+    compiler_error("unsupported graphics target")
   }
 )
+import core.build
 ```
 
-Every branch must contain only complete `system`, `search`, `path`, or `framework` entries, nested link-item `when` groups, or `@compiler_error`. This preserves conditional native metadata without giving `when` general token-splicing behavior.
+Every branch must contain only complete `system`, `search`, `path`, or `framework` entries, nested link-item `$if` groups, or `compiler_error`. This preserves conditional native metadata without giving `$if` general token-splicing behavior.
 
 ## Optimisation attributes
 
@@ -1408,7 +1427,7 @@ Program arguments are available as `std.os.args`, a `[]str`. The runtime owns th
 
 `-target <triple>` selects the effective target. `-sysroot`, `-cpu`, `-features`, `-target-abi`, `-relocation-model`, and `-code-model` refine native code generation and linking.
 
-Optimisation is selected with `-O0`, `-O1`, `-O2`, `-O3`, `-Os`, `-Oz`, `-Ofast`, or `-Og`. `-release` independently changes the compile-time `ReleaseMode` value to `.Release`; it is not itself an optimisation level.
+Optimisation is selected with `-O0`, `-O1`, `-O2`, `-O3`, `-Os`, `-Oz`, `-Ofast`, or `-Og`. `-release` independently changes `core.build.release_mode` to `.Release`; it is not itself an optimisation level.
 
 Use `-no-emit` to perform compilation checks without producing output. `-dump-ir`, `-dump-llvm`, and `-dump-asm` are development aids for inspecting compiler output.
 
@@ -1487,7 +1506,7 @@ Hosted `std.io.FileReader` and `FileWriter` provide checked open, read, write, f
 
 ## C library bindings
 
-Hosted builds expose focused declarations in `std.libc`. Their platform-dependent C types and symbols are selected with `when`, making the bindings follow the effective target rather than the compiler host.
+Hosted builds expose focused declarations in `std.libc`. Their platform-dependent C types and symbols are selected with `$if`, making the bindings follow the effective target rather than the compiler host.
 
 Prefer the higher-level allocation, stream, filesystem, and string packages when they fit. Use `std.libc` when direct C interoperability is the actual requirement.
 

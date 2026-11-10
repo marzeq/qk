@@ -14,6 +14,7 @@ type Parser struct {
 	tokens           []tokeniser.Token
 	posStack         []int
 	allowTypeCapture bool
+	compileTimeDepth int
 }
 
 func NewParser(tokens []tokeniser.Token) *Parser {
@@ -132,6 +133,29 @@ func (p *Parser) MatchBuiltin(name string) bool {
 	return p.Match(tokeniser.TokenAt) && p.Next().Type == tokeniser.TokenIdentifier && p.Next().Value == name
 }
 
+func (p *Parser) matchIntrinsic(name string) bool {
+	return p.Match(tokeniser.TokenIdentifier) && p.Peek().Value == name
+}
+
+func (p *Parser) consumeIntrinsic(name string) bool {
+	if p.Match(tokeniser.TokenIdentifier) && p.Peek().Value == name {
+		p.Inc()
+		return true
+	}
+	return false
+}
+
+func (p *Parser) matchCompileDirective() bool {
+	if p.Match(tokeniser.TokenDollar) {
+		return p.Next().Type == tokeniser.TokenIdentifier && (p.Next().Value == "compiler_assert" || p.Next().Value == "compiler_error")
+	}
+	return p.compileTimeDepth != 0 && (p.matchIntrinsic("compiler_assert") || p.matchIntrinsic("compiler_error"))
+}
+
+func (p *Parser) matchCompileTimeIf() bool {
+	return p.Match(tokeniser.TokenDollar) && p.Next().Type == tokeniser.TokenKeyword && p.Next().Value == string(tokeniser.KeywordIf)
+}
+
 func (p *Parser) ConsumeBuiltin(name string) bool {
 	if !p.MatchBuiltin(name) {
 		return false
@@ -196,7 +220,10 @@ func (p *Parser) Parse() (*RootNode, error) {
 func (p *Parser) parseTopLevel() (Node, error) {
 	startLoc := p.CurrLoc()
 	e := shared.NewError(startLoc, "expected function definition, constant definition, type alias or import statement")
-	if p.MatchBuiltin("compiler_error") || p.MatchBuiltin("compiler_assert") {
+	if p.matchCompileTimeIf() {
+		return p.parseWhen(WhenDeclarations)
+	}
+	if p.matchCompileDirective() {
 		return p.parseCompilerDirective()
 	}
 	if !p.Match(tokeniser.TokenKeyword) {
@@ -220,8 +247,6 @@ func (p *Parser) parseTopLevel() (Node, error) {
 		node, err = p.ParseImport()
 	case string(tokeniser.KeywordModule):
 		node, err = p.ParseModule()
-	case string(tokeniser.KeywordWhen):
-		node, err = p.parseWhen(WhenDeclarations)
 	default:
 		return nil, e
 	}

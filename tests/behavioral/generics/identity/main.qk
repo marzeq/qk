@@ -6,8 +6,8 @@ let Pair($T: type, $U: type) = type struct { first: T, second: U }
 let identity($T: type, value: T): T = value
 let Box($T: type) = type struct { value: T }
 let Option($T: type) = type union(@auto) { Some(T), None }
-let type_size($T: type): usz = @sizeof(T)
-let Size($T: type) = @sizeof(T)
+let type_size($T: type): usz = sizeof(T)
+let Size($T: type) = sizeof(T)
 
 let option_value(option: Option(i32)): i32 = match option {
   .Some(value) => value,

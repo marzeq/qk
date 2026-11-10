@@ -1,6 +1,8 @@
 module std.ctypes
 
-when CCharSigned {
+import core.build
+
+$if core.build.c_char_signed {
   pub let char = type alias i8
 } else {
   pub let char = type alias u8
@@ -18,14 +20,14 @@ pub let unsigned_int = type alias u32
 
 pub let bool = type alias u8
 
-when OS == .Windows || PointerBits == 32 {
+$if core.build.os == .Windows || core.build.pointer_bits == 32 {
   pub let long = type alias i32
   pub let unsigned_long = type alias u32
-} else when PointerBits == 64 {
+} else if core.build.pointer_bits == 64 {
   pub let long = type alias i64
   pub let unsigned_long = type alias u64
 } else {
-  @compiler_error("Unsupported C long width")
+  compiler_error("Unsupported C long width")
 }
 
 pub let signed_long = type alias long
@@ -44,7 +46,7 @@ pub let ssize_t = type alias isz
 pub let va_list = type alias *mut void
 
 // Exact widths of wchar_t are ABI/platform dependent.
-when OS == .Windows {
+$if core.build.os == .Windows {
   pub let wchar_t = type alias u16
 } else {
   pub let wchar_t = type alias i32

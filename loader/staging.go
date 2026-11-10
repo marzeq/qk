@@ -64,14 +64,15 @@ type stageValue struct {
 }
 
 type stageSelector struct {
-	config      StageConfig
-	module      string
-	bindings    map[string]stageValue
-	evaluated   map[parser.ExpressionNode]stageValue
-	unresolved  map[parser.ExpressionNode]struct{}
-	needsIR     bool
-	syntheticID int
-	environment *StageEnvironment
+	config            StageConfig
+	module            string
+	bindings          map[string]stageValue
+	evaluated         map[parser.ExpressionNode]stageValue
+	unresolved        map[parser.ExpressionNode]struct{}
+	needsIR           bool
+	syntheticID       int
+	environment       *StageEnvironment
+	coreBuildImported bool
 }
 
 // SelectCompileTime lowers unresolved staged expressions through the ordinary
@@ -85,6 +86,15 @@ func selectCompileTime(root *parser.RootNode, module string, config StageConfig,
 		config: config, module: module,
 		bindings: make(map[string]stageValue), evaluated: make(map[parser.ExpressionNode]stageValue),
 		unresolved: make(map[parser.ExpressionNode]struct{}), environment: environment,
+	}
+	for _, node := range root.Body {
+		if imported, ok := node.(*parser.ImportNode); ok {
+			for _, module := range imported.Modules {
+				if module == "core.build" {
+					selector.coreBuildImported = true
+				}
+			}
+		}
 	}
 	selector.primeBindings(root.Body)
 	body, err := selector.selectBody(root.Body)
@@ -213,6 +223,15 @@ func (s *stageSelector) selectNode(node parser.Node) ([]parser.Node, error) {
 			if value, resolved, err := s.evaluate(node.Value); err != nil {
 				return nil, err
 			} else if resolved {
+				if value.kind == stageEnumLiteral {
+					if annotation, ok := node.TypeNode.(*parser.NamedTypeNode); ok {
+						value.kind = stageEnum
+						value.domain = annotation.Name
+						if annotation.ModName != "" {
+							value.domain = annotation.ModName + "." + annotation.Name
+						}
+					}
+				}
 				s.bindings[node.Name] = value
 				node.Value = stageLiteral(value, node.Value.GetLoc())
 				if node.TypeNode == nil {
@@ -729,6 +748,9 @@ func (s *stageSelector) evaluateDirective(node *parser.CompilerDirectiveNode) er
 }
 
 func stageLiteral(value stageValue, loc shared.Location) parser.ExpressionNode {
+	if value.kind == stageEnum || value.kind == stageEnumLiteral {
+		return &parser.EnumLiteralNode{Variant: value.name, Loc: loc}
+	}
 	if value.kind == stageBool {
 		text := string(tokeniser.KeywordFalse)
 		if value.boolean {
@@ -743,6 +765,15 @@ func stageLiteral(value stageValue, loc shared.Location) parser.ExpressionNode {
 }
 
 func stageTypeNode(value stageValue, loc shared.Location) parser.TypeNode {
+	if value.kind == stageEnum {
+		names := map[string]string{
+			"OS": "OperatingSystem", "Arch": "Architecture",
+			"Environment": "TargetEnvironment", "ReleaseMode": "BuildMode",
+		}
+		if name := names[value.domain]; name != "" {
+			return &parser.NamedTypeNode{ModName: "core.build", Name: name, Loc: loc}
+		}
+	}
 	primitive, ok := types.Underlying(value.typ).(types.PrimitiveType)
 	if !ok || primitive == types.PrimitiveVoid {
 		return nil
@@ -770,11 +801,14 @@ func (s *stageSelector) evaluate(node parser.ExpressionNode) (stageValue, bool, 
 	case *parser.EnumLiteralNode:
 		return stageValue{kind: stageEnumLiteral, name: node.Variant}, true, nil
 	case *parser.IdentifierNode:
-		if value, ok := s.targetValue(node.Name); ok {
-			return value, true, nil
-		}
 		value, ok := s.bindings[node.Name]
 		return value, ok, nil
+	case *parser.FieldAccessNode:
+		if name, ok := coreBuildField(node); ok && s.coreBuildImported {
+			value, resolved := s.targetValue(name)
+			return value, resolved, nil
+		}
+		return stageValue{}, false, nil
 	case *parser.UnaryOpNode:
 		operand, resolved, err := s.evaluate(node.Operand)
 		if err != nil || !resolved {
@@ -804,6 +838,26 @@ func (s *stageSelector) evaluate(node parser.ExpressionNode) (stageValue, bool, 
 	default:
 		return stageValue{}, false, nil
 	}
+}
+
+func coreBuildField(node *parser.FieldAccessNode) (string, bool) {
+	module, ok := node.Subject.(*parser.FieldAccessNode)
+	if !ok || module.Field.Name != "build" {
+		return "", false
+	}
+	root, ok := module.Subject.(*parser.IdentifierNode)
+	if !ok || root.Name != "core" {
+		return "", false
+	}
+	fields := map[string]string{
+		"os": "OS", "arch": "Arch", "environment": "Environment",
+		"release_mode": "ReleaseMode", "pointer_bits": "PointerBits",
+		"c_char_signed": "CCharSigned", "has_libc": "TargetHasLibc",
+		"has_filesystem": "TargetHasFilesystem", "has_environment": "TargetHasEnvironment",
+		"has_process_exit": "TargetHasProcessExit",
+	}
+	name, ok := fields[node.Field.Name]
+	return name, ok
 }
 
 func (s *stageSelector) evaluateBinary(node *parser.BinaryOpNode) (stageValue, bool, error) {
@@ -898,14 +952,12 @@ func stageEqual(left, right stageValue) bool {
 }
 
 func (s *stageSelector) targetValue(name string) (stageValue, bool) {
-	triple := qktarget.EffectiveTriple(s.config.TargetTriple)
-	lower := strings.ToLower(triple)
+	facts := qktarget.Facts(s.config.TargetTriple, s.config.Freestanding)
 	switch name {
 	case "PointerBits":
-		bits, _ := qktarget.PointerBits(triple)
-		return stageValue{kind: stageInteger, integer: big.NewInt(int64(bits))}, true
+		return stageValue{kind: stageInteger, integer: big.NewInt(int64(facts.PointerBits))}, true
 	case "CCharSigned":
-		return stageValue{kind: stageBool, boolean: qktarget.CCharSigned(triple)}, true
+		return stageValue{kind: stageBool, boolean: facts.CCharSigned}, true
 	case "ReleaseMode":
 		value := "Debug"
 		if s.config.ReleaseMode == StageRelease {
@@ -913,43 +965,13 @@ func (s *stageSelector) targetValue(name string) (stageValue, bool) {
 		}
 		return stageValue{kind: stageEnum, domain: "ReleaseMode", name: value}, true
 	case "OS":
-		value := "Unknown"
-		switch {
-		case strings.Contains(lower, "windows"), strings.Contains(lower, "mingw"), strings.Contains(lower, "msvc"):
-			value = "Windows"
-		case strings.Contains(lower, "linux"):
-			value = "Linux"
-		case strings.Contains(lower, "darwin"), strings.Contains(lower, "apple"):
-			value = "MacOS"
-		case strings.Contains(lower, "freebsd"):
-			value = "FreeBSD"
-		case strings.Contains(lower, "openbsd"):
-			value = "OpenBSD"
-		case strings.Contains(lower, "netbsd"):
-			value = "NetBSD"
-		case strings.Contains(lower, "dragonfly"):
-			value = "DragonFly"
-		case strings.Contains(lower, "wasi"):
-			value = "WASI"
-		}
-		return stageValue{kind: stageEnum, domain: "OS", name: value}, true
+		return stageValue{kind: stageEnum, domain: "OS", name: facts.OS}, true
 	case "Arch":
-		value := map[string]string{"386": "X86", "x86_64": "X86_64", "amd64": "X86_64", "aarch64": "AArch64", "arm64": "AArch64", "wasm32": "Wasm32", "wasm64": "Wasm64"}[qktarget.Arch(triple)]
-		return stageValue{kind: stageEnum, domain: "Arch", name: value}, true
+		return stageValue{kind: stageEnum, domain: "Arch", name: facts.Architecture}, true
 	case "Environment":
-		value := "Unknown"
-		if strings.Contains(lower, "msvc") {
-			value = "MSVC"
-		} else if strings.Contains(lower, "musl") {
-			value = "Musl"
-		} else if strings.Contains(lower, "gnu") || strings.Contains(lower, "mingw") {
-			value = "GNU"
-		}
-		return stageValue{kind: stageEnum, domain: "Environment", name: value}, true
+		return stageValue{kind: stageEnum, domain: "Environment", name: facts.Environment}, true
 	case "TargetHasLibc", "TargetHasFilesystem", "TargetHasEnvironment", "TargetHasProcessExit":
-		os, _ := s.targetValue("OS")
-		native := os.name == "Windows" || os.name == "Linux" || os.name == "MacOS" || os.name == "FreeBSD" || os.name == "OpenBSD" || os.name == "NetBSD" || os.name == "DragonFly"
-		return stageValue{kind: stageBool, boolean: native && !s.config.Freestanding}, true
+		return stageValue{kind: stageBool, boolean: facts.HasHostedCapabilities}, true
 	}
 	return stageValue{}, false
 }

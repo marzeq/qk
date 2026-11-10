@@ -1,5 +1,5 @@
 module main
 
-@compiler_error("intentional compile-time failure")
+$compiler_error("intentional compile-time failure")
 
 let main() {}

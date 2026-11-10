@@ -1,22 +1,23 @@
 module main
+import core.build
 
 import std.io
 
 let Base = $6
 let Product = $(Base * 7)
-let Bits: usz = $PointerBits
+let Bits: usz = $core.build.pointer_bits
 let Enabled = $true
 let twice(value: i32): i32 = value * 2
 
-when ReleaseMode == .Release {
+$if core.build.release_mode == .Release {
   let mode(): str = "release"
-} else when ReleaseMode == .Debug {
+} else if core.build.release_mode == .Debug {
   let mode(): str = "debug"
 } else {
-  @compiler_error("unknown release mode")
+  compiler_error("unknown release mode")
 }
 
-@compiler_assert(PointerBits == 32 || PointerBits == 64, "pointer width")
+$compiler_assert(core.build.pointer_bits == 32 || core.build.pointer_bits == 64, "pointer width")
 
 let main() {
   let local: i32 = $(Product + 1)
@@ -24,7 +25,7 @@ let main() {
   assert(twice($twice(2)) == 8, "compile-time call argument")
   let nested: i32 = 1 + $(Product + 1)
   assert(nested == 44, "compile-time binary operand")
-  when OS == .Linux || OS == .MacOS || OS == .Windows {
+  $if core.build.os == .Linux || core.build.os == .MacOS || core.build.os == .Windows {
     assert(local == 43, "compile-time arithmetic")
   } else {
     assert(local == 43, "portable compile-time arithmetic")

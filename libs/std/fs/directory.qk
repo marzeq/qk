@@ -1,6 +1,8 @@
 module std.fs
 
-when TargetHasFilesystem {
+import core.build
+
+$if core.build.has_filesystem {
 import std.alloc
 import std.io
 import std.libc
@@ -36,11 +38,11 @@ pub let DirectoryEntryKind.format(
 // The caller owns the builder passed to next; each call clears it before
 // returning and a produced basename remains valid until the caller changes it.
 let DirectoryIteratorNativeData = type
-  when OS == .Windows { [40]u64 }
+  $if core.build.os == .Windows { [40]u64 }
   else { u8 }
 
 let directory_iterator_native_data(): DirectoryIteratorNativeData {
-  when OS == .Windows { return [0; 40] }
+  $if core.build.os == .Windows { return [0; 40] }
   else { return 0 }
 }
 
@@ -71,7 +73,7 @@ let directory_iterator_fail(
   return .Err(error)
 }
 
-when OS == .Windows {
+$if core.build.os == .Windows {
   let windows_find_data(
     iterator: *mut DirectoryIterator,
   ): *mut std.libc.WindowsFindData =
@@ -96,13 +98,13 @@ pub let DirectoryIterator.open(
   let mut lc = std.alloc.LibcAllocator.init()
   let allocator = lc.&mut.(*mut dyn std.alloc.Allocator)
 
-  when OS == .Windows {
-    if @len(path) == 0 { return .Err(Error.InvalidData) }
+  $if core.build.os == .Windows {
+    if len(path) == 0 { return .Err(Error.InvalidData) }
     let mut pattern = std.strings.StringBuilder.init(allocator)
     if !pattern.append(path.([]u8)) {
       return .Err(Error.OutOfMemory)
     }
-    if path[@len(path) - 1] != '\\' && path[@len(path) - 1] != '/' {
+    if path[len(path) - 1] != '\\' && path[len(path) - 1] != '/' {
       if !pattern.append("\\".([]u8)) {
         pattern.deinit()
         return .Err(Error.OutOfMemory)
@@ -119,27 +121,27 @@ pub let DirectoryIterator.open(
     }
     let c_path = path.to_cstr(allocator)
     if c_path == nil {
-      allocator.free_bytes(c_pattern, @len(pattern.as_str()) + 1, @alignof(u8))
+      allocator.free_bytes(c_pattern, len(pattern.as_str()) + 1, alignof(u8))
       pattern.deinit()
       return .Err(Error.OutOfMemory)
     }
     let attributes = std.libc.get_file_attributes(c_path)
     let attributes_error = std.libc.get_last_error()
-    allocator.free_bytes(c_path, @len(path) + 1, @alignof(u8))
+    allocator.free_bytes(c_path, len(path) + 1, alignof(u8))
     if attributes == std.libc.InvalidFileAttributes {
-      allocator.free_bytes(c_pattern, @len(pattern.as_str()) + 1, @alignof(u8))
+      allocator.free_bytes(c_pattern, len(pattern.as_str()) + 1, alignof(u8))
       pattern.deinit()
       return .Err(Error.Native(attributes_error.(i32)))
     }
     if (attributes & std.libc.FileAttributeDirectory) == 0 {
-      allocator.free_bytes(c_pattern, @len(pattern.as_str()) + 1, @alignof(u8))
+      allocator.free_bytes(c_pattern, len(pattern.as_str()) + 1, alignof(u8))
       pattern.deinit()
       return .Err(Error.InvalidData)
     }
 
     let handle = std.libc.find_first_file(c_pattern, windows_find_data(result.&mut))
     let error_code = std.libc.get_last_error()
-    allocator.free_bytes(c_pattern, @len(pattern.as_str()) + 1, @alignof(u8))
+    allocator.free_bytes(c_pattern, len(pattern.as_str()) + 1, alignof(u8))
     pattern.deinit()
     if handle == (~0.(usz)).(*void) {
       if error_code == std.libc.ErrorFileNotFound || error_code == std.libc.ErrorNoMoreFiles {
@@ -157,7 +159,7 @@ pub let DirectoryIterator.open(
     let c_path = path.to_cstr(allocator)
     if c_path == nil { return .Err(Error.OutOfMemory) }
     let directory = std.libc.opendir(c_path)
-    allocator.free_bytes(c_path, @len(path) + 1, @alignof(u8))
+    allocator.free_bytes(c_path, len(path) + 1, alignof(u8))
     if directory == nil { return .Err(std.os.last_error()) }
     result.handle = directory.(*void)
     result.opened = true
@@ -176,7 +178,7 @@ pub let DirectoryIterator.next(
   if self.exhausted { return .Ok(Option(DirectoryEntryKind).None) }
   if self.failure.is_some() { return .Err(self.failure.unwrap()) }
 
-  when OS == .Windows {
+  $if core.build.os == .Windows {
     for true {
       let data = windows_find_data(self)
       if self.first_pending {
@@ -250,7 +252,7 @@ pub let DirectoryIterator.close(*mut self): Result(Unit, Error) {
   self.first_pending = false
   if handle == nil { return .Ok(Unit.{}) }
 
-  when OS == .Windows {
+  $if core.build.os == .Windows {
     if std.libc.find_close(handle) == 0 {
       return .Err(Error.Native(std.libc.get_last_error().(i32)))
     }

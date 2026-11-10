@@ -6,7 +6,7 @@ import (
 )
 
 let main() {
-  assert(@len(std.os.args) == 3, "argument count")
+  assert(len(std.os.args) == 3, "argument count")
   assert(std.os.args[1].eq("two words") && std.os.args[2].eq("last"), "argument values")
   std.io.println("arguments ok")
 }

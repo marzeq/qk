@@ -90,10 +90,10 @@ let print_counts(counts: Counts, options: Options, name: str, named: bool, width
 }
 
 let output_width(first_file: usz): usz {
-  if first_file == @len(std.os.args) { return 7 }
+  if first_file == len(std.os.args) { return 7 }
 
   let mut total_size: usz = 0
-  for index in first_file..@len(std.os.args) {
+  for index in first_file..len(std.os.args) {
     let path = std.os.args[index]
     if path.eq("-") { return 7 }
     let size = std.fs.file_size(path)
@@ -107,9 +107,9 @@ let usage(): void {
 }
 
 let parse_short_options(argument: str, options: *mut Options): bool {
-  if @len(argument) < 2 || argument[0] != '-' { return false }
+  if len(argument) < 2 || argument[0] != '-' { return false }
 
-  for index in 1..@len(argument) {
+  for index in 1..len(argument) {
     let option = argument[index]
     if option == 'c' {
       options.bytes = true
@@ -129,9 +129,9 @@ let main() {
   let mut first_file: usz = 1
   let mut parsing_options = true
 
-  for first_file < @len(std.os.args) {
+  for first_file < len(std.os.args) {
     let argument = std.os.args[first_file]
-    if !parsing_options || argument.eq("-") || @len(argument) == 0 || argument[0] != '-' {
+    if !parsing_options || argument.eq("-") || len(argument) == 0 || argument[0] != '-' {
       break
     }
     if argument.eq("--") {
@@ -164,7 +164,7 @@ let main() {
 
   let width = output_width(first_file)
 
-  if first_file == @len(std.os.args) {
+  if first_file == len(std.os.args) {
     let result = count(std.io.stdin.&mut.(*mut dyn std.io.Reader))
     if result.is_err() {
       std.io.eprintln("wc: stdin: {}", result.unwrap_err().message())
@@ -174,11 +174,11 @@ let main() {
     return
   }
 
-  let file_count = @len(std.os.args) - first_file
+  let file_count = len(std.os.args) - first_file
   let mut total: Counts = .{ lines=0, words=0, bytes=0 }
   let mut failed = false
 
-  for index in first_file..@len(std.os.args) {
+  for index in first_file..len(std.os.args) {
     let path = std.os.args[index]
     if path.eq("-") {
       let result = count(std.io.stdin.&mut.(*mut dyn std.io.Reader))

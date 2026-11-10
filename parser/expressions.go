@@ -32,12 +32,12 @@ func (p *Parser) ParseWholeExpression() (ExpressionNode, error) {
 
 func (p *Parser) ParseSizeOfExpression() (ExpressionNode, error) {
 	beginLoc := p.CurrLoc()
-	if !p.ConsumeBuiltin("sizeof") {
-		return nil, shared.NewError(p.CurrLoc(), "expected '@sizeof' builtin")
+	if !p.consumeIntrinsic("sizeof") {
+		return nil, shared.NewError(p.CurrLoc(), "expected 'sizeof' builtin")
 	}
 
 	if !p.Expect(tokeniser.TokenOpenParen) {
-		return nil, shared.NewError(p.PrevLoc(), "expected '(' after '@sizeof'")
+		return nil, shared.NewError(p.PrevLoc(), "expected '(' after 'sizeof'")
 	}
 
 	for p.Match(tokeniser.TokenNewline) {
@@ -58,7 +58,7 @@ func (p *Parser) ParseSizeOfExpression() (ExpressionNode, error) {
 		p.PopPos()
 		node, err = p.ParseExpression()
 		if err != nil {
-			return nil, shared.NewError(p.PrevLoc(), "expected type or expression after '@sizeof'")
+			return nil, shared.NewError(p.PrevLoc(), "expected type or expression after 'sizeof'")
 		}
 	} else {
 		p.CommitPos()
@@ -69,7 +69,7 @@ func (p *Parser) ParseSizeOfExpression() (ExpressionNode, error) {
 	}
 
 	if !p.Expect(tokeniser.TokenCloseParen) {
-		return nil, shared.NewError(p.PrevLoc(), "expected ')' after '@sizeof' operand")
+		return nil, shared.NewError(p.PrevLoc(), "expected ')' after 'sizeof' operand")
 	}
 
 	switch node := node.(type) {
@@ -97,9 +97,9 @@ func (p *Parser) ParseSizeOfExpression() (ExpressionNode, error) {
 
 func (p *Parser) ParseAlignOfExpression() (ExpressionNode, error) {
 	beginLoc := p.CurrLoc()
-	p.ConsumeBuiltin("alignof")
+	p.consumeIntrinsic("alignof")
 	if !p.Expect(tokeniser.TokenOpenParen) {
-		return nil, shared.NewError(p.PrevLoc(), "expected '(' after '@alignof'")
+		return nil, shared.NewError(p.PrevLoc(), "expected '(' after 'alignof'")
 	}
 	for p.Match(tokeniser.TokenNewline) {
 		p.Inc()
@@ -116,7 +116,7 @@ func (p *Parser) ParseAlignOfExpression() (ExpressionNode, error) {
 		p.PopPos()
 		operand, err = p.ParseExpression()
 		if err != nil {
-			return nil, shared.NewError(p.PrevLoc(), "expected type or expression after '@alignof('")
+			return nil, shared.NewError(p.PrevLoc(), "expected type or expression after 'alignof('")
 		}
 	} else {
 		p.CommitPos()
@@ -125,7 +125,7 @@ func (p *Parser) ParseAlignOfExpression() (ExpressionNode, error) {
 		p.Inc()
 	}
 	if !p.Expect(tokeniser.TokenCloseParen) {
-		return nil, shared.NewError(p.PrevLoc(), "expected ')' after '@alignof' operand")
+		return nil, shared.NewError(p.PrevLoc(), "expected ')' after 'alignof' operand")
 	}
 	node := &AlignOfNode{Loc: p.SpanFrom(beginLoc)}
 	switch operand := operand.(type) {
@@ -146,32 +146,32 @@ func (p *Parser) ParseAlignOfExpression() (ExpressionNode, error) {
 
 func (p *Parser) ParseOffsetOfExpression() (ExpressionNode, error) {
 	beginLoc := p.CurrLoc()
-	p.ConsumeBuiltin("offsetof")
+	p.consumeIntrinsic("offsetof")
 	if !p.Expect(tokeniser.TokenOpenParen) {
-		return nil, shared.NewError(p.PrevLoc(), "expected '(' after '@offsetof'")
+		return nil, shared.NewError(p.PrevLoc(), "expected '(' after 'offsetof'")
 	}
 	for p.Match(tokeniser.TokenNewline) {
 		p.Inc()
 	}
 	operand, err := p.ParseType()
 	if err != nil {
-		return nil, shared.NewError(p.PrevLoc(), "expected type after '@offsetof('")
+		return nil, shared.NewError(p.PrevLoc(), "expected type after 'offsetof('")
 	}
 	if !p.Expect(tokeniser.TokenComma) {
-		return nil, shared.NewError(p.PrevLoc(), "expected ',' after type in '@offsetof'")
+		return nil, shared.NewError(p.PrevLoc(), "expected ',' after type in 'offsetof'")
 	}
 	for p.Match(tokeniser.TokenNewline) {
 		p.Inc()
 	}
 	field, ok := p.ExpectGet(tokeniser.TokenIdentifier)
 	if !ok {
-		return nil, shared.NewError(p.PrevLoc(), "expected field name in '@offsetof'")
+		return nil, shared.NewError(p.PrevLoc(), "expected field name in 'offsetof'")
 	}
 	for p.Match(tokeniser.TokenNewline) {
 		p.Inc()
 	}
 	if !p.Expect(tokeniser.TokenCloseParen) {
-		return nil, shared.NewError(p.PrevLoc(), "expected ')' after '@offsetof' field")
+		return nil, shared.NewError(p.PrevLoc(), "expected ')' after 'offsetof' field")
 	}
 	return &OffsetOfNode{Operand: operand, Field: field.Value, Loc: p.SpanFrom(beginLoc)}, nil
 }
@@ -279,6 +279,9 @@ func (p *Parser) parseLeftAssociative(
 func (p *Parser) ParseUnary() (ExpressionNode, error) {
 	beginLoc := p.CurrLoc()
 	if p.Match(tokeniser.TokenDollar) {
+		if p.matchCompileTimeIf() {
+			return p.parseWhen(WhenExpression)
+		}
 		p.Inc()
 		for p.Match(tokeniser.TokenNewline) {
 			p.Inc()
@@ -689,7 +692,7 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 
 		return expr, nil
 	}
-	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordWhen) {
+	if p.matchCompileTimeIf() {
 		node, err := p.parseWhen(WhenExpression)
 		if err != nil {
 			return nil, err
@@ -708,7 +711,7 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 		return expr, nil
 	}
 
-	if p.MatchBuiltin("sizeof") {
+	if p.matchIntrinsic("sizeof") {
 		expr, err := p.ParseSizeOfExpression()
 		if err != nil {
 			return nil, err
@@ -716,31 +719,31 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 		return expr, nil
 	}
 
-	if p.MatchBuiltin("alignof") {
+	if p.matchIntrinsic("alignof") {
 		return p.ParseAlignOfExpression()
 	}
 
-	if p.MatchBuiltin("offsetof") {
+	if p.matchIntrinsic("offsetof") {
 		return p.ParseOffsetOfExpression()
 	}
-	if p.MatchBuiltin("embed") {
+	if p.matchIntrinsic("embed") {
 		return p.ParseEmbedExpression()
 	}
 	if p.MatchBuiltin("asm") {
 		return p.ParseInlineAsmExpression()
 	}
-	if p.MatchBuiltin("repr") {
+	if p.matchIntrinsic("repr") {
 		begin := p.CurrLoc()
-		p.ConsumeBuiltin("repr")
+		p.consumeIntrinsic("repr")
 		if !p.Expect(tokeniser.TokenOpenParen) {
-			return nil, shared.NewError(p.PrevLoc(), "expected '(' after '@repr'")
+			return nil, shared.NewError(p.PrevLoc(), "expected '(' after 'repr'")
 		}
 		operand, err := p.ParseExpression()
 		if err != nil {
 			return nil, err
 		}
 		if !p.Expect(tokeniser.TokenCloseParen) {
-			return nil, shared.NewError(p.PrevLoc(), "expected ')' after '@repr' operand")
+			return nil, shared.NewError(p.PrevLoc(), "expected ')' after 'repr' operand")
 		}
 		return &ReprNode{Operand: operand, Loc: p.SpanFrom(begin)}, nil
 	}
@@ -773,23 +776,15 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 		return &NoInitializerNode{Loc: p.SpanFrom(beginLoc)}, nil
 	}
 
-	if p.Match(tokeniser.TokenIdentifier) {
-		ident, err := p.ParseIdent()
-		if err != nil {
-			return nil, err
-		}
-		return ident, nil
-	}
-
-	if p.MatchBuiltin("len") {
-		p.ConsumeBuiltin("len")
+	if p.matchIntrinsic("len") {
+		p.consumeIntrinsic("len")
 
 		for p.Match(tokeniser.TokenNewline) {
 			p.Inc()
 		}
 
 		if !p.Expect(tokeniser.TokenOpenParen) {
-			return nil, shared.NewError(p.PrevLoc(), "expected '(' after '@len'")
+			return nil, shared.NewError(p.PrevLoc(), "expected '(' after 'len'")
 		}
 
 		for p.Match(tokeniser.TokenNewline) {
@@ -806,7 +801,7 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 		}
 
 		if !p.Expect(tokeniser.TokenCloseParen) {
-			return nil, shared.NewError(p.PrevLoc(), "expected ')' after '@len' expression")
+			return nil, shared.NewError(p.PrevLoc(), "expected ')' after 'len' expression")
 		}
 
 		return &UnaryOpNode{
@@ -814,6 +809,14 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 			Operand: expr,
 			Loc:     p.SpanFrom(beginLoc),
 		}, nil
+	}
+
+	if p.Match(tokeniser.TokenIdentifier) {
+		ident, err := p.ParseIdent()
+		if err != nil {
+			return nil, err
+		}
+		return ident, nil
 	}
 
 	if p.Match(tokeniser.TokenOpenSquare) {
@@ -992,22 +995,22 @@ func (p *Parser) ParseLambdaExpression() (*LambdaNode, error) {
 
 func (p *Parser) ParseEmbedExpression() (*EmbedNode, error) {
 	begin := p.CurrLoc()
-	p.ConsumeBuiltin("embed")
+	p.consumeIntrinsic("embed")
 	if !p.Expect(tokeniser.TokenOpenParen) {
-		return nil, shared.NewError(p.PrevLoc(), "expected '(' after '@embed'")
+		return nil, shared.NewError(p.PrevLoc(), "expected '(' after 'embed'")
 	}
 	for p.Match(tokeniser.TokenNewline) {
 		p.Inc()
 	}
 	if !p.Match(tokeniser.TokenString) {
-		return nil, shared.NewError(p.CurrLoc(), "expected file path string in '@embed'")
+		return nil, shared.NewError(p.CurrLoc(), "expected file path string in 'embed'")
 	}
 	path := p.Consume().Value
 	for p.Match(tokeniser.TokenNewline) {
 		p.Inc()
 	}
 	if !p.Expect(tokeniser.TokenCloseParen) {
-		return nil, shared.NewError(p.PrevLoc(), "expected ')' after '@embed' path")
+		return nil, shared.NewError(p.PrevLoc(), "expected ')' after 'embed' path")
 	}
 	return &EmbedNode{Path: path, Loc: p.SpanFrom(begin)}, nil
 }
@@ -1380,21 +1383,21 @@ func (p *Parser) ParseType() (TypeNode, error) {
 	for p.Match(tokeniser.TokenNewline) {
 		p.Inc()
 	}
-	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordWhen) {
+	if p.matchCompileTimeIf() {
 		return p.parseWhen(WhenType)
 	}
-	if p.MatchBuiltin("reprof") {
+	if p.matchIntrinsic("repr") {
 		begin := p.CurrLoc()
-		p.ConsumeBuiltin("reprof")
+		p.consumeIntrinsic("repr")
 		if !p.Expect(tokeniser.TokenOpenParen) {
-			return nil, shared.NewError(p.PrevLoc(), "expected '(' after '@reprof'")
+			return nil, shared.NewError(p.PrevLoc(), "expected '(' after 'repr'")
 		}
 		operand, err := p.ParseType()
 		if err != nil {
 			return nil, err
 		}
 		if !p.Expect(tokeniser.TokenCloseParen) {
-			return nil, shared.NewError(p.PrevLoc(), "expected ')' after '@reprof' operand")
+			return nil, shared.NewError(p.PrevLoc(), "expected ')' after 'repr' operand")
 		}
 		return &ReprTypeNode{Operand: operand, Loc: p.SpanFrom(begin)}, nil
 	}

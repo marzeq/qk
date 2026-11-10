@@ -23,7 +23,7 @@ let write_unsigned_decimal(
   value: u64,
 ): Result(Unit, Error) {
   let mut buffer: [20]u8 = ---
-  let mut cursor = @len(buffer)
+  let mut cursor = len(buffer)
   let mut remaining = value
   for true {
     cursor -= 1

@@ -11,8 +11,9 @@ import (
 
 func TestFreestandingDisablesHostedCapabilities(t *testing.T) {
 	source := `module test
-when TargetHasLibc || TargetHasFilesystem || TargetHasEnvironment || TargetHasProcessExit {
-  @compiler_error("hosted capability leaked into freestanding mode")
+import core.build
+$if core.build.has_libc || core.build.has_filesystem || core.build.has_environment || core.build.has_process_exit {
+  compiler_error("hosted capability leaked into freestanding mode")
 }
 let retained: i32 = 7
 `
@@ -32,18 +33,19 @@ let retained: i32 = 7
 func TestCompileTimeFunctionRunsThroughRegularIR(t *testing.T) {
 	source := `
 module test @link(
-  when twice(1) == 2 { system "selected", }
-  else { @compiler_error("wrong conditional link branch") }
+  $if twice(1) == 2 { system "selected", }
+  else { compiler_error("wrong conditional link branch") }
 )
+import core.build
 let twice(value: i32): i32 = value * 2
 let Answer: i32 = $twice(21)
-when Answer == 42 {
+$if Answer == 42 {
   let selected: i32 = Answer
 } else {
-  @compiler_error("regular IR evaluation returned the wrong value")
+  compiler_error("regular IR evaluation returned the wrong value")
 }
 
-@compiler_assert(twice(2) == 4, "ordinary function call failed")
+$compiler_assert(twice(2) == 4, "ordinary function call failed")
 `
 	tokens, err := tokeniser.NewTokeniser(source, "staging.qk").Tokenise()
 	if err != nil {
@@ -58,12 +60,12 @@ when Answer == 42 {
 	}
 	for _, node := range root.Body {
 		if _, unresolved := node.(*parser.WhenNode); unresolved {
-			t.Fatal("compile-time selection left a when node in the module")
+			t.Fatal("compile-time selection left a $if node in the module")
 		}
 	}
-	answer, ok := root.Body[2].(*parser.DeclarationNode)
+	answer, ok := root.Body[3].(*parser.DeclarationNode)
 	if !ok {
-		t.Fatalf("expected answer declaration, got %T", root.Body[2])
+		t.Fatalf("expected answer declaration, got %T", root.Body[3])
 	}
 	literal, ok := answer.Value.(*parser.IntegerLiteralNode)
 	if !ok || literal.Value != "42" {

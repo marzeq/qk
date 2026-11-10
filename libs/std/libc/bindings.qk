@@ -1,15 +1,17 @@
 module std.libc
   @link(
-    when TargetHasLibc {
-      when Environment == .MSVC { system "ucrt", }
-      else when OS == .Windows { system "msvcrt", }
+    $if core.build.has_libc {
+      $if core.build.environment == .MSVC { system "ucrt", }
+      else if core.build.os == .Windows { system "msvcrt", }
       else { system "c", }
 
-      when OS == .Windows { system "kernel32", }
+      $if core.build.os == .Windows { system "kernel32", }
     }
   )
 
-when TargetHasLibc {
+import core.build
+
+$if core.build.has_libc {
 
 import std.ctypes
 
@@ -21,27 +23,27 @@ pub let DIR = type opaque
 // -----------------------------------------------------------------------------
 
 pub let time_t = type
-  when OS == .Windows
-    || OS == .MacOS
-    || OS == .FreeBSD
-    || OS == .OpenBSD
-    || OS == .NetBSD
-    || OS == .DragonFly
-    || OS == .WASI { std.ctypes.long_long }
-    else when OS == .Linux { std.ctypes.long }
+  $if core.build.os == .Windows
+    || core.build.os == .MacOS
+    || core.build.os == .FreeBSD
+    || core.build.os == .OpenBSD
+    || core.build.os == .NetBSD
+    || core.build.os == .DragonFly
+    || core.build.os == .WASI { std.ctypes.long_long }
+    else if core.build.os == .Linux { std.ctypes.long }
     else {
-    @compiler_error("Unsupported time_t ABI")
+    compiler_error("Unsupported time_t ABI")
   }
 
 pub let clock_t = type
-  when OS == .Windows
-    || OS == .FreeBSD
-    || OS == .OpenBSD
-    || OS == .NetBSD
-    || OS == .DragonFly { std.ctypes.int }
+  $if core.build.os == .Windows
+    || core.build.os == .FreeBSD
+    || core.build.os == .OpenBSD
+    || core.build.os == .NetBSD
+    || core.build.os == .DragonFly { std.ctypes.int }
     else { std.ctypes.long }
 
-when OS != .Windows {
+$if core.build.os != .Windows {
   pub let Timespec = type struct {
     seconds: time_t,
     nanoseconds: std.ctypes.long,
@@ -66,7 +68,7 @@ pub let getchar(): std.ctypes.int @foreign
 pub let puts(str: cstr): std.ctypes.int @foreign
 
 pub let fopen(path: cstr, mode: cstr): *FILE @foreign
-when OS != .Windows {
+$if core.build.os != .Windows {
   pub let fdopen(fd: std.ctypes.int, mode: cstr): *FILE @foreign
 }
 pub let fclose(file: *FILE): std.ctypes.int @foreign
@@ -110,7 +112,7 @@ pub let remove(path: cstr): std.ctypes.int @foreign
 pub let rename(old: cstr, new: cstr): std.ctypes.int @foreign
 pub let tmpfile(): *FILE @foreign
 
-when OS == .Windows {
+$if core.build.os == .Windows {
   pub let mkdir(path: cstr): std.ctypes.int @foreign(symbol "_mkdir")
   pub let rmdir(path: cstr): std.ctypes.int @foreign(symbol "_rmdir")
   pub let chdir(path: cstr): std.ctypes.int @foreign(symbol "_chdir")
@@ -157,8 +159,8 @@ when OS == .Windows {
   pub let closedir(directory: *DIR): std.ctypes.int @foreign
 
   pub let Dirent = type
-    when OS == .Linux {
-      when PointerBits == 64 {
+    $if core.build.os == .Linux {
+      $if core.build.pointer_bits == 64 {
         struct {
           inode: u64,
           offset: i64,
@@ -175,7 +177,7 @@ when OS == .Windows {
           name: [256]std.ctypes.char,
         }
       }
-    } else when OS == .MacOS {
+    } else if core.build.os == .MacOS {
       struct {
         inode: u64,
         seek_offset: i64,
@@ -184,7 +186,7 @@ when OS == .Windows {
         entry_type: u8,
         name: [1024]std.ctypes.char,
       }
-    } else when OS == .FreeBSD {
+    } else if core.build.os == .FreeBSD {
       struct {
         inode: u64,
         offset: i64,
@@ -195,7 +197,7 @@ when OS == .Windows {
         padding_1: u16,
         name: [256]std.ctypes.char,
       }
-    } else when OS == .OpenBSD {
+    } else if core.build.os == .OpenBSD {
       struct {
         inode: u64,
         offset: i64,
@@ -205,7 +207,7 @@ when OS == .Windows {
         padding: [4]u8,
         name: [256]std.ctypes.char,
       }
-    } else when OS == .NetBSD {
+    } else if core.build.os == .NetBSD {
       struct {
         inode: u64,
         record_length: u16,
@@ -213,7 +215,7 @@ when OS == .Windows {
         entry_type: u8,
         name: [512]std.ctypes.char,
       }
-    } else when OS == .DragonFly {
+    } else if core.build.os == .DragonFly {
       struct {
         inode: u64,
         name_length: u16,
@@ -223,7 +225,7 @@ when OS == .Windows {
         name: [256]std.ctypes.char,
       }
     } else {
-      @compiler_error("Unsupported dirent ABI")
+      compiler_error("Unsupported dirent ABI")
     }
 
   pub let readdir(directory: *DIR): *mut Dirent @foreign
@@ -231,13 +233,13 @@ when OS == .Windows {
 
 pub let EOF: std.ctypes.int = $-1
 
-when OS == .Windows {
+$if core.build.os == .Windows {
   pub let fileno(stream: *FILE): std.ctypes.int @foreign(symbol "_fileno")
 } else {
   pub let fileno(stream: *FILE): std.ctypes.int @foreign
 }
 
-when OS == .Windows {
+$if core.build.os == .Windows {
   let windows_read(
     fd: std.ctypes.int,
     buf: *mut void,
@@ -281,18 +283,18 @@ when OS == .Windows {
   ): std.ctypes.ssize_t @foreign
 }
 
-when OS == .Windows {
+$if core.build.os == .Windows {
   pub let errno_location(): *mut std.ctypes.int @foreign(symbol "_errno")
-} else when OS == .Linux || OS == .WASI {
+} else if core.build.os == .Linux || core.build.os == .WASI {
   pub let errno_location(): *mut std.ctypes.int @foreign(symbol "__errno_location")
-} else when OS == .MacOS
-  || OS == .FreeBSD
-  || OS == .OpenBSD
-  || OS == .NetBSD
-  || OS == .DragonFly {
+} else if core.build.os == .MacOS
+  || core.build.os == .FreeBSD
+  || core.build.os == .OpenBSD
+  || core.build.os == .NetBSD
+  || core.build.os == .DragonFly {
   pub let errno_location(): *mut std.ctypes.int @foreign(symbol "__error")
 } else {
-  @compiler_error("Unsupported errno ABI")
+  compiler_error("Unsupported errno ABI")
 }
 
 pub let strerror(error: std.ctypes.int): cstr @foreign
@@ -339,7 +341,7 @@ pub let strstr(haystack: cstr, needle: cstr): *std.ctypes.char @foreign
 
 pub let strtok(str: *mut std.ctypes.char, delim: cstr): *mut std.ctypes.char @foreign
 
-when OS == .Windows {
+$if core.build.os == .Windows {
   pub let strdup(str: cstr): *mut std.ctypes.char @foreign(symbol "_strdup")
   pub let strcasecmp(a: cstr, b: cstr): std.ctypes.int @foreign(symbol "_stricmp")
 } else {
@@ -363,7 +365,7 @@ pub let strtoul(str: cstr, end: *mut *mut std.ctypes.char, base: std.ctypes.int)
 // random / time
 // -----------------------------------------------------------------------------
 
-when OS == .Windows {
+$if core.build.os == .Windows {
   pub let time(t: *mut time_t): time_t @foreign(symbol "_time64")
 } else {
   pub let time(t: *mut time_t): time_t @foreign
@@ -371,7 +373,7 @@ when OS == .Windows {
 
 pub let clock(): clock_t @foreign
 
-when OS != .Windows {
+$if core.build.os != .Windows {
   pub let clock_gettime(
     clock_id: std.ctypes.int,
     value: *mut Timespec,
@@ -400,17 +402,17 @@ pub let getenv(name: cstr): *std.ctypes.char @foreign
 // standard streams
 // -----------------------------------------------------------------------------
 
-when OS == .Linux || OS == .WASI {
+$if core.build.os == .Linux || core.build.os == .WASI {
 
   pub let stdin: *FILE @foreign
   pub let stdout: *FILE @foreign
   pub let stderr: *FILE @foreign
 
-} else when OS == .MacOS
-  || OS == .FreeBSD
-  || OS == .OpenBSD
-  || OS == .NetBSD
-  || OS == .DragonFly {
+} else if core.build.os == .MacOS
+  || core.build.os == .FreeBSD
+  || core.build.os == .OpenBSD
+  || core.build.os == .NetBSD
+  || core.build.os == .DragonFly {
 
   // On the BSD libc ABIs these names are macros backed by non-portable
   // symbols (for example __stdinp on macOS and FreeBSD, and __sF on
@@ -421,7 +423,7 @@ when OS == .Linux || OS == .WASI {
   pub let stdout(): *FILE = fdopen(1, c"w")
   pub let stderr(): *FILE = fdopen(2, c"w")
 
-} else when OS == .Windows {
+} else if core.build.os == .Windows {
 
   let _acrt_iob_func(index: std.ctypes.unsigned_int): *FILE @foreign(symbol "__acrt_iob_func")
 
@@ -430,19 +432,19 @@ when OS == .Linux || OS == .WASI {
   pub let stderr(): *FILE = _acrt_iob_func(2)
 
 } else {
-  @compiler_error("Unsupported OS")
+  compiler_error("Unsupported OS")
 }
 
 // -----------------------------------------------------------------------------
 // Unix process management
 // -----------------------------------------------------------------------------
 
-when OS == .Linux
-  || OS == .MacOS
-  || OS == .FreeBSD
-  || OS == .OpenBSD
-  || OS == .NetBSD
-  || OS == .DragonFly {
+$if core.build.os == .Linux
+  || core.build.os == .MacOS
+  || core.build.os == .FreeBSD
+  || core.build.os == .OpenBSD
+  || core.build.os == .NetBSD
+  || core.build.os == .DragonFly {
 
   // On the supported Unix ABIs, pid_t is a signed 32-bit integer.
   pub let pid_t = type std.ctypes.int
@@ -523,12 +525,12 @@ when OS == .Linux
   // WCONTINUED is available on the supported contemporary Unix systems,
   // although its numeric value is ABI-specific.
   pub let WaitContinued: std.ctypes.int =
-    when OS == .Linux { 8 }
-    else when OS == .MacOS
-      || OS == .FreeBSD
-      || OS == .OpenBSD
-      || OS == .NetBSD
-      || OS == .DragonFly { 16 }
+    $if core.build.os == .Linux { 8 }
+    else if core.build.os == .MacOS
+      || core.build.os == .FreeBSD
+      || core.build.os == .OpenBSD
+      || core.build.os == .NetBSD
+      || core.build.os == .DragonFly { 16 }
     else { 0 }
 
   // Equivalent to the standard WIFEXITED(status) macro.
@@ -573,7 +575,7 @@ when OS == .Linux
 
   // WIFCONTINUED has different encodings between Linux and BSD-derived ABIs.
   pub let wait_continued(status: wait_status_t): bool {
-    when OS == .Linux {
+    $if core.build.os == .Linux {
       return status == (0xffff).(wait_status_t)
     } else {
       return status == (0x13).(wait_status_t)
@@ -643,39 +645,39 @@ when OS == .Linux
 
   // These values differ on Linux and BSD-derived systems.
   pub let SignalChild: signal_t =
-    when OS == .Linux { 17 }
-    else when OS == .MacOS
-      || OS == .FreeBSD
-      || OS == .OpenBSD
-      || OS == .NetBSD
-      || OS == .DragonFly { 20 }
+    $if core.build.os == .Linux { 17 }
+    else if core.build.os == .MacOS
+      || core.build.os == .FreeBSD
+      || core.build.os == .OpenBSD
+      || core.build.os == .NetBSD
+      || core.build.os == .DragonFly { 20 }
     else { 0 }
 
   pub let SignalContinue: signal_t =
-    when OS == .Linux { 18 }
-    else when OS == .MacOS
-      || OS == .FreeBSD
-      || OS == .OpenBSD
-      || OS == .NetBSD
-      || OS == .DragonFly { 19 }
+    $if core.build.os == .Linux { 18 }
+    else if core.build.os == .MacOS
+      || core.build.os == .FreeBSD
+      || core.build.os == .OpenBSD
+      || core.build.os == .NetBSD
+      || core.build.os == .DragonFly { 19 }
     else { 0 }
 
   pub let SignalStop: signal_t =
-    when OS == .Linux { 19 }
-    else when OS == .MacOS
-      || OS == .FreeBSD
-      || OS == .OpenBSD
-      || OS == .NetBSD
-      || OS == .DragonFly { 17 }
+    $if core.build.os == .Linux { 19 }
+    else if core.build.os == .MacOS
+      || core.build.os == .FreeBSD
+      || core.build.os == .OpenBSD
+      || core.build.os == .NetBSD
+      || core.build.os == .DragonFly { 17 }
     else { 0 }
 
   pub let SignalTerminalStop: signal_t =
-    when OS == .Linux { 20 }
-    else when OS == .MacOS
-      || OS == .FreeBSD
-      || OS == .OpenBSD
-      || OS == .NetBSD
-      || OS == .DragonFly { 18 }
+    $if core.build.os == .Linux { 20 }
+    else if core.build.os == .MacOS
+      || core.build.os == .FreeBSD
+      || core.build.os == .OpenBSD
+      || core.build.os == .NetBSD
+      || core.build.os == .DragonFly { 18 }
     else { 0 }
 
   // ---------------------------------------------------------------------------
@@ -748,7 +750,7 @@ when OS == .Linux
 // Linux-specific process APIs
 // -----------------------------------------------------------------------------
 
-when OS == .Linux {
+$if core.build.os == .Linux {
 
   // GNU extension: PATH lookup with an explicit environment.
   pub let execvpe(

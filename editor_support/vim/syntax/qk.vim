@@ -27,16 +27,17 @@ syn keyword qkBoolean true false
 syn keyword qkConstant nil
 
 " Language words
-syn keyword qkDeclaration let mut pub module import comptime
+syn keyword qkDeclaration let mut pub module import
 syn keyword qkTypeKeyword type alias struct union enum opaque trait dyn flags
-syn keyword qkConditional if else when match
+syn keyword qkConditional if else match
+syn match qkConditional "\$if\>"
 syn keyword qkRepeat for in
 syn keyword qkStatement break continue return defer
 syn keyword qkOperator as
 syn keyword qkOperator is implements
 " Function and module attributes.
 syn match qkAttribute "@[A-Za-z_][A-Za-z0-9_]*"
-syn match qkBuiltin "@\%(sizeof\|alignof\|offsetof\|len\|repr\|reprof\|compiler_error\)\ze\s*("
+syn match qkBuiltin "\<\%(sizeof\|alignof\|offsetof\|len\|repr\|embed\|compiler_error\|compiler_assert\)\ze\s*("
 
 hi def link qkTodo Todo
 hi def link qkLineComment Comment

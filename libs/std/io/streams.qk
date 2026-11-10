@@ -1,5 +1,7 @@
 module std.io
 
+import core.build
+
 import std.strings
 
 pub let Writer = type trait {
@@ -37,7 +39,7 @@ pub let Reader = type trait {
   }
 }
 
-when TargetHasLibc {
+$if core.build.has_libc {
 import std.libc
 import std.os
 
@@ -45,15 +47,15 @@ pub let ConsoleWriter = type struct { descriptor: i32 }
 pub let ConsoleReader = type struct { descriptor: i32 }
 
 pub let ConsoleReader.read(*mut self, buffer: []mut u8): Result(usz, Error) {
-  if @len(buffer) == 0 { return .Ok(0) }
-  let result = std.libc.read(self.descriptor, buffer[:], @len(buffer))
+  if len(buffer) == 0 { return .Ok(0) }
+  let result = std.libc.read(self.descriptor, buffer[:], len(buffer))
   if result < 0 { return .Err(std.os.last_error()) }
   return .Ok(result.(usz))
 }
 
 pub let ConsoleWriter.write(*mut self, bytes: []u8): Result(usz, Error) {
-  if @len(bytes) == 0 { return .Ok(0) }
-  let result = std.libc.write(self.descriptor, bytes[:], @len(bytes))
+  if len(bytes) == 0 { return .Ok(0) }
+  let result = std.libc.write(self.descriptor, bytes[:], len(bytes))
   if result < 0 { return .Err(std.os.last_error()) }
   return .Ok(result.(usz))
 }
@@ -63,7 +65,7 @@ pub let mut stdout: ConsoleWriter = .{ descriptor=1 }
 pub let mut stderr: ConsoleWriter = .{ descriptor=2 }
 }
 
-when TargetHasFilesystem {
+$if core.build.has_filesystem {
 import std
 import std.alloc
 import std.ctypes
@@ -88,7 +90,7 @@ pub let FileWriter.open(
   if c_path == nil { return .Err(Error.OutOfMemory) }
 
   let file = std.libc.fopen(c_path, if append { c"ab" } else { c"wb" })
-  allocator.free_bytes(c_path, @len(path) + 1, @alignof(u8))
+  allocator.free_bytes(c_path, len(path) + 1, alignof(u8))
   if file == nil { return .Err(std.os.last_error()) }
   return .Ok(.{ handle=file.(*void) })
 }
@@ -100,10 +102,10 @@ pub let FileWriter.write(
   bytes: []u8,
 ): Result(usz, Error) {
   if self.handle == nil { return .Err(Error.InvalidHandle) }
-  if @len(bytes) == 0 { return .Ok(0) }
+  if len(bytes) == 0 { return .Ok(0) }
 
   let file = self.handle.(*std.libc.FILE)
-  let count = std.libc.write(std.libc.fileno(file), bytes[:], @len(bytes))
+  let count = std.libc.write(std.libc.fileno(file), bytes[:], len(bytes))
   if count < 0 { return .Err(std.os.last_error()) }
   return .Ok(count.(usz))
 }
@@ -113,7 +115,7 @@ pub let FileWriter.write_all(
   bytes: []u8,
 ): Result(usz, Error) {
   let mut written: usz = 0
-  for written < @len(bytes) {
+  for written < len(bytes) {
     let count = match self.write(bytes[written:]) {
       .Ok(value) => value,
       .Err(error) => { return .Err(error) },
@@ -149,7 +151,7 @@ pub let FileReader.open(
   if c_path == nil { return .Err(Error.OutOfMemory) }
 
   let file = std.libc.fopen(c_path, c"rb")
-  allocator.free_bytes(c_path, @len(path) + 1, @alignof(u8))
+  allocator.free_bytes(c_path, len(path) + 1, alignof(u8))
   if file == nil { return .Err(std.os.last_error()) }
   return .Ok(.{ handle=file.(*void) })
 }
@@ -161,13 +163,13 @@ pub let FileReader.read(
   buffer: []mut u8,
 ): Result(usz, Error) {
   if self.handle == nil { return .Err(Error.InvalidHandle) }
-  if @len(buffer) == 0 { return .Ok(0) }
+  if len(buffer) == 0 { return .Ok(0) }
   let buffer_ptr: *mut u8 = buffer[:]
 
   let count = std.libc.read(
     std.libc.fileno(self.handle.(*std.libc.FILE)),
     buffer_ptr,
-    @len(buffer),
+    len(buffer),
   )
   if count < 0 { return .Err(std.os.last_error()) }
   return .Ok(count.(usz))
@@ -205,17 +207,17 @@ pub let FileReader.read_line(
   buffer: []mut u8,
 ): Result(usz, Error) {
   if self.handle == nil { return .Err(Error.InvalidHandle) }
-  if @len(buffer) == 0 { return .Ok(0) }
+  if len(buffer) == 0 { return .Ok(0) }
 
   let file = self.handle.(*std.libc.FILE)
   let c_buffer: *mut u8 = buffer[:]
-  let line = std.libc.fgets(c_buffer.(*mut std.ctypes.char), @len(buffer).(i32), file)
+  let line = std.libc.fgets(c_buffer.(*mut std.ctypes.char), len(buffer).(i32), file)
   if line == nil {
     if std.libc.feof(file) != 0 { return .Ok(0) }
     return .Err(std.os.last_error())
   }
 
-  let count = std.libc.strnlen(c_buffer, @len(buffer)).(usz)
+  let count = std.libc.strnlen(c_buffer, len(buffer)).(usz)
   return .Ok(count)
 }
 
@@ -226,7 +228,7 @@ pub let write_all(
   bytes: []u8,
 ): Result(usz, Error) {
   let mut written: usz = 0
-  for written < @len(bytes) {
+  for written < len(bytes) {
     let count = match writer.write(bytes[written:]) {
       .Ok(value) => value,
       .Err(error) => { return .Err(error) },

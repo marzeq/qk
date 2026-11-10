@@ -1,5 +1,7 @@
 module std.fs
 
+import core.build
+
 import std
 import std.alloc
 import std.collections
@@ -53,7 +55,7 @@ pub let Path.duplicate(self): (Path, bool) =
 
 pub let Path.deinit(*mut self): void { self.bytes.deinit() }
 
-when OS == .Windows {
+$if core.build.os == .Windows {
   pub let Separator: u8 = '\\'
 } else {
   pub let Separator: u8 = '/'
@@ -61,15 +63,15 @@ when OS == .Windows {
 
 let is_separator(value: u8): bool {
   if value == '/' { return true }
-  when OS == .Windows { return value == '\\' }
+  $if core.build.os == .Windows { return value == '\\' }
   else { return false }
 }
 
 pub let is_absolute(path: str): bool {
-  if @len(path) == 0 { return false }
-  when OS == .Windows {
+  if len(path) == 0 { return false }
+  $if core.build.os == .Windows {
     if is_separator(path[0]) { return true }
-    return @len(path) >= 3 && path[1] == ':' && is_separator(path[2])
+    return len(path) >= 3 && path[1] == ':' && is_separator(path[2])
   } else {
     return path[0] == '/'
   }
@@ -78,7 +80,7 @@ pub let is_absolute(path: str): bool {
 pub let Path.is_absolute(self): bool = is_absolute(self.as_str())
 
 pub let basename(path: str): str {
-  let mut end = @len(path)
+  let mut end = len(path)
   for end > 1 && is_separator(path[end - 1]) { end -= 1 }
   let mut start = end
   for start > 0 && !is_separator(path[start - 1]) { start -= 1 }
@@ -88,7 +90,7 @@ pub let basename(path: str): str {
 pub let Path.basename(self): str = basename(self.as_str())
 
 pub let dirname(path: str): str {
-  let mut end = @len(path)
+  let mut end = len(path)
   for end > 1 && is_separator(path[end - 1]) { end -= 1 }
   for end > 0 && !is_separator(path[end - 1]) { end -= 1 }
   for end > 1 && is_separator(path[end - 1]) { end -= 1 }
@@ -100,7 +102,7 @@ pub let Path.dirname(self): str = dirname(self.as_str())
 
 pub let extension(path: str): str {
   let name = basename(path)
-  let mut index = @len(name)
+  let mut index = len(name)
   for index > 0 {
     index -= 1
     if name[index] == '.' {

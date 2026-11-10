@@ -50,3 +50,61 @@ func CCharSigned(triple string) bool {
 		return true
 	}
 }
+
+// BuildFacts describes the selected target rather than the compiler host.
+type BuildFacts struct {
+	OS, Architecture, Environment string
+	PointerBits                   int
+	CCharSigned                   bool
+	HasHostedCapabilities         bool
+}
+
+func Facts(triple string, freestanding bool) BuildFacts {
+	triple = EffectiveTriple(triple)
+	lower := strings.ToLower(triple)
+	facts := BuildFacts{OS: "Unknown", Architecture: "Unknown", Environment: "Unknown"}
+	switch {
+	case strings.Contains(lower, "windows"), strings.Contains(lower, "mingw"), strings.Contains(lower, "msvc"):
+		facts.OS = "Windows"
+	case strings.Contains(lower, "linux"):
+		facts.OS = "Linux"
+	case strings.Contains(lower, "darwin"), strings.Contains(lower, "apple"):
+		facts.OS = "MacOS"
+	case strings.Contains(lower, "freebsd"):
+		facts.OS = "FreeBSD"
+	case strings.Contains(lower, "openbsd"):
+		facts.OS = "OpenBSD"
+	case strings.Contains(lower, "netbsd"):
+		facts.OS = "NetBSD"
+	case strings.Contains(lower, "dragonfly"):
+		facts.OS = "DragonFly"
+	case strings.Contains(lower, "wasi"):
+		facts.OS = "WASI"
+	}
+	switch Arch(triple) {
+	case "386", "i386", "i486", "i586", "i686", "x86":
+		facts.Architecture = "X86"
+	case "x86_64", "amd64":
+		facts.Architecture = "X86_64"
+	case "arm", "armv6", "armv7", "armv7a", "armv7l", "thumb", "thumbv7", "thumbv7a":
+		facts.Architecture = "ARM32"
+	case "aarch64", "arm64":
+		facts.Architecture = "AArch64"
+	case "wasm32":
+		facts.Architecture = "Wasm32"
+	case "wasm64":
+		facts.Architecture = "Wasm64"
+	}
+	switch {
+	case strings.Contains(lower, "msvc"):
+		facts.Environment = "MSVC"
+	case strings.Contains(lower, "musl"):
+		facts.Environment = "Musl"
+	case strings.Contains(lower, "gnu"), strings.Contains(lower, "mingw"):
+		facts.Environment = "GNU"
+	}
+	facts.PointerBits, _ = PointerBits(triple)
+	facts.CCharSigned = CCharSigned(triple)
+	facts.HasHostedCapabilities = !freestanding && (facts.OS == "Windows" || facts.OS == "Linux" || facts.OS == "MacOS" || facts.OS == "FreeBSD" || facts.OS == "OpenBSD" || facts.OS == "NetBSD" || facts.OS == "DragonFly")
+	return facts
+}

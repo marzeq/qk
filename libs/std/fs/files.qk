@@ -1,6 +1,8 @@
 module std.fs
 
-when TargetHasFilesystem {
+import core.build
+
+$if core.build.has_filesystem {
 import std
 import std.alloc
 import std.ctypes
@@ -17,7 +19,7 @@ let path_is_directory(path: str): Result(bool, Error) {
 
   let mut result = false
   let mut failure: Option(Error) = .None
-  when OS == .Windows {
+  $if core.build.os == .Windows {
     let attributes = std.libc.get_file_attributes(c_path)
     if attributes == std.libc.InvalidFileAttributes {
       failure = Option(Error).Some(std.os.last_error())
@@ -33,7 +35,7 @@ let path_is_directory(path: str): Result(bool, Error) {
       if std.libc.closedir(directory) != 0 { failure = Option(Error).Some(std.os.last_error()) }
     }
   }
-  allocator.free_bytes(c_path, @len(path) + 1, @alignof(u8))
+  allocator.free_bytes(c_path, len(path) + 1, alignof(u8))
   if failure.is_some() { return .Err(failure.unwrap()) }
   return .Ok(result)
 }
@@ -176,7 +178,7 @@ pub let remove(path: str): Result(Unit, Error) {
   if c_path == nil { return .Err(Error.OutOfMemory) }
   let status = std.libc.remove(c_path)
   let error = if status == 0 { Option(Error).None } else { Option(Error).Some(std.os.last_error()) }
-  allocator.free_bytes(c_path, @len(path) + 1, @alignof(u8))
+  allocator.free_bytes(c_path, len(path) + 1, alignof(u8))
   if error.is_some() { return .Err(error.unwrap()) }
   return .Ok(Unit.{})
 }
@@ -190,10 +192,10 @@ let create_directory_once(path: str, ok_if_exists: bool): Result(Unit, Error) {
   if c_path == nil { return .Err(Error.OutOfMemory) }
 
   let mut status: i32 = 0
-  when OS == .Windows { status = std.libc.mkdir(c_path) }
+  $if core.build.os == .Windows { status = std.libc.mkdir(c_path) }
   else { status = std.libc.mkdir(c_path, 493) }
   let error = if status == 0 { Option(Error).None } else { Option(Error).Some(std.os.last_error()) }
-  allocator.free_bytes(c_path, @len(path) + 1, @alignof(u8))
+  allocator.free_bytes(c_path, len(path) + 1, alignof(u8))
   if error.is_some() && ok_if_exists {
     let directory = is_directory(path)
     if directory.is_ok() && directory.unwrap() { return .Ok(Unit.{}) }
@@ -230,7 +232,7 @@ pub let remove_directory(path: str): Result(Unit, Error) {
   if c_path == nil { return .Err(Error.OutOfMemory) }
   let status = std.libc.rmdir(c_path)
   let error = if status == 0 { Option(Error).None } else { Option(Error).Some(std.os.last_error()) }
-  allocator.free_bytes(c_path, @len(path) + 1, @alignof(u8))
+  allocator.free_bytes(c_path, len(path) + 1, alignof(u8))
   if error.is_some() { return .Err(error.unwrap()) }
   return .Ok(Unit.{})
 }
@@ -245,13 +247,13 @@ pub let rename(from: str, to: str): Result(Unit, Error) {
   if c_from == nil { return .Err(Error.OutOfMemory) }
   let c_to = to.to_cstr(allocator)
   if c_to == nil {
-    allocator.free_bytes(c_from, @len(from) + 1, @alignof(u8))
+    allocator.free_bytes(c_from, len(from) + 1, alignof(u8))
     return .Err(Error.OutOfMemory)
   }
   let status = std.libc.rename(c_from, c_to)
   let error = if status == 0 { Option(Error).None } else { Option(Error).Some(std.os.last_error()) }
-  allocator.free_bytes(c_to, @len(to) + 1, @alignof(u8))
-  allocator.free_bytes(c_from, @len(from) + 1, @alignof(u8))
+  allocator.free_bytes(c_to, len(to) + 1, alignof(u8))
+  allocator.free_bytes(c_from, len(from) + 1, alignof(u8))
   if error.is_some() { return .Err(error.unwrap()) }
   return .Ok(Unit.{})
 }
@@ -265,7 +267,7 @@ pub let change_directory(path: str): Result(Unit, Error) {
   if c_path == nil { return .Err(Error.OutOfMemory) }
   let status = std.libc.chdir(c_path)
   let error = if status == 0 { Option(Error).None } else { Option(Error).Some(std.os.last_error()) }
-  allocator.free_bytes(c_path, @len(path) + 1, @alignof(u8))
+  allocator.free_bytes(c_path, len(path) + 1, alignof(u8))
   if error.is_some() { return .Err(error.unwrap()) }
   return .Ok(Unit.{})
 }
@@ -281,7 +283,7 @@ pub let current_directory(
     let mut result, allocated = Path.with_capacity(allocator, capacity)
     if !allocated { return .Err(Error.OutOfMemory) }
     let mut path: *mut std.ctypes.char = nil
-    when OS == .Windows {
+    $if core.build.os == .Windows {
       path = std.libc.getcwd(result.bytes.ptr.(*mut std.ctypes.char), capacity.(i32))
     } else {
       path = std.libc.getcwd(result.bytes.ptr.(*mut std.ctypes.char), capacity)

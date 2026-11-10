@@ -10,8 +10,9 @@ import (
 func TestSelectedWhenGlobalUsesConstantInitializer(t *testing.T) {
 	const path = "selected_global.qk"
 	const source = `module main
+import core.build
 pub let Selected: i32 =
-  when OS == .Linux { 17 }
+  $if core.build.os == .Linux { 17 }
   else { 20 }
 let main() {}
 `

@@ -1,7 +1,7 @@
 Error: <CASE>/main.qk:3:1
    1 | module main
    2 | 
-   3 | @compiler_error("intentional compile-time failure")
+   3 | $compiler_error("intentional compile-time failure")
      | ^^^^^^^^^^^^^^^
    4 | 
    5 | let main() {}

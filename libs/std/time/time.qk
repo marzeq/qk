@@ -1,8 +1,10 @@
 module std.time
 
-pub let HasTime = $TargetHasLibc
+import core.build
 
-when HasTime {
+pub let HasTime = $core.build.has_libc
+
+$if HasTime {
 import std.ctypes
 import std.libc
 import std.os
@@ -83,7 +85,7 @@ pub let Duration.subtract(self, other: Duration): (Duration, bool) {
   return .{ nanoseconds=self.nanoseconds - other.nanoseconds }, true
 }
 
-when OS == .Windows {
+$if core.build.os == .Windows {
   let FileTime = type struct {
     low: u32,
     high: u32,
@@ -99,15 +101,15 @@ when OS == .Windows {
     @foreign(symbol "Sleep")
 } else {
   let MonotonicClock: std.ctypes.int =
-    when OS == .Linux || OS == .WASI { 1 }
-    else when OS == .MacOS { 6 }
-    else when OS == .FreeBSD || OS == .DragonFly { 4 }
-    else when OS == .OpenBSD || OS == .NetBSD { 3 }
-    else { @compiler_error("Unsupported monotonic clock") }
+    $if core.build.os == .Linux || core.build.os == .WASI { 1 }
+    else if core.build.os == .MacOS { 6 }
+    else if core.build.os == .FreeBSD || core.build.os == .DragonFly { 4 }
+    else if core.build.os == .OpenBSD || core.build.os == .NetBSD { 3 }
+    else { compiler_error("Unsupported monotonic clock") }
 }
 
 pub let Timestamp.now(): Result(Timestamp, Error) {
-  when OS == .Windows {
+  $if core.build.os == .Windows {
     let mut file_time: FileTime = .{ low=0, high=0 }
     get_system_time(file_time.&mut)
     let intervals = (file_time.high.(u64) << 32) | file_time.low.(u64)
@@ -140,7 +142,7 @@ pub let Timestamp.unix_seconds(self): i64 = self.seconds
 pub let Timestamp.subsecond_nanoseconds(self): u32 = self.nanosecond
 
 pub let Instant.now(): Result(Instant, Error) {
-  when OS == .Windows {
+  $if core.build.os == .Windows {
     let mut counter: i64 = 0
     let mut frequency: i64 = 0
     if query_performance_frequency(frequency.&mut) == 0 || frequency <= 0 {
@@ -205,7 +207,7 @@ pub let Instant.elapsed(self): Result(Duration, Error) {
 }
 
 pub let sleep(duration: Duration): Result(Unit, Error) {
-  when OS == .Windows {
+  $if core.build.os == .Windows {
     let mut milliseconds = duration.nanoseconds / NanosecondsPerMillisecond
     if duration.nanoseconds % NanosecondsPerMillisecond != 0 { milliseconds += 1 }
     for milliseconds > 0 {
@@ -216,7 +218,7 @@ pub let sleep(duration: Duration): Result(Unit, Error) {
     return .Ok(Unit.{})
   } else {
     let seconds = duration.nanoseconds / NanosecondsPerSecond
-    let maximum_seconds: u64 = if @sizeof(std.libc.time_t) == 4 {
+    let maximum_seconds: u64 = if sizeof(std.libc.time_t) == 4 {
       2147483647
     } else {
       9223372036854775807

@@ -501,7 +501,7 @@ Build options:
   -o <file>             Set the output file name
   -t <type>             Set output type: exe, obj, lib, so, or wasm
   -O <level>            Set optimisation: 0, 1, 2, 3, s, z, fast, or g
-  -release              Select .Release for the compile-time ReleaseMode value
+  -release              Select .Release for core.build.release_mode
   -static               Prefer static libraries when linking
   -no-emit              Check and compile without writing an output file
   -freestanding         Link without the C runtime or default libraries

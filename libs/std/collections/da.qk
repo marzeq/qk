@@ -50,7 +50,7 @@ pub let DynamicArray($).ensure_capacity(
     return true
   }
 
-  let element_size = @sizeof(T)
+  let element_size = sizeof(T)
   let maximum_capacity = if element_size == 0 {
     ~0.(usz)
   } else {
@@ -120,13 +120,13 @@ pub let DynamicArray($).append_slice(
   *mut self,
   values: []T,
 ): bool {
-  if !self.reserve(@len(values)) { return false }
+  if !self.reserve(len(values)) { return false }
   let mut index: usz = 0
-  for index < @len(values) {
+  for index < len(values) {
     self.ptr[self.count + index] = values[index]
     index += 1
   }
-  self.count += @len(values)
+  self.count += len(values)
   return true
 }
 
@@ -163,17 +163,17 @@ pub let DynamicArray($).insert_slice(
   if index > self.count {
     panic("dynamic array insert index out of bounds")
   }
-  if !self.reserve(@len(values)) { return false }
+  if !self.reserve(len(values)) { return false }
 
   let mut cursor = self.count
   for cursor > index {
     cursor -= 1
-    self.ptr[cursor + @len(values)] = self.ptr[cursor]
+    self.ptr[cursor + len(values)] = self.ptr[cursor]
   }
-  for let mut value_index: usz = 0; value_index < @len(values); value_index += 1 {
+  for let mut value_index: usz = 0; value_index < len(values); value_index += 1 {
     self.ptr[index + value_index] = values[value_index]
   }
-  self.count += @len(values)
+  self.count += len(values)
   return true
 }
 

@@ -34,7 +34,7 @@ let main() {
   assert(unsigned8 == 8 && unsigned16 == 16 && unsigned32 == 32, "unsigned widths")
   assert(native_signed == -10 && octal == 42, "native and octal integers")
   assert(float32 == 1.25 && decimal == 3.5, "floating-point literals")
-  assert(@len(text) == 5 && terminated[0] == 'q' && character == 9, "text literals")
+  assert(len(text) == 5 && terminated[0] == 'q' && character == 9, "text literals")
   let _ = immutable
   std.io.println("values ok")
 }

@@ -9,6 +9,8 @@ import (
 )
 
 func (p *Parser) parseLinkItems(close tokeniser.TokenKind) ([]LinkItemNode, bool, error) {
+	p.compileTimeDepth++
+	defer func() { p.compileTimeDepth-- }()
 	var items []LinkItemNode
 	conditional := false
 	for {
@@ -21,7 +23,7 @@ func (p *Parser) parseLinkItems(close tokeniser.TokenKind) ([]LinkItemNode, bool
 		if p.Match(tokeniser.TokenEof) {
 			return nil, false, shared.NewError(p.CurrLoc(), "expected closing delimiter in @link")
 		}
-		if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordWhen) {
+		if p.matchCompileTimeIf() {
 			when, err := p.parseLinkWhen()
 			if err != nil {
 				return nil, false, err
@@ -30,7 +32,7 @@ func (p *Parser) parseLinkItems(close tokeniser.TokenKind) ([]LinkItemNode, bool
 			conditional = true
 			continue
 		}
-		if p.MatchBuiltin("compiler_error") {
+		if p.matchCompileDirective() {
 			directive, err := p.parseCompilerDirective()
 			if err != nil {
 				return nil, false, err
@@ -41,7 +43,7 @@ func (p *Parser) parseLinkItems(close tokeniser.TokenKind) ([]LinkItemNode, bool
 		}
 		kindToken, ok := p.ExpectGet(tokeniser.TokenIdentifier)
 		if !ok {
-			return nil, false, shared.NewError(p.PrevLoc(), "expected complete link entry or 'when' in @link")
+			return nil, false, shared.NewError(p.PrevLoc(), "expected complete link entry or '$if' in @link")
 		}
 		var kind attributes.LinkKind
 		switch kindToken.Value {
@@ -72,10 +74,13 @@ func (p *Parser) parseLinkWhen() (*LinkWhenNode, error) {
 	begin := p.CurrLoc()
 	node := &LinkWhenNode{}
 	for {
-		if !p.Match(tokeniser.TokenKeyword) || p.Peek().Value != string(tokeniser.KeywordWhen) {
-			return nil, shared.NewError(p.CurrLoc(), "expected 'when' in @link")
+		if p.matchCompileTimeIf() {
+			p.Inc().Inc()
+		} else if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordIf) {
+			p.Inc()
+		} else {
+			return nil, shared.NewError(p.CurrLoc(), "expected '$if' in @link")
 		}
-		p.Inc()
 		condition, err := p.parseWhenCondition()
 		if err != nil {
 			return nil, err
@@ -101,7 +106,7 @@ func (p *Parser) parseLinkWhen() (*LinkWhenNode, error) {
 		for p.Match(tokeniser.TokenNewline) {
 			p.Inc()
 		}
-		if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordWhen) {
+		if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordIf) {
 			continue
 		}
 		if !p.Expect(tokeniser.TokenOpenCurly) {
@@ -122,10 +127,12 @@ func (p *Parser) parseWhen(context WhenContext) (*WhenNode, error) {
 	begin := p.CurrLoc()
 	node := &WhenNode{Context: context}
 	for {
-		if !p.Match(tokeniser.TokenKeyword) || p.Peek().Value != string(tokeniser.KeywordWhen) {
-			return nil, shared.NewError(p.CurrLoc(), "expected 'when'")
-		}
 		branchBegin := p.CurrLoc()
+		if p.matchCompileTimeIf() {
+			p.Inc()
+		} else if !p.Match(tokeniser.TokenKeyword) || p.Peek().Value != string(tokeniser.KeywordIf) {
+			return nil, shared.NewError(p.CurrLoc(), "expected '$if'")
+		}
 		p.Inc()
 		for p.Match(tokeniser.TokenNewline) {
 			p.Inc()
@@ -153,7 +160,7 @@ func (p *Parser) parseWhen(context WhenContext) (*WhenNode, error) {
 		for p.Match(tokeniser.TokenNewline) {
 			p.Inc()
 		}
-		if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordWhen) {
+		if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordIf) {
 			continue
 		}
 		body, value, err = p.parseWhenBody(context)
@@ -189,7 +196,7 @@ func (p *Parser) parseWhenCondition() (ExpressionNode, error) {
 					}
 				}
 				if len(tokens) == 0 {
-					return nil, shared.NewError(p.CurrLoc(), "expected condition after 'when'")
+					return nil, shared.NewError(p.CurrLoc(), "expected condition after '$if'")
 				}
 				tokens = append(tokens, tokeniser.Token{Type: tokeniser.TokenEof, Loc: tokens[len(tokens)-1].Loc})
 				return NewParser(tokens).ParseWholeExpression()
@@ -201,6 +208,8 @@ func (p *Parser) parseWhenCondition() (ExpressionNode, error) {
 }
 
 func (p *Parser) parseWhenBody(context WhenContext) ([]Node, Node, error) {
+	p.compileTimeDepth++
+	defer func() { p.compileTimeDepth-- }()
 	switch context {
 	case WhenDeclarations:
 		body, err := p.parseWhenDeclarationBody()
@@ -221,7 +230,7 @@ func (p *Parser) parseWhenBody(context WhenContext) ([]Node, Node, error) {
 		for p.Match(tokeniser.TokenNewline) {
 			p.Inc()
 		}
-		if p.MatchBuiltin("compiler_error") || p.MatchBuiltin("compiler_assert") {
+		if p.matchCompileDirective() {
 			directive, err := p.parseCompilerDirective()
 			if err != nil {
 				return nil, nil, err
@@ -283,14 +292,20 @@ func (p *Parser) parseWhenDeclarationBody() ([]Node, error) {
 
 func (p *Parser) parseCompilerDirective() (*CompilerDirectiveNode, error) {
 	begin := p.CurrLoc()
+	if p.Match(tokeniser.TokenDollar) {
+		p.Inc()
+	}
 	name := "compiler_error"
-	if p.MatchBuiltin("compiler_assert") {
+	if p.matchIntrinsic("compiler_assert") {
 		name = "compiler_assert"
 	}
-	if !p.ConsumeBuiltin(name) || !p.Expect(tokeniser.TokenOpenParen) {
-		return nil, shared.NewError(p.PrevLoc(), "expected '(' after @%s", name)
+	if !p.consumeIntrinsic(name) {
+		return nil, shared.NewError(p.CurrLoc(), "expected compiler directive")
 	}
-	nameEnd := p.tokens[p.pos-2].Loc
+	nameEnd := p.tokens[p.pos-1].Loc
+	if !p.Expect(tokeniser.TokenOpenParen) {
+		return nil, shared.NewError(p.PrevLoc(), "expected '(' after %s", name)
+	}
 	node := &CompilerDirectiveNode{Name: name, NameLoc: begin.WithEnd(nameEnd)}
 	if name == "compiler_assert" {
 		condition, err := p.ParseExpression()
@@ -299,16 +314,16 @@ func (p *Parser) parseCompilerDirective() (*CompilerDirectiveNode, error) {
 		}
 		node.Condition = condition
 		if !p.Expect(tokeniser.TokenComma) {
-			return nil, shared.NewError(p.PrevLoc(), "expected ',' after @compiler_assert condition")
+			return nil, shared.NewError(p.PrevLoc(), "expected ',' after compiler_assert condition")
 		}
 	}
 	message, ok := p.ExpectGet(tokeniser.TokenString)
 	if !ok {
-		return nil, shared.NewError(p.PrevLoc(), "expected string message in @%s", name)
+		return nil, shared.NewError(p.PrevLoc(), "expected string message in %s", name)
 	}
 	node.Message = message.Value
 	if !p.Expect(tokeniser.TokenCloseParen) {
-		return nil, shared.NewError(p.PrevLoc(), "expected ')' after @%s", name)
+		return nil, shared.NewError(p.PrevLoc(), "expected ')' after %s", name)
 	}
 	node.Loc = p.SpanFrom(begin)
 	return node, nil

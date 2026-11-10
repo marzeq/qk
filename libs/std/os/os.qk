@@ -1,24 +1,26 @@
 module std.os
 
-when TargetHasEnvironment {
+import core.build
+
+$if core.build.has_environment {
   pub let mut args: []str = ---
   pub let mut env: [][2]str = ---
 }
 
-when TargetHasLibc {
+$if core.build.has_libc {
   import std.libc
 
   pub let last_error(): Error = Error.Native(std.libc.errno_location().*)
 }
 
-when TargetHasEnvironment {
+$if core.build.has_environment {
   import std.alloc
   import std.strings
 
   let environment_name_matches(entry: [2]str, name: str): bool {
-    if @len(entry[0]) != @len(name) { return false }
+    if len(entry[0]) != len(name) { return false }
     let mut index: usz = 0
-    for index < @len(name) {
+    for index < len(name) {
       if entry[0][index] != name[index] { return false }
       index += 1
     }
@@ -50,7 +52,7 @@ when TargetHasEnvironment {
 
 }
 
-when TargetHasProcessExit {
+$if core.build.has_process_exit {
   import std.libc
   pub let exit(code: i32): void @noreturn {
     std.libc.exit(code)

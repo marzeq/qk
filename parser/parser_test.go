@@ -22,7 +22,7 @@ func parseTestRoot(t *testing.T, source string) *RootNode {
 func TestComptimeTypeParametersAndOwnerCaptures(t *testing.T) {
 	root := parseTestRoot(t, `
 let Box($T: type) = type struct { value: T }
-let Size($T: type) = @sizeof(T)
+let Size($T: type) = sizeof(T)
 let identity($T: type, value: T): T = value
 let make_box($T: type, value: T): Box(T) = Box(T).{ value=value }
 let Box($).get(self): T = self.value

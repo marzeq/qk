@@ -24,8 +24,8 @@ pub let split(value: str, separator: str): SplitIterator = .{
 
 pub let SplitIterator.next(*mut self): (str, bool) {
   if self.finished { return "", false }
-  if @len(self.separator) == 0 {
-    if @len(self.remaining) == 0 {
+  if len(self.separator) == 0 {
+    if len(self.remaining) == 0 {
       self.finished = true
       return "", false
     }
@@ -41,7 +41,7 @@ pub let SplitIterator.next(*mut self): (str, bool) {
   }
 
   let result = self.remaining[0:index]
-  self.remaining = self.remaining[index + @len(self.separator):]
+  self.remaining = self.remaining[index + len(self.separator):]
   return result, true
 }
 
@@ -52,7 +52,7 @@ pub let replace(
   replacement: str,
 ): (StringBuilder, bool) {
   let mut result = StringBuilder.init(allocator)
-  if @len(needle) == 0 {
+  if len(needle) == 0 {
     return result, result.append(value.([]u8))
   }
 
@@ -71,7 +71,7 @@ pub let replace(
       result.deinit()
       return StringBuilder.init(allocator), false
     }
-    remaining = remaining[index + @len(needle):]
+    remaining = remaining[index + len(needle):]
   }
   return result, true
 }
@@ -123,22 +123,22 @@ pub let StringBuilder.ensure_capacity(
 }
 
 pub let StringBuilder.append(*mut self, bytes: []u8): bool {
-  if @len(bytes) == 0 {
+  if len(bytes) == 0 {
     return true
   }
-  if @len(bytes) > (~0.(usz)) - self.count {
+  if len(bytes) > (~0.(usz)) - self.count {
     return false
   }
-  if !self.ensure_capacity(self.count + @len(bytes)) {
+  if !self.ensure_capacity(self.count + len(bytes)) {
     return false
   }
 
   let mut index: usz = 0
-  for index < @len(bytes) {
+  for index < len(bytes) {
     self.ptr[self.count + index] = bytes[index]
     index += 1
   }
-  self.count += @len(bytes)
+  self.count += len(bytes)
   return true
 }
 
@@ -147,7 +147,7 @@ pub let StringBuilder.write(
   bytes: []u8,
 ): Result(usz, Error) {
   if !self.append(bytes) { return .Err(Error.OutOfMemory) }
-  return .Ok(@len(bytes))
+  return .Ok(len(bytes))
 }
 
 pub let StringBuilder.read(
@@ -155,7 +155,7 @@ pub let StringBuilder.read(
   buffer: []mut u8,
 ): Result(usz, Error) {
   let remaining = self.count - self.read_offset
-  let count = if @len(buffer) < remaining { @len(buffer) } else { remaining }
+  let count = if len(buffer) < remaining { len(buffer) } else { remaining }
 
   let mut index: usz = 0
   for index < count {

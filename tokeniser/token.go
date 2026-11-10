@@ -95,7 +95,6 @@ const (
 	KeywordIf       KeywordKind = "if"
 	KeywordMatch    KeywordKind = "match"
 	KeywordAs       KeywordKind = "as"
-	KeywordWhen     KeywordKind = "when"
 	KeywordElse     KeywordKind = "else"
 	KeywordFor      KeywordKind = "for"
 	KeywordBreak    KeywordKind = "break"

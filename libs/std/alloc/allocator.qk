@@ -27,7 +27,7 @@ pub let Allocator = type trait {
 }
 
 let checked_size($T: type, count: usz): (usz, bool) {
-  let element_size = @sizeof(T)
+  let element_size = sizeof(T)
 
   if element_size != 0 && count > (~0.(usz)) / element_size {
     return 0, false
@@ -43,7 +43,7 @@ pub let create($T: type,
     return nil, false
   }
 
-  let result, allocated = allocator.allocate_bytes(@sizeof(T), @alignof(T))
+  let result, allocated = allocator.allocate_bytes(sizeof(T), alignof(T))
   return result.(*mut T), allocated
 }
 
@@ -52,7 +52,7 @@ pub let destroy($T: type,
   ptr: *mut T,
 ): void {
   if allocator != nil {
-    allocator.free_bytes(ptr, @sizeof(T), @alignof(T))
+    allocator.free_bytes(ptr, sizeof(T), alignof(T))
   }
 }
 
@@ -69,7 +69,7 @@ pub let allocate($T: type,
     return [], false
   }
 
-  let result, allocated = allocator.allocate_bytes(size, @alignof(T))
+  let result, allocated = allocator.allocate_bytes(size, alignof(T))
   if !allocated {
     return [], false
   }
@@ -84,9 +84,9 @@ pub let free($T: type,
     return
   }
 
-  let size, valid = checked_size(T, @len(memory))
+  let size, valid = checked_size(T, len(memory))
   if valid {
-    allocator.free_bytes(memory[:], size, @alignof(T))
+    allocator.free_bytes(memory[:], size, alignof(T))
   }
 }
 
@@ -99,7 +99,7 @@ pub let resize($T: type,
     return [], false
   }
 
-  let old_size, valid_old_size = checked_size(T, @len(memory))
+  let old_size, valid_old_size = checked_size(T, len(memory))
   let new_size, valid_new_size = checked_size(T, new_count)
   if !valid_old_size || !valid_new_size {
     return [], false
@@ -109,7 +109,7 @@ pub let resize($T: type,
     memory[:],
     old_size,
     new_size,
-    @alignof(T),
+    alignof(T),
   )
   if !resized {
     return [], false
