@@ -1271,13 +1271,8 @@ func (p *Parser) ParseDeclaration() (*DeclarationNode, error) {
 		p.Inc()
 		mutable = true
 	}
-	compileTime := false
 	if p.Match(tokeniser.TokenDollar) {
-		p.Inc()
-		compileTime = true
-	}
-	if mutable && compileTime {
-		return nil, shared.NewError(p.PrevLoc(), "compile-time bindings cannot be mutable")
+		return nil, shared.NewError(p.CurrLoc(), "put `$` before the initializer expression")
 	}
 
 	ident, ok := p.ExpectGet(tokeniser.TokenIdentifier)
@@ -1328,10 +1323,15 @@ func (p *Parser) ParseDeclaration() (*DeclarationNode, error) {
 		TypeNode:   tpe,
 		Mutable:    mutable,
 		Value:      value,
-		Comptime:   compileTime,
+		Comptime:   !mutable && isCompileTimeExpression(value),
 		Attributes: attrs,
 		Loc:        p.SpanFrom(beginLoc),
 	}, nil
+}
+
+func isCompileTimeExpression(value ExpressionNode) bool {
+	_, ok := value.(*CompileTimeExpressionNode)
+	return ok
 }
 
 // parseTypeParameter recognizes a compile-time type parameter in an ordinary

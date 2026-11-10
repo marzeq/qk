@@ -1153,14 +1153,14 @@ QK has an explicit compile-time stage for target and configuration selection. Co
 
 ## Compile-time values
 
-Prefix a binding name with `$` to require compile-time evaluation:
+Prefix an expression with `$` to require compile-time evaluation. Use parentheses to evaluate a compound expression:
 
 ```qk
-let $BufferSize: usz = 4 * 1024
-let $HasFiles = !NoHasFiles
+let BufferSize: usz = $(4 * 1024)
+let HasFiles = $!NoHasFiles
 ```
 
-Compile-time values may be boolean or integer. They have no persistent addressable runtime storage and are materialised as constants at each runtime use; a temporary is created only when a consuming operation requires an address. Untyped integer bindings remain untyped until their use supplies a concrete numeric type.
+Compile-time expressions may appear wherever a value is expected. A binding initialized with a compile-time expression has no persistent addressable runtime storage and is materialised as a constant at each runtime use; a temporary is created only when a consuming operation requires an address. Untyped integer bindings remain untyped until their use supplies a concrete numeric type.
 
 Module-level compile-time bindings may be public and referenced through imported module names. Local bindings are visible in lexical source order.
 
@@ -1170,7 +1170,7 @@ Parameterized calculations use the same `$` binder syntax:
 let StorageSize($T: type) = @sizeof(T)
 ```
 
-Each concrete argument list produces an independently specialized binding. There is no separate initializer keyword: `$` consistently marks compile-time bindings and parameters.
+Each concrete argument list produces an independently specialized binding. There is no separate initializer keyword: `$` marks compile-time expressions and parameters.
 
 ## `when`
 

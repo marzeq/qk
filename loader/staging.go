@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"reflect"
 	"strconv"
 	"strings"
 
@@ -377,6 +378,14 @@ func (s *stageSelector) selectNode(node parser.Node) ([]parser.Node, error) {
 		if err != nil {
 			return nil, err
 		}
+	default:
+		if expression, ok := node.(parser.ExpressionNode); ok {
+			selected, err := s.selectExpression(expression)
+			if err != nil {
+				return nil, err
+			}
+			return []parser.Node{selected}, nil
+		}
 	}
 	return []parser.Node{node}, nil
 }
@@ -402,6 +411,48 @@ func (s *stageSelector) selectExpression(expression parser.ExpressionNode) (pars
 		_, err = s.selectNode(node)
 	case *parser.UnaryOpNode:
 		node.Operand, err = s.selectExpression(node.Operand)
+	case *parser.FieldAccessNode:
+		node.Subject, err = s.selectExpression(node.Subject)
+	case *parser.ReprNode:
+		node.Operand, err = s.selectExpression(node.Operand)
+	case *parser.LambdaNode:
+		node.Body, err = s.selectExpression(node.Body)
+	case *parser.InlineAsmNode:
+		for index := range node.Inputs {
+			node.Inputs[index].Value, err = s.selectExpression(node.Inputs[index].Value)
+			if err != nil {
+				break
+			}
+		}
+	case *parser.SizeOfNode:
+		node.Operand, err = s.selectType(node.Operand)
+		if err == nil {
+			node.Expression, err = s.selectExpression(node.Expression)
+		}
+	case *parser.SizeOfExprNode:
+		node.Operand, err = s.selectExpression(node.Operand)
+	case *parser.AlignOfNode:
+		node.Operand, err = s.selectType(node.Operand)
+		if err == nil {
+			node.Expression, err = s.selectExpression(node.Expression)
+		}
+	case *parser.CompileTimeExpressionNode:
+		value, resolved, evaluationError := s.evaluate(node.Operand)
+		if evaluationError != nil {
+			return nil, evaluationError
+		}
+		if !resolved {
+			if staged, ok := s.evaluated[node]; ok {
+				value, resolved = staged, true
+			} else {
+				s.needsIR = true
+				s.unresolved[node] = struct{}{}
+			}
+		}
+		if resolved {
+			return stageLiteral(value, node.Loc), nil
+		}
+		return expression, nil
 	case *parser.BinaryOpNode:
 		node.Operand1, err = s.selectExpression(node.Operand1)
 		if err == nil {
@@ -704,6 +755,8 @@ func (s *stageSelector) evaluate(node parser.ExpressionNode) (stageValue, bool, 
 		return value, true, nil
 	}
 	switch node := node.(type) {
+	case *parser.CompileTimeExpressionNode:
+		return s.evaluate(node.Operand)
 	case *parser.BoolLiteralNode:
 		return stageValue{kind: stageBool, boolean: node.Value == string(tokeniser.KeywordTrue)}, true, nil
 	case *parser.IntegerLiteralNode:
@@ -935,11 +988,17 @@ func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 		name := fmt.Sprintf("__qk_stage_%d", s.syntheticID)
 		s.syntheticID++
 		names[expression] = name
+		operand := expression
+		if prefixed, ok := expression.(*parser.CompileTimeExpressionNode); ok {
+			operand = prefixed.Operand
+		}
 		staged.Body = append(staged.Body, &parser.DeclarationNode{
-			Name: name, NameLoc: expression.GetLoc(), Value: expression,
+			Name: name, NameLoc: expression.GetLoc(), Value: operand,
 			Comptime: true, Loc: expression.GetLoc(),
 		})
 	}
+	staged = parser.CloneSyntax(staged).(*parser.RootNode)
+	stripCompileTimeExpressions(reflect.ValueOf(staged))
 
 	modules, order, err := s.stageModules(staged)
 	if err != nil {
@@ -1006,6 +1065,38 @@ func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 		}
 	}
 	return nil
+}
+
+// The provisional frontend evaluates the operand normally. The source tree
+// keeps the prefix node until its result can be substituted in the next pass.
+func stripCompileTimeExpressions(value reflect.Value) {
+	if !value.IsValid() {
+		return
+	}
+	if value.Kind() == reflect.Interface {
+		if value.IsNil() {
+			return
+		}
+		if expression, ok := value.Interface().(*parser.CompileTimeExpressionNode); ok {
+			value.Set(reflect.ValueOf(expression.Operand))
+		}
+		stripCompileTimeExpressions(value.Elem())
+		return
+	}
+	switch value.Kind() {
+	case reflect.Pointer:
+		if !value.IsNil() {
+			stripCompileTimeExpressions(value.Elem())
+		}
+	case reflect.Struct:
+		for index := 0; index < value.NumField(); index++ {
+			stripCompileTimeExpressions(value.Field(index))
+		}
+	case reflect.Slice:
+		for index := 0; index < value.Len(); index++ {
+			stripCompileTimeExpressions(value.Index(index))
+		}
+	}
 }
 
 func stageUnavailableDiagnostic(unavailable *ir.CompileTimeUnavailableError) error {
@@ -1098,6 +1189,8 @@ func collectStageCalls(node parser.Node, names map[string]bool) {
 		return
 	}
 	switch node := node.(type) {
+	case *parser.CompileTimeExpressionNode:
+		collectStageCalls(node.Operand, names)
 	case *parser.FunctionCallNode:
 		if identifier, ok := node.Callee.(*parser.IdentifierNode); ok {
 			names[identifier.Name] = true

@@ -2,10 +2,11 @@ module main
 
 import std.io
 
-let $Base = 6
-let $Product = Base * 7
-let $Bits: usz = PointerBits
-let $Enabled = true
+let Base = $6
+let Product = $(Base * 7)
+let Bits: usz = $PointerBits
+let Enabled = $true
+let twice(value: i32): i32 = value * 2
 
 when ReleaseMode == .Release {
   let mode(): str = "release"
@@ -18,8 +19,11 @@ when ReleaseMode == .Release {
 @compiler_assert(PointerBits == 32 || PointerBits == 64, "pointer width")
 
 let main() {
-  let $local: i32 = Product + 1
+  let local: i32 = $(Product + 1)
   assert(Enabled, "compile-time boolean")
+  assert(twice($twice(2)) == 8, "compile-time call argument")
+  let nested: i32 = 1 + $(Product + 1)
+  assert(nested == 44, "compile-time binary operand")
   when OS == .Linux || OS == .MacOS || OS == .Windows {
     assert(local == 43, "compile-time arithmetic")
   } else {

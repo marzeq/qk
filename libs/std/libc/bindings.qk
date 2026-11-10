@@ -229,7 +229,7 @@ when OS == .Windows {
   pub let readdir(directory: *DIR): *mut Dirent @foreign
 }
 
-pub let $EOF: std.ctypes.int = -1
+pub let EOF: std.ctypes.int = $-1
 
 when OS == .Windows {
   pub let fileno(stream: *FILE): std.ctypes.int @foreign(symbol "_fileno")

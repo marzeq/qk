@@ -130,7 +130,7 @@ func TestCompileTimeEvaluationUsesImportedPureLibraryCode(t *testing.T) {
 	libraryRoot := filepath.Join(repositoryRoot, "libs")
 	projectRoot := t.TempDir()
 	mainPath := filepath.Join(projectRoot, "main.qk")
-	source := "module main\nimport std.math\nlet $Answer = std.math.sqrt(16.0)\nlet main() {}\n"
+	source := "module main\nimport std.math\nlet Answer = $std.math.sqrt(16.0)\nlet main() {}\n"
 	if err := os.WriteFile(mainPath, []byte(source), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +167,7 @@ func TestCompileTimeEvaluationRejectsExecutedForeignCall(t *testing.T) {
 	libraryRoot := filepath.Join(repositoryRoot, "libs")
 	projectRoot := t.TempDir()
 	mainPath := filepath.Join(projectRoot, "main.qk")
-	source := "module main\nimport std.libc\nlet $Answer = std.libc.putchar(65)\nlet main() {}\n"
+	source := "module main\nimport std.libc\nlet Answer = $std.libc.putchar(65)\nlet main() {}\n"
 	if err := os.WriteFile(mainPath, []byte(source), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -199,8 +199,8 @@ let sum(x, y: i32) = {
   std.io.print("{}", result)
   result
 }
-let $Answer = sum(1, 2)
-let $Other = std.math.sqrt(16.0)
+let Answer = $sum(1, 2)
+let Other = $std.math.sqrt(16.0)
 let main() {}
 `
 	if err := os.WriteFile(mainPath, []byte(source), 0o644); err != nil {

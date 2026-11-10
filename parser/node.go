@@ -588,6 +588,18 @@ type UnaryOpNode struct {
 	Type    types.Type
 }
 
+// CompileTimeExpressionNode requests evaluation of its operand during staging.
+// Staging replaces this node with the resulting literal before semantic analysis.
+type CompileTimeExpressionNode struct {
+	Operand ExpressionNode
+	Loc     shared.Location
+	Type    types.Type
+}
+
+func (n CompileTimeExpressionNode) GetLoc() shared.Location { return n.Loc }
+func (n *CompileTimeExpressionNode) SetType(t types.Type)   { n.Type = t }
+func (n *CompileTimeExpressionNode) GetType() types.Type    { return n.Type }
+
 func (n UnaryOpNode) GetLoc() shared.Location { return n.Loc }
 func (n *UnaryOpNode) SetType(t types.Type)   { n.Type = t }
 func (n *UnaryOpNode) GetType() types.Type    { return n.Type }

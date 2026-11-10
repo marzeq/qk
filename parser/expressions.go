@@ -278,6 +278,17 @@ func (p *Parser) parseLeftAssociative(
 
 func (p *Parser) ParseUnary() (ExpressionNode, error) {
 	beginLoc := p.CurrLoc()
+	if p.Match(tokeniser.TokenDollar) {
+		p.Inc()
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+		operand, err := p.ParseUnary()
+		if err != nil {
+			return nil, err
+		}
+		return &CompileTimeExpressionNode{Operand: operand, Loc: p.SpanFrom(beginLoc)}, nil
+	}
 	if p.MatchAdjacentPair(tokeniser.TokenPlus) {
 		return nil, shared.NewError(beginLoc, "use ... += 1 instead")
 	}

@@ -78,6 +78,37 @@ func TestTypeParametersRequireDollarBinders(t *testing.T) {
 	}
 }
 
+func TestCompileTimeExpressionPrefix(t *testing.T) {
+	root := parseTestRoot(t, `let x = $(3 + 4)
+let y = 1 + $double(2)
+let mut z = $5
+`)
+	first := root.Body[0].(*DeclarationNode)
+	if !first.Comptime {
+		t.Fatal("immutable binding with a compile-time initializer should be compile-time")
+	}
+	if _, ok := first.Value.(*CompileTimeExpressionNode); !ok {
+		t.Fatalf("unexpected initializer: %T", first.Value)
+	}
+	second := root.Body[1].(*DeclarationNode)
+	if second.Comptime {
+		t.Fatal("a nested compile-time expression should not change the containing binding")
+	}
+	if _, ok := second.Value.(*BinaryOpNode).Operand2.(*CompileTimeExpressionNode); !ok {
+		t.Fatalf("unexpected nested operand: %T", second.Value.(*BinaryOpNode).Operand2)
+	}
+	if root.Body[2].(*DeclarationNode).Comptime {
+		t.Fatal("mutable binding should keep runtime storage")
+	}
+	tokens, err := tokeniser.NewTokeniser("let $old = 1", "test.qk").Tokenise()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewParser(tokens).Parse(); err == nil {
+		t.Fatal("expected old binding prefix to be rejected")
+	}
+}
+
 func TestAngleBracketGenericDeclarationsAreRejected(t *testing.T) {
 	tokens, err := tokeniser.NewTokeniser("let Box<T> = type struct { value: T }", "test.qk").Tokenise()
 	if err != nil {

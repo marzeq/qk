@@ -36,12 +36,13 @@ module test @link(
   else { @compiler_error("wrong conditional link branch") }
 )
 let twice(value: i32): i32 = value * 2
-let $Answer: i32 = twice(21)
+let Answer: i32 = $twice(21)
 when Answer == 42 {
   let selected: i32 = Answer
 } else {
   @compiler_error("regular IR evaluation returned the wrong value")
 }
+
 @compiler_assert(twice(2) == 4, "ordinary function call failed")
 `
 	tokens, err := tokeniser.NewTokeniser(source, "staging.qk").Tokenise()
@@ -75,10 +76,41 @@ when Answer == 42 {
 	}
 }
 
+func TestCompileTimePrefixInNestedValuePositions(t *testing.T) {
+	source := `module test
+let twice(value: i32): i32 = value * 2
+let global: i32 = 1 + $twice(20)
+let main(): i32 = twice($twice(2)) + $(3 + 4)
+`
+	tokens, err := tokeniser.NewTokeniser(source, "nested_prefix.qk").Tokenise()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := parser.NewParser(tokens).Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := SelectCompileTime(root, "test", StageConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	global := root.Body[2].(*parser.DeclarationNode).Value.(*parser.BinaryOpNode)
+	if literal, ok := global.Operand2.(*parser.IntegerLiteralNode); !ok || literal.Value != "40" {
+		t.Fatalf("unexpected global operand: %#v", global.Operand2)
+	}
+	main := root.Body[3].(*parser.FunctionDefNode).Body.(*parser.BinaryOpNode)
+	call := main.Operand1.(*parser.FunctionCallNode)
+	if literal, ok := call.Args[0].(*parser.IntegerLiteralNode); !ok || literal.Value != "4" {
+		t.Fatalf("unexpected call argument: %#v", call.Args[0])
+	}
+	if literal, ok := main.Operand2.(*parser.IntegerLiteralNode); !ok || literal.Value != "7" {
+		t.Fatalf("unexpected binary operand: %#v", main.Operand2)
+	}
+}
+
 func TestCompileTimeBindingExpandsInsideNestedArrayType(t *testing.T) {
 	source := `
 module test
-let $pipe_buffer_size = 32
+let pipe_buffer_size = $32
 let Pipe = type struct { x: f64 }
 let GameState = type struct { pipes: [pipe_buffer_size]Pipe }
 `
@@ -118,7 +150,7 @@ func TestCompileTimeBindingsAreVisibleAcrossModuleFiles(t *testing.T) {
 		return root
 	}
 	consumer := parse("main.qk", "module test\nlet Buffer = type [pipe_buffer_size]u8\nlet use(): i32 = pipe_buffer_size\nlet make(): [pipe_buffer_size]u8 = [0; pipe_buffer_size]\n")
-	provider := parse("state.qk", "module test\nlet $pipe_buffer_size = 32\n")
+	provider := parse("state.qk", "module test\nlet pipe_buffer_size = $32\n")
 	if err := SelectCompileTimeRoots([]*parser.RootNode{consumer, provider}, "test", StageConfig{}); err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +195,7 @@ module test
 import std.io
 let sum(x, y: i32): i32 = x + y
 let main() {
-  let $x = sum(1, 2)
+  let x = $sum(1, 2)
   std.io.print("The sum is: {}\n", x)
 }
 `
