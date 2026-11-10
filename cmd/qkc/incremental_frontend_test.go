@@ -152,6 +152,73 @@ let main() { let selected: i32 = require_four(7) }
 	}
 }
 
+func TestFunctionContextInferenceFollowsCalls(t *testing.T) {
+	const path = "main.qk"
+	const definitions = `module main
+let leaf(): usz = sizeof(i32)
+let relay(): usz = leaf()
+`
+	compile := func(source string) error {
+		_, err := runFrontend(
+			&Args{mainModule: ".", noStdlib: true},
+			loader.StageConfig{NoStdlib: true},
+			map[string]string{path: source}, map[string]string{path: "."},
+			map[string]bool{path: false}, map[string]map[string]string{".": {}},
+			false, false,
+		)
+		return err
+	}
+	if err := compile(definitions + "let Size: usz = $relay()\nlet main() { let size: usz = Size }\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := compile(definitions + "let main() { let size: usz = relay() }\n"); err == nil || !strings.Contains(err.Error(), "runtime entry") {
+		t.Fatalf("expected runtime boundary error, got %v", err)
+	}
+}
+
+func TestFunctionContextInferenceAcrossModules(t *testing.T) {
+	const helperPath = "helper/helper.qk"
+	const mainPath = "main.qk"
+	sources := map[string]string{
+		helperPath: `module helper
+pub let bytes(): usz = sizeof(i32)
+`,
+		mainPath: `module main
+import helper
+let relay(): usz = helper.bytes()
+let main() { let size: usz = relay() }
+`,
+	}
+	_, err := runFrontend(
+		&Args{mainModule: ".", noStdlib: true},
+		loader.StageConfig{NoStdlib: true}, sources,
+		map[string]string{helperPath: "helper", mainPath: "."},
+		map[string]bool{helperPath: false, mainPath: false},
+		map[string]map[string]string{"helper": {}, ".": {}}, false, false,
+	)
+	if err == nil || !strings.Contains(err.Error(), "runtime entry") {
+		t.Fatalf("expected cross-module runtime boundary error, got %v", err)
+	}
+}
+
+func TestSelectedGenericBranchInfersCompileTimeOnly(t *testing.T) {
+	const path = "main.qk"
+	const source = `module main
+let bytes($T: type): usz = $if sizeof(T) == 4 { sizeof(T) } else { 8 }
+let main() { let size: usz = bytes(i32) }
+`
+	_, err := runFrontend(
+		&Args{mainModule: ".", noStdlib: true},
+		loader.StageConfig{NoStdlib: true},
+		map[string]string{path: source}, map[string]string{path: "."},
+		map[string]bool{path: false}, map[string]map[string]string{".": {}},
+		false, false,
+	)
+	if err == nil || !strings.Contains(err.Error(), "runtime entry") {
+		t.Fatalf("expected selected specialization to require compile-time execution, got %v", err)
+	}
+}
+
 func TestImportedTypeFunctionInAnnotation(t *testing.T) {
 	const libraryPath = "types/types.qk"
 	const mainPath = "main.qk"

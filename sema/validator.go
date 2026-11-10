@@ -121,6 +121,10 @@ func (v *Validator) validateNode(node parser.Node) {
 			n.Attributes.Get(attributes.AttributeTypeExport) != nil {
 			v.errorf(n, "function cannot be both foreign and exported")
 		}
+		if n.Symbol != nil && n.Symbol.CompileTimeOnly &&
+			(n.Name == "main" && v.analyser.currentMod == "." || n.Attributes.Get(attributes.AttributeTypeExport) != nil) {
+			v.errorf(n, "function %q requires compile-time execution but is a runtime entry", n.Name)
+		}
 
 		prev := v.currentFunction
 		prevFunctionParameters := v.currentFunctionParameters

@@ -20,6 +20,14 @@ func ComputeModuleOrder(mods map[string]*ModuleInfo, primaryModule string) ([]st
 	return order, nil
 }
 
+func moduleRoots(mods map[string]*ModuleInfo, order []string) []*parser.RootNode {
+	roots := make([]*parser.RootNode, 0, len(order))
+	for _, name := range order {
+		roots = append(roots, mods[name].Root)
+	}
+	return roots
+}
+
 func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, order []string, verbose, debug bool) (errors []error, warnings []error) {
 	for _, name := range order {
 		info := mods[name]
@@ -49,6 +57,7 @@ func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, o
 		errors = append(errors, attributor.Errors()...)
 		return errors, nil
 	}
+	analyser.InferFunctionContexts(moduleRoots(mods, order)...)
 
 	templateValidator := analyser.NewValidator()
 	for _, name := range order {
@@ -70,6 +79,7 @@ func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, o
 		errors = append(errors, attributor.Errors()...)
 		return errors, warnings
 	}
+	analyser.InferFunctionContexts(moduleRoots(mods, order)...)
 
 	if verbose && debug {
 		fmt.Println("completed attribution phase")
@@ -118,6 +128,7 @@ func RunSemanticModule(info *ModuleInfo, analyser *sema.Analyser, verbose, debug
 	}
 	attributor := analyser.NewAttributor()
 	attributor.AttributeGenericTemplates(info.Root)
+	analyser.InferFunctionContexts(info.Root)
 	if len(analyser.Errors()) != 0 || len(attributor.Errors()) != 0 {
 		out := append([]error(nil), analyser.Errors()...)
 		return append(out, attributor.Errors()...), nil
@@ -129,6 +140,7 @@ func RunSemanticModule(info *ModuleInfo, analyser *sema.Analyser, verbose, debug
 		return templateValidator.Errors(), warnings
 	}
 	attributor.AttributeModule(info.Root)
+	analyser.InferFunctionContexts(info.Root)
 	if len(analyser.Errors()) != 0 || len(attributor.Errors()) != 0 {
 		out := append([]error(nil), analyser.Errors()...)
 		return append(out, attributor.Errors()...), warnings
@@ -160,6 +172,7 @@ func RunSemanticModuleBodies(mods map[string]*ModuleInfo, analyser *sema.Analyse
 		out := append([]error(nil), analyser.Errors()...)
 		return append(out, attributor.Errors()...), nil
 	}
+	analyser.InferFunctionContexts(moduleRoots(mods, order)...)
 	templateValidator := analyser.NewValidator()
 	for _, name := range order {
 		templateValidator.ValidateGenericTemplates(mods[name].Root)
@@ -175,6 +188,7 @@ func RunSemanticModuleBodies(mods map[string]*ModuleInfo, analyser *sema.Analyse
 		out := append([]error(nil), analyser.Errors()...)
 		return append(out, attributor.Errors()...), warnings
 	}
+	analyser.InferFunctionContexts(moduleRoots(mods, order)...)
 	validator := analyser.NewValidator()
 	for _, name := range order {
 		validator.ValidateModule(mods[name].Root)

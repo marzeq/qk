@@ -411,6 +411,7 @@ func (a *Analyser) specializeGenericFunction(template *symbols.Symbol, arguments
 			attributor := a.NewAttributor()
 			attributor.attributeNode(cloned)
 			a.errors = append(a.errors, attributor.Errors()...)
+			a.InferFunctionContexts(&parser.RootNode{Body: []parser.Node{cloned}})
 			validator := a.NewValidator()
 			validator.validateNode(cloned)
 			a.errors = append(a.errors, validator.Errors()...)

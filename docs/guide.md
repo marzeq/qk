@@ -1196,7 +1196,7 @@ let identity_type_value(T: type, value: T): T = value
 let seven: i32 = $identity_type_value(i32, 7)
 ```
 
-Function context inference is still pending. The current compiler evaluates ordinary pure functions when a `$` expression or `$if` condition requests them, and reports operations it cannot execute when reached.
+The compiler infers that a function is compile-time-only when its body uses an unprefixed compile-time-only intrinsic, or when it calls another compile-time-only function. This requirement propagates through calls, including across modules. Runtime entry functions cannot depend on compile-time-only functions. Functions without such a requirement can be used in either context; compile-time evaluation reports any unavailable operation it actually reaches.
 
 ## `$if`
 
