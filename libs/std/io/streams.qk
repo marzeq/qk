@@ -90,7 +90,7 @@ pub let FileWriter.open(
   if c_path == nil { return .Err(Error.OutOfMemory) }
 
   let file = std.libc.fopen(c_path, if append { c"ab" } else { c"wb" })
-  allocator.free_bytes(c_path, len(path) + 1, alignof(u8))
+  allocator.free_bytes(c_path, len(path) + 1, $alignof(u8))
   if file == nil { return .Err(std.os.last_error()) }
   return .Ok(.{ handle=file.(*void) })
 }
@@ -151,7 +151,7 @@ pub let FileReader.open(
   if c_path == nil { return .Err(Error.OutOfMemory) }
 
   let file = std.libc.fopen(c_path, c"rb")
-  allocator.free_bytes(c_path, len(path) + 1, alignof(u8))
+  allocator.free_bytes(c_path, len(path) + 1, $alignof(u8))
   if file == nil { return .Err(std.os.last_error()) }
   return .Ok(.{ handle=file.(*void) })
 }

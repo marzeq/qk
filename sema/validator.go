@@ -55,7 +55,7 @@ func (v *Validator) ValidateGenericTemplates(root *parser.RootNode) {
 	v.selectModule(root)
 	for _, node := range root.Body {
 		function, ok := node.(*parser.FunctionDefNode)
-		if !ok || !function.IsGeneric() {
+		if !ok || !function.IsGeneric() || function.DeferredStage {
 			continue
 		}
 		bindings := v.analyser.templateBindings(function.Symbol)
@@ -87,6 +87,10 @@ func (v *Validator) Errors() []error {
 
 func (v *Validator) Warnings() []error {
 	return v.warnings
+}
+
+func (v *Validator) inCompileTimeContext() bool {
+	return v.analyser.staging || v.currentFunction != nil && v.currentFunction.CompileTimeOnly
 }
 
 func (v *Validator) validateNode(node parser.Node) {
@@ -1407,6 +1411,10 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		if !v.completeGenericCall(n, nil) {
 			return
 		}
+		if n.Symbol != nil && n.Symbol.CompileTimeOnly && !v.inCompileTimeContext() {
+			v.errorf(n, "function %q can only be called in a compile-time context; prefix the call with '$'", n.Symbol.Name)
+			return
+		}
 		if n.TaggedUnionType != nil {
 			info, _ := types.TaggedUnion(n.TaggedUnionType)
 			if n.TaggedUnionVariant < 0 || n.TaggedUnionVariant >= len(info.Variants) {
@@ -2215,10 +2223,13 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		*parser.FloatLiteralNode,
 		*parser.BoolLiteralNode,
 		*parser.StringLiteralNode,
-		*parser.EmbedNode,
 		*parser.CStringLiteralNode,
 		*parser.CharLiteralNode,
 		*parser.NilLiteralNode:
+	case *parser.EmbedNode:
+		if !n.CompileTime && !v.inCompileTimeContext() {
+			v.errorf(n, "embed is only available in a compile-time context; use '$embed(...)'")
+		}
 		// nothing to validate
 
 	case *parser.IdentifierNode:
@@ -2232,6 +2243,9 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		v.errorf(n, "'---' is only valid as a declaration initializer, a struct field initializer, or the final struct initializer entry")
 
 	case *parser.SizeOfNode:
+		if !n.CompileTime && !v.inCompileTimeContext() {
+			v.errorf(n, "sizeof is only available in a compile-time context; use '$sizeof(...)'")
+		}
 		if n.Expression != nil {
 			v.validateExpr(n.Expression)
 		}
@@ -2246,6 +2260,9 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		}
 
 	case *parser.SizeOfExprNode:
+		if !n.CompileTime && !v.inCompileTimeContext() {
+			v.errorf(n, "sizeof is only available in a compile-time context; use '$sizeof(...)'")
+		}
 		v.validateExpr(n.Operand)
 		if types.HasError(n.Operand.GetType()) || types.HasError(n.OperandType) {
 			n.SetType(types.ErrorType{})
@@ -2258,6 +2275,9 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		}
 
 	case *parser.AlignOfNode:
+		if !n.CompileTime && !v.inCompileTimeContext() {
+			v.errorf(n, "alignof is only available in a compile-time context; use '$alignof(...)'")
+		}
 		if types.HasError(n.OperandType) {
 			n.SetType(types.ErrorType{})
 			return
@@ -2276,6 +2296,9 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		}
 
 	case *parser.OffsetOfNode:
+		if !n.CompileTime && !v.inCompileTimeContext() {
+			v.errorf(n, "offsetof is only available in a compile-time context; use '$offsetof(...)'")
+		}
 		if types.HasError(n.OperandType) {
 			n.SetType(types.ErrorType{})
 			return

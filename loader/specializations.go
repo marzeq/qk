@@ -17,6 +17,8 @@ type specializationRequest struct {
 	template ir.GenericTemplate
 	args     []types.Type
 	key      string
+	direct   *ir.Function
+	module   string
 }
 
 // SpecializationUnit is the deterministic output of one concrete generic
@@ -71,6 +73,20 @@ func extractGenericSpecializations(modules map[string]*ir.Module, templates map[
 		}
 		template, exists := byName[reference.Module+"\x00"+reference.Name]
 		if !exists {
+			specializedName := irgen.MangleFunctionName(reference.Module, sema.SpecializationName(reference.Module, reference.Name, arguments))
+			if module := modules[reference.Module]; module != nil {
+				for _, function := range module.Functions {
+					if function.Name == specializedName && len(function.Blocks) != 0 {
+						rename(irgen.MangleFunctionName(reference.Module, reference.Name), specializedName)
+						key := "direct:" + specializedName
+						if !queued[key] {
+							queued[key] = true
+							queue = append(queue, specializationRequest{direct: function, module: reference.Module, key: key})
+						}
+						return nil
+					}
+				}
+			}
 			return fmt.Errorf("generic template %s.%s is unavailable", reference.Module, reference.Name)
 		}
 		key := specializationRequestKey(template, arguments)
@@ -164,6 +180,22 @@ func extractGenericSpecializations(modules map[string]*ir.Module, templates map[
 	for len(queue) != 0 {
 		request := queue[0]
 		queue = queue[1:]
+		if request.direct != nil {
+			function := request.direct
+			function.Linkage = ir.LinkageExternal
+			function.Visibility = ir.VisibilityHidden
+			removed[function.Name] = true
+			if err := queueCalls(function); err != nil {
+				return nil, err
+			}
+			result.Functions = append(result.Functions, function)
+			if units != nil {
+				unit := SpecializationUnit{Key: request.key, DefiningModule: request.module, IR: &ir.Module{Functions: []*ir.Function{function}}}
+				addSpecializationExterns(unit.IR)
+				*units = append(*units, unit)
+			}
+			continue
+		}
 		functions, err := ir.InstantiateGenericTemplate(request.template, request.args)
 		if err != nil {
 			return nil, err

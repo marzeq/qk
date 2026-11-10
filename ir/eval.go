@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/marzeq/qk/shared"
+	qktarget "github.com/marzeq/qk/target"
 	"github.com/marzeq/qk/types"
 )
 
@@ -62,13 +63,18 @@ func EvalFloat(value float64, typ types.Type) EvalValue {
 func EvalBool(value bool) EvalValue { return EvalValue{Type: types.PrimitiveBool, Boolean: value} }
 
 type Evaluator struct {
-	Functions map[string]*Function
-	Globals   map[string]EvalValue
-	MaxDepth  int
+	Functions    map[string]*Function
+	Globals      map[string]EvalValue
+	MaxDepth     int
+	TargetTriple string
 }
 
 func NewEvaluator(modules ...*Module) *Evaluator {
-	evaluator := &Evaluator{Functions: make(map[string]*Function), Globals: make(map[string]EvalValue), MaxDepth: 1024}
+	return NewEvaluatorForTarget("", modules...)
+}
+
+func NewEvaluatorForTarget(triple string, modules ...*Module) *Evaluator {
+	evaluator := &Evaluator{Functions: make(map[string]*Function), Globals: make(map[string]EvalValue), MaxDepth: 1024, TargetTriple: triple}
 	for _, module := range modules {
 		for _, function := range module.Functions {
 			if len(function.Blocks) != 0 {
@@ -348,8 +354,26 @@ func (e *Evaluator) run(name string, arguments []EvalValue, depth int) (EvalValu
 				}
 				value.Type = instruction.To
 				frame.values[instruction.Dest] = value
+			case Sizeof:
+				size, _, err := qktarget.LayoutOf(instruction.Type, e.TargetTriple)
+				if err != nil {
+					return EvalValue{}, err
+				}
+				frame.values[instruction.Dest] = EvalInteger(big.NewInt(int64(size)), types.PrimitiveUsz)
+			case Alignof:
+				_, align, err := qktarget.LayoutOf(instruction.Type, e.TargetTriple)
+				if err != nil {
+					return EvalValue{}, err
+				}
+				frame.values[instruction.Dest] = EvalInteger(big.NewInt(int64(align)), types.PrimitiveUsz)
+			case Offsetof:
+				offset, err := qktarget.OffsetOf(instruction.Type, instruction.Field, e.TargetTriple)
+				if err != nil {
+					return EvalValue{}, err
+				}
+				frame.values[instruction.Dest] = EvalInteger(big.NewInt(int64(offset)), types.PrimitiveUsz)
 			case Call:
-				if instruction.Callee != nil || instruction.Generic != nil || instruction.Requirement != nil {
+				if instruction.Callee != nil || instruction.Requirement != nil {
 					return EvalValue{}, annotateUnavailable(
 						&CompileTimeUnavailableError{Detail: "indirect or unresolved calls are not available in a compile-time context"},
 						instruction,
@@ -464,6 +488,12 @@ func (e *Evaluator) operand(operand Operand, frame *evalFrame) (EvalValue, error
 		return EvalBool(operand.BoolValue), nil
 	case OperandZeroConst, OperandNullConst:
 		return zeroEvalValue(operand.Type), nil
+	case OperandSizeofConst:
+		size, _, err := qktarget.LayoutOf(operand.SubjectType, e.TargetTriple)
+		if err != nil {
+			return EvalValue{}, err
+		}
+		return EvalInteger(big.NewInt(int64(size)), types.PrimitiveUsz), nil
 	case OperandStructConst:
 		value := EvalValue{Type: operand.Type, Aggregate: make([]EvalValue, len(operand.Fields))}
 		for index, field := range operand.Fields {

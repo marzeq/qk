@@ -368,10 +368,11 @@ func (n *StringLiteralNode) SetType(t types.Type)   { n.Type = t }
 func (n *StringLiteralNode) GetType() types.Type    { return n.Type }
 
 type EmbedNode struct {
-	Path     string
-	Contents string
-	Loc      shared.Location
-	Type     types.Type
+	Path        string
+	Contents    string
+	CompileTime bool
+	Loc         shared.Location
+	Type        types.Type
 }
 
 func (n EmbedNode) GetLoc() shared.Location { return n.Loc }
@@ -738,6 +739,7 @@ type SizeOfNode struct {
 	Operand     TypeNode
 	Expression  ExpressionNode
 	OperandType types.Type
+	CompileTime bool
 	Loc         shared.Location
 	Type        types.Type
 }
@@ -749,6 +751,7 @@ func (n *SizeOfNode) GetType() types.Type    { return n.Type }
 type SizeOfExprNode struct {
 	Operand     ExpressionNode
 	OperandType types.Type
+	CompileTime bool
 	Loc         shared.Location
 	Type        types.Type
 }
@@ -761,6 +764,7 @@ type AlignOfNode struct {
 	Operand     TypeNode
 	Expression  ExpressionNode
 	OperandType types.Type
+	CompileTime bool
 	Loc         shared.Location
 	Type        types.Type
 }
@@ -773,6 +777,7 @@ type OffsetOfNode struct {
 	Operand     TypeNode
 	OperandType types.Type
 	Field       string
+	CompileTime bool
 	Loc         shared.Location
 	Type        types.Type
 }
@@ -840,6 +845,8 @@ type FunctionDefNode struct {
 	Loc                          shared.Location
 	Symbol                       *symbols.Symbol
 	GenericInstance              bool
+	CompileTimeOnly              bool
+	DeferredStage                bool
 }
 
 type MethodReceiverKind uint8

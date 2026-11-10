@@ -1383,6 +1383,10 @@ func (p *Parser) ParseType() (TypeNode, error) {
 	for p.Match(tokeniser.TokenNewline) {
 		p.Inc()
 	}
+	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordType) {
+		tok := p.Consume()
+		return &NamedTypeNode{Name: "type", Loc: tok.Loc}, nil
+	}
 	if p.matchCompileTimeIf() {
 		return p.parseWhen(WhenType)
 	}

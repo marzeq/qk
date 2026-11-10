@@ -1133,6 +1133,8 @@ let alignment = $alignof(Header)
 
 `offsetof(T, field)` returns the byte offset of a struct field. It is especially useful when checking foreign layouts.
 
+Layout and `embed("path")` operations run only in a compile-time context. Prefix a use in an ordinary value expression with `$`, for example `$offsetof(Header, length)` or `$embed("payload.bin")`. A compile-time-only function with a bare `T: type` parameter may use these operations directly in its body. `len(value)` remains available in both contexts.
+
 `len(value)` returns the length of an array, slice, or string. Array lengths are compile-time constants; slice and string lengths come from their descriptors.
 
 ## Representation access
@@ -1178,7 +1180,21 @@ Each concrete argument list produces an independently specialized binding. There
 let identity($T: type, value: T): T = value
 ```
 
-A bare `T: type` means a different thing: it is an ordinary parameter holding a type value. A function with such a parameter can only run during compilation. This distinction is the basis for future functions that compute types from type values and other compile-time inputs, such as `generate_type_for_json(T: type, json_text: str)`. The current compiler does not yet accept bare `T: type` parameters or type-valued function results.
+A bare `T: type` means a different thing: it is an ordinary parameter holding a type value. A function with such a parameter can only run during compilation. Type-returning functions that return a type name or call another type-returning function work in type annotations:
+
+```qk
+let identity_type(T: type): type = T
+let Number: identity_type(i32) = 7
+```
+
+Type values currently have no general operations. Type-returning functions are limited to type parameters and a direct return of a type name or another type-function call. Functions mixing type parameters with other value parameters, and general type-valued computation, are not implemented yet.
+
+A bare type parameter can also specialize a function that returns an ordinary value. Such a function can only be called from a compile-time expression:
+
+```qk
+let identity_type_value(T: type, value: T): T = value
+let seven: i32 = $identity_type_value(i32, 7)
+```
 
 Function context inference is still pending. The current compiler evaluates ordinary pure functions when a `$` expression or `$if` condition requests them, and reports operations it cannot execute when reached.
 
@@ -1198,7 +1214,7 @@ $if core.build.os == .Windows {
 
 It can select a complete declaration, statement, type, or expression. `else if` chains use compile-time conditions too. Only the selected branch is checked after parsing. It cannot insert fragments such as part of a parameter list, argument list, sequence literal, or individual attribute entry.
 
-Currently, `$if` selection happens before generic specialization, so a condition in a parameterized function cannot yet depend on its `$T` argument.
+Inside a parameterized function, a `$if` condition can depend on a concrete `$T` argument. The compiler selects the branch for each specialization and analyzes only that branch. For example, `$if sizeof(T) == 4 { ... } else { ... }` can produce different bodies for `f(i32)` and `f(i64)`.
 
 The compiler-provided `core.build` package is available with `-nostdlib` and describes the selected target, including during cross compilation. Import it explicitly. Its retained values include:
 

@@ -32,9 +32,9 @@ pub let LibcAllocator.allocate_bytes(
     return nil, false
   }
 
-  let data_align = max_usz(align, alignof(LibcAllocationHeader))
+  let data_align = max_usz(align, $alignof(LibcAllocationHeader))
   let with_padding, valid_padding = checked_add(
-    sizeof(LibcAllocationHeader),
+    $sizeof(LibcAllocationHeader),
     data_align - 1,
   )
   if !valid_padding {
@@ -53,7 +53,7 @@ pub let LibcAllocator.allocate_bytes(
 
   let unaligned_data, valid_data = checked_add(
     allocation.(usz),
-    sizeof(LibcAllocationHeader),
+    $sizeof(LibcAllocationHeader),
   )
   let data_address, valid_alignment = checked_align_forward(
     unaligned_data,
@@ -65,7 +65,7 @@ pub let LibcAllocator.allocate_bytes(
   }
 
   let mut header =
-    (data_address - sizeof(LibcAllocationHeader)).(*mut LibcAllocationHeader)
+    (data_address - $sizeof(LibcAllocationHeader)).(*mut LibcAllocationHeader)
   header.allocation = allocation
   return data_address.(*mut void), true
 }
@@ -81,7 +81,7 @@ pub let LibcAllocator.free_bytes(
   }
 
   let header =
-    (ptr.(usz) - sizeof(LibcAllocationHeader)).(*LibcAllocationHeader)
+    (ptr.(usz) - $sizeof(LibcAllocationHeader)).(*LibcAllocationHeader)
   std.libc.free(header.allocation)
 }
 
@@ -122,7 +122,7 @@ pub let LibcAllocator.allocate(*mut self, $T: type,
     return nil, false
   }
 
-  let result, allocated = self.allocate_bytes(size, alignof(T))
+  let result, allocated = self.allocate_bytes(size, $alignof(T))
   return result.(*mut T), allocated
 }
 
@@ -132,7 +132,7 @@ pub let LibcAllocator.free(*mut self, $T: type,
 ): void {
   let size, valid = checked_size(T, count)
   if valid {
-    self.free_bytes(ptr, size, alignof(T))
+    self.free_bytes(ptr, size, $alignof(T))
   }
 }
 
@@ -151,7 +151,7 @@ pub let LibcAllocator.resize(*mut self, $T: type,
     ptr,
     old_size,
     new_size,
-    alignof(T),
+    $alignof(T),
   )
   return result.(*mut T), resized
 }

@@ -386,6 +386,45 @@ func (a *Analyser) specializeGenericFunction(template *symbols.Symbol, arguments
 
 	instance := &parser.FunctionDefNode{Symbol: instanceSymbol}
 	info.specializations[key] = instance
+	if info.node.DeferredStage {
+		if a.deferredStageSelector == nil {
+			a.errorf(use, "specialization-dependent compile-time selection is unavailable")
+			return nil
+		}
+		cloned := parser.CloneSyntax(info.node).(*parser.FunctionDefNode)
+		cloned.Symbol = instanceSymbol
+		cloned.Name = name
+		cloned.GenericParameters = nil
+		cloned.MethodOwnerGenericParameters = nil
+		cloned.MethodOwnerType = nil
+		cloned.DeferredStage = false
+		cloned.MethodOwner = ""
+		bindings := typeArgumentBindings(template.GenericParameters, arguments)
+		var selectionError error
+		trusted := a.modules[info.module].TrustedStandardLibrary
+		a.withDefinitionContext(info.module, trusted, bindings, func() {
+			selectionError = a.deferredStageSelector(cloned, info.root, bindings)
+			if selectionError != nil {
+				return
+			}
+			a.visitFunction(cloned)
+			attributor := a.NewAttributor()
+			attributor.attributeNode(cloned)
+			a.errors = append(a.errors, attributor.Errors()...)
+			validator := a.NewValidator()
+			validator.validateNode(cloned)
+			a.errors = append(a.errors, validator.Errors()...)
+		})
+		if selectionError != nil {
+			a.errors = append(a.errors, selectionError)
+			delete(info.specializations, key)
+			return nil
+		}
+		cloned.GenericInstance = true
+		*instance = *cloned
+		info.root.Body = append(info.root.Body, instance)
+		return instance
+	}
 
 	symbolsByOriginal := map[*symbols.Symbol]*symbols.Symbol{template: instanceSymbol}
 	mapSymbol := func(original *symbols.Symbol) *symbols.Symbol {

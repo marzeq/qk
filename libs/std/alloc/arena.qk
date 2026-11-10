@@ -142,8 +142,8 @@ let Arena.allocate_chunk(
     return nil
   }
 
-  let header_size = sizeof(ArenaChunk)
-  let data_align = max_usz(requested_align, alignof(ArenaChunk))
+  let header_size = $sizeof(ArenaChunk)
+  let data_align = max_usz(requested_align, $alignof(ArenaChunk))
 
   let with_padding, valid_padding = checked_add(
     header_size,
@@ -427,7 +427,7 @@ pub let Arena.allocate(*mut self, $T: type,
     return nil, false
   }
 
-  let result, allocated = self.allocate_bytes(size, alignof(T))
+  let result, allocated = self.allocate_bytes(size, $alignof(T))
   return result.(*mut T), allocated
 }
 
@@ -439,7 +439,7 @@ pub let Arena.allocate_zeroed(*mut self, $T: type,
     return nil, false
   }
 
-  let result, allocated = self.allocate_bytes(size, alignof(T))
+  let result, allocated = self.allocate_bytes(size, $alignof(T))
   if !allocated {
     return nil, false
   }
@@ -465,7 +465,7 @@ pub let Arena.duplicate(*mut self, $T: type,
   let result, allocated = self.duplicate_bytes(
     source,
     size,
-    alignof(T),
+    $alignof(T),
   )
   return result.(*mut T), allocated
 }
@@ -500,7 +500,7 @@ pub let Arena.free(*mut self, $T: type,
     return
   }
 
-  self.free_bytes(ptr, size, alignof(T))
+  self.free_bytes(ptr, size, $alignof(T))
 }
 
 pub let Arena.resize(*mut self, $T: type,
@@ -518,7 +518,7 @@ pub let Arena.resize(*mut self, $T: type,
     ptr,
     old_size,
     new_size,
-    alignof(T),
+    $alignof(T),
   )
   return result.(*mut T), resized
 }

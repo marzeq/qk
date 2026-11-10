@@ -80,13 +80,13 @@ pub let str.to_i32(self, base: u8 = 10): (i32, bool) {
 
 pub let str.to_usz(self, base: u8 = 10): (usz, bool) {
   let value, ok = self.to_u64(base)
-  if !ok || (sizeof(usz) == 4 && value > 4294967295) { return 0, false }
+  if !ok || ($sizeof(usz) == 4 && value > 4294967295) { return 0, false }
   return value.(usz), true
 }
 
 pub let str.to_isz(self, base: u8 = 10): (isz, bool) {
   let value, ok = self.to_i64(base)
-  if !ok || (sizeof(isz) == 4 && (value < -2147483648 || value > 2147483647)) { return 0, false }
+  if !ok || ($sizeof(isz) == 4 && (value < -2147483648 || value > 2147483647)) { return 0, false }
   return value.(isz), true
 }
 

@@ -136,6 +136,7 @@ func (a *Analyser) collectPlainFunctionSignature(n *parser.FunctionDefNode) {
 		DefinitionModule:  a.currentMod,
 		GenericParameters: genericParameters,
 		Template:          len(genericParameters) != 0,
+		CompileTimeOnly:   n.CompileTimeOnly,
 	}
 
 	if a.defineSymbol(sym, n) {

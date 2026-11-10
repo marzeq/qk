@@ -218,7 +218,7 @@ pub let sleep(duration: Duration): Result(Unit, Error) {
     return .Ok(Unit.{})
   } else {
     let seconds = duration.nanoseconds / NanosecondsPerSecond
-    let maximum_seconds: u64 = if sizeof(std.libc.time_t) == 4 {
+    let maximum_seconds: u64 = if $sizeof(std.libc.time_t) == 4 {
       2147483647
     } else {
       9223372036854775807

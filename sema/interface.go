@@ -54,6 +54,7 @@ type InterfaceSymbol struct {
 	MethodOwnerName    string                   `json:"method_owner_name,omitempty"`
 	Mutable            bool                     `json:"mutable,omitempty"`
 	Comptime           bool                     `json:"comptime,omitempty"`
+	CompileTimeOnly    bool                     `json:"compile_time_only,omitempty"`
 	InlineComptime     bool                     `json:"inline_comptime,omitempty"`
 	ComptimeInteger    string                   `json:"comptime_integer,omitempty"`
 	Attributes         []InterfaceAttribute     `json:"attributes,omitempty"`
@@ -211,6 +212,7 @@ func interfaceSymbol(symbol *symbols.Symbol) InterfaceSymbol {
 		MethodOwner:        interfaceType(symbol.MethodOwnerType),
 		Mutable:            symbol.Mutable,
 		Comptime:           symbol.Comptime,
+		CompileTimeOnly:    symbol.CompileTimeOnly,
 		InlineComptime:     symbol.InlineComptime,
 		ComptimeInteger:    symbol.ComptimeInteger,
 		Attributes:         interfaceAttributes(symbol.Attributes),

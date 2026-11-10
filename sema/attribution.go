@@ -59,7 +59,7 @@ func (a *Attributor) AttributeGenericTemplates(root *parser.RootNode) {
 	a.selectModule(root)
 	for _, node := range root.Body {
 		function, ok := node.(*parser.FunctionDefNode)
-		if !ok || !function.IsGeneric() {
+		if !ok || !function.IsGeneric() || function.DeferredStage {
 			continue
 		}
 		bindings := a.analyser.templateBindings(function.Symbol)

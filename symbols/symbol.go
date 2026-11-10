@@ -20,6 +20,8 @@ type Symbol struct {
 	Mutable  bool
 	Public   bool
 	Comptime bool
+	// CompileTimeOnly functions require a compile-time call site.
+	CompileTimeOnly bool
 	// Referenced records whether source-level name resolution encountered a use
 	// of this binding after its definition.
 	Referenced bool

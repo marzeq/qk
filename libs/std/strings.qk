@@ -124,7 +124,7 @@ pub let str.to_cstr(self, allocator: *mut dyn std.alloc.Allocator): *mut u8 {
 
   let allocated, success = allocator.allocate_bytes(
     len(self) + 1,
-    alignof(u8),
+    $alignof(u8),
   )
   if !success {
     return nil

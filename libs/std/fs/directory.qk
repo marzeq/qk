@@ -121,27 +121,27 @@ pub let DirectoryIterator.open(
     }
     let c_path = path.to_cstr(allocator)
     if c_path == nil {
-      allocator.free_bytes(c_pattern, len(pattern.as_str()) + 1, alignof(u8))
+      allocator.free_bytes(c_pattern, len(pattern.as_str()) + 1, $alignof(u8))
       pattern.deinit()
       return .Err(Error.OutOfMemory)
     }
     let attributes = std.libc.get_file_attributes(c_path)
     let attributes_error = std.libc.get_last_error()
-    allocator.free_bytes(c_path, len(path) + 1, alignof(u8))
+    allocator.free_bytes(c_path, len(path) + 1, $alignof(u8))
     if attributes == std.libc.InvalidFileAttributes {
-      allocator.free_bytes(c_pattern, len(pattern.as_str()) + 1, alignof(u8))
+      allocator.free_bytes(c_pattern, len(pattern.as_str()) + 1, $alignof(u8))
       pattern.deinit()
       return .Err(Error.Native(attributes_error.(i32)))
     }
     if (attributes & std.libc.FileAttributeDirectory) == 0 {
-      allocator.free_bytes(c_pattern, len(pattern.as_str()) + 1, alignof(u8))
+      allocator.free_bytes(c_pattern, len(pattern.as_str()) + 1, $alignof(u8))
       pattern.deinit()
       return .Err(Error.InvalidData)
     }
 
     let handle = std.libc.find_first_file(c_pattern, windows_find_data(result.&mut))
     let error_code = std.libc.get_last_error()
-    allocator.free_bytes(c_pattern, len(pattern.as_str()) + 1, alignof(u8))
+    allocator.free_bytes(c_pattern, len(pattern.as_str()) + 1, $alignof(u8))
     pattern.deinit()
     if handle == (~0.(usz)).(*void) {
       if error_code == std.libc.ErrorFileNotFound || error_code == std.libc.ErrorNoMoreFiles {
@@ -159,7 +159,7 @@ pub let DirectoryIterator.open(
     let c_path = path.to_cstr(allocator)
     if c_path == nil { return .Err(Error.OutOfMemory) }
     let directory = std.libc.opendir(c_path)
-    allocator.free_bytes(c_path, len(path) + 1, alignof(u8))
+    allocator.free_bytes(c_path, len(path) + 1, $alignof(u8))
     if directory == nil { return .Err(std.os.last_error()) }
     result.handle = directory.(*void)
     result.opened = true

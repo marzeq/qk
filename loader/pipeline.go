@@ -237,7 +237,7 @@ func GenerateModuleGenericTemplateIR(info *ModuleInfo) []ir.GenericTemplate {
 	var result []ir.GenericTemplate
 	for _, node := range info.Root.Body {
 		function, ok := node.(*parser.FunctionDefNode)
-		if !ok || !function.IsGeneric() || function.Body == nil {
+		if !ok || !function.IsGeneric() || function.Body == nil || function.DeferredStage {
 			continue
 		}
 		if generated := generator.GenerateGenericTemplate(function); len(generated) != 0 {

@@ -61,6 +61,7 @@ func runFrontend(
 		order: order,
 	}
 	analyser := sema.NewAnalyser()
+	loader.ConfigureDeferredStage(analyser, config)
 	var sourceOrder []string
 	stageModules := make(map[string]*loader.ModuleInfo)
 	for _, name := range order {

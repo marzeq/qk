@@ -1,9 +1,11 @@
 package loader
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/marzeq/qk/attributes"
+	"github.com/marzeq/qk/ir"
 	"github.com/marzeq/qk/parser"
 	"github.com/marzeq/qk/sema"
 	"github.com/marzeq/qk/tokeniser"
@@ -27,6 +29,212 @@ let retained: i32 = 7
 	}
 	if err := SelectCompileTime(root, "test", StageConfig{TargetTriple: "x86_64-unknown-linux-gnu", Freestanding: true}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestTypeReturningFunctionInAnnotation(t *testing.T) {
+	source := `module test
+let identity(T: type): type { return T }
+let relay(T: type): type = identity(T)
+let value: relay(i32) = 7
+`
+	tokens, err := tokeniser.NewTokeniser(source, "type_function.qk").Tokenise()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := parser.NewParser(tokens).Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := SelectCompileTime(root, "test", StageConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	partial, err := CollectModuleInfo(root, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	partial.Path = "test"
+	modules, err := BuildModules([]*PartialModuleInfo{partial})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if errors, _ := RunSemanticModule(modules["test"], sema.NewAnalyser(), false, false); len(errors) != 0 {
+		t.Fatal(errors[0])
+	}
+}
+
+func TestBareTypeParameterRequiresCompileTimeCall(t *testing.T) {
+	for _, test := range []struct {
+		name, call string
+		wantError  bool
+	}{
+		{"compile time", "$identity(i32, 7)", false},
+		{"runtime", "identity(i32, 7)", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			source := "module test\nlet identity(T: type, value: T): T = value\nlet result: i32 = " + test.call + "\n"
+			tokens, err := tokeniser.NewTokeniser(source, "bare_type_parameter.qk").Tokenise()
+			if err != nil {
+				t.Fatal(err)
+			}
+			root, err := parser.NewParser(tokens).Parse()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := SelectCompileTime(root, "test", StageConfig{}); err != nil {
+				t.Fatal(err)
+			}
+			partial, err := CollectModuleInfo(root, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			partial.Path = "test"
+			modules, err := BuildModules([]*PartialModuleInfo{partial})
+			if err != nil {
+				t.Fatal(err)
+			}
+			errors, _ := RunSemanticModule(modules["test"], sema.NewAnalyser(), false, false)
+			if test.wantError != (len(errors) != 0) {
+				t.Fatalf("errors = %v, want error %t", errors, test.wantError)
+			}
+		})
+	}
+}
+
+func TestCompileTimeOnlyFunctionsCompose(t *testing.T) {
+	source := `module test
+let identity(T: type, value: T): T = value
+let relay(T: type, value: T): T = identity(T, value)
+let result: i32 = $relay(i32, 7)
+`
+	tokens, err := tokeniser.NewTokeniser(source, "composed_type_parameter.qk").Tokenise()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := parser.NewParser(tokens).Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := SelectCompileTime(root, "test", StageConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	partial, err := CollectModuleInfo(root, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	partial.Path = "test"
+	modules, err := BuildModules([]*PartialModuleInfo{partial})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if errors, _ := RunSemanticModule(modules["test"], sema.NewAnalyser(), false, false); len(errors) != 0 {
+		t.Fatal(errors[0])
+	}
+}
+
+func TestCompileTimeLayoutUsesSelectedTarget(t *testing.T) {
+	source := "module test\nlet Header = type struct @packed { tag: u8, length: u32 }\nlet size(T: type): usz = sizeof(T)\nlet pointer_bytes: usz = $size(usz)\nlet pointer_alignment: usz = $alignof(usz)\nlet length_offset: usz = $offsetof(Header, length)\n"
+	tokens, err := tokeniser.NewTokeniser(source, "layout_target.qk").Tokenise()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := parser.NewParser(tokens).Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := SelectCompileTime(root, "test", StageConfig{TargetTriple: "wasm32-wasi"}); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"pointer_bytes": "4", "pointer_alignment": "4", "length_offset": "1"}
+	for _, raw := range root.Body[3:] {
+		declaration := raw.(*parser.DeclarationNode)
+		value, ok := declaration.Value.(*parser.IntegerLiteralNode)
+		if !ok || value.Value != want[declaration.Name] {
+			t.Fatalf("%s = %#v, want %s", declaration.Name, declaration.Value, want[declaration.Name])
+		}
+	}
+}
+
+func TestBareLayoutOperationRequiresCompileTimeContext(t *testing.T) {
+	source := "module test\nlet value: usz = sizeof(i32)\n"
+	tokens, err := tokeniser.NewTokeniser(source, "bare_layout.qk").Tokenise()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := parser.NewParser(tokens).Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := SelectCompileTime(root, "test", StageConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	partial, err := CollectModuleInfo(root, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	partial.Path = "test"
+	modules, err := BuildModules([]*PartialModuleInfo{partial})
+	if err != nil {
+		t.Fatal(err)
+	}
+	errors, _ := RunSemanticModule(modules["test"], sema.NewAnalyser(), false, false)
+	if len(errors) == 0 || !strings.Contains(errors[0].Error(), "compile-time context") {
+		t.Fatalf("expected compile-time context diagnostic, got %v", errors)
+	}
+}
+
+func TestGenericCompileTimeBranchDefersUntilSpecialization(t *testing.T) {
+	source := "module test\nlet size_class($T: type): i32 = $if sizeof(T) == 4 { 1 } else { 2 }\nlet small: i32 = size_class(i32)\nlet large: i32 = size_class(i64)\n"
+	tokens, err := tokeniser.NewTokeniser(source, "generic_branch.qk").Tokenise()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := parser.NewParser(tokens).Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := SelectCompileTime(root, "test", StageConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	function := root.Body[1].(*parser.FunctionDefNode)
+	if !function.DeferredStage {
+		t.Fatal("generic $if was selected before its type argument was known")
+	}
+	partial, err := CollectModuleInfo(root, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	partial.Path = "test"
+	modules, err := BuildModules([]*PartialModuleInfo{partial})
+	if err != nil {
+		t.Fatal(err)
+	}
+	analyser := sema.NewAnalyser()
+	ConfigureDeferredStage(analyser, StageConfig{})
+	if errors, _ := RunSemanticModule(modules["test"], analyser, false, false); len(errors) != 0 {
+		t.Fatal(errors[0])
+	}
+	if len(modules["test"].Root.Body) < 6 {
+		t.Fatalf("expected two concrete instances, got %d nodes", len(modules["test"].Root.Body))
+	}
+	irModules, irErrors := GenerateIRModules(modules, "test", []string{"test"}, false, false)
+	if len(irErrors) != 0 {
+		t.Fatal(irErrors[0])
+	}
+	templates := map[string][]ir.GenericTemplate{"test": GenerateModuleGenericTemplateIR(modules["test"])}
+	specializations, err := ExtractGenericSpecializations(irModules, templates, analyser.ModuleInterfaces())
+	if err != nil {
+		t.Fatal(err)
+	}
+	evaluator := ir.NewEvaluator(irModules["test"], specializations)
+	if _, err := evaluator.Run(irModules["test"].Initializer); err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]int64{"small": 1, "large": 2} {
+		value, ok := findEvaluatedGlobal(evaluator.Globals, name)
+		if !ok || value.Integer == nil || value.Integer.Int64() != want {
+			t.Fatalf("%s = %#v, want %d", name, value, want)
+		}
 	}
 }
 

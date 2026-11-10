@@ -36,6 +36,14 @@ type Analyser struct {
 	definitionTypeBindings        map[*symbols.Symbol]map[string]types.Type
 	lambdaCounter                 int
 	lambdaOwnedSymbols            []map[*symbols.Symbol]bool
+	staging                       bool
+	deferredStageSelector         func(*parser.FunctionDefNode, *parser.RootNode, map[string]types.Type) error
+}
+
+func (a *Analyser) SetStaging(staging bool) { a.staging = staging }
+
+func (a *Analyser) SetDeferredStageSelector(selector func(*parser.FunctionDefNode, *parser.RootNode, map[string]types.Type) error) {
+	a.deferredStageSelector = selector
 }
 
 func NewAnalyser() *Analyser {

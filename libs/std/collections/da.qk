@@ -50,7 +50,7 @@ pub let DynamicArray($).ensure_capacity(
     return true
   }
 
-  let element_size = sizeof(T)
+  let element_size = $sizeof(T)
   let maximum_capacity = if element_size == 0 {
     ~0.(usz)
   } else {

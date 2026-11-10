@@ -73,6 +73,9 @@ type stageSelector struct {
 	syntheticID       int
 	environment       *StageEnvironment
 	coreBuildImported bool
+	inFunction        bool
+	genericFunction   *parser.FunctionDefNode
+	typeBindings      map[string]types.Type
 }
 
 // SelectCompileTime lowers unresolved staged expressions through the ordinary
@@ -82,6 +85,9 @@ func SelectCompileTime(root *parser.RootNode, module string, config StageConfig)
 }
 
 func selectCompileTime(root *parser.RootNode, module string, config StageConfig, environment *StageEnvironment) error {
+	if err := lowerTypeFunctions(root); err != nil {
+		return err
+	}
 	selector := &stageSelector{
 		config: config, module: module,
 		bindings: make(map[string]stageValue), evaluated: make(map[parser.ExpressionNode]stageValue),
@@ -219,6 +225,12 @@ func (s *stageSelector) selectNode(node parser.Node) ([]parser.Node, error) {
 			}
 		}
 	case *parser.DeclarationNode:
+		if prefix, ok := node.Value.(*parser.CompileTimeExpressionNode); ok {
+			markLayoutCompileTime(prefix.Operand)
+		}
+		if node.Comptime && (s.inFunction && isLayoutPrefix(node.Value) || isEmbedPrefix(node.Value)) {
+			node.Comptime = false
+		}
 		if node.Comptime {
 			if value, resolved, err := s.evaluate(node.Value); err != nil {
 				return nil, err
@@ -258,6 +270,13 @@ func (s *stageSelector) selectNode(node parser.Node) ([]parser.Node, error) {
 			return nil, err
 		}
 	case *parser.FunctionDefNode:
+		previousFunction := s.inFunction
+		previousGenericFunction := s.genericFunction
+		s.inFunction = true
+		if node.IsGeneric() {
+			s.genericFunction = node
+		}
+		defer func() { s.inFunction, s.genericFunction = previousFunction, previousGenericFunction }()
 		var err error
 		for _, arg := range node.Args {
 			arg.Type, err = s.selectType(arg.Type)
@@ -456,11 +475,19 @@ func (s *stageSelector) selectExpression(expression parser.ExpressionNode) (pars
 			node.Expression, err = s.selectExpression(node.Expression)
 		}
 	case *parser.CompileTimeExpressionNode:
+		markLayoutCompileTime(node.Operand)
+		if isEmbedExpression(node.Operand) || s.inFunction && isLayoutExpression(node.Operand) {
+			return s.selectExpression(node.Operand)
+		}
 		value, resolved, evaluationError := s.evaluate(node.Operand)
 		if evaluationError != nil {
 			return nil, evaluationError
 		}
 		if !resolved {
+			if s.genericFunction != nil {
+				s.genericFunction.DeferredStage = true
+				return expression, nil
+			}
 			if staged, ok := s.evaluated[node]; ok {
 				value, resolved = staged, true
 			} else {
@@ -525,6 +552,47 @@ func (s *stageSelector) selectExpression(expression parser.ExpressionNode) (pars
 		}
 	}
 	return expression, err
+}
+
+func isLayoutPrefix(expression parser.ExpressionNode) bool {
+	prefix, ok := expression.(*parser.CompileTimeExpressionNode)
+	return ok && isLayoutExpression(prefix.Operand)
+}
+
+func isEmbedPrefix(expression parser.ExpressionNode) bool {
+	prefix, ok := expression.(*parser.CompileTimeExpressionNode)
+	return ok && isEmbedExpression(prefix.Operand)
+}
+
+func isEmbedExpression(expression parser.ExpressionNode) bool {
+	_, ok := expression.(*parser.EmbedNode)
+	return ok
+}
+
+func isLayoutExpression(expression parser.ExpressionNode) bool {
+	switch expression.(type) {
+	case *parser.SizeOfNode, *parser.SizeOfExprNode, *parser.AlignOfNode, *parser.OffsetOfNode, *parser.EmbedNode:
+		return true
+	}
+	return false
+}
+
+func markLayoutCompileTime(expression parser.ExpressionNode) bool {
+	switch node := expression.(type) {
+	case *parser.SizeOfNode:
+		node.CompileTime = true
+	case *parser.SizeOfExprNode:
+		node.CompileTime = true
+	case *parser.AlignOfNode:
+		node.CompileTime = true
+	case *parser.OffsetOfNode:
+		node.CompileTime = true
+	case *parser.EmbedNode:
+		node.CompileTime = true
+	default:
+		return false
+	}
+	return true
 }
 
 func (s *stageSelector) selectType(typeNode parser.TypeNode) (parser.TypeNode, error) {
@@ -633,6 +701,10 @@ func (s *stageSelector) selectWhen(node *parser.WhenNode) ([]parser.Node, bool, 
 			return nil, false, err
 		}
 		if !resolved {
+			if s.genericFunction != nil {
+				s.genericFunction.DeferredStage = true
+				return nil, false, nil
+			}
 			s.needsIR = true
 			s.unresolved[branch.Condition] = struct{}{}
 			return nil, false, nil
@@ -654,8 +726,12 @@ func (s *stageSelector) selectWhenValue(node *parser.WhenNode) (parser.Node, boo
 		condition, resolved, err := s.evaluate(branch.Condition)
 		if err != nil || !resolved {
 			if err == nil {
-				s.needsIR = true
-				s.unresolved[branch.Condition] = struct{}{}
+				if s.genericFunction != nil {
+					s.genericFunction.DeferredStage = true
+				} else {
+					s.needsIR = true
+					s.unresolved[branch.Condition] = struct{}{}
+				}
 			}
 			return nil, resolved, err
 		}
@@ -781,6 +857,57 @@ func stageTypeNode(value stageValue, loc shared.Location) parser.TypeNode {
 	return &parser.NamedTypeNode{Name: string(primitive), Loc: loc}
 }
 
+func (s *stageSelector) resolveStageType(node parser.TypeNode) (types.Type, bool) {
+	switch typed := node.(type) {
+	case *parser.NamedTypeNode:
+		if typed.ModName != "" || len(typed.TypeArguments) != 0 {
+			return nil, false
+		}
+		if value, ok := s.typeBindings[typed.Name]; ok {
+			return value, true
+		}
+		switch typed.Name {
+		case "i8":
+			return types.PrimitiveI8, true
+		case "i16":
+			return types.PrimitiveI16, true
+		case "i32":
+			return types.PrimitiveI32, true
+		case "i64":
+			return types.PrimitiveI64, true
+		case "u8":
+			return types.PrimitiveU8, true
+		case "u16":
+			return types.PrimitiveU16, true
+		case "u32":
+			return types.PrimitiveU32, true
+		case "u64":
+			return types.PrimitiveU64, true
+		case "f32":
+			return types.PrimitiveF32, true
+		case "f64":
+			return types.PrimitiveF64, true
+		case "isz":
+			return types.PrimitiveIsz, true
+		case "usz":
+			return types.PrimitiveUsz, true
+		case "bool":
+			return types.PrimitiveBool, true
+		}
+	case *parser.PointerTypeNode:
+		base, ok := s.resolveStageType(typed.BaseType)
+		if ok {
+			return types.PointerType{Base: base, Mutable: typed.Mutable}, true
+		}
+	case *parser.SliceTypeNode:
+		base, ok := s.resolveStageType(typed.ElementType)
+		if ok {
+			return types.SliceType{Base: base, Mutable: typed.Mutable}, true
+		}
+	}
+	return nil, false
+}
+
 func (s *stageSelector) evaluate(node parser.ExpressionNode) (stageValue, bool, error) {
 	if value, ok := s.evaluated[node]; ok {
 		return value, true, nil
@@ -803,6 +930,36 @@ func (s *stageSelector) evaluate(node parser.ExpressionNode) (stageValue, bool, 
 	case *parser.IdentifierNode:
 		value, ok := s.bindings[node.Name]
 		return value, ok, nil
+	case *parser.SizeOfNode:
+		resolved, ok := s.resolveStageType(node.Operand)
+		if !ok {
+			return stageValue{}, false, nil
+		}
+		size, _, err := qktarget.LayoutOf(resolved, s.config.TargetTriple)
+		if err != nil {
+			return stageValue{}, false, shared.NewError(node.Loc, "%v", err)
+		}
+		return stageValue{kind: stageInteger, integer: big.NewInt(int64(size)), typ: types.PrimitiveUsz}, true, nil
+	case *parser.AlignOfNode:
+		resolved, ok := s.resolveStageType(node.Operand)
+		if !ok {
+			return stageValue{}, false, nil
+		}
+		_, align, err := qktarget.LayoutOf(resolved, s.config.TargetTriple)
+		if err != nil {
+			return stageValue{}, false, shared.NewError(node.Loc, "%v", err)
+		}
+		return stageValue{kind: stageInteger, integer: big.NewInt(int64(align)), typ: types.PrimitiveUsz}, true, nil
+	case *parser.OffsetOfNode:
+		resolved, ok := s.resolveStageType(node.Operand)
+		if !ok {
+			return stageValue{}, false, nil
+		}
+		offset, err := qktarget.OffsetOf(resolved, node.Field, s.config.TargetTriple)
+		if err != nil {
+			return stageValue{}, false, shared.NewError(node.Loc, "%v", err)
+		}
+		return stageValue{kind: stageInteger, integer: big.NewInt(int64(offset)), typ: types.PrimitiveUsz}, true, nil
 	case *parser.FieldAccessNode:
 		if name, ok := coreBuildField(node); ok && s.coreBuildImported {
 			value, resolved := s.targetValue(name)
@@ -1027,6 +1184,8 @@ func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 		return err
 	}
 	analyser := sema.NewAnalyser()
+	analyser.SetStaging(true)
+	ConfigureDeferredStage(analyser, s.config)
 	if errors, _ := RunSemanticPipeline(modules, analyser, order, false, false); len(errors) != 0 {
 		return errors[0]
 	}
@@ -1052,7 +1211,7 @@ func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 	if specializations != nil {
 		allIR = append(allIR, specializations)
 	}
-	evaluator := ir.NewEvaluator(allIR...)
+	evaluator := ir.NewEvaluatorForTarget(s.config.TargetTriple, allIR...)
 	moduleIR := irModules[s.module]
 	if moduleIR.Initializer != "" {
 		if _, err := evaluator.Run(moduleIR.Initializer); err != nil {

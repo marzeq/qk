@@ -105,7 +105,7 @@ func (a *Analyser) visitFunction(n *parser.FunctionDefNode) {
 		arg.Symbol = paramSym
 	}
 
-	if n.Body != nil {
+	if n.Body != nil && !n.DeferredStage {
 		a.visit(n.Body)
 	}
 	a.current = prev
