@@ -37,6 +37,8 @@ func (a *Analyser) resolveTypeNode(n parser.TypeNode) types.Type {
 
 func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Type {
 	switch t := n.(type) {
+	case *parser.DistinctTypeNode:
+		return a.resolveTypeNodeAt(t.Base, indirect)
 	case *parser.ResolvedTypeNode:
 		return t.Value
 	case *parser.ConstantTypeNode:

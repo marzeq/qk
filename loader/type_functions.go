@@ -96,7 +96,7 @@ func lowerTypeFunctionsInBody(body []parser.Node) ([]parser.Node, error) {
 		transparent := true
 		switch typeNode.(type) {
 		case *parser.StructTypeNode, *parser.EnumTypeNode, *parser.FlagsTypeNode,
-			*parser.UnionTypeNode, *parser.TraitTypeNode, *parser.OpaqueTypeNode:
+			*parser.UnionTypeNode, *parser.TraitTypeNode, *parser.OpaqueTypeNode, *parser.DistinctTypeNode:
 			transparent = false
 		}
 		body[index] = &parser.TypeAliasNode{
@@ -110,6 +110,9 @@ func lowerTypeFunctionsInBody(body []parser.Node) ([]parser.Node, error) {
 			continue
 		}
 		var methods []*parser.FunctionDefNode
+		if len(alias.Methods) != 0 {
+			methods, alias.Methods = alias.Methods, nil
+		}
 		switch value := alias.Type.(type) {
 		case *parser.StructTypeNode:
 			methods, value.Methods = value.Methods, nil
@@ -118,6 +121,8 @@ func lowerTypeFunctionsInBody(body []parser.Node) ([]parser.Node, error) {
 		case *parser.FlagsTypeNode:
 			methods, value.Methods = value.Methods, nil
 		case *parser.UnionTypeNode:
+			methods, value.Methods = value.Methods, nil
+		case *parser.DistinctTypeNode:
 			methods, value.Methods = value.Methods, nil
 		}
 		body = append(body, methodNodes(methods)...)

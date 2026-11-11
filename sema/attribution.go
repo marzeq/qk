@@ -1110,7 +1110,11 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 		var target types.Type
 		view := n.StaticTraitView
 		if n.ToType != nil {
-			target, view = a.analyser.resolveCastTarget(n.ToType)
+			if n.Type != nil {
+				target = n.Type
+			} else {
+				target, view = a.analyser.resolveCastTarget(n.ToType)
+			}
 		} else {
 			target = n.Type
 			if n.Checked && n.CheckedType != nil {

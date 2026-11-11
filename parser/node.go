@@ -224,6 +224,16 @@ type StructField struct {
 	Type   TypeNode
 	Spread ExpressionNode
 }
+
+type DistinctTypeNode struct {
+	Base    TypeNode
+	Methods []*FunctionDefNode
+	Loc     shared.Location
+}
+
+func (n DistinctTypeNode) GetLoc() shared.Location { return n.Loc }
+func (n DistinctTypeNode) _type()                  {}
+
 type StructTypeNode struct {
 	Fields     []StructField
 	Methods    []*FunctionDefNode
@@ -943,6 +953,7 @@ type TypeAliasNode struct {
 	Name              string
 	GenericParameters []GenericParameterNode
 	Type              TypeNode
+	Methods           []*FunctionDefNode
 	Transparent       bool
 	DeferredStage     bool
 	Pub               bool

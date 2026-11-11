@@ -685,6 +685,8 @@ func (s *stageSelector) selectType(typeNode parser.TypeNode) (parser.TypeNode, e
 	}
 	var err error
 	switch node := typeNode.(type) {
+	case *parser.DistinctTypeNode:
+		node.Base, err = s.selectType(node.Base)
 	case *parser.ConstantTypeNode:
 		if value, resolved, evaluationError := s.evaluate(node.Value); evaluationError != nil {
 			return nil, evaluationError

@@ -24,7 +24,7 @@ func (a *Analyser) typeValueFromSyntax(expression parser.ExpressionNode) types.T
 		}
 		switch expression.Value.(type) {
 		case *parser.StructTypeNode, *parser.EnumTypeNode, *parser.FlagsTypeNode,
-			*parser.UnionTypeNode, *parser.TraitTypeNode, *parser.OpaqueTypeNode:
+			*parser.UnionTypeNode, *parser.TraitTypeNode, *parser.OpaqueTypeNode, *parser.DistinctTypeNode:
 		default:
 			return value
 		}

@@ -935,8 +935,12 @@ func (p *Parser) ParseTypeAlias() (*TypeAliasNode, error) {
 		if !p.Expect(tokeniser.TokenCloseParen) {
 			return nil, shared.NewError(p.PrevLoc(), "expected ')' after distinct type")
 		}
+		methods, err := p.parseDistinctMethods()
+		if err != nil {
+			return nil, err
+		}
 		return &TypeAliasNode{Name: name.Value, GenericParameters: genericParameters,
-			Type: value, Loc: p.SpanFrom(beginLoc)}, nil
+			Type: value, Methods: methods, Loc: p.SpanFrom(beginLoc)}, nil
 	}
 	// A bare reference is an alias; a constructor creates a new type.
 	switch p.Peek().Value {
@@ -959,6 +963,33 @@ func (p *Parser) ParseTypeAlias() (*TypeAliasNode, error) {
 		Transparent:       transparent,
 		Loc:               p.SpanFrom(beginLoc),
 	}, nil
+}
+
+func (p *Parser) parseDistinctMethods() ([]*FunctionDefNode, error) {
+	if !p.Match(tokeniser.TokenOpenCurly) {
+		return nil, nil
+	}
+	p.Inc()
+	p.typeLiteralDepth++
+	defer func() { p.typeLiteralDepth-- }()
+	var methods []*FunctionDefNode
+	for {
+		for p.Match(tokeniser.TokenNewline, tokeniser.TokenSemicolon, tokeniser.TokenComma) {
+			p.Inc()
+		}
+		if p.Match(tokeniser.TokenCloseCurly) {
+			p.Inc()
+			return methods, nil
+		}
+		if !p.atLexicalMethod() {
+			return nil, shared.NewError(p.CurrLoc(), "distinct type body only accepts methods")
+		}
+		method, err := p.parseLexicalMethod()
+		if err != nil {
+			return nil, err
+		}
+		methods = append(methods, method)
+	}
 }
 
 func (p *Parser) ParseImport() (*ImportNode, error) {
@@ -1316,7 +1347,7 @@ func (p *Parser) bindingParametersIntroduce(initializer string) bool {
 				}
 				if initializer == "type" {
 					switch p.Peek().Value {
-					case string(tokeniser.KeywordStruct), string(tokeniser.KeywordEnum), string(tokeniser.KeywordUnion), string(tokeniser.KeywordTrait), string(tokeniser.KeywordOpaque), "flags":
+					case string(tokeniser.KeywordStruct), string(tokeniser.KeywordEnum), string(tokeniser.KeywordUnion), string(tokeniser.KeywordTrait), string(tokeniser.KeywordOpaque), "flags", "distinct":
 						return true
 					}
 				}

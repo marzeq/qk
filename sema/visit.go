@@ -290,7 +290,7 @@ func (a *Analyser) visitExpression(expr parser.ExpressionNode) {
 		// trait specializations (and their default templates) exist before the
 		// template attribution/validation passes begin.
 		if e.ToType != nil {
-			a.resolveCastTarget(e.ToType)
+			e.Type, e.StaticTraitView = a.resolveCastTarget(e.ToType)
 		}
 
 	case *parser.ReprNode:

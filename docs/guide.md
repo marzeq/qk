@@ -575,6 +575,27 @@ let raw: u64 = 42
 let user: UserId = raw.(UserId)
 ```
 
+A distinct type can declare methods in an optional body. `Self` names the
+distinct type; casting to its representation is explicit:
+
+```qk
+let UserId = distinct(u64) {
+  let raw(self): u64 = self.(u64)
+  let from(value: u64): UserId = value.(UserId)
+}
+
+let id = UserId.from(42)
+let number = id.raw()
+```
+
+The same body works on a parameterized distinct type, and its methods can use
+the captured type parameter. A type factory can return `distinct(T)` with a
+lexical method body as well.
+
+`distinct(T)` is also a type value inside a compile-time function. Each
+constructor expression has its own nominal identity, even if two use the same
+representation. A local binding can name that result in an annotation or cast.
+
 A bare type reference creates a transparent alias:
 
 ```qk

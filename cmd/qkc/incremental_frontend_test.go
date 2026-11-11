@@ -56,12 +56,31 @@ func TestDirectTypeConstructorsAndFactory(t *testing.T) {
 	const source = `module main
 let Pair = struct { left: i32, right: i32 }
 let Byte = u8
-let UserId = distinct(u64)
+let UserId = distinct(u64) {
+  let raw(self): u64 = self.(u64)
+  let from(raw: u64): UserId = raw.(UserId)
+}
 let Box(T: type): type = struct { value: T }
+let NumberTag(T: type): type = distinct(T) {
+  let raw(self): T = self.(T)
+}
+let Tagged($T: type) = distinct(T) {
+  let raw(self): T = self.(T)
+}
 let main() {
   let pair: Pair = .{ left=1, right=2 }
   let box: Box(i32) = .{ value=pair.left }
   let user: UserId = 7.(UserId)
+  let raw: u64 = user.raw()
+  let made: UserId = UserId.from(raw)
+  let tagged: Tagged(i32) = 8.(Tagged(i32))
+  let tagged_raw: i32 = tagged.raw()
+  let function_tag: NumberTag(u8) = 9.(NumberTag(u8))
+  let function_raw: u8 = function_tag.raw()
+  _ = made
+  _ = tagged_raw
+  _ = function_tag
+  _ = function_raw
 }
 `
 	_, err := runFrontend(
@@ -325,11 +344,18 @@ let distinct_locations(): bool {
   let second = struct { value: i32 }
   return first != second
 }
+let local_distinct(): bool {
+  let first = distinct(u64)
+  let second = distinct(u64)
+  let sample: first = 7.(first)
+  return first != second && sizeof(first) == sizeof(u64) && core.types.static_type(sample) == first
+}
 let Computed: usz = $make_type()
 let FieldSize: usz = $field_size()
 let SameType: bool = $same_type()
 let StaticType: bool = $inspect_static_type(7)
 let DistinctLocations: bool = $distinct_locations()
+let LocalDistinct: bool = $local_distinct()
 let BuilderSignature: bool = $builder_signature()
 let EnumAndFlags: bool = $enum_and_flags()
 let UnionBuilderWorks: bool = $union_builder()
@@ -365,10 +391,10 @@ let main() {
 	found := 0
 	for _, node := range frontend.modules["."].Root.Body {
 		declaration, ok := node.(*parser.DeclarationNode)
-		if !ok || (declaration.Name != "Computed" && declaration.Name != "FieldSize" && declaration.Name != "SameType" && declaration.Name != "StaticType" && declaration.Name != "DistinctLocations" && declaration.Name != "BuilderSignature" && declaration.Name != "EnumAndFlags" && declaration.Name != "UnionBuilderWorks" && declaration.Name != "RecursiveBuilderWorks" && declaration.Name != "SeparateInputs" && declaration.Name != "RepeatFactory") {
+		if !ok || (declaration.Name != "Computed" && declaration.Name != "FieldSize" && declaration.Name != "SameType" && declaration.Name != "StaticType" && declaration.Name != "DistinctLocations" && declaration.Name != "LocalDistinct" && declaration.Name != "BuilderSignature" && declaration.Name != "EnumAndFlags" && declaration.Name != "UnionBuilderWorks" && declaration.Name != "RecursiveBuilderWorks" && declaration.Name != "SeparateInputs" && declaration.Name != "RepeatFactory") {
 			continue
 		}
-		if declaration.Name == "SameType" || declaration.Name == "StaticType" || declaration.Name == "DistinctLocations" || declaration.Name == "BuilderSignature" || declaration.Name == "EnumAndFlags" || declaration.Name == "UnionBuilderWorks" || declaration.Name == "RecursiveBuilderWorks" || declaration.Name == "SeparateInputs" || declaration.Name == "RepeatFactory" {
+		if declaration.Name == "SameType" || declaration.Name == "StaticType" || declaration.Name == "DistinctLocations" || declaration.Name == "LocalDistinct" || declaration.Name == "BuilderSignature" || declaration.Name == "EnumAndFlags" || declaration.Name == "UnionBuilderWorks" || declaration.Name == "RecursiveBuilderWorks" || declaration.Name == "SeparateInputs" || declaration.Name == "RepeatFactory" {
 			literal, ok := declaration.Value.(*parser.BoolLiteralNode)
 			if !ok || literal.Value != "true" {
 				t.Fatalf("compile-time type equality produced %#v", declaration.Value)
@@ -382,7 +408,7 @@ let main() {
 		}
 		found++
 	}
-	if found != 11 {
+	if found != 12 {
 		t.Fatalf("found %d computed declarations", found)
 	}
 }

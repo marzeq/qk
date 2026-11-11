@@ -711,6 +711,13 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 		}
 		return &TypeValueExprNode{Value: value, Loc: value.GetLoc()}, nil
 	}
+	if p.Match(tokeniser.TokenIdentifier) && p.Peek().Value == "distinct" && p.Next().Type == tokeniser.TokenOpenParen {
+		value, err := p.ParseDistinctType()
+		if err != nil {
+			return nil, err
+		}
+		return &TypeValueExprNode{Value: value, Loc: value.GetLoc()}, nil
+	}
 	if p.Match(tokeniser.TokenPipe, tokeniser.TokenLogicalOr) {
 		return p.ParseLambdaExpression()
 	}
@@ -918,6 +925,26 @@ func (p *Parser) ParseTerm() (ExpressionNode, error) {
 	}
 
 	return nil, shared.NewError(p.CurrLoc(), "unexpected token %s", p.Peek())
+}
+
+func (p *Parser) ParseDistinctType() (*DistinctTypeNode, error) {
+	begin := p.CurrLoc()
+	p.Inc()
+	if !p.Expect(tokeniser.TokenOpenParen) {
+		return nil, shared.NewError(p.PrevLoc(), "expected '(' after distinct")
+	}
+	base, err := p.ParseType()
+	if err != nil {
+		return nil, err
+	}
+	if !p.Expect(tokeniser.TokenCloseParen) {
+		return nil, shared.NewError(p.PrevLoc(), "expected ')' after distinct type")
+	}
+	methods, err := p.parseDistinctMethods()
+	if err != nil {
+		return nil, err
+	}
+	return &DistinctTypeNode{Base: base, Methods: methods, Loc: p.SpanFrom(begin)}, nil
 }
 
 func (p *Parser) ParseLambdaExpression() (*LambdaNode, error) {
