@@ -1,13 +1,13 @@
 package main
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"runtime/pprof"
+	"sync"
 
 	"github.com/marzeq/qk/attributes"
 	"github.com/marzeq/qk/ir"
@@ -153,15 +153,11 @@ func main() {
 			}
 		}
 	}
-	specializationUnits, err := loader.ExtractGenericSpecializationUnits(irModules, genericTemplates, frontend.interfaces)
+	specializations, err := loader.ExtractGenericSpecializations(irModules, genericTemplates, frontend.interfaces)
 	check(err)
-	specializationMetadata := make(map[string]loader.SpecializationUnit, len(specializationUnits))
-	for _, unit := range specializationUnits {
-		digest := sha256.Sum256([]byte(unit.Key))
-		name := loader.SpecializationModule + "." + hex.EncodeToString(digest[:8])
-		irModules[name] = unit.IR
-		specializationMetadata[name] = unit
-		order = append(order, name)
+	if len(specializations.Functions) != 0 {
+		irModules[loader.SpecializationModule] = specializations
+		order = append(order, loader.SpecializationModule)
 	}
 	if args.outputType == OutputExecutable {
 		if !args.freestanding && !args.noStdlib {
@@ -188,26 +184,14 @@ func main() {
 	artifacts := make(map[string]*cachedArtifact, len(llvmOutputs))
 	moduleHashes := make(map[string]string, len(llvmOutputs))
 	for moduleName, llvmOutput := range llvmOutputs {
-		if _, specialized := specializationMetadata[moduleName]; !specialized {
-			moduleHashes[moduleName] = implementationHash(moduleName, llvmOutput)
-		}
+		moduleHashes[moduleName] = implementationHash(moduleName, llvmOutput)
 	}
 	for moduleName, llvmOutput := range llvmOutputs {
 		if cache == nil {
 			artifacts[moduleName] = &cachedArtifact{ImplementationHash: implementationHash(moduleName, llvmOutput), Objects: make(map[string][]byte)}
 			continue
 		}
-		var path string
-		if unit, specialized := specializationMetadata[moduleName]; specialized {
-			ownerHash := moduleHashes[unit.DefiningModule]
-			if ownerHash == "" {
-				ownerHash = specializationOwnerHash(moduleHashes)
-			}
-			digest := sha256.Sum256([]byte(unit.Key))
-			path = cache.specializationPath(ownerHash, hex.EncodeToString(digest[:]))
-		} else {
-			path = cache.modulePath(moduleHashes[moduleName])
-		}
+		path := cache.modulePath(moduleHashes[moduleName])
 		artifactPaths[moduleName] = path
 		artifactHash := implementationHash(moduleName, llvmOutput)
 		artifact, ok := loadCachedArtifact(path, artifactHash)
@@ -329,13 +313,16 @@ func main() {
 		return
 	}
 
-	var buildDirs []string
-	var objFiles []string
+	buildDirs := make([]string, len(order))
+	objFiles := make([]string, len(order))
+	compileErrors := make([]error, len(order))
+	compileSlots := make(chan struct{}, min(runtime.GOMAXPROCS(0), 4))
+	var compileJobs sync.WaitGroup
 	const objectKey = cachedNativeObjectKey
-	for _, moduleName := range order {
+	for index, moduleName := range order {
 		buildDir, err := emitLLVMFile(llvmOutputs[moduleName])
 		check(err)
-		buildDirs = append(buildDirs, buildDir)
+		buildDirs[index] = buildDir
 
 		if !args.keepBuildDir {
 			defer os.RemoveAll(buildDir)
@@ -353,24 +340,36 @@ func main() {
 		}
 
 		objFile := filepath.Join(buildDir, "module.o")
+		objFiles[index] = objFile
 		artifact := artifacts[moduleName]
 		if data := artifact.Objects[objectKey]; len(data) != 0 && os.WriteFile(objFile, data, 0o644) == nil {
 			if args.verbose {
 				fmt.Printf("used cached object for module %s\n", moduleName)
 			}
 		} else {
-			objFile, err = compileLLVMModule(buildDir, moduleName, llvmOutputs[moduleName], args)
-			check(err)
-			if data, readErr := os.ReadFile(objFile); readErr == nil {
-				artifact.Objects[objectKey] = data
-				if path := artifactPaths[moduleName]; path != "" {
-					if storeErr := storeCachedArtifact(path, artifact); storeErr != nil && args.verbose {
-						fmt.Fprintf(os.Stderr, "warning: failed to update module artifact %s: %v\n", moduleName, storeErr)
+			compileSlots <- struct{}{}
+			compileJobs.Add(1)
+			go func() {
+				defer compileJobs.Done()
+				defer func() { <-compileSlots }()
+				_, compileErrors[index] = compileLLVMModule(buildDir, moduleName, llvmOutputs[moduleName], args)
+				if compileErrors[index] != nil {
+					return
+				}
+				if data, readErr := os.ReadFile(objFile); readErr == nil {
+					artifact.Objects[objectKey] = data
+					if path := artifactPaths[moduleName]; path != "" {
+						if storeErr := storeCachedArtifact(path, artifact); storeErr != nil && args.verbose {
+							fmt.Fprintf(os.Stderr, "warning: failed to update module artifact %s: %v\n", moduleName, storeErr)
+						}
 					}
 				}
-			}
+			}()
 		}
-		objFiles = append(objFiles, objFile)
+	}
+	compileJobs.Wait()
+	for _, err := range compileErrors {
+		check(err)
 	}
 	if hostedRuntime != "" {
 		buildDir, err := emitLLVMFile(hostedRuntime)
