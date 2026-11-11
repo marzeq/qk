@@ -104,7 +104,7 @@ func (g *Generator) GenerateRoots(roots []*parser.RootNode) *ir.Module {
 	for _, root := range roots {
 		for _, node := range root.Body {
 			if node, ok := node.(*parser.DeclarationNode); ok {
-				if len(node.GenericParameters) != 0 || node.Symbol.InlineComptime {
+				if len(node.ParameterizedParameters) != 0 || node.Symbol.InlineComptime {
 					continue
 				}
 				g.generateGlobalDeclaration(node)
@@ -118,7 +118,7 @@ func (g *Generator) GenerateRoots(roots []*parser.RootNode) *ir.Module {
 			if !ok {
 				continue
 			}
-			if node.IsGeneric() {
+			if node.IsParameterized() {
 				continue
 			}
 			if node.Body == nil {
@@ -456,11 +456,11 @@ func (g *Generator) GenerateFunction(fn *parser.FunctionDefNode) {
 	}
 }
 
-// GenerateGenericTemplate lowers an attributed generic body into symbolic QK
+// GenerateParameterizedTemplate lowers an attributed parameterized body into symbolic QK
 // IR. Type parameters deliberately remain in the result and are substituted
 // before target lowering.
-func (g *Generator) GenerateGenericTemplate(fn *parser.FunctionDefNode) []*ir.Function {
-	if fn == nil || !fn.IsGeneric() {
+func (g *Generator) GenerateParameterizedTemplate(fn *parser.FunctionDefNode) []*ir.Function {
+	if fn == nil || !fn.IsParameterized() {
 		return nil
 	}
 	if g.Module == nil {
@@ -2044,10 +2044,10 @@ func (g *Generator) generateCastExpr(node *parser.CastNode) ir.Operand {
 		return g.generateTraitUnwrap(node)
 	}
 	assertionMatches := node.AssertionMatches
-	if node.GenericAssertion {
+	if node.ParameterizedAssertion {
 		assertionMatches = node.Operand.GetType().Equals(targetType)
 	}
-	if (node.GenericAssertion || node.StaticAssertion || node.StaticTraitView != nil) && !assertionMatches {
+	if (node.ParameterizedAssertion || node.StaticAssertion || node.StaticTraitView != nil) && !assertionMatches {
 		return g.generateFailedStaticAssertion(node, targetType)
 	}
 
@@ -2284,7 +2284,7 @@ func (g *Generator) ensureTraitVTable(node *parser.CastNode, trait types.TraitTy
 		}
 		functionOperand := ir.FunctionConstOperand(fnName, fnType)
 		if method.TemplateSymbol != nil {
-			functionOperand.Generic = &ir.GenericReference{
+			functionOperand.Parameterized = &ir.ParameterizedReference{
 				Module: method.TemplateSymbol.DefinitionModule, Name: method.TemplateSymbol.Name,
 				TypeArguments: append([]types.Type(nil), method.TypeArguments...),
 			}
@@ -3405,29 +3405,29 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 	if runtimeBuiltin {
 		g.addExternForCall("__qk_"+node.Symbol.Name, callSig, "", true)
 	}
-	var genericReference *ir.GenericReference
+	var parameterizedReference *ir.ParameterizedReference
 	var requirementReference *ir.TraitRequirementReference
-	genericSymbol := node.Symbol
-	if genericSymbol == nil {
+	parameterizedSymbol := node.Symbol
+	if parameterizedSymbol == nil {
 		if member, ok := node.Callee.(*parser.FieldAccessNode); ok {
-			genericSymbol = member.MethodSymbol
+			parameterizedSymbol = member.MethodSymbol
 		}
 	}
-	if genericSymbol != nil && genericSymbol.TemplateSymbol != nil {
-		template := genericSymbol.TemplateSymbol
-		genericReference = &ir.GenericReference{
+	if parameterizedSymbol != nil && parameterizedSymbol.TemplateSymbol != nil {
+		template := parameterizedSymbol.TemplateSymbol
+		parameterizedReference = &ir.ParameterizedReference{
 			Module: template.DefinitionModule, Name: template.Name,
-			TypeArguments: append([]types.Type(nil), genericSymbol.TypeArguments...),
+			TypeArguments: append([]types.Type(nil), parameterizedSymbol.TypeArguments...),
 		}
-	} else if genericSymbol != nil && genericSymbol.Template {
-		genericReference = &ir.GenericReference{Module: genericSymbol.DefinitionModule, Name: genericSymbol.Name}
-		for _, parameter := range genericSymbol.GenericParameters {
-			genericReference.TypeArguments = append(genericReference.TypeArguments, parameter)
+	} else if parameterizedSymbol != nil && parameterizedSymbol.Template {
+		parameterizedReference = &ir.ParameterizedReference{Module: parameterizedSymbol.DefinitionModule, Name: parameterizedSymbol.Name}
+		for _, parameter := range parameterizedSymbol.ParameterizedParameters {
+			parameterizedReference.TypeArguments = append(parameterizedReference.TypeArguments, parameter)
 		}
 	}
-	if genericSymbol != nil && genericSymbol.TraitRequirement && len(genericSymbol.Signature.Parameters) != 0 {
+	if parameterizedSymbol != nil && parameterizedSymbol.TraitRequirement && len(parameterizedSymbol.Signature.Parameters) != 0 {
 		requirementReference = &ir.TraitRequirementReference{
-			Name: genericSymbol.Name, ReceiverType: genericSymbol.Signature.Parameters[0],
+			Name: parameterizedSymbol.Name, ReceiverType: parameterizedSymbol.Signature.Parameters[0],
 		}
 	}
 
@@ -3438,7 +3438,7 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 			Args:            args,
 			CompileTimeArgs: compileTimeArgs,
 			Signature:       callSig,
-			Generic:         genericReference,
+			Parameterized:   parameterizedReference,
 			Requirement:     requirementReference,
 			SourceName:      sourceCallName(node.Callee),
 			SourceLoc:       sourceCallLoc(node),
@@ -3453,7 +3453,7 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 	g.Emit(ir.Call{
 		Dest: dst, Name: name, Callee: callee, Args: args, Signature: callSig,
 		CompileTimeArgs: compileTimeArgs,
-		Generic:         genericReference, Requirement: requirementReference,
+		Parameterized:   parameterizedReference, Requirement: requirementReference,
 		SourceName: sourceCallName(node.Callee), SourceLoc: sourceCallLoc(node),
 	})
 	return ir.ValueOperand(dst, node.GetType())

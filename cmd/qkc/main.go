@@ -80,23 +80,6 @@ func main() {
 	if args.outputType == OutputExecutable && discovered[0].Name != "main" {
 		fatal("cannot build executable from package %q: package must declare module main", discovered[0].Name)
 	}
-	cache, cacheErr := newArtifactCache(args)
-	if cacheErr != nil && args.verbose {
-		fmt.Fprintf(os.Stderr, "warning: module artifact cache is unavailable: %v\n", cacheErr)
-	}
-	if args.dumpIR || args.dumpLLVM || args.dumpAsm {
-		cache = nil
-	}
-	buildHash := buildInputHash(args, compileTimeSources, sourcePackagePaths)
-	if cache != nil && !args.run {
-		if snapshot, ok := cache.loadBuildSnapshot(buildHash); ok {
-			if args.verbose {
-				fmt.Println("used cached lowered QK build")
-			}
-			check(runCachedBuildSnapshot(cache, snapshot, args))
-			return
-		}
-	}
 	frontend, err := runFrontend(
 		args, comptimeConfig, compileTimeSources, sourcePackagePaths, trustedSources, importResolutions, args.verbose, args.debug,
 	)
@@ -116,7 +99,7 @@ func main() {
 			}
 		}
 	}
-	irModules, genericTemplates := frontend.irModules, frontend.templates
+	irModules, parameterizedTemplates := frontend.irModules, frontend.templates
 	if args.freestanding {
 		foundEntry := false
 		if primary := irModules[args.mainModule]; primary != nil {
@@ -132,7 +115,6 @@ func main() {
 		}
 	}
 	var warnings = frontend.warnings
-	var displayedWarnings []string
 	for _, warning := range warnings {
 		mode := args.warningMode
 		if diagnostic, ok := warning.(shared.Error); ok {
@@ -143,7 +125,6 @@ func main() {
 		switch mode {
 		case WarningModeShow:
 			text := warning.Error()
-			displayedWarnings = append(displayedWarnings, text)
 			fmt.Println(text)
 		case WarningModeError:
 			if diagnostic, ok := warning.(shared.Error); ok {
@@ -153,7 +134,7 @@ func main() {
 			}
 		}
 	}
-	specializations, err := loader.ExtractGenericSpecializations(irModules, genericTemplates, frontend.interfaces)
+	specializations, err := loader.ExtractParameterizedSpecializations(irModules, parameterizedTemplates, frontend.methodTargets)
 	check(err)
 	if len(specializations.Functions) != 0 {
 		irModules[loader.SpecializationModule] = specializations
@@ -180,26 +161,6 @@ func main() {
 			args.target,
 		)
 	}
-	artifactPaths := make(map[string]string, len(llvmOutputs))
-	artifacts := make(map[string]*cachedArtifact, len(llvmOutputs))
-	moduleHashes := make(map[string]string, len(llvmOutputs))
-	for moduleName, llvmOutput := range llvmOutputs {
-		moduleHashes[moduleName] = implementationHash(moduleName, llvmOutput)
-	}
-	for moduleName, llvmOutput := range llvmOutputs {
-		if cache == nil {
-			artifacts[moduleName] = &cachedArtifact{ImplementationHash: implementationHash(moduleName, llvmOutput), Objects: make(map[string][]byte)}
-			continue
-		}
-		path := cache.modulePath(moduleHashes[moduleName])
-		artifactPaths[moduleName] = path
-		artifactHash := implementationHash(moduleName, llvmOutput)
-		artifact, ok := loadCachedArtifact(path, artifactHash)
-		if !ok {
-			artifact = &cachedArtifact{ImplementationHash: artifactHash, Objects: make(map[string][]byte)}
-		}
-		artifacts[moduleName] = artifact
-	}
 	mainInitializer := ""
 	userMain := ""
 	if mainIR := irModules[args.mainModule]; mainIR != nil {
@@ -213,16 +174,6 @@ func main() {
 	check(err)
 	if hostedRuntime != "" {
 		llvmOutputs["__qk.runtime"] = hostedRuntime
-		runtimeHash := implementationHash("__qk.runtime", hostedRuntime)
-		artifact := &cachedArtifact{ImplementationHash: runtimeHash, Objects: make(map[string][]byte)}
-		if cache != nil {
-			path := cache.modulePath(runtimeHash)
-			artifactPaths["__qk.runtime"] = path
-			if loaded, ok := loadCachedArtifact(path, runtimeHash); ok {
-				artifact = loaded
-			}
-		}
-		artifacts["__qk.runtime"] = artifact
 	}
 
 	if args.dumpIR {
@@ -250,7 +201,7 @@ func main() {
 		switch fn := stmt.(type) {
 		case *parser.FunctionDefNode:
 			if fn.Name == "main" && !args.freestanding {
-				if len(fn.GenericParameters) != 0 {
+				if len(fn.ParameterizedParameters) != 0 {
 					fatal("%v", shared.NewError(fn.Loc, "main function cannot have compile-time type parameters"))
 				}
 				if len(fn.Args) != 0 {
@@ -318,7 +269,6 @@ func main() {
 	compileErrors := make([]error, len(order))
 	compileSlots := make(chan struct{}, min(runtime.GOMAXPROCS(0), 4))
 	var compileJobs sync.WaitGroup
-	const objectKey = cachedNativeObjectKey
 	for index, moduleName := range order {
 		buildDir, err := emitLLVMFile(llvmOutputs[moduleName])
 		check(err)
@@ -341,31 +291,13 @@ func main() {
 
 		objFile := filepath.Join(buildDir, "module.o")
 		objFiles[index] = objFile
-		artifact := artifacts[moduleName]
-		if data := artifact.Objects[objectKey]; len(data) != 0 && os.WriteFile(objFile, data, 0o644) == nil {
-			if args.verbose {
-				fmt.Printf("used cached object for module %s\n", moduleName)
-			}
-		} else {
-			compileSlots <- struct{}{}
-			compileJobs.Add(1)
-			go func() {
-				defer compileJobs.Done()
-				defer func() { <-compileSlots }()
-				_, compileErrors[index] = compileLLVMModule(buildDir, moduleName, llvmOutputs[moduleName], args)
-				if compileErrors[index] != nil {
-					return
-				}
-				if data, readErr := os.ReadFile(objFile); readErr == nil {
-					artifact.Objects[objectKey] = data
-					if path := artifactPaths[moduleName]; path != "" {
-						if storeErr := storeCachedArtifact(path, artifact); storeErr != nil && args.verbose {
-							fmt.Fprintf(os.Stderr, "warning: failed to update module artifact %s: %v\n", moduleName, storeErr)
-						}
-					}
-				}
-			}()
-		}
+		compileSlots <- struct{}{}
+		compileJobs.Add(1)
+		go func() {
+			defer compileJobs.Done()
+			defer func() { <-compileSlots }()
+			_, compileErrors[index] = compileLLVMModule(buildDir, moduleName, llvmOutputs[moduleName], args)
+		}()
 	}
 	compileJobs.Wait()
 	for _, err := range compileErrors {
@@ -383,23 +315,8 @@ func main() {
 			check(dumpAssemblyFile(buildDir))
 		}
 		objFile := filepath.Join(buildDir, "module.o")
-		artifact := artifacts["__qk.runtime"]
-		if data := artifact.Objects[objectKey]; len(data) != 0 && os.WriteFile(objFile, data, 0o644) == nil {
-			if args.verbose {
-				fmt.Println("used cached object for hosted runtime")
-			}
-		} else {
-			objFile, err = compileLLVMModule(buildDir, "hosted runtime", hostedRuntime, args)
-			check(err)
-			if data, readErr := os.ReadFile(objFile); readErr == nil {
-				artifact.Objects[objectKey] = data
-				if path := artifactPaths["__qk.runtime"]; path != "" {
-					if storeErr := storeCachedArtifact(path, artifact); storeErr != nil && args.verbose {
-						fmt.Fprintf(os.Stderr, "warning: failed to update runtime artifact: %v\n", storeErr)
-					}
-				}
-			}
-		}
+		objFile, err = compileLLVMModule(buildDir, "hosted runtime", hostedRuntime, args)
+		check(err)
 		objFiles = append(objFiles, objFile)
 	}
 	stat, err := os.Stat(args.output)
@@ -422,9 +339,6 @@ func main() {
 
 	err = linkObjects(objFiles, moduleLinks, linkRoots, args)
 	check(err)
-	if cache != nil {
-		storeSuccessfulBuildSnapshot(cache, buildHash, order, artifactPaths, moduleLinks, linkRoots, displayedWarnings, args.verbose)
-	}
 
 	if args.keepBuildDir {
 		for _, buildDir := range buildDirs {

@@ -32,7 +32,7 @@ func (w *debugWalker) walkNode(node parser.Node) {
 		}
 
 	case *parser.FunctionDefNode:
-		if n.IsGeneric() {
+		if n.IsParameterized() {
 			break
 		}
 		if n.Symbol == nil || n.Symbol.Signature == nil {
@@ -56,7 +56,7 @@ func (w *debugWalker) walkNode(node parser.Node) {
 		w.walkNode(n.Action)
 
 	case *parser.DeclarationNode:
-		if len(n.GenericParameters) != 0 {
+		if len(n.ParameterizedParameters) != 0 {
 			break
 		}
 		if n.Name == "_" {

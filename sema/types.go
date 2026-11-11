@@ -113,16 +113,16 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 				return types.ErrorType{}
 			}
 			if sym.Template {
-				info := a.genericAliases[sym]
+				info := a.parameterizedAliases[sym]
 				if info == nil {
 					a.errorf(t, "unsupported parameterized type %q", t.Name)
 					return types.ErrorType{}
 				}
-				// The generic representation decides whether a recursive argument is
+				// The parameterized representation decides whether a recursive argument is
 				// stored by value or behind indirection. Preserve a recursive reference
 				// until specialization has exposed that representation.
-				arguments := a.resolveGenericArgumentsAt(t.TypeArguments, true)
-				specialization := a.specializeGenericAlias(info, arguments, t, indirect)
+				arguments := a.resolveParameterizedArgumentsAt(t.TypeArguments, true)
+				specialization := a.specializeParameterizedAlias(info, arguments, t, indirect)
 				if specialization == nil {
 					return types.ErrorType{}
 				}
@@ -156,13 +156,13 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 			return types.ErrorType{}
 		}
 		if sym.Template {
-			info := a.genericAliases[sym]
+			info := a.parameterizedAliases[sym]
 			if info == nil {
 				a.errorf(t, "unsupported parameterized type %q", t.Name)
 				return types.ErrorType{}
 			}
-			arguments := a.resolveGenericArgumentsAt(t.TypeArguments, true)
-			specialization := a.specializeGenericAlias(info, arguments, t, indirect)
+			arguments := a.resolveParameterizedArgumentsAt(t.TypeArguments, true)
+			specialization := a.specializeParameterizedAlias(info, arguments, t, indirect)
 			if specialization == nil {
 				return types.ErrorType{}
 			}
@@ -214,17 +214,17 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 		previousTraitContext := a.resolvingTraitMethodTypes
 		a.resolvingTraitMethodTypes = true
 		for i, method := range t.Methods {
-			genericParameters := a.makeGenericParameters(
+			parameterizedParameters := a.makeParameterizedParameters(
 				"<trait-method:"+method.Name+"@"+method.Loc.String()+">",
-				method.GenericParameters,
+				method.ParameterizedParameters,
 			)
 			previousBindings := a.typeParameterBindings
-			if len(genericParameters) != 0 {
-				bindings := make(map[string]types.Type, len(previousBindings)+len(genericParameters))
+			if len(parameterizedParameters) != 0 {
+				bindings := make(map[string]types.Type, len(previousBindings)+len(parameterizedParameters))
 				for name, binding := range previousBindings {
 					bindings[name] = binding
 				}
-				for _, parameter := range genericParameters {
+				for _, parameter := range parameterizedParameters {
 					bindings[parameter.Name] = parameter
 				}
 				a.typeParameterBindings = bindings
@@ -241,7 +241,7 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 				receiver = types.TraitReceiverMutablePointer
 			}
 			methods[i] = types.TraitMethod{
-				Name: method.Name, GenericParameters: genericParameters, Receiver: receiver,
+				Name: method.Name, ParameterizedParameters: parameterizedParameters, Receiver: receiver,
 				Parameters: params, ReturnType: a.resolveTypeNode(method.ReturnType),
 				HasDefault: method.Body != nil,
 			}

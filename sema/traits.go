@@ -86,7 +86,7 @@ func (a *Analyser) structuralConformance(from types.Type, target types.TraitPoin
 			return nil, false
 		}
 		available := types.TraitMethod{
-			Name: requirement.Name, GenericParameters: method.GenericParameters,
+			Name: requirement.Name, ParameterizedParameters: method.ParameterizedParameters,
 			Receiver: method.MethodReceiver, Parameters: sig.Parameters[1:], ReturnType: sig.ReturnType,
 		}
 		if !traitMethodShapeMatches(requirement, available, pointer.Base) {
@@ -177,17 +177,17 @@ func traitImplementsTrait(source, target types.TraitType) bool {
 func traitMethodShapeMatches(required, available types.TraitMethod, self types.Type) bool {
 	if available.Name != required.Name || available.Receiver != required.Receiver ||
 		len(available.Parameters) != len(required.Parameters) ||
-		len(available.GenericParameters) != len(required.GenericParameters) {
+		len(available.ParameterizedParameters) != len(required.ParameterizedParameters) {
 		return false
 	}
 
-	substitutions := make(map[string]types.Type, len(required.GenericParameters))
-	for i, parameter := range required.GenericParameters {
-		substitutions[parameter.Key()] = available.GenericParameters[i]
+	substitutions := make(map[string]types.Type, len(required.ParameterizedParameters))
+	for i, parameter := range required.ParameterizedParameters {
+		substitutions[parameter.Key()] = available.ParameterizedParameters[i]
 	}
-	for i, parameter := range required.GenericParameters {
+	for i, parameter := range required.ParameterizedParameters {
 		requiredConstraint := substituteTraitMethodType(parameter.Constraint, substitutions, self)
-		availableConstraint := available.GenericParameters[i].Constraint
+		availableConstraint := available.ParameterizedParameters[i].Constraint
 		if !optionalTypesEqual(requiredConstraint, availableConstraint) {
 			return false
 		}

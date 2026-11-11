@@ -38,11 +38,11 @@
       "negativeNotApplicable": true
     },
     {
-      "name": "generics",
+      "name": "parameterization",
       "positive": [
-        "generics/identity",
-        "generics/imported_alias_method",
-        "generics/dynamic_array_append"
+        "parameterization/identity",
+        "parameterization/imported_alias_method",
+        "parameterization/dynamic_array_append"
       ],
       "negativeNotApplicable": true
     },
@@ -124,13 +124,13 @@
       "positive": ["types/aggregates"],
       "negative": [
         "diagnostics/duplicate_field",
-        "diagnostics/recursive_generic_by_value"
+        "diagnostics/recursive_parameterized_by_value"
       ]
     },
     {
-      "name": "generic inference diagnostics",
-      "positive": ["generics/identity"],
-      "negative": ["diagnostics/generic_inference"]
+      "name": "parameterized inference diagnostics",
+      "positive": ["parameterization/identity"],
+      "negative": ["diagnostics/parameterized_inference"]
     },
     {
       "name": "entry-point diagnostics",

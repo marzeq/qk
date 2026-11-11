@@ -15,10 +15,10 @@ type Type interface {
 	String() string
 }
 
-// DetachForSerialization returns an equivalent type graph without runtime-only
-// recursive AliasRef target pointers. Stable module/name references are enough
-// to reconnect aliases when a module interface is loaded.
-func DetachForSerialization(value Type) Type {
+// DetachAliasTargets copies a type graph without recursive AliasRef target
+// pointers. Substitution keeps these references by module and name so it can
+// traverse recursive types without following an endless cycle.
+func DetachAliasTargets(value Type) Type {
 	if value == nil {
 		return nil
 	}
@@ -26,30 +26,30 @@ func DetachForSerialization(value Type) Type {
 	case *AliasRef:
 		return &AliasRef{Module: value.Module, Name: value.Name}
 	case TypeParameter:
-		value.Constraint = DetachForSerialization(value.Constraint)
-		value.ValueType = DetachForSerialization(value.ValueType)
+		value.Constraint = DetachAliasTargets(value.Constraint)
+		value.ValueType = DetachAliasTargets(value.ValueType)
 		return value
 	case DefinedType:
-		value.Underlying = DetachForSerialization(value.Underlying)
+		value.Underlying = DetachAliasTargets(value.Underlying)
 		value.TypeArguments = detachTypes(value.TypeArguments)
 		return value
 	case PointerType:
-		value.Base = DetachForSerialization(value.Base)
+		value.Base = DetachAliasTargets(value.Base)
 		return value
 	case SliceType:
-		value.Base = DetachForSerialization(value.Base)
+		value.Base = DetachAliasTargets(value.Base)
 		return value
 	case ArrayType:
-		value.Base = DetachForSerialization(value.Base)
+		value.Base = DetachAliasTargets(value.Base)
 		return value
 	case SequenceType:
-		value.Base = DetachForSerialization(value.Base)
+		value.Base = DetachAliasTargets(value.Base)
 		return value
 	case StructType:
 		value.Fields = detachFields(value.Fields)
 		if value.TaggedUnion != nil {
 			info := *value.TaggedUnion
-			info.Tag = DetachForSerialization(info.Tag)
+			info.Tag = DetachAliasTargets(info.Tag)
 			info.Variants = append([]TaggedUnionVariant(nil), info.Variants...)
 			for index := range info.Variants {
 				info.Variants[index].Fields = detachFields(info.Variants[index].Fields)
@@ -64,21 +64,21 @@ func DetachForSerialization(value Type) Type {
 		value.Methods = append([]TraitMethod(nil), value.Methods...)
 		for index := range value.Methods {
 			value.Methods[index].Parameters = detachTypes(value.Methods[index].Parameters)
-			value.Methods[index].ReturnType = DetachForSerialization(value.Methods[index].ReturnType)
-			value.Methods[index].GenericParameters = append([]TypeParameter(nil), value.Methods[index].GenericParameters...)
-			for parameter := range value.Methods[index].GenericParameters {
-				constraint := value.Methods[index].GenericParameters[parameter].Constraint
-				value.Methods[index].GenericParameters[parameter].Constraint = DetachForSerialization(constraint)
+			value.Methods[index].ReturnType = DetachAliasTargets(value.Methods[index].ReturnType)
+			value.Methods[index].ParameterizedParameters = append([]TypeParameter(nil), value.Methods[index].ParameterizedParameters...)
+			for parameter := range value.Methods[index].ParameterizedParameters {
+				constraint := value.Methods[index].ParameterizedParameters[parameter].Constraint
+				value.Methods[index].ParameterizedParameters[parameter].Constraint = DetachAliasTargets(constraint)
 			}
 		}
 		return value
 	case TraitPointerType:
-		value.Trait = DetachForSerialization(value.Trait).(TraitType)
+		value.Trait = DetachAliasTargets(value.Trait).(TraitType)
 		return value
 	case FunctionType:
 		value.Parameters = detachTypes(value.Parameters)
-		value.ReturnType = DetachForSerialization(value.ReturnType)
-		value.VariadicElement = DetachForSerialization(value.VariadicElement)
+		value.ReturnType = DetachAliasTargets(value.ReturnType)
+		value.VariadicElement = DetachAliasTargets(value.VariadicElement)
 		return value
 	case MultipleReturnType:
 		value.Types = detachTypes(value.Types)
@@ -88,8 +88,8 @@ func DetachForSerialization(value Type) Type {
 	}
 }
 
-// SubstituteParameters replaces declaration-scoped generic parameters in a
-// detached type graph. Bindings are keyed by TypeParameter.Key().
+// SubstituteParameters replaces declaration-scoped type parameters in a
+// copied type graph. Bindings are keyed by TypeParameter.Key().
 func SubstituteParameters(value Type, bindings map[string]Type) Type {
 	if value == nil {
 		return nil
@@ -102,7 +102,7 @@ func SubstituteParameters(value Type, bindings map[string]Type) Type {
 		parameter.ValueType = SubstituteParameters(parameter.ValueType, bindings)
 		return parameter
 	}
-	detached := DetachForSerialization(value)
+	detached := DetachAliasTargets(value)
 	switch value := detached.(type) {
 	case DefinedType:
 		value.Underlying = SubstituteParameters(value.Underlying, bindings)
@@ -173,7 +173,7 @@ func substituteFields(values []shared.Pair[string, Type], bindings map[string]Ty
 func detachTypes(values []Type) []Type {
 	result := make([]Type, len(values))
 	for index, value := range values {
-		result[index] = DetachForSerialization(value)
+		result[index] = DetachAliasTargets(value)
 	}
 	return result
 }
@@ -181,7 +181,7 @@ func detachTypes(values []Type) []Type {
 func detachFields(values []shared.Pair[string, Type]) []shared.Pair[string, Type] {
 	result := append([]shared.Pair[string, Type](nil), values...)
 	for index := range result {
-		result[index].R = DetachForSerialization(result[index].R)
+		result[index].R = DetachAliasTargets(result[index].R)
 	}
 	return result
 }
@@ -302,7 +302,7 @@ func HasSelfType(t Type) bool {
 }
 
 // TypeParameter is a declaration-scoped placeholder used only while describing
-// a generic binding. Owner makes equally named parameters from different
+// a parameterized binding. Owner makes equally named parameters from different
 // declarations distinct.
 type TypeParameter struct {
 	Owner      string
@@ -379,11 +379,11 @@ func (NoInitializerType) String() string         { return "<no initializer>" }
 // DefinedType is a nominal user-defined type. Its underlying type determines
 // representation and explicit cast compatibility, but never implicit coercion.
 type DefinedType struct {
-	Module        string
-	Name          string
-	Underlying    Type
-	GenericName   string
-	TypeArguments []Type
+	Module            string
+	Name              string
+	Underlying        Type
+	ParameterizedName string
+	TypeArguments     []Type
 }
 
 // StrType returns the nominal builtin string type. Its representation is a
@@ -548,11 +548,11 @@ func Substitute(t Type, arguments map[string]Type) Type {
 	case TraitType:
 		t.Methods = append([]TraitMethod(nil), t.Methods...)
 		for i := range t.Methods {
-			t.Methods[i].GenericParameters = append([]TypeParameter(nil), t.Methods[i].GenericParameters...)
+			t.Methods[i].ParameterizedParameters = append([]TypeParameter(nil), t.Methods[i].ParameterizedParameters...)
 			t.Methods[i].Parameters = append([]Type(nil), t.Methods[i].Parameters...)
-			for j := range t.Methods[i].GenericParameters {
-				t.Methods[i].GenericParameters[j].Constraint = Substitute(
-					t.Methods[i].GenericParameters[j].Constraint,
+			for j := range t.Methods[i].ParameterizedParameters {
+				t.Methods[i].ParameterizedParameters[j].Constraint = Substitute(
+					t.Methods[i].ParameterizedParameters[j].Constraint,
 					arguments,
 				)
 			}
@@ -581,12 +581,12 @@ func Identity(t Type) string {
 	case ConstantType:
 		return "constant(" + Identity(t.ValueType) + ":" + t.Value + ")"
 	case DefinedType:
-		if t.GenericName != "" {
+		if t.ParameterizedName != "" {
 			arguments := make([]string, len(t.TypeArguments))
 			for i, argument := range t.TypeArguments {
 				arguments[i] = Identity(argument)
 			}
-			return "defined(" + t.Module + ":" + t.GenericName + "<" + strings.Join(arguments, ",") + ">)"
+			return "defined(" + t.Module + ":" + t.ParameterizedName + "<" + strings.Join(arguments, ",") + ">)"
 		}
 		return "defined(" + t.Module + ":" + t.Name + ")"
 	case *AliasRef:
@@ -921,12 +921,12 @@ func (i *TaggedUnionInfo) Variant(name string) (TaggedUnionVariant, int, bool) {
 }
 
 type TraitMethod struct {
-	Name              string
-	GenericParameters []TypeParameter
-	Receiver          TraitReceiverKind
-	Parameters        []Type
-	ReturnType        Type
-	HasDefault        bool
+	Name                    string
+	ParameterizedParameters []TypeParameter
+	Receiver                TraitReceiverKind
+	Parameters              []Type
+	ReturnType              Type
+	HasDefault              bool
 }
 
 type TraitReceiverKind uint8
@@ -948,8 +948,8 @@ type TraitType struct {
 
 func (t TraitType) DynamicIncompatibility() (method string, reason string, incompatible bool) {
 	for _, method := range t.Methods {
-		if len(method.GenericParameters) != 0 {
-			return method.Name, "is generic", true
+		if len(method.ParameterizedParameters) != 0 {
+			return method.Name, "is parameterized", true
 		}
 		if HasSelfType(method.ReturnType) || slices.ContainsFunc(method.Parameters, HasSelfType) {
 			return method.Name, "uses Self outside its receiver", true
@@ -1739,7 +1739,7 @@ func hasError(t Type, defined map[string]bool, aliases map[*AliasRef]bool) bool 
 		}
 		defined[key] = true
 		for _, method := range t.Methods {
-			for _, parameter := range method.GenericParameters {
+			for _, parameter := range method.ParameterizedParameters {
 				if hasError(parameter.Constraint, defined, aliases) {
 					return true
 				}

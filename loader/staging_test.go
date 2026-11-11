@@ -221,9 +221,9 @@ func TestBareLayoutOperationRequiresCompileTimeContext(t *testing.T) {
 	}
 }
 
-func TestGenericCompileTimeBranchDefersUntilSpecialization(t *testing.T) {
+func TestParameterizedCompileTimeBranchDefersUntilSpecialization(t *testing.T) {
 	source := "module test\nlet size_class($T: type): i32 = $if sizeof(T) == 4 { 1 } else { 2 }\nlet small: i32 = size_class(i32)\nlet large: i32 = size_class(i64)\n"
-	tokens, err := tokeniser.NewTokeniser(source, "generic_branch.qk").Tokenise()
+	tokens, err := tokeniser.NewTokeniser(source, "parameterized_branch.qk").Tokenise()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,7 +236,7 @@ func TestGenericCompileTimeBranchDefersUntilSpecialization(t *testing.T) {
 	}
 	function := root.Body[1].(*parser.FunctionDefNode)
 	if !function.DeferredStage {
-		t.Fatal("generic $if was selected before its type argument was known")
+		t.Fatal("parameterized $if was selected before its type argument was known")
 	}
 	partial, err := CollectModuleInfo(root, false)
 	if err != nil {
@@ -259,8 +259,8 @@ func TestGenericCompileTimeBranchDefersUntilSpecialization(t *testing.T) {
 	if len(irErrors) != 0 {
 		t.Fatal(irErrors[0])
 	}
-	templates := map[string][]ir.GenericTemplate{"test": GenerateModuleGenericTemplateIR(modules["test"])}
-	specializations, err := ExtractGenericSpecializations(irModules, templates, analyser.ModuleInterfaces())
+	templates := map[string][]ir.ParameterizedTemplate{"test": GenerateModuleParameterizedTemplateIR(modules["test"])}
+	specializations, err := ExtractParameterizedSpecializations(irModules, templates, analyser.MethodTargets())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -27,8 +27,8 @@ func (a *Analyser) collectTopLevel(root *parser.RootNode) {
 	a.promoteTypeApplications(root)
 
 	for _, node := range root.Body {
-		if n, ok := node.(*parser.TypeAliasNode); ok && len(n.GenericParameters) != 0 {
-			a.finishGenericTypeAlias(n)
+		if n, ok := node.(*parser.TypeAliasNode); ok && len(n.ParameterizedParameters) != 0 {
+			a.finishParameterizedTypeAlias(n)
 		}
 	}
 
@@ -55,7 +55,7 @@ func (a *Analyser) resolveBodies(root *parser.RootNode) {
 		}
 	}
 
-	// Resolving a generic trait use can materialize hidden default-method
+	// Resolving a parameterized trait use can materialize hidden default-method
 	// templates in this root. Keep walking until those appended definitions
 	// have received their scopes and parameter symbols too.
 	for i := 0; i < len(root.Body); i++ {
@@ -64,7 +64,7 @@ func (a *Analyser) resolveBodies(root *parser.RootNode) {
 		case *parser.FunctionDefNode:
 			a.visitFunction(n)
 		case *parser.DeclarationNode:
-			if len(n.GenericParameters) != 0 || n.Symbol != nil && n.Symbol.TemplateSymbol != nil {
+			if len(n.ParameterizedParameters) != 0 || n.Symbol != nil && n.Symbol.TemplateSymbol != nil {
 				continue
 			}
 			if n.Value != nil {
@@ -75,7 +75,7 @@ func (a *Analyser) resolveBodies(root *parser.RootNode) {
 }
 
 func (a *Analyser) collectFunctionSignature(n *parser.FunctionDefNode) {
-	if n.IsGeneric() {
+	if n.IsParameterized() {
 		if n.Attributes.Get(attributes.AttributeTypeForeign) != nil {
 			a.errorf(n, "parameterized functions cannot be foreign declarations")
 		}
@@ -91,11 +91,11 @@ func (a *Analyser) collectFunctionSignature(n *parser.FunctionDefNode) {
 }
 
 func (a *Analyser) collectPlainFunctionSignature(n *parser.FunctionDefNode) {
-	genericParameters := a.makeGenericParameters(n.Name, n.GenericParameters)
+	parameterizedParameters := a.makeParameterizedParameters(n.Name, n.ParameterizedParameters)
 	previousBindings := a.typeParameterBindings
-	if len(genericParameters) != 0 {
-		a.typeParameterBindings = make(map[string]types.Type, len(genericParameters))
-		for _, parameter := range genericParameters {
+	if len(parameterizedParameters) != 0 {
+		a.typeParameterBindings = make(map[string]types.Type, len(parameterizedParameters))
+		for _, parameter := range parameterizedParameters {
 			if parameter.ValueType == nil {
 				a.typeParameterBindings[parameter.Name] = parameter
 			}
@@ -131,15 +131,15 @@ func (a *Analyser) collectPlainFunctionSignature(n *parser.FunctionDefNode) {
 	}
 
 	sym := &symbols.Symbol{
-		Name:              n.Name,
-		Kind:              symbols.SymbolKindFunction,
-		Signature:         sig,
-		Public:            n.Pub,
-		Attributes:        n.Attributes,
-		DefinitionModule:  a.currentMod,
-		GenericParameters: genericParameters,
-		Template:          len(genericParameters) != 0,
-		CompileTimeOnly:   n.CompileTimeOnly,
+		Name:                    n.Name,
+		Kind:                    symbols.SymbolKindFunction,
+		Signature:               sig,
+		Public:                  n.Pub,
+		Attributes:              n.Attributes,
+		DefinitionModule:        a.currentMod,
+		ParameterizedParameters: parameterizedParameters,
+		Template:                len(parameterizedParameters) != 0,
+		CompileTimeOnly:         n.CompileTimeOnly,
 	}
 	setValueParameterPositions(sym, n.Args)
 
@@ -147,7 +147,7 @@ func (a *Analyser) collectPlainFunctionSignature(n *parser.FunctionDefNode) {
 		n.Symbol = sym
 		a.functionDefinitions[sym] = &functionDefinitionInfo{node: n, module: a.currentMod}
 		if sym.Template {
-			a.genericFunctions[sym] = &genericFunctionInfo{
+			a.parameterizedFunctions[sym] = &parameterizedFunctionInfo{
 				node: n, root: a.currentRoot, module: a.currentMod,
 				specializations: make(map[string]*parser.FunctionDefNode),
 			}
@@ -156,11 +156,11 @@ func (a *Analyser) collectPlainFunctionSignature(n *parser.FunctionDefNode) {
 }
 
 func setValueParameterPositions(symbol *symbols.Symbol, arguments []*parser.FunctionNodeArg) {
-	if len(symbol.GenericParameters) == 0 {
+	if len(symbol.ParameterizedParameters) == 0 {
 		return
 	}
-	symbol.ValueParameterPositions = make([]int, len(symbol.GenericParameters))
-	for index, parameter := range symbol.GenericParameters {
+	symbol.ValueParameterPositions = make([]int, len(symbol.ParameterizedParameters))
+	for index, parameter := range symbol.ParameterizedParameters {
 		symbol.ValueParameterPositions[index] = -1
 		if parameter.ValueType == nil {
 			continue
@@ -179,7 +179,7 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 		a.collectPatternMethodSignature(n)
 		return
 	}
-	if len(n.MethodOwnerGenericParameters) != 0 {
+	if len(n.MethodOwnerParameterizedParameters) != 0 {
 		a.errorf(n, "parameterized method owners use a capture such as Type($).%s(...)", n.Name)
 		return
 	}
@@ -199,7 +199,7 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 		a.errorf(n, "parameterized method owner %q requires a capture such as %s($).%s(...)", n.MethodOwner, n.MethodOwner, n.Name)
 		return
 	} else if builtin, ok := a.universe.Resolve(n.MethodOwner); ok && builtin.Kind == symbols.SymbolKindType {
-		if len(n.MethodOwnerGenericParameters) != 0 {
+		if len(n.MethodOwnerParameterizedParameters) != 0 {
 			a.errorf(n, "builtin method owner %q does not accept type parameters", n.MethodOwner)
 			return
 		}
@@ -230,12 +230,12 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 	}
 
 	previousBindings := a.typeParameterBindings
-	methodParameterNodes := n.GenericParameters
-	methodParameters := a.makeGenericParameters(n.MethodOwner+"."+n.Name, methodParameterNodes)
-	genericParameters := methodParameters
-	if len(genericParameters) != 0 {
+	methodParameterNodes := n.ParameterizedParameters
+	methodParameters := a.makeParameterizedParameters(n.MethodOwner+"."+n.Name, methodParameterNodes)
+	parameterizedParameters := methodParameters
+	if len(parameterizedParameters) != 0 {
 		if a.typeParameterBindings == nil {
-			a.typeParameterBindings = make(map[string]types.Type, len(genericParameters))
+			a.typeParameterBindings = make(map[string]types.Type, len(parameterizedParameters))
 		}
 		for _, parameter := range methodParameters {
 			if parameter.ValueType == nil {
@@ -280,7 +280,7 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 	sym := &symbols.Symbol{Name: n.MethodOwner + "." + n.Name, Kind: symbols.SymbolKindFunction,
 		Signature: &symbols.FunctionSignature{Parameters: paramTypes, RequiredParameters: requiredParameters, ReturnType: ret, Variadic: n.HasVariadic, TypedVariadic: n.TypedVariadic},
 		Public:    n.Pub, Attributes: n.Attributes, Method: true, StaticMethod: n.Receiver == parser.MethodReceiverNone,
-		MethodReceiver: receiver, DefinitionModule: a.currentMod, GenericParameters: genericParameters, Template: len(genericParameters) != 0}
+		MethodReceiver: receiver, DefinitionModule: a.currentMod, ParameterizedParameters: parameterizedParameters, Template: len(parameterizedParameters) != 0}
 	setValueParameterPositions(sym, n.Args)
 	a.methods[key][n.Name] = sym
 	if n.TypedVariadic {
@@ -289,7 +289,7 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 	n.Symbol = sym
 	a.functionDefinitions[sym] = &functionDefinitionInfo{node: n, module: a.currentMod}
 	if sym.Template {
-		a.genericFunctions[sym] = &genericFunctionInfo{
+		a.parameterizedFunctions[sym] = &parameterizedFunctionInfo{
 			node: n, root: a.currentRoot, module: a.currentMod,
 			specializations: make(map[string]*parser.FunctionDefNode),
 		}
@@ -313,10 +313,10 @@ func (a *Analyser) collectPatternMethodSignature(n *parser.FunctionDefNode) {
 				a.errorf(capture, "implicit type capture requires a parameterized type, got %q", owner.Name)
 				return
 			}
-			owner.TypeArguments = make([]parser.TypeNode, len(ownerSymbol.GenericParameters))
-			ownerParameters := make([]parser.GenericParameterNode, len(ownerSymbol.GenericParameters))
-			for i, parameter := range ownerSymbol.GenericParameters {
-				for _, methodParameter := range n.GenericParameters {
+			owner.TypeArguments = make([]parser.TypeNode, len(ownerSymbol.ParameterizedParameters))
+			ownerParameters := make([]parser.ParameterizedParameterNode, len(ownerSymbol.ParameterizedParameters))
+			for i, parameter := range ownerSymbol.ParameterizedParameters {
+				for _, methodParameter := range n.ParameterizedParameters {
 					if methodParameter.Name == parameter.Name {
 						a.errorf(methodParameter, "method type parameter %q conflicts with an implicit owner capture", parameter.Name)
 						return
@@ -324,12 +324,12 @@ func (a *Analyser) collectPatternMethodSignature(n *parser.FunctionDefNode) {
 				}
 				owner.TypeArguments[i] = &parser.NamedTypeNode{Name: parameter.Name, Capture: true, Loc: capture.Loc}
 				var constraint parser.TypeNode
-				if alias := a.genericAliases[ownerSymbol]; alias != nil {
-					constraint = alias.node.GenericParameters[i].Constraint
+				if alias := a.parameterizedAliases[ownerSymbol]; alias != nil {
+					constraint = alias.node.ParameterizedParameters[i].Constraint
 				}
-				ownerParameters[i] = parser.GenericParameterNode{Name: parameter.Name, Constraint: constraint, Loc: capture.Loc}
+				ownerParameters[i] = parser.ParameterizedParameterNode{Name: parameter.Name, Constraint: constraint, Loc: capture.Loc}
 			}
-			n.GenericParameters = append(ownerParameters, n.GenericParameters...)
+			n.ParameterizedParameters = append(ownerParameters, n.ParameterizedParameters...)
 			implicitCapture = true
 			break
 		}
@@ -342,11 +342,11 @@ func (a *Analyser) collectPatternMethodSignature(n *parser.FunctionDefNode) {
 			a.errorf(n, "parameterized functions cannot be exported")
 		}
 	}
-	genericParameters := a.makeGenericParameters(n.Name, n.GenericParameters)
+	parameterizedParameters := a.makeParameterizedParameters(n.Name, n.ParameterizedParameters)
 	previousBindings := a.typeParameterBindings
-	if len(genericParameters) != 0 {
-		a.typeParameterBindings = make(map[string]types.Type, len(genericParameters))
-		for _, parameter := range genericParameters {
+	if len(parameterizedParameters) != 0 {
+		a.typeParameterBindings = make(map[string]types.Type, len(parameterizedParameters))
+		for _, parameter := range parameterizedParameters {
 			if parameter.ValueType == nil {
 				a.typeParameterBindings[parameter.Name] = parameter
 			}
@@ -359,12 +359,12 @@ func (a *Analyser) collectPatternMethodSignature(n *parser.FunctionDefNode) {
 		return
 	}
 	ownerParameters := methodOwnerTypeParameters(ownerType)
-	if len(ownerParameters) > len(genericParameters) {
+	if len(ownerParameters) > len(parameterizedParameters) {
 		a.errorf(n, "method owner type %v uses undeclared type captures", ownerType)
 		return
 	}
 	for i, ownerParameter := range ownerParameters {
-		if !ownerParameter.Equals(genericParameters[i]) {
+		if !ownerParameter.Equals(parameterizedParameters[i]) {
 			a.errorf(n, "type captures used by method owner %v must be declared first and in owner order", ownerType)
 			return
 		}
@@ -404,7 +404,7 @@ func (a *Analyser) collectPatternMethodSignature(n *parser.FunctionDefNode) {
 		Signature: &symbols.FunctionSignature{Parameters: paramTypes, RequiredParameters: requiredParameters, ReturnType: ret, Variadic: n.HasVariadic, TypedVariadic: n.TypedVariadic},
 		Public:    n.Pub, Attributes: n.Attributes, Method: true, StaticMethod: n.Receiver == parser.MethodReceiverNone,
 		MethodReceiver: receiver, MethodOwnerType: ownerType, DefinitionModule: a.currentMod,
-		GenericParameters: genericParameters, Template: len(genericParameters) != 0}
+		ParameterizedParameters: parameterizedParameters, Template: len(parameterizedParameters) != 0}
 	setValueParameterPositions(sym, n.Args)
 	if n.TypedVariadic {
 		sym.Signature.VariadicElement = types.Underlying(paramTypes[len(paramTypes)-1]).(types.SliceType).Base
@@ -433,7 +433,7 @@ func (a *Analyser) collectPatternMethodSignature(n *parser.FunctionDefNode) {
 	n.Symbol = sym
 	a.functionDefinitions[sym] = &functionDefinitionInfo{node: n, module: a.currentMod}
 	if sym.Template {
-		a.genericFunctions[sym] = &genericFunctionInfo{
+		a.parameterizedFunctions[sym] = &parameterizedFunctionInfo{
 			node: n, root: a.currentRoot, module: a.currentMod,
 			specializations: make(map[string]*parser.FunctionDefNode),
 		}
@@ -465,8 +465,8 @@ func (a *Analyser) classifyPatternMethodOwner(n *parser.FunctionDefNode, ownerTy
 	switch owner := ownerType.(type) {
 	case types.DefinedType:
 		name := owner.Name
-		if owner.GenericName != "" {
-			name = owner.GenericName
+		if owner.ParameterizedName != "" {
+			name = owner.ParameterizedName
 		}
 		if owner.Module == "" {
 			if !a.currentTrustedStandardLibrary {
@@ -604,7 +604,7 @@ func fieldExists(t types.Type, name string) bool {
 func (a *Analyser) precollectTypeAlias(n *parser.TypeAliasNode) {
 	sym := &symbols.Symbol{
 		Name: n.Name, Kind: symbols.SymbolKindType, Public: n.Pub,
-		Template: len(n.GenericParameters) != 0, DefinitionModule: a.currentMod,
+		Template: len(n.ParameterizedParameters) != 0, DefinitionModule: a.currentMod,
 	}
 
 	if !a.defineSymbol(sym, n) {
@@ -622,15 +622,15 @@ func (a *Analyser) precollectTypeAlias(n *parser.TypeAliasNode) {
 	}
 }
 
-func (a *Analyser) finishGenericTypeAlias(n *parser.TypeAliasNode) {
+func (a *Analyser) finishParameterizedTypeAlias(n *parser.TypeAliasNode) {
 	if n.Symbol == nil {
 		return
 	}
-	genericParameters := a.makeGenericParameters(n.Name, n.GenericParameters)
-	n.Symbol.GenericParameters = genericParameters
-	a.genericAliases[n.Symbol] = &genericAliasInfo{
-		node: n, root: a.currentRoot, module: a.currentMod, parameters: genericParameters,
-		specializations: make(map[string]*genericAliasSpecialization),
+	parameterizedParameters := a.makeParameterizedParameters(n.Name, n.ParameterizedParameters)
+	n.Symbol.ParameterizedParameters = parameterizedParameters
+	a.parameterizedAliases[n.Symbol] = &parameterizedAliasInfo{
+		node: n, root: a.currentRoot, module: a.currentMod, parameters: parameterizedParameters,
+		specializations: make(map[string]*parameterizedAliasSpecialization),
 	}
 }
 
@@ -654,14 +654,14 @@ func compileTimeLiteral(n *parser.DeclarationNode) (string, bool) {
 }
 
 func (a *Analyser) collectGlobalVariable(n *parser.DeclarationNode) {
-	if len(n.GenericParameters) != 0 && n.Attributes.Get(attributes.AttributeTypeForeign) != nil {
+	if len(n.ParameterizedParameters) != 0 && n.Attributes.Get(attributes.AttributeTypeForeign) != nil {
 		a.errorf(n, "parameterized values cannot be foreign declarations")
 	}
-	genericParameters := a.makeGenericParameters(n.Name, n.GenericParameters)
+	parameterizedParameters := a.makeParameterizedParameters(n.Name, n.ParameterizedParameters)
 	previousBindings := a.typeParameterBindings
-	if len(genericParameters) != 0 {
-		a.typeParameterBindings = make(map[string]types.Type, len(genericParameters))
-		for _, parameter := range genericParameters {
+	if len(parameterizedParameters) != 0 {
+		a.typeParameterBindings = make(map[string]types.Type, len(parameterizedParameters))
+		for _, parameter := range parameterizedParameters {
 			a.typeParameterBindings[parameter.Name] = parameter
 		}
 		defer func() { a.typeParameterBindings = previousBindings }()
@@ -673,17 +673,17 @@ func (a *Analyser) collectGlobalVariable(n *parser.DeclarationNode) {
 	}
 
 	sym := &symbols.Symbol{
-		Name:              n.Name,
-		Kind:              symbols.SymbolKindVariable,
-		Type:              varType,
-		Mutable:           n.Mutable,
-		Public:            n.Pub,
-		Comptime:          n.Comptime,
-		Attributes:        n.Attributes,
-		GenericParameters: genericParameters,
-		Template:          len(genericParameters) != 0,
+		Name:                    n.Name,
+		Kind:                    symbols.SymbolKindVariable,
+		Type:                    varType,
+		Mutable:                 n.Mutable,
+		Public:                  n.Pub,
+		Comptime:                n.Comptime,
+		Attributes:              n.Attributes,
+		ParameterizedParameters: parameterizedParameters,
+		Template:                len(parameterizedParameters) != 0,
 	}
-	if value, ok := compileTimeLiteral(n); ok && len(genericParameters) == 0 {
+	if value, ok := compileTimeLiteral(n); ok && len(parameterizedParameters) == 0 {
 		sym.InlineComptime = true
 		sym.ComptimeInteger = value
 		if sym.Type == nil {
@@ -694,7 +694,7 @@ func (a *Analyser) collectGlobalVariable(n *parser.DeclarationNode) {
 	if a.defineSymbol(sym, n) {
 		n.Symbol = sym
 		if sym.Template {
-			a.genericValues[sym] = &genericValueInfo{
+			a.parameterizedValues[sym] = &parameterizedValueInfo{
 				node: n, root: a.currentRoot, module: a.currentMod,
 				trusted: a.currentTrustedStandardLibrary, specializations: make(map[string]*parser.DeclarationNode),
 			}

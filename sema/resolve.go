@@ -24,7 +24,7 @@ func (a *Analyser) resolveIdentifier(n *parser.IdentifierNode) (*symbols.Symbol,
 			a.errorf(n, "undefined identifier %q", n.Name)
 			return nil, false
 		}
-		resolved, ok := a.resolveGenericIdentifier(n, sym)
+		resolved, ok := a.resolveParameterizedIdentifier(n, sym)
 		if ok {
 			resolved.Referenced = true
 			a.rejectLambdaCapture(n, resolved)
@@ -59,7 +59,7 @@ func (a *Analyser) resolveIdentifier(n *parser.IdentifierNode) (*symbols.Symbol,
 	}
 
 	n.ResolvedModuleName = mod.Name
-	resolved, ok := a.resolveGenericIdentifier(n, sym)
+	resolved, ok := a.resolveParameterizedIdentifier(n, sym)
 	if ok {
 		resolved.Referenced = true
 	}
@@ -82,7 +82,7 @@ func (a *Analyser) rejectLambdaCapture(n *parser.IdentifierNode, sym *symbols.Sy
 	a.errorf(n, "lambda cannot capture local variable %q", sym.Name)
 }
 
-func (a *Analyser) resolveGenericIdentifier(n *parser.IdentifierNode, sym *symbols.Symbol) (*symbols.Symbol, bool) {
+func (a *Analyser) resolveParameterizedIdentifier(n *parser.IdentifierNode, sym *symbols.Symbol) (*symbols.Symbol, bool) {
 	if !sym.Template {
 		if len(n.TypeArguments) != 0 {
 			a.errorf(n, "non-parameterized binding %q does not accept type arguments", sym.Name)
@@ -95,17 +95,17 @@ func (a *Analyser) resolveGenericIdentifier(n *parser.IdentifierNode, sym *symbo
 		n.Symbol = sym
 		return sym, true
 	}
-	arguments := a.resolveGenericArguments(n.TypeArguments)
+	arguments := a.resolveParameterizedArguments(n.TypeArguments)
 	switch sym.Kind {
 	case symbols.SymbolKindFunction:
 		n.ResolvedTypeArgs = arguments
 		n.Symbol = sym
 		return sym, true
 	case symbols.SymbolKindVariable:
-		sym = a.specializeGenericValue(sym, arguments, n)
+		sym = a.specializeParameterizedValue(sym, arguments, n)
 	case symbols.SymbolKindType:
-		info := a.genericAliases[sym]
-		sym = a.specializeGenericAlias(info, arguments, n, false)
+		info := a.parameterizedAliases[sym]
+		sym = a.specializeParameterizedAlias(info, arguments, n, false)
 	}
 	if sym == nil {
 		return nil, false
@@ -135,14 +135,14 @@ func (a *Analyser) resolveFunctionCall(n *parser.FunctionCallNode) {
 		if sym.Kind == symbols.SymbolKindFunction {
 			n.Symbol = sym
 			if sym.Template {
-				arguments, remaining, explicit, valid := a.explicitCallTypeArguments(sym.GenericParameters, sym.Signature, n.Args, false, n)
+				arguments, remaining, explicit, valid := a.explicitCallTypeArguments(sym.ParameterizedParameters, sym.Signature, n.Args, false, n)
 				if !valid {
 					return
 				}
 				if explicit {
 					n.Args = remaining
 					n.Name.ResolvedTypeArgs = arguments
-					n.Symbol = dependentGenericFunctionSymbol(sym, arguments)
+					n.Symbol = dependentParameterizedFunctionSymbol(sym, arguments)
 					n.Name.Symbol = n.Symbol
 				}
 			}
@@ -188,7 +188,7 @@ func (a *Analyser) resolveCompileTimeApplication(
 	application := &parser.IdentifierNode{
 		Name: name.Name, Module: name.Module, TypeArguments: typeArguments, Loc: call.Loc,
 	}
-	resolved, valid := a.resolveGenericIdentifier(application, template)
+	resolved, valid := a.resolveParameterizedIdentifier(application, template)
 	if !valid {
 		return true
 	}
@@ -361,15 +361,15 @@ func (a *Analyser) resolveTaggedUnionConstructor(n *parser.FunctionCallNode) boo
 		return false
 	}
 	if symbol.Template {
-		generic := a.genericAliases[symbol]
-		if generic == nil {
+		parameterized := a.parameterizedAliases[symbol]
+		if parameterized == nil {
 			return false
 		}
-		arguments := make([]types.Type, len(generic.parameters))
-		for i := range generic.parameters {
-			arguments[i] = generic.parameters[i]
+		arguments := make([]types.Type, len(parameterized.parameters))
+		for i := range parameterized.parameters {
+			arguments[i] = parameterized.parameters[i]
 		}
-		specialization := a.specializeGenericAlias(generic, arguments, n, false)
+		specialization := a.specializeParameterizedAlias(parameterized, arguments, n, false)
 		if specialization == nil {
 			return true
 		}
@@ -443,7 +443,7 @@ func (a *Analyser) resolveModuleField(n *parser.FieldAccessNode) bool {
 		Name: n.Field.Name, Module: resolvedPath, ResolvedModuleName: resolvedPath, Loc: n.Field.Loc,
 		TypeArguments: n.Field.TypeArguments,
 	}
-	if _, ok := a.resolveGenericIdentifier(resolved, sym); !ok {
+	if _, ok := a.resolveParameterizedIdentifier(resolved, sym); !ok {
 		return true
 	}
 	n.ResolvedIdentifier = resolved

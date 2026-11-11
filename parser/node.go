@@ -155,7 +155,7 @@ type NamedTypeNode struct {
 	Name          string
 	TypeArguments []TypeNode
 	// Capture marks a type-pattern binding such as $T in a method owner.
-	// Captures are converted to declaration-scoped generic parameters before
+	// Captures are converted to declaration-scoped parameterized parameters before
 	// semantic type resolution.
 	Capture           bool
 	CaptureConstraint TypeNode
@@ -307,14 +307,14 @@ func (n OpaqueTypeNode) GetLoc() shared.Location { return n.Loc }
 func (n OpaqueTypeNode) _type()                  {}
 
 type TraitMethodNode struct {
-	Name              string
-	GenericParameters []GenericParameterNode
-	Receiver          MethodReceiverKind
-	Args              []*FunctionNodeArg
-	ReturnType        TypeNode
-	Body              Node
-	ExpressionBody    bool
-	Loc               shared.Location
+	Name                    string
+	ParameterizedParameters []ParameterizedParameterNode
+	Receiver                MethodReceiverKind
+	Args                    []*FunctionNodeArg
+	ReturnType              TypeNode
+	Body                    Node
+	ExpressionBody          bool
+	Loc                     shared.Location
 }
 
 type TraitTypeNode struct {
@@ -535,7 +535,7 @@ type FunctionCallNode struct {
 
 	TaggedUnionType    types.Type
 	TaggedUnionVariant int
-	// TaggedUnionTemplate is set when a generic union constructor omits its
+	// TaggedUnionTemplate is set when a parameterized union constructor omits its
 	// owner type arguments. Attribution infers them from the payload arguments.
 	TaggedUnionTemplate *symbols.Symbol
 }
@@ -780,18 +780,18 @@ type CastNode struct {
 	Loc     shared.Location
 	Type    types.Type
 
-	TraitConversion  bool
-	TraitRecast      bool
-	TraitUnwrap      bool
-	ConcreteType     types.Type
-	TraitMethods     []*symbols.Symbol
-	TraitCandidates  []TraitCastCandidate
-	Checked          bool
-	CheckedType      types.Type
-	GenericAssertion bool
-	StaticAssertion  bool
-	AssertionMatches bool
-	StaticTraitView  *types.StaticTraitView
+	TraitConversion        bool
+	TraitRecast            bool
+	TraitUnwrap            bool
+	ConcreteType           types.Type
+	TraitMethods           []*symbols.Symbol
+	TraitCandidates        []TraitCastCandidate
+	Checked                bool
+	CheckedType            types.Type
+	ParameterizedAssertion bool
+	StaticAssertion        bool
+	AssertionMatches       bool
+	StaticTraitView        *types.StaticTraitView
 }
 
 type TraitCastCandidate struct {
@@ -888,35 +888,35 @@ func (a FunctionNodeArg) GetLoc() shared.Location {
 	return a.Type.GetLoc()
 }
 
-type GenericParameterNode struct {
+type ParameterizedParameterNode struct {
 	Name       string
 	Constraint TypeNode
 	ValueType  TypeNode
 	Loc        shared.Location
 }
 
-func (n GenericParameterNode) GetLoc() shared.Location { return n.Loc }
+func (n ParameterizedParameterNode) GetLoc() shared.Location { return n.Loc }
 
 type FunctionDefNode struct {
-	Name                         string
-	MethodOwner                  string
-	MethodOwnerType              TypeNode
-	MethodOwnerGenericParameters []GenericParameterNode
-	Receiver                     MethodReceiverKind
-	GenericParameters            []GenericParameterNode
-	Args                         []*FunctionNodeArg
-	RetTypeNode                  TypeNode
-	Body                         Node
-	ExpressionBody               bool
-	HasVariadic                  bool
-	TypedVariadic                bool
-	Pub                          bool
-	Attributes                   attributes.Attributes
-	Loc                          shared.Location
-	Symbol                       *symbols.Symbol
-	GenericInstance              bool
-	CompileTimeOnly              bool
-	DeferredStage                bool
+	Name                               string
+	MethodOwner                        string
+	MethodOwnerType                    TypeNode
+	MethodOwnerParameterizedParameters []ParameterizedParameterNode
+	Receiver                           MethodReceiverKind
+	ParameterizedParameters            []ParameterizedParameterNode
+	Args                               []*FunctionNodeArg
+	RetTypeNode                        TypeNode
+	Body                               Node
+	ExpressionBody                     bool
+	HasVariadic                        bool
+	TypedVariadic                      bool
+	Pub                                bool
+	Attributes                         attributes.Attributes
+	Loc                                shared.Location
+	Symbol                             *symbols.Symbol
+	ParameterizedInstance              bool
+	CompileTimeOnly                    bool
+	DeferredStage                      bool
 }
 
 type MethodReceiverKind uint8
@@ -934,11 +934,11 @@ func (n FunctionDefNode) HasMethodOwner() bool {
 	return n.MethodOwner != "" || n.MethodOwnerType != nil
 }
 
-func (n FunctionDefNode) IsGeneric() bool {
-	if n.GenericInstance || n.Symbol != nil && !n.Symbol.Template {
+func (n FunctionDefNode) IsParameterized() bool {
+	if n.ParameterizedInstance || n.Symbol != nil && !n.Symbol.Template {
 		return false
 	}
-	if len(n.MethodOwnerGenericParameters) != 0 || len(n.GenericParameters) != 0 {
+	if len(n.MethodOwnerParameterizedParameters) != 0 || len(n.ParameterizedParameters) != 0 {
 		return true
 	}
 	for _, arg := range n.Args {
@@ -950,15 +950,15 @@ func (n FunctionDefNode) IsGeneric() bool {
 }
 
 type TypeAliasNode struct {
-	Name              string
-	GenericParameters []GenericParameterNode
-	Type              TypeNode
-	Methods           []*FunctionDefNode
-	Transparent       bool
-	DeferredStage     bool
-	Pub               bool
-	Loc               shared.Location
-	Symbol            *symbols.Symbol
+	Name                    string
+	ParameterizedParameters []ParameterizedParameterNode
+	Type                    TypeNode
+	Methods                 []*FunctionDefNode
+	Transparent             bool
+	DeferredStage           bool
+	Pub                     bool
+	Loc                     shared.Location
+	Symbol                  *symbols.Symbol
 }
 
 func (n TypeAliasNode) GetLoc() shared.Location { return n.Loc }
@@ -1107,17 +1107,17 @@ type DeferNode struct {
 func (n DeferNode) GetLoc() shared.Location { return n.Loc }
 
 type DeclarationNode struct {
-	Name              string
-	NameLoc           shared.Location
-	GenericParameters []GenericParameterNode
-	Mutable           bool
-	Pub               bool
-	TypeNode          TypeNode
-	Value             ExpressionNode
-	Comptime          bool
-	Attributes        attributes.Attributes
-	Loc               shared.Location
-	Symbol            *symbols.Symbol
+	Name                    string
+	NameLoc                 shared.Location
+	ParameterizedParameters []ParameterizedParameterNode
+	Mutable                 bool
+	Pub                     bool
+	TypeNode                TypeNode
+	Value                   ExpressionNode
+	Comptime                bool
+	Attributes              attributes.Attributes
+	Loc                     shared.Location
+	Symbol                  *symbols.Symbol
 }
 
 type MultiDeclarationNode struct {

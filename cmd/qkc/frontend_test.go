@@ -264,12 +264,12 @@ let Record = struct {
   let get(self): i32 = self.value
 }
 let make_record(): type = struct { ...make_fields() }
-let generic_fields(T: type): []core.types.FieldSpec = [.{ name="item", field_type=T }]
-let GenericRecord(T: type): type = struct {
-  ...generic_fields(T),
+let parameterized_fields(T: type): []core.types.FieldSpec = [.{ name="item", field_type=T }]
+let ParameterizedRecord(T: type): type = struct {
+  ...parameterized_fields(T),
   let get(self): T = self.item
 }
-let GenericMethod(T: type): type = struct {
+let ParameterizedMethod(T: type): type = struct {
   ...make_fields(),
   item: T
   let get(self): T = self.item
@@ -279,17 +279,17 @@ let main() {
   let record: Record = .{ value=7, other=1 }
   let generated: make_record() = .{ value=8 }
   let copied: BuiltRecord = .{ built=9 }
-  let generic: GenericRecord(u16) = .{ item=11 }
-  let generic_value: u16 = generic.get()
-  let generic_method: GenericMethod(u16) = .{ value=12, item=13 }
-  let generic_result: u16 = generic_method.get()
+  let parameterized: ParameterizedRecord(u16) = .{ item=11 }
+  let parameterized_value: u16 = parameterized.get()
+  let parameterized_method: ParameterizedMethod(u16) = .{ value=12, item=13 }
+  let parameterized_result: u16 = parameterized_method.get()
   let value: i32 = record.get()
   _ = value
   _ = generated
   _ = copied
-  _ = generic
-  _ = generic_value
-  _ = generic_result
+  _ = parameterized
+  _ = parameterized_value
+  _ = parameterized_result
 }
 `
 	frontend, err := runFrontend(&Args{mainModule: ".", noStdlib: true}, loader.StageConfig{NoStdlib: true},
@@ -461,14 +461,14 @@ let Named = $built_from_name("label")
 let main() {
   let value: Built = .{ value=1 }
   let another: built_type() = .{ value=2 }
-  let generic: built_for(i32) = .{ value=3 }
+  let parameterized: built_for(i32) = .{ value=3 }
   let looped: Looped = .{ left=1, right=2 }
   let named: Named = .{ label=4 }
   let direct_name: built_from_name("other") = .{ other=5 }
   let chosen: choose_type(u8, $false) = 4
   _ = value
   _ = another
-  _ = generic
+  _ = parameterized
   _ = looped
   _ = named
   _ = direct_name
@@ -557,7 +557,7 @@ let main() { let result: usz = fib(8) }
 	}
 }
 
-func TestImportedGenericCompileTimeBranchSelectsPerInstance(t *testing.T) {
+func TestImportedParameterizedCompileTimeBranchSelectsPerInstance(t *testing.T) {
 	const helperPath = "helper/helper.qk"
 	const libraryPath = "choice/choice.qk"
 	const mainPath = "main.qk"
@@ -586,7 +586,7 @@ let main() { let selected: i32 = choice.select(7) }
 	}
 }
 
-func TestGenericCompileTimeBranchCallsPureFunction(t *testing.T) {
+func TestParameterizedCompileTimeBranchCallsPureFunction(t *testing.T) {
 	const path = "main.qk"
 	const source = `module main
 let small(size: usz): bool = size == 4
@@ -605,7 +605,7 @@ let main() { let selected: i32 = select(7) }
 	}
 }
 
-func TestGenericCompilerAssertUsesConcreteType(t *testing.T) {
+func TestParameterizedCompilerAssertUsesConcreteType(t *testing.T) {
 	const path = "main.qk"
 	const source = `module main
 let require_four($T: type, value: T): T = {
@@ -685,7 +685,7 @@ let main() { let size: usz = relay() }
 	}
 }
 
-func TestSelectedGenericBranchInfersCompileTimeOnly(t *testing.T) {
+func TestSelectedParameterizedBranchInfersCompileTimeOnly(t *testing.T) {
 	const path = "main.qk"
 	const source = `module main
 let bytes($T: type): usz = $if sizeof(T) == 4 { sizeof(T) } else { 8 }

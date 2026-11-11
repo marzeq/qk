@@ -12,7 +12,7 @@ import (
 )
 
 func (a *Analyser) fillRetainedArguments(template *symbols.Symbol, values []parser.ExpressionNode, arguments []types.Type, use parser.Node) bool {
-	for index, parameter := range template.GenericParameters {
+	for index, parameter := range template.ParameterizedParameters {
 		if parameter.ValueType == nil {
 			continue
 		}
@@ -58,7 +58,7 @@ func retainedArgumentValue(expression parser.ExpressionNode, valueType types.Typ
 		}
 	case *parser.IdentifierNode:
 		if node.Symbol != nil {
-			if parameter, ok := node.Symbol.GenericOrigin.(types.TypeParameter); ok && parameter.ValueType != nil && parameter.ValueType.Equals(valueType) {
+			if parameter, ok := node.Symbol.ParameterizedOrigin.(types.TypeParameter); ok && parameter.ValueType != nil && parameter.ValueType.Equals(valueType) {
 				return parameter, true
 			}
 			if node.Symbol.Comptime && node.Symbol.ComptimeInteger != "" {
@@ -77,14 +77,14 @@ func retainedArgumentValue(expression parser.ExpressionNode, valueType types.Typ
 	return nil, false
 }
 
-type genericFunctionInfo struct {
+type parameterizedFunctionInfo struct {
 	node            *parser.FunctionDefNode
 	root            *parser.RootNode
 	module          string
 	specializations map[string]*parser.FunctionDefNode
 }
 
-type genericValueInfo struct {
+type parameterizedValueInfo struct {
 	node            *parser.DeclarationNode
 	root            *parser.RootNode
 	module          string
@@ -92,21 +92,21 @@ type genericValueInfo struct {
 	specializations map[string]*parser.DeclarationNode
 }
 
-type genericAliasSpecialization struct {
+type parameterizedAliasSpecialization struct {
 	state    aliasState
 	resolved types.Type
 	symbol   *symbols.Symbol
 }
 
-type genericAliasInfo struct {
+type parameterizedAliasInfo struct {
 	node            *parser.TypeAliasNode
 	root            *parser.RootNode
 	module          string
 	parameters      []types.TypeParameter
-	specializations map[string]*genericAliasSpecialization
+	specializations map[string]*parameterizedAliasSpecialization
 }
 
-func genericOwner(module, name string) string {
+func parameterizedOwner(module, name string) string {
 	return module + ":" + name
 }
 
@@ -119,7 +119,7 @@ func specializationKey(arguments []types.Type) string {
 }
 
 func SpecializationName(module, name string, arguments []types.Type) string {
-	identity := genericOwner(module, name) + "<" + specializationKey(arguments) + ">"
+	identity := parameterizedOwner(module, name) + "<" + specializationKey(arguments) + ">"
 	return name + "$" + fmt.Sprintf("%x", sha256.Sum256([]byte(identity)))
 }
 
@@ -131,7 +131,7 @@ func specializationDisplayName(name string, arguments []types.Type) string {
 	return name + "<" + strings.Join(parts, ", ") + ">"
 }
 
-func (a *Analyser) makeGenericParameters(name string, nodes []parser.GenericParameterNode) []types.TypeParameter {
+func (a *Analyser) makeParameterizedParameters(name string, nodes []parser.ParameterizedParameterNode) []types.TypeParameter {
 	previous := a.typeParameterBindings
 	bindings := make(map[string]types.Type, len(previous)+len(nodes))
 	for name, binding := range previous {
@@ -139,7 +139,7 @@ func (a *Analyser) makeGenericParameters(name string, nodes []parser.GenericPara
 	}
 	a.typeParameterBindings = bindings
 	parameters := make([]types.TypeParameter, len(nodes))
-	owner := genericOwner(a.currentMod, name)
+	owner := parameterizedOwner(a.currentMod, name)
 	for i, node := range nodes {
 		parameter := types.TypeParameter{Owner: owner, Name: node.Name, Index: i}
 		if node.ValueType != nil {
@@ -215,20 +215,20 @@ func substituteFunctionSignature(signature *symbols.FunctionSignature, substitut
 	return &result
 }
 
-func dependentGenericFunctionSymbol(template *symbols.Symbol, arguments []types.Type) *symbols.Symbol {
+func dependentParameterizedFunctionSymbol(template *symbols.Symbol, arguments []types.Type) *symbols.Symbol {
 	result := *template
 	result.Template = false
 	result.TemplateSymbol = template
 	result.TypeArguments = append([]types.Type(nil), arguments...)
-	result.GenericParameters = nil
+	result.ParameterizedParameters = nil
 	result.Signature = substituteFunctionSignature(
 		template.Signature,
-		typeSubstitutionBindings(template.GenericParameters, arguments),
+		typeSubstitutionBindings(template.ParameterizedParameters, arguments),
 	)
 	return &result
 }
 
-func staticTraitViewForGenericType(t types.Type) *types.StaticTraitView {
+func staticTraitViewForParameterizedType(t types.Type) *types.StaticTraitView {
 	access := types.TraitReceiverValue
 	if pointer, ok := t.(types.PointerType); ok {
 		t = pointer.Base
@@ -248,7 +248,7 @@ func staticTraitViewForGenericType(t types.Type) *types.StaticTraitView {
 	return &types.StaticTraitView{Trait: trait, Access: access}
 }
 
-func genericTypeParameterBase(t types.Type) (types.TypeParameter, bool) {
+func parameterizedTypeParameterBase(t types.Type) (types.TypeParameter, bool) {
 	if pointer, ok := t.(types.PointerType); ok {
 		t = pointer.Base
 	}
@@ -256,11 +256,11 @@ func genericTypeParameterBase(t types.Type) (types.TypeParameter, bool) {
 	return parameter, ok
 }
 
-func (a *Analyser) resolveGenericArguments(nodes []parser.TypeNode) []types.Type {
-	return a.resolveGenericArgumentsAt(nodes, false)
+func (a *Analyser) resolveParameterizedArguments(nodes []parser.TypeNode) []types.Type {
+	return a.resolveParameterizedArgumentsAt(nodes, false)
 }
 
-func (a *Analyser) resolveGenericArgumentsAt(nodes []parser.TypeNode, indirect bool) []types.Type {
+func (a *Analyser) resolveParameterizedArgumentsAt(nodes []parser.TypeNode, indirect bool) []types.Type {
 	arguments := make([]types.Type, len(nodes))
 	for i, node := range nodes {
 		arguments[i] = a.resolveTypeNodeAt(node, indirect)
@@ -268,11 +268,11 @@ func (a *Analyser) resolveGenericArgumentsAt(nodes []parser.TypeNode, indirect b
 	return arguments
 }
 
-func (a *Analyser) checkGenericArguments(node parser.Node, parameters []types.TypeParameter, arguments []types.Type) bool {
-	return a.checkGenericArgumentsFrom(node, parameters, arguments, 0)
+func (a *Analyser) checkParameterizedArguments(node parser.Node, parameters []types.TypeParameter, arguments []types.Type) bool {
+	return a.checkParameterizedArgumentsFrom(node, parameters, arguments, 0)
 }
 
-func (a *Analyser) checkGenericArgumentsFrom(node parser.Node, parameters []types.TypeParameter, arguments []types.Type, start int) bool {
+func (a *Analyser) checkParameterizedArgumentsFrom(node parser.Node, parameters []types.TypeParameter, arguments []types.Type, start int) bool {
 	if len(parameters) != len(arguments) {
 		a.errorf(node, "parameterized binding expects %d type arguments, got %d", len(parameters), len(arguments))
 		return false
@@ -352,7 +352,7 @@ func (a *Analyser) withDefinitionContext(module string, trusted bool, bindings m
 	a.resolvingTraitMethodTypes = previousTraitContext
 }
 
-func (a *Analyser) specializeGenericAlias(info *genericAliasInfo, arguments []types.Type, use parser.Node, indirect bool) *symbols.Symbol {
+func (a *Analyser) specializeParameterizedAlias(info *parameterizedAliasInfo, arguments []types.Type, use parser.Node, indirect bool) *symbols.Symbol {
 	if info == nil {
 		a.errorf(use, "parameterized type metadata is unavailable")
 		return nil
@@ -369,7 +369,7 @@ func (a *Analyser) specializeGenericAlias(info *genericAliasInfo, arguments []ty
 			}
 		}
 	}
-	if !a.checkGenericArguments(use, info.parameters, arguments) {
+	if !a.checkParameterizedArguments(use, info.parameters, arguments) {
 		return nil
 	}
 	key := specializationKey(arguments)
@@ -397,7 +397,7 @@ func (a *Analyser) specializeGenericAlias(info *genericAliasInfo, arguments []ty
 		}
 		return existing.symbol
 	}
-	specialization := &genericAliasSpecialization{state: aliasResolving}
+	specialization := &parameterizedAliasSpecialization{state: aliasResolving}
 	info.specializations[key] = specialization
 	bindings := typeArgumentBindings(info.parameters, arguments)
 	var selectionError error
@@ -433,7 +433,7 @@ func (a *Analyser) specializeGenericAlias(info *genericAliasInfo, arguments []ty
 		} else if !info.node.Transparent {
 			resolved = types.DefinedType{
 				Module: info.module, Name: displayName, Underlying: resolved,
-				GenericName: info.node.Name, TypeArguments: append([]types.Type(nil), arguments...),
+				ParameterizedName: info.node.Name, TypeArguments: append([]types.Type(nil), arguments...),
 			}
 			a.concreteTypes[info.module+":"+displayName] = resolved
 		}
@@ -465,9 +465,9 @@ func (a *Analyser) specializeGenericAlias(info *genericAliasInfo, arguments []ty
 	return specialization.symbol
 }
 
-func (a *Analyser) specializeGenericValue(template *symbols.Symbol, arguments []types.Type, use parser.Node) *symbols.Symbol {
-	info := a.genericValues[template]
-	if info == nil || !a.checkGenericArguments(use, template.GenericParameters, arguments) {
+func (a *Analyser) specializeParameterizedValue(template *symbols.Symbol, arguments []types.Type, use parser.Node) *symbols.Symbol {
+	info := a.parameterizedValues[template]
+	if info == nil || !a.checkParameterizedArguments(use, template.ParameterizedParameters, arguments) {
 		return nil
 	}
 	key := specializationKey(arguments)
@@ -475,11 +475,11 @@ func (a *Analyser) specializeGenericValue(template *symbols.Symbol, arguments []
 		return existing.Symbol
 	}
 	clone := parser.CloneSyntax(info.node).(*parser.DeclarationNode)
-	clone.GenericParameters = nil
+	clone.ParameterizedParameters = nil
 	clone.Name = SpecializationName(info.module, template.Name, arguments)
 	info.specializations[key] = clone
 	info.root.Body = append(info.root.Body, clone)
-	bindings := typeArgumentBindings(template.GenericParameters, arguments)
+	bindings := typeArgumentBindings(template.ParameterizedParameters, arguments)
 	a.withDefinitionContext(info.module, info.trusted, bindings, func() {
 		a.collectGlobalVariable(clone)
 		if clone.Symbol != nil {
@@ -493,31 +493,31 @@ func (a *Analyser) specializeGenericValue(template *symbols.Symbol, arguments []
 	return clone.Symbol
 }
 
-func (a *Analyser) specializeGenericFunction(template *symbols.Symbol, arguments []types.Type, use parser.Node) *parser.FunctionDefNode {
+func (a *Analyser) specializeParameterizedFunction(template *symbols.Symbol, arguments []types.Type, use parser.Node) *parser.FunctionDefNode {
 	if template.TraitDefaultTemplate != nil {
 		arguments = append([]types.Type{template.TraitDefaultSelf}, arguments...)
 		template = template.TraitDefaultTemplate
 	}
-	info := a.genericFunctions[template]
+	info := a.parameterizedFunctions[template]
 	checkFrom := 0
 	if template.TraitDefault {
 		checkFrom = 1
 	}
-	if info == nil || !a.checkGenericArgumentsFrom(use, template.GenericParameters, arguments, checkFrom) {
+	if info == nil || !a.checkParameterizedArgumentsFrom(use, template.ParameterizedParameters, arguments, checkFrom) {
 		return nil
 	}
 	key := specializationKey(arguments)
 	if existing := info.specializations[key]; existing != nil {
 		return existing
 	}
-	substitutions := typeSubstitutionBindings(template.GenericParameters, arguments)
+	substitutions := typeSubstitutionBindings(template.ParameterizedParameters, arguments)
 	name := SpecializationName(info.module, template.Name, arguments)
 	instanceSymbol := a.substituteSymbol(template, substitutions, use)
 	instanceSymbol.Name = name
 	instanceSymbol.Template = false
 	instanceSymbol.TemplateSymbol = template
 	instanceSymbol.TypeArguments = append([]types.Type(nil), arguments...)
-	instanceSymbol.GenericParameters = nil
+	instanceSymbol.ParameterizedParameters = nil
 
 	instance := &parser.FunctionDefNode{Symbol: instanceSymbol}
 	info.specializations[key] = instance
@@ -529,17 +529,17 @@ func (a *Analyser) specializeGenericFunction(template *symbols.Symbol, arguments
 		cloned := parser.CloneSyntax(info.node).(*parser.FunctionDefNode)
 		cloned.Symbol = instanceSymbol
 		cloned.Name = name
-		cloned.GenericParameters = nil
-		cloned.MethodOwnerGenericParameters = nil
+		cloned.ParameterizedParameters = nil
+		cloned.MethodOwnerParameterizedParameters = nil
 		cloned.MethodOwnerType = nil
 		cloned.DeferredStage = false
 		cloned.MethodOwner = ""
-		bindings := typeArgumentBindings(template.GenericParameters, arguments)
+		bindings := typeArgumentBindings(template.ParameterizedParameters, arguments)
 		stageBindings := make(map[string]types.Type, len(bindings)+len(arguments))
 		for name, binding := range bindings {
 			stageBindings[name] = binding
 		}
-		for i, parameter := range template.GenericParameters {
+		for i, parameter := range template.ParameterizedParameters {
 			if parameter.ValueType != nil {
 				stageBindings[parameter.Name] = arguments[i]
 			}
@@ -565,7 +565,7 @@ func (a *Analyser) specializeGenericFunction(template *symbols.Symbol, arguments
 			delete(info.specializations, key)
 			return nil
 		}
-		cloned.GenericInstance = true
+		cloned.ParameterizedInstance = true
 		*instance = *cloned
 		info.root.Body = append(info.root.Body, instance)
 		return instance
@@ -584,10 +584,10 @@ func (a *Analyser) specializeGenericFunction(template *symbols.Symbol, arguments
 			lambda.Function.Name = lambda.Function.Symbol.Name
 		}
 	}).(*parser.FunctionDefNode)
-	cloned.GenericParameters = nil
-	cloned.MethodOwnerGenericParameters = nil
+	cloned.ParameterizedParameters = nil
+	cloned.MethodOwnerParameterizedParameters = nil
 	cloned.MethodOwnerType = nil
-	cloned.GenericInstance = true
+	cloned.ParameterizedInstance = true
 	cloned.Name = name
 	cloned.Symbol = instanceSymbol
 	if cloned.MethodOwner != "" {
@@ -598,18 +598,18 @@ func (a *Analyser) specializeGenericFunction(template *symbols.Symbol, arguments
 	return instance
 }
 
-func (a *Analyser) specializeGenericFunctionSymbol(template *symbols.Symbol, arguments []types.Type, use parser.Node) *symbols.Symbol {
-	if a.genericFunctions[template] == nil {
+func (a *Analyser) specializeParameterizedFunctionSymbol(template *symbols.Symbol, arguments []types.Type, use parser.Node) *symbols.Symbol {
+	if a.parameterizedFunctions[template] == nil {
 		checkFrom := 0
 		if template.TraitDefault {
 			checkFrom = 1
 		}
-		if !a.checkGenericArgumentsFrom(use, template.GenericParameters, arguments, checkFrom) {
+		if !a.checkParameterizedArgumentsFrom(use, template.ParameterizedParameters, arguments, checkFrom) {
 			return nil
 		}
-		return dependentGenericFunctionSymbol(template, arguments)
+		return dependentParameterizedFunctionSymbol(template, arguments)
 	}
-	instance := a.specializeGenericFunction(template, arguments, use)
+	instance := a.specializeParameterizedFunction(template, arguments, use)
 	if instance == nil {
 		return nil
 	}
@@ -641,14 +641,14 @@ func (a *Analyser) instantiateSemanticNode(node parser.Node) {
 			}
 		}
 	}
-	if cast.GenericAssertion {
+	if cast.ParameterizedAssertion {
 		target := targetType
 		source := cast.Operand.GetType()
 		if specializedExplicitCast(cast.Operand, source, target) {
 			// A cast involving symbolic types may have been conservatively
 			// attributed as an assertion. Once both sides are concrete, use the
-			// same cast semantics as the equivalent non-generic expression.
-			cast.GenericAssertion = false
+			// same cast semantics as the equivalent non-parameterized expression.
+			cast.ParameterizedAssertion = false
 			cast.AssertionMatches = false
 		} else {
 			cast.AssertionMatches = source.Equals(target)
@@ -722,7 +722,7 @@ func (a *Analyser) substituteSymbol(
 ) *symbols.Symbol {
 	result := *original
 	result.Type = a.instantiateType(original.Type, substitutions, use)
-	result.GenericOrigin = a.instantiateType(original.GenericOrigin, substitutions, use)
+	result.ParameterizedOrigin = a.instantiateType(original.ParameterizedOrigin, substitutions, use)
 	result.Signature = a.instantiateFunctionSignature(original.Signature, substitutions, use)
 	result.TypeInfo = a.instantiateType(original.TypeInfo, substitutions, use)
 	result.MethodOwnerType = a.instantiateType(original.MethodOwnerType, substitutions, use)
@@ -773,12 +773,12 @@ func (a *Analyser) instantiateType(t types.Type, substitutions map[string]types.
 		for i, argument := range current.TypeArguments {
 			current.TypeArguments[i] = a.instantiateType(argument, substitutions, use)
 		}
-		if current.GenericName != "" && !hasTypeParameters(current.TypeArguments) {
+		if current.ParameterizedName != "" && !hasTypeParameters(current.TypeArguments) {
 			module := a.modules[current.Module]
 			if module != nil {
-				if template, ok := module.Scope.Resolve(current.GenericName); ok {
-					if info := a.genericAliases[template]; info != nil {
-						if specialized := a.specializeGenericAlias(info, current.TypeArguments, use, false); specialized != nil {
+				if template, ok := module.Scope.Resolve(current.ParameterizedName); ok {
+					if info := a.parameterizedAliases[template]; info != nil {
+						if specialized := a.specializeParameterizedAlias(info, current.TypeArguments, use, false); specialized != nil {
 							return specialized.TypeInfo
 						}
 					}
@@ -825,9 +825,9 @@ func (a *Analyser) instantiateType(t types.Type, substitutions map[string]types.
 		return current
 	case types.TraitType:
 		for i := range current.Methods {
-			for j := range current.Methods[i].GenericParameters {
-				current.Methods[i].GenericParameters[j].Constraint = a.instantiateType(
-					current.Methods[i].GenericParameters[j].Constraint,
+			for j := range current.Methods[i].ParameterizedParameters {
+				current.Methods[i].ParameterizedParameters[j].Constraint = a.instantiateType(
+					current.Methods[i].ParameterizedParameters[j].Constraint,
 					substitutions,
 					use,
 				)
@@ -883,12 +883,12 @@ func (a *Analyser) instantiateFunctionSymbol(
 		}
 		method := methods[original.RequirementSlot]
 		if method.Template {
-			if len(substituted.TypeArguments) != len(method.GenericParameters) || hasTypeParameters(substituted.TypeArguments) {
+			if len(substituted.TypeArguments) != len(method.ParameterizedParameters) || hasTypeParameters(substituted.TypeArguments) {
 				a.errorf(use, "cannot resolve parameterized trait method %q type arguments", method.Name)
 				cloned[original] = substituted
 				return substituted
 			}
-			specialization := a.specializeGenericFunction(method, substituted.TypeArguments, use)
+			specialization := a.specializeParameterizedFunction(method, substituted.TypeArguments, use)
 			if specialization == nil || specialization.Symbol == nil {
 				cloned[original] = substituted
 				return substituted
@@ -902,7 +902,7 @@ func (a *Analyser) instantiateFunctionSymbol(
 		if !hasTypeParameters(substituted.TypeArguments) {
 			switch original.TemplateSymbol.Kind {
 			case symbols.SymbolKindFunction:
-				specialization := a.specializeGenericFunction(
+				specialization := a.specializeParameterizedFunction(
 					original.TemplateSymbol,
 					substituted.TypeArguments,
 					use,
@@ -912,7 +912,7 @@ func (a *Analyser) instantiateFunctionSymbol(
 					return specialization.Symbol
 				}
 			case symbols.SymbolKindVariable:
-				if specialization := a.specializeGenericValue(
+				if specialization := a.specializeParameterizedValue(
 					original.TemplateSymbol,
 					substituted.TypeArguments,
 					use,
@@ -921,8 +921,8 @@ func (a *Analyser) instantiateFunctionSymbol(
 					return specialization
 				}
 			case symbols.SymbolKindType:
-				if specialization := a.specializeGenericAlias(
-					a.genericAliases[original.TemplateSymbol],
+				if specialization := a.specializeParameterizedAlias(
+					a.parameterizedAliases[original.TemplateSymbol],
 					substituted.TypeArguments,
 					use,
 					false,
@@ -958,20 +958,20 @@ func (a *Analyser) isGlobalSymbol(symbol *symbols.Symbol) bool {
 	return false
 }
 
-func inferGenericArguments(
+func inferParameterizedArguments(
 	parameters []types.TypeParameter,
 	patterns, actuals []types.Type,
 	typedVariadic, variadicExpansion bool,
 ) ([]types.Type, error) {
-	return inferGenericArgumentsForCall(parameters, patterns, actuals, nil, nil, typedVariadic, variadicExpansion, false)
+	return inferParameterizedArgumentsForCall(parameters, patterns, actuals, nil, nil, typedVariadic, variadicExpansion, false)
 }
 
-func inferGenericArgumentsPartial(
+func inferParameterizedArgumentsPartial(
 	parameters []types.TypeParameter,
 	patterns, actuals []types.Type,
 	typedVariadic, variadicExpansion bool,
 ) ([]types.Type, error) {
-	return inferGenericArgumentsForCall(parameters, patterns, actuals, nil, nil, typedVariadic, variadicExpansion, true)
+	return inferParameterizedArgumentsForCall(parameters, patterns, actuals, nil, nil, typedVariadic, variadicExpansion, true)
 }
 
 // preserveResolvedTypeArguments keeps explicit or argument-derived choices
@@ -985,19 +985,19 @@ func preserveResolvedTypeArguments(parameters []types.TypeParameter, fixed, infe
 	return inferred
 }
 
-func inferGenericArgumentsWithResult(
+func inferParameterizedArgumentsWithResult(
 	parameters []types.TypeParameter,
 	patterns, actuals []types.Type,
 	resultPattern, expectedResult types.Type,
 	typedVariadic, variadicExpansion bool,
 ) ([]types.Type, error) {
-	return inferGenericArgumentsForCall(
+	return inferParameterizedArgumentsForCall(
 		parameters, patterns, actuals, resultPattern, expectedResult,
 		typedVariadic, variadicExpansion, false,
 	)
 }
 
-func inferGenericArgumentsForCall(
+func inferParameterizedArgumentsForCall(
 	parameters []types.TypeParameter,
 	patterns, actuals []types.Type,
 	resultPattern, expectedResult types.Type,
@@ -1021,12 +1021,12 @@ func inferGenericArgumentsForCall(
 				pattern = slice.Base
 			}
 		}
-		if err := inferGenericType(pattern, actual, inferred); err != nil {
+		if err := inferParameterizedType(pattern, actual, inferred); err != nil {
 			return nil, err
 		}
 	}
 	if resultPattern != nil && expectedResult != nil {
-		inferMissingGenericType(resultPattern, expectedResult, inferred)
+		inferMissingParameterizedType(resultPattern, expectedResult, inferred)
 	}
 	arguments := make([]types.Type, len(parameters))
 	for i, parameter := range parameters {
@@ -1054,7 +1054,7 @@ func inferGenericArgumentsForCall(
 	return arguments, nil
 }
 
-func inferMissingGenericType(pattern, actual types.Type, inferred map[string]types.Type) {
+func inferMissingParameterizedType(pattern, actual types.Type, inferred map[string]types.Type) {
 	if parameter, ok := pattern.(types.TypeParameter); ok {
 		if previous, exists := inferred[parameter.Key()]; !exists || types.HasUntyped(previous) {
 			if !types.HasUntyped(actual) {
@@ -1066,24 +1066,24 @@ func inferMissingGenericType(pattern, actual types.Type, inferred map[string]typ
 	switch pattern := pattern.(type) {
 	case types.PointerType:
 		if actual, ok := actual.(types.PointerType); ok {
-			inferMissingGenericType(pattern.Base, actual.Base, inferred)
+			inferMissingParameterizedType(pattern.Base, actual.Base, inferred)
 		}
 	case types.SliceType:
 		if actual, ok := actual.(types.SliceType); ok {
-			inferMissingGenericType(pattern.Base, actual.Base, inferred)
+			inferMissingParameterizedType(pattern.Base, actual.Base, inferred)
 		}
 	case types.ArrayType:
 		if actual, ok := actual.(types.ArrayType); ok && pattern.Length == actual.Length {
-			inferMissingGenericType(pattern.Base, actual.Base, inferred)
+			inferMissingParameterizedType(pattern.Base, actual.Base, inferred)
 		}
 	case types.DefinedType:
 		actual, ok := actual.(types.DefinedType)
-		if !ok || pattern.Module != actual.Module || pattern.GenericName == "" || pattern.GenericName != actual.GenericName ||
+		if !ok || pattern.Module != actual.Module || pattern.ParameterizedName == "" || pattern.ParameterizedName != actual.ParameterizedName ||
 			len(pattern.TypeArguments) != len(actual.TypeArguments) {
 			return
 		}
 		for i := range pattern.TypeArguments {
-			inferMissingGenericType(pattern.TypeArguments[i], actual.TypeArguments[i], inferred)
+			inferMissingParameterizedType(pattern.TypeArguments[i], actual.TypeArguments[i], inferred)
 		}
 	case types.FunctionType:
 		actual, ok := actual.(types.FunctionType)
@@ -1091,21 +1091,21 @@ func inferMissingGenericType(pattern, actual types.Type, inferred map[string]typ
 			return
 		}
 		for i := range pattern.Parameters {
-			inferMissingGenericType(pattern.Parameters[i], actual.Parameters[i], inferred)
+			inferMissingParameterizedType(pattern.Parameters[i], actual.Parameters[i], inferred)
 		}
-		inferMissingGenericType(pattern.ReturnType, actual.ReturnType, inferred)
+		inferMissingParameterizedType(pattern.ReturnType, actual.ReturnType, inferred)
 	case types.MultipleReturnType:
 		actual, ok := actual.(types.MultipleReturnType)
 		if !ok || len(pattern.Types) != len(actual.Types) {
 			return
 		}
 		for i := range pattern.Types {
-			inferMissingGenericType(pattern.Types[i], actual.Types[i], inferred)
+			inferMissingParameterizedType(pattern.Types[i], actual.Types[i], inferred)
 		}
 	}
 }
 
-func inferGenericType(pattern, actual types.Type, inferred map[string]types.Type) error {
+func inferParameterizedType(pattern, actual types.Type, inferred map[string]types.Type) error {
 	if parameter, ok := pattern.(types.TypeParameter); ok {
 		if _, ambiguous := actual.(types.SequenceType); ambiguous {
 			return nil
@@ -1136,35 +1136,35 @@ func inferGenericType(pattern, actual types.Type, inferred map[string]types.Type
 		if !ok {
 			return nil
 		}
-		return inferGenericType(pattern.Base, actual.Base, inferred)
+		return inferParameterizedType(pattern.Base, actual.Base, inferred)
 	case types.SliceType:
 		switch actual := actual.(type) {
 		case types.SliceType:
-			return inferGenericType(pattern.Base, actual.Base, inferred)
+			return inferParameterizedType(pattern.Base, actual.Base, inferred)
 		case types.SequenceType:
-			return inferGenericType(pattern.Base, actual.Base, inferred)
+			return inferParameterizedType(pattern.Base, actual.Base, inferred)
 		}
 		return nil
 	case types.ArrayType:
 		switch actual := actual.(type) {
 		case types.ArrayType:
 			if pattern.Length == actual.Length {
-				return inferGenericType(pattern.Base, actual.Base, inferred)
+				return inferParameterizedType(pattern.Base, actual.Base, inferred)
 			}
 		case types.SequenceType:
 			if pattern.Length == actual.Length {
-				return inferGenericType(pattern.Base, actual.Base, inferred)
+				return inferParameterizedType(pattern.Base, actual.Base, inferred)
 			}
 		}
 		return nil
 	case types.DefinedType:
 		actual, ok := actual.(types.DefinedType)
-		if !ok || pattern.Module != actual.Module || pattern.GenericName == "" || pattern.GenericName != actual.GenericName ||
+		if !ok || pattern.Module != actual.Module || pattern.ParameterizedName == "" || pattern.ParameterizedName != actual.ParameterizedName ||
 			len(pattern.TypeArguments) != len(actual.TypeArguments) {
 			return nil
 		}
 		for i := range pattern.TypeArguments {
-			if err := inferGenericType(pattern.TypeArguments[i], actual.TypeArguments[i], inferred); err != nil {
+			if err := inferParameterizedType(pattern.TypeArguments[i], actual.TypeArguments[i], inferred); err != nil {
 				return err
 			}
 		}
@@ -1174,11 +1174,11 @@ func inferGenericType(pattern, actual types.Type, inferred map[string]types.Type
 			return nil
 		}
 		for i := range pattern.Parameters {
-			if err := inferGenericType(pattern.Parameters[i], actual.Parameters[i], inferred); err != nil {
+			if err := inferParameterizedType(pattern.Parameters[i], actual.Parameters[i], inferred); err != nil {
 				return err
 			}
 		}
-		return inferGenericType(pattern.ReturnType, actual.ReturnType, inferred)
+		return inferParameterizedType(pattern.ReturnType, actual.ReturnType, inferred)
 	}
 	return nil
 }
@@ -1191,15 +1191,15 @@ func expressionTypes(expressions []parser.ExpressionNode) []types.Type {
 	return result
 }
 
-func (a *Attributor) attributeGenericSpecialization(template *symbols.Symbol, arguments []types.Type, use parser.Node) *parser.FunctionDefNode {
-	specialization := a.analyser.specializeGenericFunction(template, arguments, use)
+func (a *Attributor) attributeParameterizedSpecialization(template *symbols.Symbol, arguments []types.Type, use parser.Node) *parser.FunctionDefNode {
+	specialization := a.analyser.specializeParameterizedFunction(template, arguments, use)
 	return specialization
 }
 
 func (a *Attributor) enterSpecialization(symbol *symbols.Symbol) func() {
 	previous := a.analyser.typeParameterBindings
 	if symbol != nil && symbol.TemplateSymbol != nil {
-		a.analyser.typeParameterBindings = typeArgumentBindings(symbol.TemplateSymbol.GenericParameters, symbol.TypeArguments)
+		a.analyser.typeParameterBindings = typeArgumentBindings(symbol.TemplateSymbol.ParameterizedParameters, symbol.TypeArguments)
 	}
 	return func() {
 		a.analyser.typeParameterBindings = previous

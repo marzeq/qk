@@ -13,7 +13,7 @@ func traitDefaultKey(trait types.TraitType) string {
 }
 
 func (a *Analyser) registerTraitDefaults(node *parser.TypeAliasNode, trait types.TraitType, root *parser.RootNode) {
-	if root == nil || len(node.GenericParameters) != 0 && trait.Name == node.Name {
+	if root == nil || len(node.ParameterizedParameters) != 0 && trait.Name == node.Name {
 		return
 	}
 	key := traitDefaultKey(trait)
@@ -28,7 +28,7 @@ func (a *Analyser) registerTraitDefaults(node *parser.TypeAliasNode, trait types
 		}
 
 		self := types.TypeParameter{
-			Owner: genericOwner(trait.Module, "<trait-default:"+trait.Name+"."+method.Name+">"),
+			Owner: parameterizedOwner(trait.Module, "<trait-default:"+trait.Name+"."+method.Name+">"),
 			Name:  "Self", Index: 0, Constraint: trait,
 		}
 		receiverType := types.Type(self)
@@ -43,11 +43,11 @@ func (a *Analyser) registerTraitDefaults(node *parser.TypeAliasNode, trait types
 		for i, parameter := range method.Parameters {
 			parameters[i+1] = types.SubstituteSelf(parameter, self)
 		}
-		methodGenericParameters := append([]types.TypeParameter(nil), method.GenericParameters...)
-		for i := range methodGenericParameters {
-			methodGenericParameters[i].Constraint = types.SubstituteSelf(methodGenericParameters[i].Constraint, self)
+		methodParameterizedParameters := append([]types.TypeParameter(nil), method.ParameterizedParameters...)
+		for i := range methodParameterizedParameters {
+			methodParameterizedParameters[i].Constraint = types.SubstituteSelf(methodParameterizedParameters[i].Constraint, self)
 		}
-		genericParameters := append([]types.TypeParameter{self}, methodGenericParameters...)
+		parameterizedParameters := append([]types.TypeParameter{self}, methodParameterizedParameters...)
 		name := fmt.Sprintf("__trait_default_%s_%s_%d", trait.Name, method.Name, slot)
 		symbol := &symbols.Symbol{
 			Name: name, Kind: symbols.SymbolKindFunction,
@@ -56,7 +56,7 @@ func (a *Analyser) registerTraitDefaults(node *parser.TypeAliasNode, trait types
 				ReturnType: types.SubstituteSelf(method.ReturnType, self),
 			},
 			Method: true, MethodReceiver: method.Receiver, DefinitionModule: trait.Module,
-			GenericParameters: genericParameters, Template: true, TraitDefault: true,
+			ParameterizedParameters: parameterizedParameters, Template: true, TraitDefault: true,
 		}
 
 		selfTypeNode := parser.TypeNode(&parser.NamedTypeNode{Name: "Self", Loc: syntax.Loc})
@@ -74,18 +74,18 @@ func (a *Analyser) registerTraitDefaults(node *parser.TypeAliasNode, trait types
 		for i, arg := range syntax.Args {
 			args[i+1] = parser.CloneSyntax(arg).(*parser.FunctionNodeArg)
 		}
-		genericNodes := make([]parser.GenericParameterNode, len(syntax.GenericParameters)+1)
-		genericNodes[0] = parser.GenericParameterNode{Name: "Self", Loc: syntax.Loc}
-		copy(genericNodes[1:], syntax.GenericParameters)
+		parameterizedNodes := make([]parser.ParameterizedParameterNode, len(syntax.ParameterizedParameters)+1)
+		parameterizedNodes[0] = parser.ParameterizedParameterNode{Name: "Self", Loc: syntax.Loc}
+		copy(parameterizedNodes[1:], syntax.ParameterizedParameters)
 		definition := &parser.FunctionDefNode{
 			Name: name, Receiver: parser.MethodReceiverKind(method.Receiver + 1),
-			GenericParameters: genericNodes, Args: args, RetTypeNode: syntax.ReturnType,
+			ParameterizedParameters: parameterizedNodes, Args: args, RetTypeNode: syntax.ReturnType,
 			Body: parser.CloneSyntax(syntax.Body), ExpressionBody: syntax.ExpressionBody,
 			Loc: syntax.Loc, Symbol: symbol,
 		}
 		root.Body = append(root.Body, definition)
 		a.functionDefinitions[symbol] = &functionDefinitionInfo{node: definition, module: trait.Module}
-		a.genericFunctions[symbol] = &genericFunctionInfo{
+		a.parameterizedFunctions[symbol] = &parameterizedFunctionInfo{
 			node: definition, root: root, module: trait.Module,
 			specializations: make(map[string]*parser.FunctionDefNode),
 		}
@@ -105,10 +105,10 @@ func (a *Analyser) defaultTraitMethod(trait types.TraitType, slot int, concrete 
 		return nil
 	}
 	template := defaults[slot]
-	if len(template.GenericParameters) == 1 {
+	if len(template.ParameterizedParameters) == 1 {
 		arguments := []types.Type{concrete}
-		result := a.specializeGenericFunctionSymbol(template, arguments, at)
-		if result != nil && a.genericFunctions[template] == nil {
+		result := a.specializeParameterizedFunctionSymbol(template, arguments, at)
+		if result != nil && a.parameterizedFunctions[template] == nil {
 			result.Name = SpecializationName(template.DefinitionModule, template.Name, arguments)
 		}
 		return result
@@ -116,9 +116,9 @@ func (a *Analyser) defaultTraitMethod(trait types.TraitType, slot int, concrete 
 
 	result := *template
 	result.Signature = substituteFunctionSignature(template.Signature, map[string]types.Type{
-		template.GenericParameters[0].Key(): concrete,
+		template.ParameterizedParameters[0].Key(): concrete,
 	})
-	result.GenericParameters = append([]types.TypeParameter(nil), template.GenericParameters[1:]...)
+	result.ParameterizedParameters = append([]types.TypeParameter(nil), template.ParameterizedParameters[1:]...)
 	result.TraitDefaultTemplate = template
 	result.TraitDefaultSelf = concrete
 	result.TraitDefault = false
@@ -126,11 +126,11 @@ func (a *Analyser) defaultTraitMethod(trait types.TraitType, slot int, concrete 
 }
 
 func (a *Analyser) templateBindings(symbol *symbols.Symbol) map[string]types.Type {
-	bindings := make(map[string]types.Type, len(a.definitionTypeBindings[symbol])+len(symbol.GenericParameters))
+	bindings := make(map[string]types.Type, len(a.definitionTypeBindings[symbol])+len(symbol.ParameterizedParameters))
 	for name, binding := range a.definitionTypeBindings[symbol] {
 		bindings[name] = binding
 	}
-	for _, parameter := range symbol.GenericParameters {
+	for _, parameter := range symbol.ParameterizedParameters {
 		if parameter.ValueType == nil {
 			bindings[parameter.Name] = parameter
 		}

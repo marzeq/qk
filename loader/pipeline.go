@@ -44,120 +44,13 @@ func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, o
 	if verbose && debug {
 		fmt.Println("completed analysis phase")
 	}
-
-	attributor := analyser.NewAttributor()
-
-	for _, name := range order {
-		info := mods[name]
-		attributor.AttributeGenericTemplates(info.Root)
-	}
-
-	if len(analyser.Errors()) > 0 || len(attributor.Errors()) > 0 {
-		errors := append([]error(nil), analyser.Errors()...)
-		errors = append(errors, attributor.Errors()...)
-		return errors, nil
-	}
-	analyser.InferFunctionContexts(moduleRoots(mods, order)...)
-
-	templateValidator := analyser.NewValidator()
-	for _, name := range order {
-		info := mods[name]
-		templateValidator.ValidateGenericTemplates(info.Root)
-	}
-	warnings = append(warnings, templateValidator.Warnings()...)
-	if len(templateValidator.Errors()) > 0 {
-		return templateValidator.Errors(), warnings
-	}
-
-	for _, name := range order {
-		info := mods[name]
-		attributor.AttributeModule(info.Root)
-	}
-
-	if len(analyser.Errors()) > 0 || len(attributor.Errors()) > 0 {
-		errors := append([]error(nil), analyser.Errors()...)
-		errors = append(errors, attributor.Errors()...)
-		return errors, warnings
-	}
-	analyser.InferFunctionContexts(moduleRoots(mods, order)...)
-
-	if verbose && debug {
-		fmt.Println("completed attribution phase")
-	}
-
-	validator := analyser.NewValidator()
-
-	for _, name := range order {
-		info := mods[name]
-		validator.ValidateModule(info.Root)
-	}
-	warnings = append(warnings, validator.Warnings()...)
-
-	if len(validator.Errors()) > 0 {
-		return validator.Errors(), warnings
-	}
-
-	if verbose && debug {
-		fmt.Println("completed validation phase")
-	}
-
-	if debug {
-		for _, name := range order {
-			info := mods[name]
-			analyser.DebugCheck(info.Root)
-		}
-
-		if verbose {
-			fmt.Println("completed debug checks")
-		}
-	}
-
-	return nil, warnings
+	return RunSemanticModuleBodies(mods, analyser, order, verbose, debug)
 }
 
 // RunSemanticModule analyses one source-backed module after its dependencies
 // have been declared.
 func RunSemanticModule(info *ModuleInfo, analyser *sema.Analyser, verbose, debug bool) (errors []error, warnings []error) {
-	analyser.DeclareModule(info.Root, info.Path, info.TrustedStandardLibrary)
-	if len(analyser.Errors()) != 0 {
-		return analyser.Errors(), nil
-	}
-	analyser.AnalyseModuleBody(info.Root, info.Path)
-	if len(analyser.Errors()) != 0 {
-		return analyser.Errors(), nil
-	}
-	attributor := analyser.NewAttributor()
-	attributor.AttributeGenericTemplates(info.Root)
-	analyser.InferFunctionContexts(info.Root)
-	if len(analyser.Errors()) != 0 || len(attributor.Errors()) != 0 {
-		out := append([]error(nil), analyser.Errors()...)
-		return append(out, attributor.Errors()...), nil
-	}
-	templateValidator := analyser.NewValidator()
-	templateValidator.ValidateGenericTemplates(info.Root)
-	warnings = append(warnings, templateValidator.Warnings()...)
-	if len(templateValidator.Errors()) != 0 {
-		return templateValidator.Errors(), warnings
-	}
-	attributor.AttributeModule(info.Root)
-	analyser.InferFunctionContexts(info.Root)
-	if len(analyser.Errors()) != 0 || len(attributor.Errors()) != 0 {
-		out := append([]error(nil), analyser.Errors()...)
-		return append(out, attributor.Errors()...), warnings
-	}
-	validator := analyser.NewValidator()
-	validator.ValidateModule(info.Root)
-	warnings = append(warnings, validator.Warnings()...)
-	if len(validator.Errors()) != 0 {
-		return validator.Errors(), warnings
-	}
-	if debug {
-		analyser.DebugCheck(info.Root)
-	}
-	if verbose && debug {
-		fmt.Printf("completed semantic pipeline for module %s\n", info.Path)
-	}
-	return nil, warnings
+	return RunSemanticPipeline(map[string]*ModuleInfo{info.Path: info}, analyser, []string{info.Path}, verbose, debug)
 }
 
 // RunSemanticModuleBodies completes attribution and validation for modules
@@ -166,7 +59,7 @@ func RunSemanticModule(info *ModuleInfo, analyser *sema.Analyser, verbose, debug
 func RunSemanticModuleBodies(mods map[string]*ModuleInfo, analyser *sema.Analyser, order []string, verbose, debug bool) (errors []error, warnings []error) {
 	attributor := analyser.NewAttributor()
 	for _, name := range order {
-		attributor.AttributeGenericTemplates(mods[name].Root)
+		attributor.AttributeParameterizedTemplates(mods[name].Root)
 	}
 	if len(analyser.Errors()) != 0 || len(attributor.Errors()) != 0 {
 		out := append([]error(nil), analyser.Errors()...)
@@ -175,7 +68,7 @@ func RunSemanticModuleBodies(mods map[string]*ModuleInfo, analyser *sema.Analyse
 	analyser.InferFunctionContexts(moduleRoots(mods, order)...)
 	templateValidator := analyser.NewValidator()
 	for _, name := range order {
-		templateValidator.ValidateGenericTemplates(mods[name].Root)
+		templateValidator.ValidateParameterizedTemplates(mods[name].Root)
 	}
 	warnings = append(warnings, templateValidator.Warnings()...)
 	if len(templateValidator.Errors()) != 0 {
@@ -245,19 +138,19 @@ func GenerateIRModule(info *ModuleInfo, mainModule string, dependencyInitializer
 	return module
 }
 
-func GenerateModuleGenericTemplateIR(info *ModuleInfo) []ir.GenericTemplate {
+func GenerateModuleParameterizedTemplateIR(info *ModuleInfo) []ir.ParameterizedTemplate {
 	module := &ir.Module{}
 	generator := &irgen.Generator{ModuleName: info.Path, Module: module}
-	var result []ir.GenericTemplate
+	var result []ir.ParameterizedTemplate
 	for _, node := range info.Root.Body {
 		function, ok := node.(*parser.FunctionDefNode)
-		if !ok || !function.IsGeneric() || function.Body == nil || function.DeferredStage {
+		if !ok || !function.IsParameterized() || function.Body == nil || function.DeferredStage {
 			continue
 		}
-		if generated := generator.GenerateGenericTemplate(function); len(generated) != 0 {
-			result = append(result, ir.GenericTemplate{
+		if generated := generator.GenerateParameterizedTemplate(function); len(generated) != 0 {
+			result = append(result, ir.ParameterizedTemplate{
 				Module: info.Path, Name: function.Symbol.Name,
-				Parameters: append([]types.TypeParameter(nil), function.Symbol.GenericParameters...),
+				Parameters: append([]types.TypeParameter(nil), function.Symbol.ParameterizedParameters...),
 				Functions:  generated,
 			})
 		}
@@ -272,28 +165,6 @@ func GenerateModuleGenericTemplateIR(info *ModuleInfo) []ir.GenericTemplate {
 func PropagateSpecializationDemands(mods map[string]*ModuleInfo, order []string) {
 	propagateSpecializationConstants(mods, order)
 	propagateTypedVariadicArities(mods, order)
-}
-
-func GenerateGenericTemplateIR(mods map[string]*ModuleInfo, order []string) map[string][]ir.GenericTemplate {
-	result := make(map[string][]ir.GenericTemplate)
-	for _, name := range order {
-		module := &ir.Module{}
-		generator := &irgen.Generator{ModuleName: name, Module: module}
-		for _, node := range mods[name].Root.Body {
-			function, ok := node.(*parser.FunctionDefNode)
-			if !ok || !function.IsGeneric() || function.Body == nil {
-				continue
-			}
-			if generated := generator.GenerateGenericTemplate(function); len(generated) != 0 {
-				result[name] = append(result[name], ir.GenericTemplate{
-					Module: name, Name: function.Symbol.Name,
-					Parameters: append([]types.TypeParameter(nil), function.Symbol.GenericParameters...),
-					Functions:  generated,
-				})
-			}
-		}
-	}
-	return result
 }
 
 func propagateSpecializationConstants(mods map[string]*ModuleInfo, order []string) {

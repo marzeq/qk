@@ -146,8 +146,8 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 	var err error
 	methodOwner := ""
 	var methodOwnerType TypeNode
-	var methodOwnerGenericParameters []GenericParameterNode
-	var genericParameters []GenericParameterNode
+	var methodOwnerParameterizedParameters []ParameterizedParameterNode
+	var parameterizedParameters []ParameterizedParameterNode
 	if p.Match(tokeniser.TokenOpenParen) {
 		p.Inc()
 		previousCaptureMode := p.allowTypeCapture
@@ -167,7 +167,7 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 				}
 			}
 		}
-		genericParameters, err = capturedTypeParameters(methodOwnerType)
+		parameterizedParameters, err = capturedTypeParameters(methodOwnerType)
 		if err != nil {
 			return nil, err
 		}
@@ -214,7 +214,7 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 			if err != nil {
 				return nil, err
 			}
-			genericParameters, err = capturedTypeParameters(methodOwnerType)
+			parameterizedParameters, err = capturedTypeParameters(methodOwnerType)
 			if err != nil {
 				return nil, err
 			}
@@ -280,8 +280,8 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 		if methodOwnerType != nil {
 			selfType = methodOwnerType
 		} else {
-			ownerTypeArguments := make([]TypeNode, len(methodOwnerGenericParameters))
-			for i, parameter := range methodOwnerGenericParameters {
+			ownerTypeArguments := make([]TypeNode, len(methodOwnerParameterizedParameters))
+			for i, parameter := range methodOwnerParameterizedParameters {
 				ownerTypeArguments[i] = &NamedTypeNode{Name: parameter.Name, Loc: parameter.Loc}
 			}
 			selfType = &NamedTypeNode{Name: methodOwner, TypeArguments: ownerTypeArguments, Loc: self.Loc}
@@ -321,12 +321,12 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 			if parseErr != nil {
 				return nil, parseErr
 			}
-			for _, existing := range genericParameters {
+			for _, existing := range parameterizedParameters {
 				if existing.Name == parameter.Name {
 					return nil, shared.NewError(parameter.Loc, "duplicate type parameter %q", parameter.Name)
 				}
 			}
-			genericParameters = append(genericParameters, parameter)
+			parameterizedParameters = append(parameterizedParameters, parameter)
 			if !p.Match(tokeniser.TokenComma) {
 				if !p.Match(tokeniser.TokenCloseParen) {
 					return nil, shared.NewError(p.CurrLoc(), "expected ',' or ')' after type parameter")
@@ -509,7 +509,7 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 	} else if isTypeResultNode(retType) && !((methodOwner != "") || methodOwnerType != nil) {
 		p.lexicalOwner = name.Value
 		p.lexicalOwnerArgs = nil
-		for _, parameter := range genericParameters {
+		for _, parameter := range parameterizedParameters {
 			p.lexicalOwnerArgs = append(p.lexicalOwnerArgs, parameter.Name)
 		}
 		for _, argument := range args {
@@ -557,20 +557,20 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 	}
 
 	return &FunctionDefNode{
-		Name:                         name.Value,
-		MethodOwner:                  methodOwner,
-		MethodOwnerType:              methodOwnerType,
-		MethodOwnerGenericParameters: methodOwnerGenericParameters,
-		Receiver:                     receiver,
-		GenericParameters:            genericParameters,
-		Args:                         args,
-		RetTypeNode:                  retType,
-		Body:                         body,
-		ExpressionBody:               expressionBody,
-		Loc:                          p.SpanFrom(beginLoc),
-		Attributes:                   attrs,
-		HasVariadic:                  variadic,
-		TypedVariadic:                typedVariadic,
+		Name:                               name.Value,
+		MethodOwner:                        methodOwner,
+		MethodOwnerType:                    methodOwnerType,
+		MethodOwnerParameterizedParameters: methodOwnerParameterizedParameters,
+		Receiver:                           receiver,
+		ParameterizedParameters:            parameterizedParameters,
+		Args:                               args,
+		RetTypeNode:                        retType,
+		Body:                               body,
+		ExpressionBody:                     expressionBody,
+		Loc:                                p.SpanFrom(beginLoc),
+		Attributes:                         attrs,
+		HasVariadic:                        variadic,
+		TypedVariadic:                      typedVariadic,
 	}, nil
 }
 
@@ -891,7 +891,7 @@ func (p *Parser) ParseTypeAlias() (*TypeAliasNode, error) {
 		p.Inc()
 	}
 
-	genericParameters := []GenericParameterNode{}
+	parameterizedParameters := []ParameterizedParameterNode{}
 	if p.Match(tokeniser.TokenOpenParen) {
 		p.Inc()
 		for !p.Match(tokeniser.TokenCloseParen) {
@@ -902,7 +902,7 @@ func (p *Parser) ParseTypeAlias() (*TypeAliasNode, error) {
 			if !matched {
 				return nil, shared.NewError(p.CurrLoc(), "type-producing bindings only accept parameters of type 'type'")
 			}
-			genericParameters = append(genericParameters, parameter)
+			parameterizedParameters = append(parameterizedParameters, parameter)
 			if !p.Match(tokeniser.TokenComma) {
 				break
 			}
@@ -920,7 +920,7 @@ func (p *Parser) ParseTypeAlias() (*TypeAliasNode, error) {
 	defer func() { p.lexicalOwner, p.lexicalOwnerArgs = previousOwner, previousOwnerArgs }()
 	p.lexicalOwner = name.Value
 	p.lexicalOwnerArgs = nil
-	for _, parameter := range genericParameters {
+	for _, parameter := range parameterizedParameters {
 		p.lexicalOwnerArgs = append(p.lexicalOwnerArgs, parameter.Name)
 	}
 
@@ -939,7 +939,7 @@ func (p *Parser) ParseTypeAlias() (*TypeAliasNode, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &TypeAliasNode{Name: name.Value, GenericParameters: genericParameters,
+		return &TypeAliasNode{Name: name.Value, ParameterizedParameters: parameterizedParameters,
 			Type: value, Methods: methods, Loc: p.SpanFrom(beginLoc)}, nil
 	}
 	// A bare reference is an alias; a constructor creates a new type.
@@ -957,11 +957,11 @@ func (p *Parser) ParseTypeAlias() (*TypeAliasNode, error) {
 	}
 
 	return &TypeAliasNode{
-		Name:              name.Value,
-		GenericParameters: genericParameters,
-		Type:              tpe,
-		Transparent:       transparent,
-		Loc:               p.SpanFrom(beginLoc),
+		Name:                    name.Value,
+		ParameterizedParameters: parameterizedParameters,
+		Type:                    tpe,
+		Transparent:             transparent,
+		Loc:                     p.SpanFrom(beginLoc),
 	}, nil
 }
 
@@ -1480,39 +1480,39 @@ func isCompileTimeExpression(value ExpressionNode) bool {
 // parseTypeParameter recognizes a compile-time type parameter in an ordinary
 // binding argument list. Constraints use type(Trait), for example
 // $T: type(PartialEq).
-func (p *Parser) parseTypeParameter() (GenericParameterNode, bool, error) {
+func (p *Parser) parseTypeParameter() (ParameterizedParameterNode, bool, error) {
 	p.PushPos()
 	begin := p.CurrLoc()
 	if !p.Match(tokeniser.TokenDollar) {
 		p.PopPos()
-		return GenericParameterNode{}, false, nil
+		return ParameterizedParameterNode{}, false, nil
 	}
 	p.Inc()
 	name, ok := p.ExpectGet(tokeniser.TokenIdentifier)
 	if !ok {
 		p.PopPos()
-		return GenericParameterNode{}, true, shared.NewError(begin, "expected type parameter name after '$'")
+		return ParameterizedParameterNode{}, true, shared.NewError(begin, "expected type parameter name after '$'")
 	}
 	if !p.Expect(tokeniser.TokenColon) {
 		p.PopPos()
-		return GenericParameterNode{}, true, shared.NewError(name.Loc, "expected ':' after compile-time parameter %q", name.Value)
+		return ParameterizedParameterNode{}, true, shared.NewError(name.Loc, "expected ':' after compile-time parameter %q", name.Value)
 	}
 	if !p.Match(tokeniser.TokenKeyword) || p.Peek().Value != string(tokeniser.KeywordType) {
 		p.PopPos()
-		return GenericParameterNode{}, false, nil
+		return ParameterizedParameterNode{}, false, nil
 	}
 	p.Inc()
-	parameter := GenericParameterNode{Name: name.Value, Loc: p.SpanFrom(begin)}
+	parameter := ParameterizedParameterNode{Name: name.Value, Loc: p.SpanFrom(begin)}
 	if p.Match(tokeniser.TokenOpenParen) {
 		p.Inc()
 		constraint, err := p.ParseType()
 		if err != nil {
 			p.CommitPos()
-			return GenericParameterNode{}, true, err
+			return ParameterizedParameterNode{}, true, err
 		}
 		if !p.Expect(tokeniser.TokenCloseParen) {
 			p.CommitPos()
-			return GenericParameterNode{}, true, shared.NewError(p.PrevLoc(), "expected ')' after type parameter constraint")
+			return ParameterizedParameterNode{}, true, shared.NewError(p.PrevLoc(), "expected ')' after type parameter constraint")
 		}
 		parameter.Constraint = constraint
 		parameter.Loc = p.SpanFrom(begin)
@@ -1521,8 +1521,8 @@ func (p *Parser) parseTypeParameter() (GenericParameterNode, bool, error) {
 	return parameter, true, nil
 }
 
-func capturedTypeParameters(owner TypeNode) ([]GenericParameterNode, error) {
-	var result []GenericParameterNode
+func capturedTypeParameters(owner TypeNode) ([]ParameterizedParameterNode, error) {
+	var result []ParameterizedParameterNode
 	seen := make(map[string]bool)
 	var visit func(TypeNode) error
 	visit = func(node TypeNode) error {
@@ -1534,7 +1534,7 @@ func capturedTypeParameters(owner TypeNode) ([]GenericParameterNode, error) {
 				}
 				if !seen[n.Name] {
 					seen[n.Name] = true
-					result = append(result, GenericParameterNode{Name: n.Name, Constraint: n.CaptureConstraint, Loc: n.Loc})
+					result = append(result, ParameterizedParameterNode{Name: n.Name, Constraint: n.CaptureConstraint, Loc: n.Loc})
 				} else if n.CaptureConstraint != nil {
 					return shared.NewError(n.Loc, "constraint for repeated type capture %q must be declared on its first occurrence", n.Name)
 				}

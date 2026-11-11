@@ -1565,7 +1565,7 @@ func (p *Parser) ParseTraitType() (*TraitTypeNode, error) {
 			return nil, shared.NewError(name.Loc, "duplicate trait method %q", name.Value)
 		}
 		seen[name.Value] = struct{}{}
-		genericParameters := []GenericParameterNode{}
+		parameterizedParameters := []ParameterizedParameterNode{}
 		if !p.Expect(tokeniser.TokenOpenParen) {
 			return nil, shared.NewError(p.PrevLoc(), "expected '('")
 		}
@@ -1605,7 +1605,7 @@ func (p *Parser) ParseTraitType() (*TraitTypeNode, error) {
 				if parseErr != nil {
 					return nil, parseErr
 				}
-				genericParameters = append(genericParameters, parameter)
+				parameterizedParameters = append(parameterizedParameters, parameter)
 				if p.Match(tokeniser.TokenComma) {
 					p.Inc()
 				}
@@ -1693,7 +1693,7 @@ func (p *Parser) ParseTraitType() (*TraitTypeNode, error) {
 			}
 		}
 		methods = append(methods, TraitMethodNode{
-			Name: name.Value, GenericParameters: genericParameters, Receiver: receiver,
+			Name: name.Value, ParameterizedParameters: parameterizedParameters, Receiver: receiver,
 			Args: args, ReturnType: ret, Body: body, ExpressionBody: expressionBody,
 			Loc: p.SpanFrom(loc),
 		})

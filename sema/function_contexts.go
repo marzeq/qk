@@ -20,7 +20,7 @@ func (a *Analyser) InferFunctionContexts(roots ...*parser.RootNode) {
 	for _, root := range roots {
 		for _, raw := range root.Body {
 			function, ok := raw.(*parser.FunctionDefNode)
-			if !ok || function.Symbol == nil || function.Body == nil || function.GenericInstance || function.DeferredStage {
+			if !ok || function.Symbol == nil || function.Body == nil || function.ParameterizedInstance || function.DeferredStage {
 				continue
 			}
 			current := entry{function: function}

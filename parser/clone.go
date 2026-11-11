@@ -23,7 +23,7 @@ func CloneSyntax(node Node) Node {
 }
 
 // CloneSemantic copies an attributed AST while allowing declaration-scoped
-// types and symbols to be replaced for a generic instantiation.
+// types and symbols to be replaced for a parameterized instantiation.
 func CloneSemantic(
 	node Node,
 	substituteType func(types.Type) types.Type,

@@ -70,7 +70,7 @@ func lowerTypeFunctionsInBody(body []parser.Node) ([]parser.Node, error) {
 			function.CompileTimeOnly = true
 			continue
 		}
-		parameters := append([]parser.GenericParameterNode(nil), function.GenericParameters...)
+		parameters := append([]parser.ParameterizedParameterNode(nil), function.ParameterizedParameters...)
 		simple := true
 		for _, argument := range function.Args {
 			valueParameter := !isTypeMarker(argument.Type)
@@ -83,7 +83,7 @@ func lowerTypeFunctionsInBody(body []parser.Node) ([]parser.Node, error) {
 					return nil, shared.NewError(argument.Loc, "duplicate type parameter %q", argument.Name)
 				}
 			}
-			parameter := parser.GenericParameterNode{Name: argument.Name, Loc: argument.Loc}
+			parameter := parser.ParameterizedParameterNode{Name: argument.Name, Loc: argument.Loc}
 			if valueParameter {
 				parameter.ValueType = argument.Type
 			}
@@ -100,7 +100,7 @@ func lowerTypeFunctionsInBody(body []parser.Node) ([]parser.Node, error) {
 			transparent = false
 		}
 		body[index] = &parser.TypeAliasNode{
-			Name: function.Name, GenericParameters: parameters, Type: typeNode,
+			Name: function.Name, ParameterizedParameters: parameters, Type: typeNode,
 			Transparent: transparent, Pub: function.Pub, Loc: function.Loc,
 		}
 	}
@@ -156,7 +156,7 @@ func lowerBareTypeParameters(function *parser.FunctionDefNode) error {
 			}
 		}
 	}
-	parameters := append([]parser.GenericParameterNode(nil), function.GenericParameters...)
+	parameters := append([]parser.ParameterizedParameterNode(nil), function.ParameterizedParameters...)
 	arguments := make([]*parser.FunctionNodeArg, 0, len(function.Args))
 	seenValue := false
 	for _, argument := range function.Args {
@@ -171,7 +171,7 @@ func lowerBareTypeParameters(function *parser.FunctionDefNode) error {
 						return shared.NewError(argument.Loc, "duplicate compile-time parameter %q", argument.Name)
 					}
 				}
-				parameters = append(parameters, parser.GenericParameterNode{Name: argument.Name, ValueType: argument.Type, Loc: argument.Loc})
+				parameters = append(parameters, parser.ParameterizedParameterNode{Name: argument.Name, ValueType: argument.Type, Loc: argument.Loc})
 			}
 			arguments = append(arguments, argument)
 			continue
@@ -197,11 +197,11 @@ func lowerBareTypeParameters(function *parser.FunctionDefNode) error {
 				return shared.NewError(argument.Loc, "duplicate type parameter %q", argument.Name)
 			}
 		}
-		parameters = append(parameters, parser.GenericParameterNode{Name: argument.Name, Loc: argument.Loc})
+		parameters = append(parameters, parser.ParameterizedParameterNode{Name: argument.Name, Loc: argument.Loc})
 		function.CompileTimeOnly = true
 	}
 	function.Args = arguments
-	function.GenericParameters = parameters
+	function.ParameterizedParameters = parameters
 	return nil
 }
 

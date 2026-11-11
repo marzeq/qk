@@ -22,13 +22,13 @@ var builtinSource string
 var coreTypesSource string
 
 type frontendResult struct {
-	modules    map[string]*loader.ModuleInfo
-	partials   []*loader.PartialModuleInfo
-	order      []string
-	irModules  map[string]*ir.Module
-	templates  map[string][]ir.GenericTemplate
-	interfaces map[string]sema.ModuleInterface
-	warnings   []error
+	modules       map[string]*loader.ModuleInfo
+	partials      []*loader.PartialModuleInfo
+	order         []string
+	irModules     map[string]*ir.Module
+	templates     map[string][]ir.ParameterizedTemplate
+	methodTargets []sema.MethodTarget
+	warnings      []error
 }
 
 func runFrontend(
@@ -54,7 +54,7 @@ func runFrontend(
 	sources[coreTypesOrigin] = coreTypesSource
 	sourcePackages[coreTypesOrigin] = "core.types"
 	trustedSources[coreTypesOrigin] = false
-	graphModules, origins, err := sourceModuleGraph(sources, sourcePackages, trustedSources, importResolutions, args.noStdlib)
+	graphModules, origins, parsed, err := sourceModuleGraph(sources, sourcePackages, trustedSources, importResolutions, args.noStdlib)
 	if err != nil {
 		return nil, err
 	}
@@ -64,8 +64,8 @@ func runFrontend(
 	}
 	result := &frontendResult{
 		modules: make(map[string]*loader.ModuleInfo), irModules: make(map[string]*ir.Module),
-		templates: make(map[string][]ir.GenericTemplate), interfaces: make(map[string]sema.ModuleInterface),
-		order: order,
+		templates: make(map[string][]ir.ParameterizedTemplate),
+		order:     order,
 	}
 	var sourceOrder []string
 	stageModules := make(map[string]*loader.ModuleInfo)
@@ -81,10 +81,7 @@ func runFrontend(
 		partials := make([]*loader.PartialModuleInfo, 0, len(origins[name]))
 		roots := make([]*parser.RootNode, 0, len(origins[name]))
 		for _, origin := range origins[name] {
-			root, err := parseSource(origin, sources[origin])
-			if err != nil {
-				return nil, err
-			}
+			root := parsed[origin]
 			resolveRootImports(root, importResolutions[name])
 			roots = append(roots, root)
 		}
@@ -138,7 +135,7 @@ func runFrontend(
 		result.warnings = append(result.warnings, warnings...)
 	}
 	loader.PropagateSpecializationDemands(result.modules, sourceOrder)
-	allInterfaces := analyser.ModuleInterfaces()
+	result.methodTargets = analyser.MethodTargets()
 	for _, name := range sourceOrder {
 		info := result.modules[name]
 		dependencyInitializers := make([]string, 0, len(info.Imports))
@@ -149,9 +146,7 @@ func runFrontend(
 		}
 		moduleIR := loader.GenerateIRModule(info, args.mainModule, dependencyInitializers)
 		result.irModules[name] = moduleIR
-		result.templates[name] = loader.GenerateModuleGenericTemplateIR(info)
-		iface := allInterfaces[name]
-		result.interfaces[name] = iface
+		result.templates[name] = loader.GenerateModuleParameterizedTemplateIR(info)
 	}
 	return result, nil
 }
@@ -172,9 +167,10 @@ func cloneBoolMap(source map[string]bool) map[string]bool {
 	return result
 }
 
-func sourceModuleGraph(sources, sourcePackages map[string]string, trustedSources map[string]bool, importResolutions map[string]map[string]string, noStdlib bool) (map[string]*loader.ModuleInfo, map[string][]string, error) {
+func sourceModuleGraph(sources, sourcePackages map[string]string, trustedSources map[string]bool, importResolutions map[string]map[string]string, noStdlib bool) (map[string]*loader.ModuleInfo, map[string][]string, map[string]*parser.RootNode, error) {
 	modules := make(map[string]*loader.ModuleInfo)
 	origins := make(map[string][]string)
+	parsed := make(map[string]*parser.RootNode, len(sources))
 	paths := make([]string, 0, len(sources))
 	for origin := range sources {
 		paths = append(paths, origin)
@@ -183,22 +179,27 @@ func sourceModuleGraph(sources, sourcePackages map[string]string, trustedSources
 	for _, origin := range paths {
 		name := sourcePackages[origin]
 		if name == "" {
-			return nil, nil, fmt.Errorf("source %s has no canonical module path", origin)
+			return nil, nil, nil, fmt.Errorf("source %s has no canonical module path", origin)
 		}
 		tokens, err := tokeniser.NewTokeniser(sources[origin], origin).Tokenise()
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		header, err := parser.ScanSourceHeader(tokens)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
+		root, err := parser.NewParser(tokens).Parse()
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		parsed[origin] = root
 		module := modules[name]
 		if module == nil {
 			module = &loader.ModuleInfo{Path: name, Name: header.Module, TrustedStandardLibrary: trustedSources[origin]}
 			modules[name] = module
 		} else if module.TrustedStandardLibrary != trustedSources[origin] {
-			return nil, nil, fmt.Errorf("module %q mixes trusted and untrusted sources", name)
+			return nil, nil, nil, fmt.Errorf("module %q mixes trusted and untrusted sources", name)
 		}
 		for _, imported := range header.Imports {
 			if resolved := importResolutions[name][imported]; resolved != "" {
@@ -218,7 +219,7 @@ func sourceModuleGraph(sources, sourcePackages map[string]string, trustedSources
 			module.Imports = append(module.Imports, "std")
 		}
 	}
-	return modules, origins, nil
+	return modules, origins, parsed, nil
 }
 
 func resolveRootImports(root *parser.RootNode, resolutions map[string]string) {

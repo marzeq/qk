@@ -50,12 +50,12 @@ func (v *Validator) ValidateModule(root *parser.RootNode) {
 	v.validateNode(root)
 }
 
-func (v *Validator) ValidateGenericTemplates(root *parser.RootNode) {
+func (v *Validator) ValidateParameterizedTemplates(root *parser.RootNode) {
 	v.validatingTemplate = true
 	v.selectModule(root)
 	for _, node := range root.Body {
 		function, ok := node.(*parser.FunctionDefNode)
-		if !ok || !function.IsGeneric() || function.DeferredStage {
+		if !ok || !function.IsParameterized() || function.DeferredStage {
 			continue
 		}
 		bindings := v.analyser.templateBindings(function.Symbol)
@@ -107,7 +107,7 @@ func (v *Validator) validateNode(node parser.Node) {
 		v.validateAttributes(n, n.Attributes, "module", attributes.AttributeTypeLink, attributes.AttributeTypeEntry, attributes.AttributeTypeFreestanding)
 
 	case *parser.FunctionDefNode:
-		if n.GenericInstance || (n.IsGeneric() && !v.validatingTemplate) {
+		if n.ParameterizedInstance || (n.IsParameterized() && !v.validatingTemplate) {
 			return
 		}
 		v.validateAttributes(n, n.Attributes, "function",
@@ -265,7 +265,7 @@ func (v *Validator) validateNode(node parser.Node) {
 		}
 
 	case *parser.DeclarationNode:
-		if len(n.GenericParameters) != 0 {
+		if len(n.ParameterizedParameters) != 0 {
 			return
 		}
 		if n.Name == "_" {
@@ -325,7 +325,7 @@ func (v *Validator) validateNode(node parser.Node) {
 		v.validateExpr(n)
 
 	case *parser.TypeAliasNode:
-		if len(n.GenericParameters) != 0 {
+		if len(n.ParameterizedParameters) != 0 {
 			return
 		}
 		if types.HasError(n.Symbol.TypeInfo) {
@@ -1412,7 +1412,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		if n.CompileTimeApplication != nil {
 			return
 		}
-		if !v.completeGenericCall(n, nil) {
+		if !v.completeParameterizedCall(n, nil) {
 			return
 		}
 		if n.Symbol != nil && n.Symbol.CompileTimeOnly && !v.inCompileTimeContext() {
@@ -1627,7 +1627,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 		}
 		if target, ok := v.analyser.traitPointer(targetType); ok {
 			got := n.Operand.GetType()
-			parameter, symbolic := genericTypeParameterBase(got)
+			parameter, symbolic := parameterizedTypeParameterBase(got)
 			constraint, constrained := types.TraitType{}, false
 			if symbolic {
 				constraint, constrained = types.Underlying(parameter.Constraint).(types.TraitType)
@@ -1640,7 +1640,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 				}
 				n.ConcreteType = pointer.Base
 				n.TraitConversion = true
-				n.GenericAssertion = false
+				n.ParameterizedAssertion = false
 				break
 			}
 		}
@@ -1695,10 +1695,10 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			}
 			break
 		}
-		if n.GenericAssertion {
+		if n.ParameterizedAssertion {
 			if _, sourceIsSlice := types.Underlying(n.Operand.GetType()).(types.SliceType); sourceIsSlice {
 				if _, targetIsPointer := types.Underlying(targetType).(types.PointerType); targetIsPointer {
-					n.GenericAssertion = false
+					n.ParameterizedAssertion = false
 					if n.Checked {
 						n.StaticAssertion = true
 						n.AssertionMatches = false
@@ -2871,7 +2871,7 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 	}
 
 	if call, ok := node.(*parser.FunctionCallNode); ok {
-		if !v.completeGenericCall(call, expected) {
+		if !v.completeParameterizedCall(call, expected) {
 			return call
 		}
 		if literal, shorthand := call.Callee.(*parser.EnumLiteralNode); shorthand {
@@ -3085,7 +3085,7 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 			v.errorf(node, "cannot infer concrete type for trait conversion; add a type annotation or cast")
 			return node
 		}
-		if parameter, symbolic := genericTypeParameterBase(got); symbolic {
+		if parameter, symbolic := parameterizedTypeParameterBase(got); symbolic {
 			constraint, constrained := types.Underlying(parameter.Constraint).(types.TraitType)
 			if constrained && traitImplementsTrait(constraint, target.Trait) {
 				if pointer, isPointer := types.Underlying(got).(types.PointerType); isPointer {
@@ -3161,7 +3161,7 @@ func (v *Validator) prepareLambda(n *parser.LambdaNode, expected types.Type) {
 	v.errors = append(v.errors, attributor.Errors()...)
 }
 
-func (v *Validator) completeGenericCall(call *parser.FunctionCallNode, expected types.Type) bool {
+func (v *Validator) completeParameterizedCall(call *parser.FunctionCallNode, expected types.Type) bool {
 	if anyErrorExpression(call.Args...) {
 		call.SetType(types.ErrorType{})
 		return false
@@ -3172,7 +3172,7 @@ func (v *Validator) completeGenericCall(call *parser.FunctionCallNode, expected 
 	template := call.Symbol.TemplateSymbol
 	unresolved := false
 	for i, argument := range call.Symbol.TypeArguments {
-		if i < len(template.GenericParameters) && (argument == nil || argument.Equals(template.GenericParameters[i])) {
+		if i < len(template.ParameterizedParameters) && (argument == nil || argument.Equals(template.ParameterizedParameters[i])) {
 			unresolved = true
 			break
 		}
@@ -3184,13 +3184,13 @@ func (v *Validator) completeGenericCall(call *parser.FunctionCallNode, expected 
 	var arguments []types.Type
 	var err error
 	if expected == nil {
-		arguments, err = inferGenericArguments(
-			template.GenericParameters, template.Signature.Parameters, expressionTypes(call.Args),
+		arguments, err = inferParameterizedArguments(
+			template.ParameterizedParameters, template.Signature.Parameters, expressionTypes(call.Args),
 			template.Signature.TypedVariadic, call.VariadicExpansion,
 		)
 	} else {
-		arguments, err = inferGenericArgumentsWithResult(
-			template.GenericParameters, template.Signature.Parameters, expressionTypes(call.Args),
+		arguments, err = inferParameterizedArgumentsWithResult(
+			template.ParameterizedParameters, template.Signature.Parameters, expressionTypes(call.Args),
 			template.Signature.ReturnType, expected,
 			template.Signature.TypedVariadic, call.VariadicExpansion,
 		)
@@ -3200,7 +3200,7 @@ func (v *Validator) completeGenericCall(call *parser.FunctionCallNode, expected 
 		call.SetType(types.ErrorType{})
 		return false
 	}
-	arguments = preserveResolvedTypeArguments(template.GenericParameters, call.Symbol.TypeArguments, arguments)
+	arguments = preserveResolvedTypeArguments(template.ParameterizedParameters, call.Symbol.TypeArguments, arguments)
 	beforeValueErrors := len(v.analyser.errors)
 	if !v.analyser.fillRetainedArguments(template, call.Args, arguments, call) {
 		v.errors = append(v.errors, v.analyser.errors[beforeValueErrors:]...)
@@ -3209,8 +3209,8 @@ func (v *Validator) completeGenericCall(call *parser.FunctionCallNode, expected 
 		return false
 	}
 	for i, argument := range arguments {
-		if i < len(template.GenericParameters) && argument.Equals(template.GenericParameters[i]) {
-			v.errorf(call, "cannot infer type argument %s", template.GenericParameters[i].Name)
+		if i < len(template.ParameterizedParameters) && argument.Equals(template.ParameterizedParameters[i]) {
+			v.errorf(call, "cannot infer type argument %s", template.ParameterizedParameters[i].Name)
 			call.SetType(types.ErrorType{})
 			return false
 		}
@@ -3218,10 +3218,10 @@ func (v *Validator) completeGenericCall(call *parser.FunctionCallNode, expected 
 
 	beforeErrors := len(v.analyser.errors)
 	if hasTypeParameters(arguments) {
-		if v.analyser.checkGenericArguments(call, template.GenericParameters, arguments) {
-			call.Symbol = dependentGenericFunctionSymbol(template, arguments)
+		if v.analyser.checkParameterizedArguments(call, template.ParameterizedParameters, arguments) {
+			call.Symbol = dependentParameterizedFunctionSymbol(template, arguments)
 		}
-	} else if specialization := v.analyser.specializeGenericFunction(template, arguments, call); specialization != nil {
+	} else if specialization := v.analyser.specializeParameterizedFunction(template, arguments, call); specialization != nil {
 		call.Symbol = specialization.Symbol
 	}
 	if len(v.analyser.errors) > beforeErrors {

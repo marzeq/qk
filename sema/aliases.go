@@ -23,8 +23,8 @@ func (a *Analyser) resolveAlias(info *aliasInfo, node parser.Node, indirect bool
 	switch info.state {
 	case aliasResolving:
 		named, namedType := info.node.Type.(*parser.NamedTypeNode)
-		genericApplication := namedType && len(named.TypeArguments) != 0
-		if indirect || genericApplication {
+		parameterizedApplication := namedType && len(named.TypeArguments) != 0
+		if indirect || parameterizedApplication {
 			if _, ok := info.node.Type.(*parser.TraitTypeNode); ok && !info.node.Transparent {
 				return types.TraitType{Module: a.currentMod, Name: info.node.Name}
 			}

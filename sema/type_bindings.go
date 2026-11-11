@@ -12,7 +12,7 @@ import (
 func (a *Analyser) promoteTypeApplications(root *parser.RootNode) {
 	for index, node := range root.Body {
 		declaration, ok := node.(*parser.DeclarationNode)
-		if !ok || declaration.Mutable || declaration.TypeNode != nil || len(declaration.GenericParameters) != 0 {
+		if !ok || declaration.Mutable || declaration.TypeNode != nil || len(declaration.ParameterizedParameters) != 0 {
 			continue
 		}
 		call, ok := declaration.Value.(*parser.FunctionCallNode)

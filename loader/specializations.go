@@ -14,43 +14,21 @@ import (
 const SpecializationModule = "__qk.specializations"
 
 type specializationRequest struct {
-	template ir.GenericTemplate
+	template ir.ParameterizedTemplate
 	args     []types.Type
 	key      string
 	direct   *ir.Function
-	module   string
 }
 
-// SpecializationUnit is the deterministic output of one concrete generic
-// request. Persistence belongs to the build layer; the compiler only exposes
-// the stable request key and resulting IR.
-type SpecializationUnit struct {
-	Key            string
-	DefiningModule string
-	IR             *ir.Module
-}
-
-// ExtractGenericSpecializations replaces importer-demanded generic functions
+// ExtractParameterizedSpecializations replaces importer-demanded parameterized functions
 // with standalone instantiated IR and removes their old copies from base
 // modules. Base module implementations therefore no longer vary by importer.
-func ExtractGenericSpecializations(modules map[string]*ir.Module, templates map[string][]ir.GenericTemplate, interfaces map[string]sema.ModuleInterface) (*ir.Module, error) {
-	return extractGenericSpecializations(modules, templates, interfaces, nil)
-}
-
-func ExtractGenericSpecializationUnits(modules map[string]*ir.Module, templates map[string][]ir.GenericTemplate, interfaces map[string]sema.ModuleInterface) ([]SpecializationUnit, error) {
-	var units []SpecializationUnit
-	_, err := extractGenericSpecializations(modules, templates, interfaces, &units)
-	return units, err
-}
-
-func extractGenericSpecializations(modules map[string]*ir.Module, templates map[string][]ir.GenericTemplate, interfaces map[string]sema.ModuleInterface, units *[]SpecializationUnit) (*ir.Module, error) {
-	byName := make(map[string]ir.GenericTemplate)
+func ExtractParameterizedSpecializations(modules map[string]*ir.Module, templates map[string][]ir.ParameterizedTemplate, methods []sema.MethodTarget) (*ir.Module, error) {
+	byName := make(map[string]ir.ParameterizedTemplate)
 	methodTargets := make(map[string]string)
-	for _, iface := range interfaces {
-		for _, method := range append(append([]sema.InterfaceSymbol(nil), iface.Methods...), iface.WitnessMethods...) {
-			methodTargets[method.MethodOwnerModule+"\x00"+method.MethodOwnerName+"\x00"+method.MethodLookupName] =
-				irgen.MangleFunctionName(iface.Name, method.Name)
-		}
+	for _, method := range methods {
+		methodTargets[method.OwnerModule+"\x00"+method.OwnerName+"\x00"+method.LookupName] =
+			irgen.MangleFunctionName(method.Module, method.Name)
 	}
 	for module, values := range templates {
 		for _, template := range values {
@@ -61,7 +39,7 @@ func extractGenericSpecializations(modules map[string]*ir.Module, templates map[
 	queued := make(map[string]bool)
 	removed := make(map[string]bool)
 	var queue []specializationRequest
-	queueReference := func(reference *ir.GenericReference, rename func(string, string)) error {
+	queueReference := func(reference *ir.ParameterizedReference, rename func(string, string)) error {
 		if reference == nil {
 			return nil
 		}
@@ -81,13 +59,13 @@ func extractGenericSpecializations(modules map[string]*ir.Module, templates map[
 						key := "direct:" + specializedName
 						if !queued[key] {
 							queued[key] = true
-							queue = append(queue, specializationRequest{direct: function, module: reference.Module, key: key})
+							queue = append(queue, specializationRequest{direct: function, key: key})
 						}
 						return nil
 					}
 				}
 			}
-			return fmt.Errorf("generic template %s.%s is unavailable", reference.Module, reference.Name)
+			return fmt.Errorf("parameterized template %s.%s is unavailable", reference.Module, reference.Name)
 		}
 		key := specializationRequestKey(template, arguments)
 		baseName := irgen.MangleFunctionName(template.Module, template.Name)
@@ -104,8 +82,8 @@ func extractGenericSpecializations(modules map[string]*ir.Module, templates map[
 		if operand == nil {
 			return nil
 		}
-		if operand.Generic != nil {
-			if err := queueReference(operand.Generic, func(oldName, newName string) {
+		if operand.Parameterized != nil {
+			if err := queueReference(operand.Parameterized, func(oldName, newName string) {
 				if !strings.HasPrefix(operand.FunctionName, newName) {
 					operand.FunctionName = strings.Replace(operand.FunctionName, oldName, newName, 1)
 				}
@@ -146,10 +124,10 @@ func extractGenericSpecializations(modules map[string]*ir.Module, templates map[
 					call.Requirement = nil
 					block.Instr[index] = call
 				}
-				if call.Generic == nil {
+				if call.Parameterized == nil {
 					continue
 				}
-				if err := queueReference(call.Generic, func(oldName, newName string) {
+				if err := queueReference(call.Parameterized, func(oldName, newName string) {
 					renameCallTarget(&call, oldName, newName)
 				}); err != nil {
 					return err
@@ -189,14 +167,9 @@ func extractGenericSpecializations(modules map[string]*ir.Module, templates map[
 				return nil, err
 			}
 			result.Functions = append(result.Functions, function)
-			if units != nil {
-				unit := SpecializationUnit{Key: request.key, DefiningModule: request.module, IR: &ir.Module{Functions: []*ir.Function{function}}}
-				addSpecializationExterns(unit.IR)
-				*units = append(*units, unit)
-			}
 			continue
 		}
-		functions, err := ir.InstantiateGenericTemplate(request.template, request.args)
+		functions, err := ir.InstantiateParameterizedTemplate(request.template, request.args)
 		if err != nil {
 			return nil, err
 		}
@@ -230,15 +203,6 @@ func extractGenericSpecializations(modules map[string]*ir.Module, templates map[
 			}
 			result.Functions = append(result.Functions, function)
 		}
-		if units != nil {
-			unitFunctions := append([]*ir.Function(nil), functions...)
-			unit := SpecializationUnit{
-				Key: request.key, DefiningModule: request.template.Module,
-				IR: &ir.Module{Functions: unitFunctions},
-			}
-			addSpecializationExterns(unit.IR)
-			*units = append(*units, unit)
-		}
 	}
 	for _, moduleName := range moduleNames {
 		module := modules[moduleName]
@@ -263,8 +227,8 @@ func concreteTypeIdentity(value types.Type) (string, string, bool) {
 	switch value := value.(type) {
 	case types.DefinedType:
 		name := value.Name
-		if value.GenericName != "" {
-			name = value.GenericName
+		if value.ParameterizedName != "" {
+			name = value.ParameterizedName
 		}
 		return value.Module, name, true
 	case *types.AliasRef:
@@ -350,7 +314,7 @@ func renameCallTarget(call *ir.Call, oldName, newName string) {
 	}
 }
 
-func specializationRequestKey(template ir.GenericTemplate, arguments []types.Type) string {
+func specializationRequestKey(template ir.ParameterizedTemplate, arguments []types.Type) string {
 	parts := make([]string, len(arguments))
 	for index, argument := range arguments {
 		parts[index] = types.Identity(argument)

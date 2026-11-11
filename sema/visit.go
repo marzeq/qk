@@ -84,34 +84,34 @@ func (a *Analyser) visitFunction(n *parser.FunctionDefNode) {
 		if arg.Default != nil {
 			a.visitExpression(arg.Default)
 		}
-		var genericOrigin types.Type
+		var parameterizedOrigin types.Type
 		if n.Symbol.Template {
-			genericOrigin = n.Symbol.Signature.Parameters[i]
+			parameterizedOrigin = n.Symbol.Signature.Parameters[i]
 		} else if n.Symbol.TemplateSymbol != nil {
-			genericOrigin = n.Symbol.TemplateSymbol.Signature.Parameters[i]
+			parameterizedOrigin = n.Symbol.TemplateSymbol.Signature.Parameters[i]
 		}
-		if !types.HasTypeParameter(genericOrigin) {
-			genericOrigin = nil
+		if !types.HasTypeParameter(parameterizedOrigin) {
+			parameterizedOrigin = nil
 		}
 		if arg.CompileTime {
-			parameters := n.Symbol.GenericParameters
+			parameters := n.Symbol.ParameterizedParameters
 			if n.Symbol.TemplateSymbol != nil {
-				parameters = n.Symbol.TemplateSymbol.GenericParameters
+				parameters = n.Symbol.TemplateSymbol.ParameterizedParameters
 			}
 			for _, parameter := range parameters {
 				if parameter.Name == arg.Name && parameter.ValueType != nil {
-					genericOrigin = parameter
+					parameterizedOrigin = parameter
 					break
 				}
 			}
 		}
 		paramSym := &symbols.Symbol{
-			Name:            arg.Name,
-			Kind:            symbols.SymbolKindVariable,
-			Type:            n.Symbol.Signature.Parameters[i],
-			GenericOrigin:   genericOrigin,
-			StaticTraitView: staticTraitViewForGenericType(genericOrigin),
-			Mutable:         arg.Mutable,
+			Name:                arg.Name,
+			Kind:                symbols.SymbolKindVariable,
+			Type:                n.Symbol.Signature.Parameters[i],
+			ParameterizedOrigin: parameterizedOrigin,
+			StaticTraitView:     staticTraitViewForParameterizedType(parameterizedOrigin),
+			Mutable:             arg.Mutable,
 		}
 		a.defineSymbol(paramSym, arg)
 		arg.Symbol = paramSym
@@ -135,7 +135,7 @@ func (a *Analyser) visitBlock(n *parser.BlockNode) {
 }
 
 func (a *Analyser) visitLocalDeclaration(n *parser.DeclarationNode) {
-	if len(n.GenericParameters) != 0 {
+	if len(n.ParameterizedParameters) != 0 {
 		a.errorf(n, "parameterized bindings may only be declared at module scope")
 		return
 	}
@@ -286,7 +286,7 @@ func (a *Analyser) visitExpression(expr parser.ExpressionNode) {
 
 	case *parser.CastNode:
 		a.visitExpression(e.Operand)
-		// Resolve cast targets during analysis as well as attribution so generic
+		// Resolve cast targets during analysis as well as attribution so parameterized
 		// trait specializations (and their default templates) exist before the
 		// template attribution/validation passes begin.
 		if e.ToType != nil {

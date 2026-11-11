@@ -822,8 +822,8 @@ func (e *Evaluator) coreTypesCall(call Call, args []EvalValue, invocation string
 		if len(args) == 1 {
 			input = args[0].TypeValue
 		}
-		if input == nil && call.Generic != nil && len(call.Generic.TypeArguments) == 1 {
-			input = call.Generic.TypeArguments[0]
+		if input == nil && call.Parameterized != nil && len(call.Parameterized.TypeArguments) == 1 {
+			input = call.Parameterized.TypeArguments[0]
 		}
 		if input == nil {
 			return EvalValue{}, true, fmt.Errorf("core.types.inspect requires a completed type value")
@@ -875,7 +875,7 @@ func (e *Evaluator) coreTypesCall(call Call, args []EvalValue, invocation string
 	switch method {
 	case "add_field":
 		if len(args) != 3 || args[2].TypeValue == nil {
-			return EvalValue{}, true, fmt.Errorf("StructBuilder.add_field requires a name and type (got %d arguments, generic %#v)", len(args), call.Generic)
+			return EvalValue{}, true, fmt.Errorf("StructBuilder.add_field requires a name and type (got %d arguments, parameterized %#v)", len(args), call.Parameterized)
 		}
 		name, err := evalString(args[1])
 		if err != nil {

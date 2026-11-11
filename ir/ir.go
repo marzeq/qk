@@ -30,9 +30,9 @@ const (
 )
 
 type Operand struct {
-	Kind    OperandKind
-	Type    types.Type
-	Generic *GenericReference
+	Kind          OperandKind
+	Type          types.Type
+	Parameterized *ParameterizedReference
 
 	Value ValueID
 
@@ -225,9 +225,9 @@ type Module struct {
 	Entry         string
 }
 
-// GenericTemplate is target-independent, attributed QK IR. Parameters remain
+// ParameterizedTemplate is target-independent, attributed QK IR. Parameters remain
 // symbolic until a specialization unit substitutes concrete arguments.
-type GenericTemplate struct {
+type ParameterizedTemplate struct {
 	Module     string
 	Name       string
 	Parameters []types.TypeParameter
@@ -545,7 +545,7 @@ type Call struct {
 	Args            []Operand
 	CompileTimeArgs map[int]Operand
 	Signature       FunctionSignature
-	Generic         *GenericReference
+	Parameterized   *ParameterizedReference
 	Requirement     *TraitRequirementReference
 	SourceName      string
 	SourceLoc       shared.Location
@@ -561,7 +561,7 @@ func (TypePointer) isInstr() {}
 
 func (Call) isInstr() {}
 
-type GenericReference struct {
+type ParameterizedReference struct {
 	Module        string
 	Name          string
 	TypeArguments []types.Type
@@ -572,9 +572,9 @@ type TraitRequirementReference struct {
 	ReceiverType types.Type
 }
 
-// InstantiateGenericTemplate deep-copies symbolic IR and substitutes its type
-// parameters. Generic call references remain explicit for recursive scheduling.
-func InstantiateGenericTemplate(template GenericTemplate, arguments []types.Type) ([]*Function, error) {
+// InstantiateParameterizedTemplate deep-copies symbolic IR and substitutes its type
+// parameters. Parameterized call references remain explicit for recursive scheduling.
+func InstantiateParameterizedTemplate(template ParameterizedTemplate, arguments []types.Type) ([]*Function, error) {
 	if len(arguments) != len(template.Parameters) {
 		return nil, fmt.Errorf("template %s.%s expects %d type arguments, got %d", template.Module, template.Name, len(template.Parameters), len(arguments))
 	}

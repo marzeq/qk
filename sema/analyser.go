@@ -29,9 +29,9 @@ type Analyser struct {
 	currentRoot                   *parser.RootNode
 	modulePaths                   map[*parser.RootNode]string
 	functionDefinitions           map[*symbols.Symbol]*functionDefinitionInfo
-	genericFunctions              map[*symbols.Symbol]*genericFunctionInfo
-	genericValues                 map[*symbols.Symbol]*genericValueInfo
-	genericAliases                map[*symbols.Symbol]*genericAliasInfo
+	parameterizedFunctions        map[*symbols.Symbol]*parameterizedFunctionInfo
+	parameterizedValues           map[*symbols.Symbol]*parameterizedValueInfo
+	parameterizedAliases          map[*symbols.Symbol]*parameterizedAliasInfo
 	traitDefaults                 map[string][]*symbols.Symbol
 	definitionTypeBindings        map[*symbols.Symbol]map[string]types.Type
 	lambdaCounter                 int
@@ -67,9 +67,9 @@ func NewAnalyser() *Analyser {
 		importAliasesByModule:  make(map[string]map[string]string),
 		modulePaths:            make(map[*parser.RootNode]string),
 		functionDefinitions:    make(map[*symbols.Symbol]*functionDefinitionInfo),
-		genericFunctions:       make(map[*symbols.Symbol]*genericFunctionInfo),
-		genericValues:          make(map[*symbols.Symbol]*genericValueInfo),
-		genericAliases:         make(map[*symbols.Symbol]*genericAliasInfo),
+		parameterizedFunctions: make(map[*symbols.Symbol]*parameterizedFunctionInfo),
+		parameterizedValues:    make(map[*symbols.Symbol]*parameterizedValueInfo),
+		parameterizedAliases:   make(map[*symbols.Symbol]*parameterizedAliasInfo),
 		traitDefaults:          make(map[string][]*symbols.Symbol),
 		definitionTypeBindings: make(map[*symbols.Symbol]map[string]types.Type),
 	}

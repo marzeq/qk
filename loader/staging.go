@@ -68,28 +68,28 @@ type stageValue struct {
 }
 
 type stageSelector struct {
-	config              StageConfig
-	module              string
-	bindings            map[string]stageValue
-	evaluated           map[parser.ExpressionNode]stageValue
-	unresolved          map[parser.ExpressionNode]struct{}
-	needsIR             bool
-	syntheticID         int
-	environment         *StageEnvironment
-	coreBuildImported   bool
-	inFunction          bool
-	genericFunction     *parser.FunctionDefNode
-	genericAlias        *parser.TypeAliasNode
-	specializing        bool
-	stageMinimal        bool
-	stagingAliasName    string
-	typeBindings        map[string]types.Type
-	typeFunctions       map[string]bool
-	typeCalls           map[*parser.NamedTypeNode]parser.ExpressionNode
-	spreadAliases       map[string]bool
-	spreadExpressions   map[parser.ExpressionNode]struct{}
-	deferredExpressions map[parser.ExpressionNode]struct{}
-	currentAlias        string
+	config                StageConfig
+	module                string
+	bindings              map[string]stageValue
+	evaluated             map[parser.ExpressionNode]stageValue
+	unresolved            map[parser.ExpressionNode]struct{}
+	needsIR               bool
+	syntheticID           int
+	environment           *StageEnvironment
+	coreBuildImported     bool
+	inFunction            bool
+	parameterizedFunction *parser.FunctionDefNode
+	parameterizedAlias    *parser.TypeAliasNode
+	specializing          bool
+	stageMinimal          bool
+	stagingAliasName      string
+	typeBindings          map[string]types.Type
+	typeFunctions         map[string]bool
+	typeCalls             map[*parser.NamedTypeNode]parser.ExpressionNode
+	spreadAliases         map[string]bool
+	spreadExpressions     map[parser.ExpressionNode]struct{}
+	deferredExpressions   map[parser.ExpressionNode]struct{}
+	currentAlias          string
 }
 
 // SelectCompileTime lowers unresolved staged expressions through the ordinary
@@ -178,7 +178,7 @@ func selectCompileTime(root *parser.RootNode, module string, config StageConfig,
 	}
 	for index, node := range root.Body {
 		declaration, ok := node.(*parser.DeclarationNode)
-		if !ok || declaration.Mutable || len(declaration.GenericParameters) != 0 {
+		if !ok || declaration.Mutable || len(declaration.ParameterizedParameters) != 0 {
 			continue
 		}
 		value, ok := declaration.Value.(*parser.TypeValueExprNode)
@@ -332,13 +332,13 @@ func (s *stageSelector) selectNode(node parser.Node) ([]parser.Node, error) {
 			return nil, err
 		}
 	case *parser.TypeAliasNode:
-		previousAlias := s.genericAlias
+		previousAlias := s.parameterizedAlias
 		previousCurrentAlias := s.currentAlias
 		s.currentAlias = node.Name
-		if len(node.GenericParameters) != 0 {
-			s.genericAlias = node
+		if len(node.ParameterizedParameters) != 0 {
+			s.parameterizedAlias = node
 		}
-		defer func() { s.genericAlias, s.currentAlias = previousAlias, previousCurrentAlias }()
+		defer func() { s.parameterizedAlias, s.currentAlias = previousAlias, previousCurrentAlias }()
 		var err error
 		node.Type, err = s.selectType(node.Type)
 		if err != nil {
@@ -346,12 +346,12 @@ func (s *stageSelector) selectNode(node parser.Node) ([]parser.Node, error) {
 		}
 	case *parser.FunctionDefNode:
 		previousFunction := s.inFunction
-		previousGenericFunction := s.genericFunction
+		previousParameterizedFunction := s.parameterizedFunction
 		s.inFunction = true
-		if node.IsGeneric() {
-			s.genericFunction = node
+		if node.IsParameterized() {
+			s.parameterizedFunction = node
 		}
-		defer func() { s.inFunction, s.genericFunction = previousFunction, previousGenericFunction }()
+		defer func() { s.inFunction, s.parameterizedFunction = previousFunction, previousParameterizedFunction }()
 		var err error
 		for _, arg := range node.Args {
 			arg.Type, err = s.selectType(arg.Type)
@@ -561,8 +561,8 @@ func (s *stageSelector) selectExpression(expression parser.ExpressionNode) (pars
 			return nil, evaluationError
 		}
 		if !resolved {
-			if s.genericFunction != nil {
-				s.genericFunction.DeferredStage = true
+			if s.parameterizedFunction != nil {
+				s.parameterizedFunction.DeferredStage = true
 				return expression, nil
 			}
 			if staged, ok := s.evaluated[node]; ok {
@@ -692,8 +692,8 @@ func (s *stageSelector) selectType(typeNode parser.TypeNode) (parser.TypeNode, e
 			return nil, evaluationError
 		} else if resolved {
 			node.Value = stageLiteral(value, node.Loc)
-		} else if s.genericAlias != nil && !s.specializing {
-			s.genericAlias.DeferredStage = true
+		} else if s.parameterizedAlias != nil && !s.specializing {
+			s.parameterizedAlias.DeferredStage = true
 		} else {
 			s.needsIR = true
 			s.unresolved[node.Value] = struct{}{}
@@ -772,8 +772,8 @@ func (s *stageSelector) selectType(typeNode parser.TypeNode) (parser.TypeNode, e
 		seen := make(map[string]bool)
 		for _, field := range node.Fields {
 			if field.Spread != nil {
-				if s.genericAlias != nil && !s.specializing {
-					s.genericAlias.DeferredStage = true
+				if s.parameterizedAlias != nil && !s.specializing {
+					s.parameterizedAlias.DeferredStage = true
 					fields = append(fields, field)
 					continue
 				}
@@ -878,8 +878,8 @@ func (s *stageSelector) selectWhen(node *parser.WhenNode) ([]parser.Node, bool, 
 			return nil, false, err
 		}
 		if !resolved {
-			if s.genericFunction != nil {
-				s.genericFunction.DeferredStage = true
+			if s.parameterizedFunction != nil {
+				s.parameterizedFunction.DeferredStage = true
 				return nil, false, nil
 			}
 			s.needsIR = true
@@ -905,10 +905,10 @@ func (s *stageSelector) selectWhenValue(node *parser.WhenNode) (parser.Node, boo
 		condition, resolved, err := s.evaluate(branch.Condition)
 		if err != nil || !resolved {
 			if err == nil {
-				if s.genericFunction != nil {
-					s.genericFunction.DeferredStage = true
-				} else if s.genericAlias != nil && !s.specializing {
-					s.genericAlias.DeferredStage = true
+				if s.parameterizedFunction != nil {
+					s.parameterizedFunction.DeferredStage = true
+				} else if s.parameterizedAlias != nil && !s.specializing {
+					s.parameterizedAlias.DeferredStage = true
 				} else {
 					s.needsIR = true
 					s.unresolved[branch.Condition] = struct{}{}
@@ -994,8 +994,8 @@ func (s *stageSelector) evaluateDirective(node *parser.CompilerDirectiveNode) er
 		return err
 	}
 	if !resolved {
-		if s.genericFunction != nil {
-			s.genericFunction.DeferredStage = true
+		if s.parameterizedFunction != nil {
+			s.parameterizedFunction.DeferredStage = true
 		} else {
 			s.needsIR = true
 		}
@@ -1431,11 +1431,11 @@ func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 	if len(irErrors) != 0 {
 		return irErrors[0]
 	}
-	templates := make(map[string][]ir.GenericTemplate, len(order))
+	templates := make(map[string][]ir.ParameterizedTemplate, len(order))
 	for _, name := range order {
-		templates[name] = GenerateModuleGenericTemplateIR(modules[name])
+		templates[name] = GenerateModuleParameterizedTemplateIR(modules[name])
 	}
-	specializations, err := ExtractGenericSpecializations(irModules, templates, analyser.ModuleInterfaces())
+	specializations, err := ExtractParameterizedSpecializations(irModules, templates, analyser.MethodTargets())
 	if err != nil {
 		return err
 	}

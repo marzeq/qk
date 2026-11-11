@@ -35,17 +35,17 @@ let Box($).keep(self, $U: type, value: U): U = value
 		name  string
 	}{{1, "T"}, {2, "Foo"}} {
 		method := root.Body[test.index].(*parser.FunctionDefNode)
-		if method.Symbol == nil || len(method.Symbol.GenericParameters) != 1 || method.Symbol.GenericParameters[0].Name != test.name {
+		if method.Symbol == nil || len(method.Symbol.ParameterizedParameters) != 1 || method.Symbol.ParameterizedParameters[0].Name != test.name {
 			t.Fatalf("method %d did not capture %q: %#v", test.index, test.name, method.Symbol)
 		}
 	}
 	pairMethod := root.Body[4].(*parser.FunctionDefNode)
-	if len(pairMethod.Symbol.GenericParameters) != 2 || pairMethod.Symbol.GenericParameters[1].Name != "B" {
-		t.Fatalf("method did not capture both owner parameters: %#v", pairMethod.Symbol.GenericParameters)
+	if len(pairMethod.Symbol.ParameterizedParameters) != 2 || pairMethod.Symbol.ParameterizedParameters[1].Name != "B" {
+		t.Fatalf("method did not capture both owner parameters: %#v", pairMethod.Symbol.ParameterizedParameters)
 	}
 	keep := root.Body[5].(*parser.FunctionDefNode)
-	if len(keep.Symbol.GenericParameters) != 2 || keep.Symbol.GenericParameters[0].Name != "T" || keep.Symbol.GenericParameters[1].Name != "U" {
-		t.Fatalf("method did not preserve its own type parameter after owner captures: %#v", keep.Symbol.GenericParameters)
+	if len(keep.Symbol.ParameterizedParameters) != 2 || keep.Symbol.ParameterizedParameters[0].Name != "T" || keep.Symbol.ParameterizedParameters[1].Name != "U" {
+		t.Fatalf("method did not preserve its own type parameter after owner captures: %#v", keep.Symbol.ParameterizedParameters)
 	}
 }
 

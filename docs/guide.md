@@ -1270,7 +1270,7 @@ without executing it, so a compile-time function can inspect the type of a
 runtime value.
 
 `core.types.satisfies(T, Trait)` checks a completed type against a trait using
-the same structural method rules as a generic constraint. It returns a
+the same structural method rules as a compile-time type constraint. It returns a
 compile-time `bool` and can be called from a type factory or embedded with `$`:
 
 ```qk
@@ -1570,10 +1570,10 @@ Immutable and mutable slices provide search, prefix and suffix checks, filling, 
 `std.alloc.Allocator` is the byte-oriented allocator trait. Typed helpers build on it:
 
 ```qk
-let object, created = std.alloc.create<Point>(allocator)
+let object, created = std.alloc.create(Point, allocator)
 defer std.alloc.destroy(allocator, object)
 
-let values, allocated = std.alloc.allocate<i32>(allocator, 128)
+let values, allocated = std.alloc.allocate(i32, allocator, 128)
 defer std.alloc.free(allocator, values)
 ```
 
