@@ -1353,6 +1353,12 @@ func (s *stageSelector) targetValue(name string) (stageValue, bool) {
 func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 	staged := &parser.RootNode{Loc: root.Loc}
 	reachableFunctions := s.reachableStageFunctions(root)
+	stagedOwners := make(map[string]bool)
+	for _, node := range root.Body {
+		if alias, ok := node.(*parser.TypeAliasNode); ok && alias.Name != s.stagingAliasName && !s.spreadAliases[alias.Name] {
+			stagedOwners[alias.Name] = true
+		}
+	}
 	hasModule := false
 	for _, node := range root.Body {
 		switch node := node.(type) {
@@ -1371,7 +1377,7 @@ func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 			copy.Attributes = nil
 			staged.Body = append(staged.Body, &copy)
 		case *parser.FunctionDefNode:
-			if reachableFunctions[node] {
+			if reachableFunctions[node] || node.MethodOwner != "" && stagedOwners[node.MethodOwner] {
 				staged.Body = append(staged.Body, node)
 			}
 		case *parser.TypeAliasNode:
@@ -1443,6 +1449,7 @@ func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 		allIR = append(allIR, specializations)
 	}
 	evaluator := ir.NewEvaluatorForTarget(s.config.TargetTriple, allIR...)
+	evaluator.TypeSatisfies = analyser.TypeSatisfies
 	moduleIR := irModules[s.module]
 	if moduleIR.Initializer != "" {
 		if _, err := evaluator.Run(moduleIR.Initializer); err != nil {

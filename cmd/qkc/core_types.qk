@@ -34,6 +34,9 @@ pub let inspect(T: type): TypeShape = .{
   has_element=false, length=0, mutable=false, packed=false, members=[],
 }
 
+// Uses the same structural conformance check as a type parameter constraint.
+pub let satisfies(T: type, Requirement: type): bool = false
+
 pub let StructBuilder = struct {
   handle: u64,
   marker: type,

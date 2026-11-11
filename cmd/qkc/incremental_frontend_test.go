@@ -60,6 +60,7 @@ let UserId = distinct(u64) {
   let raw(self): u64 = self.(u64)
   let from(raw: u64): UserId = raw.(UserId)
 }
+
 let Box(T: type): type = struct { value: T }
 let LaterBox = Box(Later)
 let Later = struct { value: i32 }
@@ -102,6 +103,91 @@ let main() {
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestCoreTypesSatisfiesUsesStructuralMethods(t *testing.T) {
+	const path = "type_satisfies.qk"
+	const source = `module main
+import core.types
+let HasValue = trait { let value(self): i32 }
+let Record = struct {
+  number: i32,
+  let value(self): i32 = self.number
+}
+
+let Empty = struct {}
+let HasDefault = trait { let answer(self): i32 = 7 }
+let check(T: type): bool = core.types.satisfies(T, HasValue)
+let Positive: bool = $check(Record)
+let Negative: bool = $core.types.satisfies(Empty, HasValue)
+let Default: bool = $core.types.satisfies(Empty, HasDefault)
+$if core.types.satisfies(Record, HasValue) {
+  let Selected = struct { ok: bool }
+} else {
+  $compiler_error("Record must satisfy HasValue")
+}
+let main() {}
+`
+	frontend, err := runFrontend(&Args{mainModule: ".", noStdlib: true}, loader.StageConfig{NoStdlib: true},
+		map[string]string{path: source}, map[string]string{path: "."}, map[string]bool{path: false},
+		map[string]map[string]string{".": {}}, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	results := map[string]string{"Positive": "true", "Negative": "false", "Default": "true"}
+	for _, node := range frontend.modules["."].Root.Body {
+		declaration, ok := node.(*parser.DeclarationNode)
+		if !ok {
+			continue
+		}
+		want, ok := results[declaration.Name]
+		if !ok {
+			continue
+		}
+		literal, ok := declaration.Value.(*parser.BoolLiteralNode)
+		if !ok || literal.Value != want {
+			t.Fatalf("%s = %#v, want %s", declaration.Name, declaration.Value, want)
+		}
+		delete(results, declaration.Name)
+	}
+	if len(results) != 0 {
+		t.Fatalf("missing compile-time results: %#v", results)
+	}
+}
+
+func TestCoreTypesSatisfiesImportedPrivateWitness(t *testing.T) {
+	sources := map[string]string{
+		"model/model.qk": `module model
+pub let Record = struct {
+  number: i32,
+  let value(self): i32 = self.number
+}
+`,
+		"main.qk": `module main
+import core.types
+import model
+let HasValue = trait { let value(self): i32 }
+let Supported: bool = $core.types.satisfies(model.Record, HasValue)
+let main() {}
+`,
+	}
+	packages := map[string]string{"model/model.qk": "model", "main.qk": "."}
+	trusted := map[string]bool{"model/model.qk": false, "main.qk": false}
+	frontend, err := runFrontend(&Args{mainModule: ".", noStdlib: true}, loader.StageConfig{NoStdlib: true},
+		sources, packages, trusted, map[string]map[string]string{"model": {}, ".": {}}, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, node := range frontend.modules["."].Root.Body {
+		if declaration, ok := node.(*parser.DeclarationNode); ok && declaration.Name == "Supported" {
+			literal, ok := declaration.Value.(*parser.BoolLiteralNode)
+			if !ok || literal.Value != "true" {
+				t.Fatalf("imported private witness produced %#v", declaration.Value)
+			}
+			return
+		}
+	}
+	t.Fatal("missing Supported declaration")
 }
 
 func TestLexicalStructMethods(t *testing.T) {

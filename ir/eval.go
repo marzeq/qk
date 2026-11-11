@@ -231,10 +231,11 @@ func EvalFloat(value float64, typ types.Type) EvalValue {
 func EvalBool(value bool) EvalValue { return EvalValue{Type: types.PrimitiveBool, Boolean: value} }
 
 type Evaluator struct {
-	Functions    map[string]*Function
-	Globals      map[string]EvalValue
-	MaxDepth     int
-	TargetTriple string
+	Functions     map[string]*Function
+	Globals       map[string]EvalValue
+	MaxDepth      int
+	TargetTriple  string
+	TypeSatisfies func(types.Type, types.Type) (bool, error)
 }
 
 func NewEvaluator(modules ...*Module) *Evaluator {
@@ -803,8 +804,19 @@ const coreTypesEnumBuilder = "__qk_0_4_core5_types_EnumBuilder_"
 const coreTypesFlagsBuilder = "__qk_0_4_core5_types_FlagsBuilder_"
 const coreTypesUnionBuilder = "__qk_0_4_core5_types_UnionBuilder_"
 const coreTypesInspect = "__qk_0_4_core5_types_inspect"
+const coreTypesSatisfies = "__qk_0_4_core5_types_satisfies"
 
 func (e *Evaluator) coreTypesCall(call Call, args []EvalValue, invocation string) (EvalValue, bool, error) {
+	if call.Name == coreTypesSatisfies || strings.HasPrefix(call.Name, coreTypesSatisfies+"_") {
+		if len(args) != 2 || args[0].TypeValue == nil || args[1].TypeValue == nil {
+			return EvalValue{}, true, fmt.Errorf("core.types.satisfies requires two completed type values")
+		}
+		if e.TypeSatisfies == nil {
+			return EvalValue{}, true, fmt.Errorf("core.types.satisfies requires semantic type information")
+		}
+		result, err := e.TypeSatisfies(args[0].TypeValue, args[1].TypeValue)
+		return EvalBool(result), true, err
+	}
 	if call.Name == coreTypesInspect || strings.HasPrefix(call.Name, coreTypesInspect+"_") {
 		var input types.Type
 		if len(args) == 1 {

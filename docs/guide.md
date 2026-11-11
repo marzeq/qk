@@ -1269,6 +1269,15 @@ The record includes `mutable` and `packed` where those properties apply.
 without executing it, so a compile-time function can inspect the type of a
 runtime value.
 
+`core.types.satisfies(T, Trait)` checks a completed type against a trait using
+the same structural method rules as a generic constraint. It returns a
+compile-time `bool` and can be called from a type factory or embedded with `$`:
+
+```qk
+let HasValue = trait { let value(self): i32 }
+let supports_value: bool = $core.types.satisfies(Record, HasValue)
+```
+
 A bare type parameter can also specialize a function that returns an ordinary value. Such a function can only be called from a compile-time expression:
 
 ```qk

@@ -866,7 +866,7 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 				}
 				ident.SetType(types.PointerType{Base: types.FunctionType{Parameters: ident.Symbol.Signature.Parameters, ReturnType: ret, TypedVariadic: ident.Symbol.Signature.TypedVariadic, VariadicElement: ident.Symbol.Signature.VariadicElement}})
 			case symbols.SymbolKindType:
-				ident.SetType(ident.Symbol.TypeInfo)
+				ident.SetType(types.MetaType{})
 			}
 			n.SetType(ident.GetType())
 			break
