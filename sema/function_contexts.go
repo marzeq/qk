@@ -104,6 +104,13 @@ func walkRuntimeSyntax(node parser.Node, visit func(parser.Node)) {
 	switch node := node.(type) {
 	case *parser.CompileTimeExpressionNode, *parser.CompilerDirectiveNode, *parser.FunctionDefNode:
 		return
+	case *parser.FieldAccessNode:
+		if node.MethodSymbol != nil && node.MethodSymbol.StaticMethod {
+			// The owner in Type.method is a name resolved during compilation,
+			// not a type value evaluated by the runtime function.
+			visit(node)
+			return
+		}
 	case *parser.WhenNode:
 		for _, branch := range node.Branches {
 			for _, item := range branch.Body {

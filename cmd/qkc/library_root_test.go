@@ -125,6 +125,22 @@ func TestLibraryTreeThroughCompilerFrontend(t *testing.T) {
 	}
 }
 
+func TestWordCountExampleUsesRuntimeStaticMethod(t *testing.T) {
+	repositoryRoot := filepath.Clean(filepath.Join("..", ".."))
+	libraryRoot := filepath.Join(repositoryRoot, "libs")
+	projectRoot := filepath.Join(repositoryRoot, "examples", "wc")
+	_, sources, sourcePackages, trustedSources, importResolutions, err := discoverSourcePackages(
+		".", projectRoot, "", []string{libraryRoot, projectRoot}, nil, libraryRoot, true,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runFrontend(&Args{mainModule: "."}, loader.StageConfig{},
+		sources, sourcePackages, trustedSources, importResolutions, false, false); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestCompileTimeEvaluationUsesImportedPureLibraryCode(t *testing.T) {
 	repositoryRoot := filepath.Clean(filepath.Join("..", ".."))
 	libraryRoot := filepath.Join(repositoryRoot, "libs")
