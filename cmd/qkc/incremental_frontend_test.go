@@ -61,6 +61,10 @@ let UserId = distinct(u64) {
   let from(raw: u64): UserId = raw.(UserId)
 }
 let Box(T: type): type = struct { value: T }
+let LaterBox = Box(Later)
+let Later = struct { value: i32 }
+let make_number(): i32 = 3
+let RuntimeResult = make_number()
 let NumberTag(T: type): type = distinct(T) {
   let raw(self): T = self.(T)
 }
@@ -70,6 +74,7 @@ let Tagged($T: type) = distinct(T) {
 let main() {
   let pair: Pair = .{ left=1, right=2 }
   let box: Box(i32) = .{ value=pair.left }
+  let later: LaterBox = .{ value=.{ value=pair.right } }
   let user: UserId = 7.(UserId)
   let raw: u64 = user.raw()
   let made: UserId = UserId.from(raw)
@@ -78,6 +83,8 @@ let main() {
   let function_tag: NumberTag(u8) = 9.(NumberTag(u8))
   let function_raw: u8 = function_tag.raw()
   _ = made
+  _ = later
+  _ = RuntimeResult
   _ = tagged_raw
   _ = function_tag
   _ = function_raw

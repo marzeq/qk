@@ -24,6 +24,7 @@ func (a *Analyser) collectTopLevel(root *parser.RootNode) {
 			a.precollectTypeAlias(n)
 		}
 	}
+	a.promoteTypeApplications(root)
 
 	for _, node := range root.Body {
 		if n, ok := node.(*parser.TypeAliasNode); ok && len(n.GenericParameters) != 0 {
