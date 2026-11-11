@@ -33,30 +33,30 @@ import core.build
 
 import std.ctypes
 
-pub let VaList = type alias *mut void
+pub let VaList: type = *mut void
 
-pub let rAudioBuffer = type opaque
-pub let rAudioProcessor = type opaque
+pub let rAudioBuffer = opaque
+pub let rAudioProcessor = opaque
 
-pub let Vector2 = type struct {
+pub let Vector2 = struct {
   x: std.ctypes.float,
   y: std.ctypes.float,
 }
 
-pub let Vector3 = type struct {
+pub let Vector3 = struct {
   x: std.ctypes.float,
   y: std.ctypes.float,
   z: std.ctypes.float,
 }
 
-pub let Vector4 = type struct {
+pub let Vector4 = struct {
   x: std.ctypes.float,
   y: std.ctypes.float,
   z: std.ctypes.float,
   w: std.ctypes.float,
 }
 
-pub let Matrix = type struct {
+pub let Matrix = struct {
   m0: std.ctypes.float,
   m4: std.ctypes.float,
   m8: std.ctypes.float,
@@ -75,21 +75,21 @@ pub let Matrix = type struct {
   m15: std.ctypes.float,
 }
 
-pub let Color = type struct {
+pub let Color = struct {
   r: std.ctypes.unsigned_char,
   g: std.ctypes.unsigned_char,
   b: std.ctypes.unsigned_char,
   a: std.ctypes.unsigned_char,
 }
 
-pub let Rectangle = type struct {
+pub let Rectangle = struct {
   x: std.ctypes.float,
   y: std.ctypes.float,
   width: std.ctypes.float,
   height: std.ctypes.float,
 }
 
-pub let Image = type struct {
+pub let Image = struct {
   data: *mut void,
   width: std.ctypes.int,
   height: std.ctypes.int,
@@ -97,7 +97,7 @@ pub let Image = type struct {
   format: std.ctypes.int,
 }
 
-pub let Texture = type struct {
+pub let Texture = struct {
   id: std.ctypes.unsigned_int,
   width: std.ctypes.int,
   height: std.ctypes.int,
@@ -105,13 +105,13 @@ pub let Texture = type struct {
   format: std.ctypes.int,
 }
 
-pub let RenderTexture = type struct {
+pub let RenderTexture = struct {
   id: std.ctypes.unsigned_int,
   texture: Texture,
   depth: Texture,
 }
 
-pub let NPatchInfo = type struct {
+pub let NPatchInfo = struct {
   source: Rectangle,
   left: std.ctypes.int,
   top: std.ctypes.int,
@@ -120,7 +120,7 @@ pub let NPatchInfo = type struct {
   layout: std.ctypes.int,
 }
 
-pub let GlyphInfo = type struct {
+pub let GlyphInfo = struct {
   value: std.ctypes.int,
   offset_x: std.ctypes.int,
   offset_y: std.ctypes.int,
@@ -128,7 +128,7 @@ pub let GlyphInfo = type struct {
   image: Image,
 }
 
-pub let Font = type struct {
+pub let Font = struct {
   base_size: std.ctypes.int,
   glyph_count: std.ctypes.int,
   glyph_padding: std.ctypes.int,
@@ -137,7 +137,7 @@ pub let Font = type struct {
   glyphs: *mut GlyphInfo,
 }
 
-pub let Camera3D = type struct {
+pub let Camera3D = struct {
   position: Vector3,
   target: Vector3,
   up: Vector3,
@@ -145,14 +145,14 @@ pub let Camera3D = type struct {
   projection: std.ctypes.int,
 }
 
-pub let Camera2D = type struct {
+pub let Camera2D = struct {
   offset: Vector2,
   target: Vector2,
   rotation: std.ctypes.float,
   zoom: std.ctypes.float,
 }
 
-pub let Mesh = type struct {
+pub let Mesh = struct {
   vertex_count: std.ctypes.int,
   triangle_count: std.ctypes.int,
   vertices: *mut std.ctypes.float,
@@ -171,41 +171,41 @@ pub let Mesh = type struct {
   vbo_id: *mut std.ctypes.unsigned_int,
 }
 
-pub let Shader = type struct {
+pub let Shader = struct {
   id: std.ctypes.unsigned_int,
   locs: *mut std.ctypes.int,
 }
 
-pub let MaterialMap = type struct {
+pub let MaterialMap = struct {
   texture: Texture2D,
   color: Color,
   value: std.ctypes.float,
 }
 
-pub let Material = type struct {
+pub let Material = struct {
   shader: Shader,
   maps: *mut MaterialMap,
   params: [4]std.ctypes.float,
 }
 
-pub let Transform = type struct {
+pub let Transform = struct {
   translation: Vector3,
   rotation: Quaternion,
   scale: Vector3,
 }
 
-pub let BoneInfo = type struct {
+pub let BoneInfo = struct {
   name: [32]std.ctypes.char,
   parent: std.ctypes.int,
 }
 
-pub let ModelSkeleton = type struct {
+pub let ModelSkeleton = struct {
   bone_count: std.ctypes.int,
   bones: *mut BoneInfo,
   bind_pose: ModelAnimPose,
 }
 
-pub let Model = type struct {
+pub let Model = struct {
   transform: Matrix,
   mesh_count: std.ctypes.int,
   material_count: std.ctypes.int,
@@ -217,31 +217,31 @@ pub let Model = type struct {
   bone_matrices: *mut Matrix,
 }
 
-pub let ModelAnimation = type struct {
+pub let ModelAnimation = struct {
   name: [32]std.ctypes.char,
   bone_count: std.ctypes.int,
   keyframe_count: std.ctypes.int,
   keyframe_poses: *mut ModelAnimPose,
 }
 
-pub let Ray = type struct {
+pub let Ray = struct {
   position: Vector3,
   direction: Vector3,
 }
 
-pub let RayCollision = type struct {
+pub let RayCollision = struct {
   hit: bool,
   distance: std.ctypes.float,
   point: Vector3,
   normal: Vector3,
 }
 
-pub let BoundingBox = type struct {
+pub let BoundingBox = struct {
   min: Vector3,
   max: Vector3,
 }
 
-pub let Wave = type struct {
+pub let Wave = struct {
   frame_count: std.ctypes.unsigned_int,
   sample_rate: std.ctypes.unsigned_int,
   sample_size: std.ctypes.unsigned_int,
@@ -249,7 +249,7 @@ pub let Wave = type struct {
   data: *mut void,
 }
 
-pub let AudioStream = type struct {
+pub let AudioStream = struct {
   buffer: *mut rAudioBuffer,
   processor: *mut rAudioProcessor,
   sample_rate: std.ctypes.unsigned_int,
@@ -257,12 +257,12 @@ pub let AudioStream = type struct {
   channels: std.ctypes.unsigned_int,
 }
 
-pub let Sound = type struct {
+pub let Sound = struct {
   stream: AudioStream,
   frame_count: std.ctypes.unsigned_int,
 }
 
-pub let Music = type struct {
+pub let Music = struct {
   stream: AudioStream,
   frame_count: std.ctypes.unsigned_int,
   looping: bool,
@@ -270,7 +270,7 @@ pub let Music = type struct {
   ctx_data: *mut void,
 }
 
-pub let VrDeviceInfo = type struct {
+pub let VrDeviceInfo = struct {
   h_resolution: std.ctypes.int,
   v_resolution: std.ctypes.int,
   h_screen_size: std.ctypes.float,
@@ -282,7 +282,7 @@ pub let VrDeviceInfo = type struct {
   chroma_ab_correction: [4]std.ctypes.float,
 }
 
-pub let VrStereoConfig = type struct {
+pub let VrStereoConfig = struct {
   projection: [2]Matrix,
   view_offset: [2]Matrix,
   left_lens_center: [2]std.ctypes.float,
@@ -293,48 +293,48 @@ pub let VrStereoConfig = type struct {
   scale_in: [2]std.ctypes.float,
 }
 
-pub let FilePathList = type struct {
+pub let FilePathList = struct {
   count: std.ctypes.unsigned_int,
   paths: *mut *mut std.ctypes.char,
 }
 
-pub let AutomationEvent = type struct {
+pub let AutomationEvent = struct {
   frame: std.ctypes.unsigned_int,
   type_value: std.ctypes.unsigned_int,
   params: [4]std.ctypes.int,
 }
 
-pub let AutomationEventList = type struct {
+pub let AutomationEventList = struct {
   capacity: std.ctypes.unsigned_int,
   count: std.ctypes.unsigned_int,
   events: *mut AutomationEvent,
 }
 
-pub let Quaternion = type alias Vector4
+pub let Quaternion: type = Vector4
 
-pub let Texture2D = type alias Texture
+pub let Texture2D: type = Texture
 
-pub let TextureCubemap = type alias Texture
+pub let TextureCubemap: type = Texture
 
-pub let RenderTexture2D = type alias RenderTexture
+pub let RenderTexture2D: type = RenderTexture
 
-pub let Camera = type alias Camera3D
+pub let Camera: type = Camera3D
 
-pub let ModelAnimPose = type alias *mut Transform
+pub let ModelAnimPose: type = *mut Transform
 
-pub let TraceLogCallback = type alias *(std.ctypes.int, cstr, VaList): void
+pub let TraceLogCallback: type = *(std.ctypes.int, cstr, VaList): void
 
-pub let LoadFileDataCallback = type alias *(cstr, *mut std.ctypes.int): *mut std.ctypes.unsigned_char
+pub let LoadFileDataCallback: type = *(cstr, *mut std.ctypes.int): *mut std.ctypes.unsigned_char
 
-pub let SaveFileDataCallback = type alias *(cstr, *mut void, std.ctypes.int): bool
+pub let SaveFileDataCallback: type = *(cstr, *mut void, std.ctypes.int): bool
 
-pub let LoadFileTextCallback = type alias *(cstr): *mut std.ctypes.char
+pub let LoadFileTextCallback: type = *(cstr): *mut std.ctypes.char
 
-pub let SaveFileTextCallback = type alias *(cstr, cstr): bool
+pub let SaveFileTextCallback: type = *(cstr, cstr): bool
 
-pub let AudioCallback = type alias *(*mut void, std.ctypes.unsigned_int): void
+pub let AudioCallback: type = *(*mut void, std.ctypes.unsigned_int): void
 
-pub let ConfigFlags = type flags(u32) {
+pub let ConfigFlags = flags(u32) {
   VsyncHint = 0x40,
   FullscreenMode = 0x2,
   WindowResizable = 0x4,
@@ -353,7 +353,7 @@ pub let ConfigFlags = type flags(u32) {
   InterlacedHint = 0x10000,
 }
 
-pub let TraceLogLevel = type enum {
+pub let TraceLogLevel = enum {
   All = 0,
   Trace = 1,
   Debug = 2,
@@ -364,7 +364,7 @@ pub let TraceLogLevel = type enum {
   None = 7,
 }
 
-pub let KeyboardKey = type enum {
+pub let KeyboardKey = enum {
   Null = 0,
   Apostrophe = 39,
   Comma = 44,
@@ -477,7 +477,7 @@ pub let KeyboardKey = type enum {
   VolumeDown = 25,
 }
 
-pub let MouseButton = type enum {
+pub let MouseButton = enum {
   Left = 0,
   Right = 1,
   Middle = 2,
@@ -487,7 +487,7 @@ pub let MouseButton = type enum {
   Back = 6,
 }
 
-pub let MouseCursor = type enum {
+pub let MouseCursor = enum {
   Default = 0,
   Arrow = 1,
   Ibeam = 2,
@@ -501,7 +501,7 @@ pub let MouseCursor = type enum {
   NotAllowed = 10,
 }
 
-pub let GamepadButton = type enum {
+pub let GamepadButton = enum {
   Unknown = 0,
   LeftFaceUp = 1,
   LeftFaceRight = 2,
@@ -522,7 +522,7 @@ pub let GamepadButton = type enum {
   RightThumb = 17,
 }
 
-pub let GamepadAxis = type enum {
+pub let GamepadAxis = enum {
   LeftX = 0,
   LeftY = 1,
   RightX = 2,
@@ -531,7 +531,7 @@ pub let GamepadAxis = type enum {
   RightTrigger = 5,
 }
 
-pub let MaterialMapIndex = type enum {
+pub let MaterialMapIndex = enum {
   Albedo = 0,
   Metalness = 1,
   Normal = 2,
@@ -545,7 +545,7 @@ pub let MaterialMapIndex = type enum {
   Brdf = 10,
 }
 
-pub let ShaderLocationIndex = type enum {
+pub let ShaderLocationIndex = enum {
   VertexPosition = 0,
   VertexTEXCOORD01 = 1,
   VertexTEXCOORD02 = 2,
@@ -578,7 +578,7 @@ pub let ShaderLocationIndex = type enum {
   VertexInstancetransform = 29,
 }
 
-pub let ShaderUniformDataType = type enum {
+pub let ShaderUniformDataType = enum {
   Float = 0,
   VEC2 = 1,
   VEC3 = 2,
@@ -594,14 +594,14 @@ pub let ShaderUniformDataType = type enum {
   SAMPLER2D = 12,
 }
 
-pub let ShaderAttributeDataType = type enum {
+pub let ShaderAttributeDataType = enum {
   Float = 0,
   VEC2 = 1,
   VEC3 = 2,
   VEC4 = 3,
 }
 
-pub let PixelFormat = type enum {
+pub let PixelFormat = enum {
   UncompressedGrayscale = 1,
   UncompressedGrayAlpha = 2,
   UncompressedR5G6B5 = 3,
@@ -628,7 +628,7 @@ pub let PixelFormat = type enum {
   CompressedAstc8x8Rgba = 24,
 }
 
-pub let TextureFilter = type enum {
+pub let TextureFilter = enum {
   Point = 0,
   Bilinear = 1,
   Trilinear = 2,
@@ -637,14 +637,14 @@ pub let TextureFilter = type enum {
   Anisotropic16X = 5,
 }
 
-pub let TextureWrap = type enum {
+pub let TextureWrap = enum {
   Repeat = 0,
   Clamp = 1,
   MirrorRepeat = 2,
   MirrorClamp = 3,
 }
 
-pub let CubemapLayout = type enum {
+pub let CubemapLayout = enum {
   AutoDetect = 0,
   LineVertical = 1,
   LineHorizontal = 2,
@@ -652,13 +652,13 @@ pub let CubemapLayout = type enum {
   CrossFourByThree = 4,
 }
 
-pub let FontType = type enum {
+pub let FontType = enum {
   Default = 0,
   Bitmap = 1,
   Sdf = 2,
 }
 
-pub let BlendMode = type enum {
+pub let BlendMode = enum {
   Alpha = 0,
   Additive = 1,
   Multiplied = 2,
@@ -669,7 +669,7 @@ pub let BlendMode = type enum {
   CustomSeparate = 7,
 }
 
-pub let Gesture = type flags(u32) {
+pub let Gesture = flags(u32) {
   None = 0x0,
   Tap = 0x1,
   Doubletap = 0x2,
@@ -683,7 +683,7 @@ pub let Gesture = type flags(u32) {
   PinchOut = 0x200,
 }
 
-pub let CameraMode = type enum {
+pub let CameraMode = enum {
   Custom = 0,
   Free = 1,
   Orbital = 2,
@@ -691,18 +691,18 @@ pub let CameraMode = type enum {
   ThirdPerson = 4,
 }
 
-pub let CameraProjection = type enum {
+pub let CameraProjection = enum {
   Perspective = 0,
   Orthographic = 1,
 }
 
-pub let NPatchLayout = type enum {
+pub let NPatchLayout = enum {
   NinePatch = 0,
   ThreePatchVertical = 1,
   ThreePatchHorizontal = 2,
 }
 
-pub let Key = type alias KeyboardKey
+pub let Key: type = KeyboardKey
 
 pub let VersionMajor: i32 = 6
 pub let VersionMinor: i32 = 0

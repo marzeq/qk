@@ -6,13 +6,13 @@ import (
   std.os
 )
 
-let Counts = type struct {
+let Counts = struct {
   lines: usz,
   words: usz,
   bytes: usz,
 }
 
-let Options = type struct {
+let Options = struct {
   lines: bool,
   words: bool,
   bytes: bool,

@@ -424,6 +424,7 @@ func (g *Generator) GenerateFunction(fn *parser.FunctionDefNode) {
 		name = g.mangleFunctionName(g.ModuleName, fn.Symbol.Name)
 	}
 	irFn := ir.NewFunction(name, linkage, fn.Attributes)
+	irFn.CompileTimeOnly = fn.CompileTimeOnly
 	irFn.Visibility = visibility
 	irFn.Signature = g.buildFunctionSignature(fn)
 	g.Module.AddFunction(irFn)
@@ -1682,6 +1683,15 @@ func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
 		return ir.FloatConstOperand(n.Value, n.GetType())
 	case *parser.BoolLiteralNode:
 		return ir.BoolConstOperand(n.Value == string(tokeniser.KeywordTrue))
+	case *parser.TypeValueExprNode:
+		return ir.TypeConstOperand(n.ValueType)
+	case *parser.StaticTypeNode:
+		return ir.TypeConstOperand(n.ValueType)
+	case *parser.TypePointerExprNode:
+		base := g.GenerateExpr(n.Base)
+		dest := g.currentFunction.NewValueOfType(types.MetaType{})
+		g.Emit(ir.TypePointer{Dest: dest, Base: base, Mutable: n.Mutable})
+		return ir.ValueOperand(dest, types.MetaType{})
 	case *parser.EnumLiteralNode:
 		return ir.IntConstOperand(n.Value, n.GetType())
 	case *parser.IdentifierNode:
@@ -2547,19 +2557,31 @@ func (g *Generator) generateTraitUnwrap(node *parser.CastNode) ir.Operand {
 
 func (g *Generator) generateSizeOfExpr(node *parser.SizeOfNode) ir.Operand {
 	dst := g.currentFunction.NewValueOfType(types.PrimitiveUsz)
-	g.Emit(ir.Sizeof{Dest: dst, Type: node.OperandType})
+	if _, typeValue := types.Underlying(node.OperandType).(types.MetaType); typeValue && node.Expression != nil {
+		g.Emit(ir.SizeofValue{Dest: dst, Value: g.GenerateExpr(node.Expression)})
+	} else {
+		g.Emit(ir.Sizeof{Dest: dst, Type: node.OperandType})
+	}
 	return ir.ValueOperand(dst, types.PrimitiveUsz)
 }
 
 func (g *Generator) generateSizeOfExprExpr(node *parser.SizeOfExprNode) ir.Operand {
 	dst := g.currentFunction.NewValueOfType(types.PrimitiveUsz)
-	g.Emit(ir.Sizeof{Dest: dst, Type: node.Operand.GetType()})
+	if _, typeValue := types.Underlying(node.Operand.GetType()).(types.MetaType); typeValue {
+		g.Emit(ir.SizeofValue{Dest: dst, Value: g.GenerateExpr(node.Operand)})
+	} else {
+		g.Emit(ir.Sizeof{Dest: dst, Type: node.Operand.GetType()})
+	}
 	return ir.ValueOperand(dst, types.PrimitiveUsz)
 }
 
 func (g *Generator) generateAlignOfExpr(node *parser.AlignOfNode) ir.Operand {
 	dst := g.currentFunction.NewValueOfType(types.PrimitiveUsz)
-	g.Emit(ir.Alignof{Dest: dst, Type: node.OperandType})
+	if _, typeValue := types.Underlying(node.OperandType).(types.MetaType); typeValue && node.Expression != nil {
+		g.Emit(ir.AlignofValue{Dest: dst, Value: g.GenerateExpr(node.Expression)})
+	} else {
+		g.Emit(ir.Alignof{Dest: dst, Type: node.OperandType})
+	}
 	return ir.ValueOperand(dst, types.PrimitiveUsz)
 }
 
@@ -3222,6 +3244,7 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 		callee = &value
 	}
 	args := make([]ir.Operand, 0, len(node.Args))
+	var compileTimeArgs map[int]ir.Operand
 	callTypedVariadicArity := len(node.Args) - node.TypedVariadicStart
 	typedVariadicWrapper := node.TypedVariadic && !node.VariadicExpansion && node.Symbol != nil &&
 		hasTypedVariadicSpecialization(node.Symbol.Signature, callTypedVariadicArity)
@@ -3279,6 +3302,12 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 		for i, arg := range node.Args {
 			if constantWrapper {
 				if _, specialized := constants[i]; specialized {
+					if node.Symbol != nil && node.Symbol.DefinitionModule == "core.types" {
+						if compileTimeArgs == nil {
+							compileTimeArgs = make(map[int]ir.Operand)
+						}
+						compileTimeArgs[i] = g.GenerateExpr(arg)
+					}
 					continue
 				}
 			}
@@ -3404,14 +3433,15 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 
 	if node.GetType().Equals(types.PrimitiveVoid) {
 		g.Emit(ir.Call{
-			Name:        name,
-			Callee:      callee,
-			Args:        args,
-			Signature:   callSig,
-			Generic:     genericReference,
-			Requirement: requirementReference,
-			SourceName:  sourceCallName(node.Callee),
-			SourceLoc:   sourceCallLoc(node),
+			Name:            name,
+			Callee:          callee,
+			Args:            args,
+			CompileTimeArgs: compileTimeArgs,
+			Signature:       callSig,
+			Generic:         genericReference,
+			Requirement:     requirementReference,
+			SourceName:      sourceCallName(node.Callee),
+			SourceLoc:       sourceCallLoc(node),
 		})
 		if node.Symbol != nil && node.Symbol.Name == "panic" {
 			g.Emit(ir.Unreachable{})
@@ -3422,7 +3452,8 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 	dst := g.currentFunction.NewValueOfType(node.GetType())
 	g.Emit(ir.Call{
 		Dest: dst, Name: name, Callee: callee, Args: args, Signature: callSig,
-		Generic: genericReference, Requirement: requirementReference,
+		CompileTimeArgs: compileTimeArgs,
+		Generic:         genericReference, Requirement: requirementReference,
 		SourceName: sourceCallName(node.Callee), SourceLoc: sourceCallLoc(node),
 	})
 	return ir.ValueOperand(dst, node.GetType())
@@ -3646,6 +3677,9 @@ func (g *Generator) buildCallSignature(node *parser.FunctionCallNode) ir.Functio
 func (g *Generator) generateIdentifierExpr(node *parser.IdentifierNode) ir.Operand {
 	if node.Symbol == nil {
 		panic("identifier symbol is nil")
+	}
+	if node.Symbol.Kind == symbols.SymbolKindType {
+		return ir.TypeConstOperand(node.Symbol.TypeInfo)
 	}
 	if node.Symbol.InlineComptime {
 		if types.HasUntyped(node.GetType()) {

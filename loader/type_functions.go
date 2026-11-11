@@ -1,53 +1,56 @@
 package loader
 
 import (
+	"reflect"
+
 	"github.com/marzeq/qk/parser"
 	"github.com/marzeq/qk/shared"
 )
 
-// Type-returning functions currently have no operations on type values. A
-// function that merely selects and returns a type can use the existing
-// parameterized transparent-type resolver, which also handles calls in type
-// annotations and preserves definition-module ownership.
+// Simple type-returning functions use the existing parameterized transparent
+// type resolver. Functions with general bodies remain compile-time-only and
+// are evaluated through staging when called in type annotations.
 func lowerTypeFunctions(root *parser.RootNode) error {
-	for index, node := range root.Body {
+	var err error
+	root.Body, err = lowerTypeFunctionsInBody(root.Body)
+	return err
+}
+
+func lowerTypeFunctionsInBody(body []parser.Node) ([]parser.Node, error) {
+	for index, node := range body {
+		if when, ok := node.(*parser.WhenNode); ok {
+			for branch := range when.Branches {
+				var err error
+				when.Branches[branch].Body, err = lowerTypeFunctionsInBody(when.Branches[branch].Body)
+				if err != nil {
+					return nil, err
+				}
+			}
+			var err error
+			when.ElseBody, err = lowerTypeFunctionsInBody(when.ElseBody)
+			if err != nil {
+				return nil, err
+			}
+		}
 		function, ok := node.(*parser.FunctionDefNode)
 		if !ok {
 			continue
 		}
 		if !isTypeMarker(function.RetTypeNode) {
 			if err := lowerBareTypeParameters(function); err != nil {
-				return err
+				return nil, err
 			}
 			continue
 		}
-		if function.HasMethodOwner() || function.HasVariadic || function.TypedVariadic {
-			return shared.NewError(function.Loc, "type-returning functions cannot be methods or variadic")
-		}
-		parameters := append([]parser.GenericParameterNode(nil), function.GenericParameters...)
-		for _, argument := range function.Args {
-			valueParameter := !isTypeMarker(argument.Type)
-			if valueParameter && !supportedRetainedParameterType(argument.Type) {
-				return shared.NewError(argument.Loc, "type-returning functions accept type values and compile-time scalar parameters")
-			}
-			if argument.Default != nil || argument.Mutable {
-				return shared.NewError(argument.Loc, "type-function parameters cannot be mutable or have defaults")
-			}
-			for _, parameter := range parameters {
-				if parameter.Name == argument.Name {
-					return shared.NewError(argument.Loc, "duplicate type parameter %q", argument.Name)
-				}
-			}
-			parameter := parser.GenericParameterNode{Name: argument.Name, Loc: argument.Loc}
-			if valueParameter {
-				parameter.ValueType = argument.Type
-			}
-			parameters = append(parameters, parameter)
+		if function.HasMethodOwner() {
+			function.CompileTimeOnly = true
+			continue
 		}
 		result := function.Body
 		if block, ok := result.(*parser.BlockNode); ok {
 			if len(block.Body) != 1 {
-				return shared.NewError(block.Loc, "type-returning function body must return one type")
+				function.CompileTimeOnly = true
+				continue
 			}
 			result = block.Body[0]
 		}
@@ -56,21 +59,98 @@ func lowerTypeFunctions(root *parser.RootNode) error {
 		}
 		expression, ok := result.(parser.ExpressionNode)
 		if !ok {
-			return shared.NewError(function.Loc, "type-returning function must return a type")
+			return nil, shared.NewError(function.Loc, "type-returning function must return a type")
 		}
 		typeNode, ok := returnedTypeExpression(expression)
 		if !ok {
-			return shared.NewError(expression.GetLoc(), "type-returning function currently supports type names and type-function calls")
+			function.CompileTimeOnly = true
+			continue
 		}
-		root.Body[index] = &parser.TypeAliasNode{
+		if function.HasVariadic || function.TypedVariadic {
+			function.CompileTimeOnly = true
+			continue
+		}
+		parameters := append([]parser.GenericParameterNode(nil), function.GenericParameters...)
+		simple := true
+		for _, argument := range function.Args {
+			valueParameter := !isTypeMarker(argument.Type)
+			if valueParameter && !supportedRetainedParameterType(argument.Type) || argument.Default != nil || argument.Mutable {
+				simple = false
+				break
+			}
+			for _, parameter := range parameters {
+				if parameter.Name == argument.Name {
+					return nil, shared.NewError(argument.Loc, "duplicate type parameter %q", argument.Name)
+				}
+			}
+			parameter := parser.GenericParameterNode{Name: argument.Name, Loc: argument.Loc}
+			if valueParameter {
+				parameter.ValueType = argument.Type
+			}
+			parameters = append(parameters, parameter)
+		}
+		if !simple {
+			function.CompileTimeOnly = true
+			continue
+		}
+		transparent := true
+		switch typeNode.(type) {
+		case *parser.StructTypeNode, *parser.EnumTypeNode, *parser.FlagsTypeNode,
+			*parser.UnionTypeNode, *parser.TraitTypeNode, *parser.OpaqueTypeNode:
+			transparent = false
+		}
+		body[index] = &parser.TypeAliasNode{
 			Name: function.Name, GenericParameters: parameters, Type: typeNode,
-			Transparent: true, Pub: function.Pub, Loc: function.Loc,
+			Transparent: transparent, Pub: function.Pub, Loc: function.Loc,
 		}
 	}
-	return nil
+	for _, node := range body {
+		alias, ok := node.(*parser.TypeAliasNode)
+		if !ok {
+			continue
+		}
+		var methods []*parser.FunctionDefNode
+		switch value := alias.Type.(type) {
+		case *parser.StructTypeNode:
+			methods, value.Methods = value.Methods, nil
+		case *parser.EnumTypeNode:
+			methods, value.Methods = value.Methods, nil
+		case *parser.FlagsTypeNode:
+			methods, value.Methods = value.Methods, nil
+		case *parser.UnionTypeNode:
+			methods, value.Methods = value.Methods, nil
+		}
+		body = append(body, methodNodes(methods)...)
+	}
+	return body, nil
+}
+
+func methodNodes(methods []*parser.FunctionDefNode) []parser.Node {
+	result := make([]parser.Node, len(methods))
+	for i, method := range methods {
+		result[i] = method
+	}
+	return result
 }
 
 func lowerBareTypeParameters(function *parser.FunctionDefNode) error {
+	needsSpecialization := false
+	for _, argument := range function.Args {
+		if !isTypeMarker(argument.Type) {
+			continue
+		}
+		if typeNodeUsesName(reflect.ValueOf(function.Body), argument.Name) ||
+			typeNodeUsesName(reflect.ValueOf(function.RetTypeNode), argument.Name) {
+			needsSpecialization = true
+			break
+		}
+		for _, other := range function.Args {
+			if other != argument && typeNodeUsesName(reflect.ValueOf(other.Type), argument.Name) {
+				needsSpecialization = true
+				break
+			}
+		}
+	}
 	parameters := append([]parser.GenericParameterNode(nil), function.GenericParameters...)
 	arguments := make([]*parser.FunctionNodeArg, 0, len(function.Args))
 	seenValue := false
@@ -92,7 +172,14 @@ func lowerBareTypeParameters(function *parser.FunctionDefNode) error {
 			continue
 		}
 		if function.HasMethodOwner() {
-			return shared.NewError(argument.Loc, "bare type parameters in methods are not supported yet")
+			function.CompileTimeOnly = true
+			arguments = append(arguments, argument)
+			continue
+		}
+		if !needsSpecialization {
+			function.CompileTimeOnly = true
+			arguments = append(arguments, argument)
+			continue
 		}
 		if seenValue {
 			return shared.NewError(argument.Loc, "type parameters must precede value parameters")
@@ -111,6 +198,37 @@ func lowerBareTypeParameters(function *parser.FunctionDefNode) error {
 	function.Args = arguments
 	function.GenericParameters = parameters
 	return nil
+}
+
+func typeNodeUsesName(value reflect.Value, name string) bool {
+	if !value.IsValid() {
+		return false
+	}
+	for value.Kind() == reflect.Interface || value.Kind() == reflect.Pointer {
+		if value.IsNil() {
+			return false
+		}
+		if node, ok := value.Interface().(*parser.NamedTypeNode); ok && node.ModName == "" && node.Name == name {
+			return true
+		}
+		value = value.Elem()
+	}
+	switch value.Kind() {
+	case reflect.Struct:
+		for index := range value.NumField() {
+			field := value.Field(index)
+			if field.CanInterface() && typeNodeUsesName(field, name) {
+				return true
+			}
+		}
+	case reflect.Slice, reflect.Array:
+		for index := range value.Len() {
+			if typeNodeUsesName(value.Index(index), name) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func supportedRetainedParameterType(node parser.TypeNode) bool {
@@ -132,6 +250,8 @@ func isTypeMarker(node parser.TypeNode) bool {
 
 func returnedTypeExpression(expression parser.ExpressionNode) (parser.TypeNode, bool) {
 	switch node := expression.(type) {
+	case *parser.TypeValueExprNode:
+		return node.Value, true
 	case *parser.BlockNode:
 		if len(node.Body) == 1 {
 			if inner, ok := node.Body[0].(parser.ExpressionNode); ok {

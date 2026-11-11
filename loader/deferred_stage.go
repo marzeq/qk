@@ -15,6 +15,7 @@ func ConfigureDeferredStage(analyser *sema.Analyser, config StageConfig, environ
 			config: config, module: module, specializing: true,
 			bindings: make(map[string]stageValue), evaluated: make(map[parser.ExpressionNode]stageValue),
 			unresolved: make(map[parser.ExpressionNode]struct{}), typeBindings: bindings,
+			spreadAliases: make(map[string]bool), spreadExpressions: make(map[parser.ExpressionNode]struct{}),
 		}
 		for name, bound := range bindings {
 			if constant, ok := bound.(types.ConstantType); ok {
@@ -23,6 +24,8 @@ func ConfigureDeferredStage(analyser *sema.Analyser, config StageConfig, environ
 				} else if integer, ok := new(big.Int).SetString(constant.Value, 10); ok {
 					selector.bindings[name] = stageValue{kind: stageInteger, integer: integer, typ: constant.ValueType}
 				}
+			} else {
+				selector.bindings[name] = stageValue{kind: stageType, typeValue: bound, typ: types.MetaType{}}
 			}
 		}
 		if len(environmentFor) != 0 {

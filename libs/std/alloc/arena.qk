@@ -8,7 +8,7 @@ import std.libc
 
 let ArenaDefaultChunkSize: usz = $(64 * 1024)
 
-let ArenaChunk = type struct {
+let ArenaChunk = struct {
   previous: *mut ArenaChunk,
   next: *mut ArenaChunk,
 
@@ -19,7 +19,7 @@ let ArenaChunk = type struct {
   used: usz,
 }
 
-pub let ArenaMark = type struct {
+pub let ArenaMark = struct {
   arena: *mut Arena,
   chunk: *mut ArenaChunk,
   used: usz,
@@ -29,7 +29,7 @@ pub let ArenaMark = type struct {
 // Arena is a single-threaded allocator. reset(), rewind(), deinit(), and
 // free_all() invalidate affected allocations. The arena does not run
 // destructors.
-pub let Arena = type struct {
+pub let Arena = struct {
   first: *mut ArenaChunk,
   current: *mut ArenaChunk,
 
@@ -53,6 +53,540 @@ pub let Arena = type struct {
 
   // Marks are tied to one arena lifetime and are invalidated by reset/deinit.
   generation: usz,
+
+
+  pub let init(
+    initial_chunk_size: usz = ArenaDefaultChunkSize,
+    maximum_total_size: usz = ~0.(usz),
+    maximum_alignment: usz = ~0.(usz),
+  ): Arena {
+    let chunk_size = max_usz(initial_chunk_size, 1)
+
+    return .{
+      first=nil,
+      current=nil,
+      initial_chunk_size=chunk_size,
+      next_chunk_size=chunk_size,
+      maximum_total_size=maximum_total_size,
+      maximum_alignment=maximum_alignment,
+      total_capacity=0,
+      total_used=0,
+      peak_used=0,
+      chunk_count=0,
+      allocation_count=0,
+      last_ptr=nil,
+      last_chunk=nil,
+      last_offset=0,
+      last_size=0,
+      last_align=1,
+      generation=1,
+    }
+  }
+
+  let clear_last_allocation(*mut self): void {
+    self.last_ptr = nil
+    self.last_chunk = nil
+    self.last_offset = 0
+    self.last_size = 0
+    self.last_align = 1
+  }
+
+  let advance_generation(*mut self): void {
+    self.generation = if self.generation != ~0.(usz) {
+      self.generation + 1
+    } else {
+      0
+    }
+  }
+
+  let allocate_chunk(
+    *mut self,
+    minimum_capacity: usz,
+    requested_align: usz,
+    previous: *mut ArenaChunk,
+  ): *mut ArenaChunk {
+    if minimum_capacity > self.maximum_total_size - self.total_capacity {
+      return nil
+    }
+
+    let header_size = $sizeof(ArenaChunk)
+    let data_align = max_usz(requested_align, $alignof(ArenaChunk))
+
+    let with_padding, valid_padding = checked_add(
+      header_size,
+      data_align - 1,
+    )
+    if !valid_padding {
+      return nil
+    }
+
+    let allocation_size, valid_size = checked_add(
+      with_padding,
+      minimum_capacity,
+    )
+    if !valid_size {
+      return nil
+    }
+
+    let raw = std.libc.malloc(allocation_size)
+    if raw == nil {
+      return nil
+    }
+
+    let unaligned_data, valid_data = checked_add(raw.(usz), header_size)
+    let data_address, valid_alignment = checked_align_forward(
+      unaligned_data,
+      data_align,
+    )
+    if !valid_data || !valid_alignment {
+      std.libc.free(raw)
+      return nil
+    }
+
+    let mut chunk = raw.(*mut ArenaChunk)
+    chunk.previous = previous
+    chunk.next = nil
+    chunk.data = data_address.(*mut u8)
+    chunk.capacity = minimum_capacity
+    chunk.used = 0
+
+    if previous != nil {
+      previous.next = chunk
+    } else {
+      self.first = chunk
+    }
+
+    self.current = chunk
+    self.total_capacity += minimum_capacity
+    self.chunk_count = saturating_increment(self.chunk_count)
+    return chunk
+  }
+
+  let grow(
+    *mut self,
+    size: usz,
+    align: usz,
+  ): *mut ArenaChunk {
+    let required_capacity, valid = checked_add(size, align - 1)
+    if !valid {
+      return nil
+    }
+
+    // After reset, walk retained chunks before asking libc for more memory.
+    let mut previous = self.current
+    let mut reusable = if previous != nil { previous.next } else { self.first }
+    for reusable != nil {
+      if reusable.capacity >= required_capacity {
+        self.current = reusable
+        return reusable
+      }
+
+      previous = reusable
+      reusable = reusable.next
+    }
+
+    let regular_capacity = self.next_chunk_size
+    let oversized = required_capacity > regular_capacity
+    let capacity = if oversized { required_capacity } else { regular_capacity }
+
+    let chunk = self.allocate_chunk(capacity, align, previous)
+    if chunk == nil {
+      return nil
+    }
+
+    // Oversized allocations do not perturb the regular geometric sequence.
+    if !oversized {
+      self.next_chunk_size = saturating_double(regular_capacity)
+    }
+
+    return chunk
+  }
+
+  let record_allocation(
+    *mut self,
+    chunk: *mut ArenaChunk,
+    result: *mut void,
+    offset: usz,
+    size: usz,
+    align: usz,
+    previous_used: usz,
+  ): void {
+    self.total_used += chunk.used - previous_used
+    if self.total_used > self.peak_used {
+      self.peak_used = self.total_used
+    }
+    self.allocation_count = saturating_increment(self.allocation_count)
+
+    self.last_ptr = result
+    self.last_chunk = chunk
+    self.last_offset = offset
+    self.last_size = size
+    self.last_align = align
+  }
+
+  pub let allocate_bytes(
+    *mut self,
+    size: usz,
+    align: usz,
+  ): (*mut void, bool) {
+    if size == 0 {
+      return nil, true
+    }
+
+    if !is_power_of_two(align) || align > self.maximum_alignment {
+      return nil, false
+    }
+
+    let mut chunk = self.current
+
+    if chunk != nil {
+      let data_address = chunk.data.(usz)
+      let cursor, valid_cursor = checked_add(data_address, chunk.used)
+      let aligned_address, valid_alignment = checked_align_forward(
+        cursor,
+        align,
+      )
+
+      if valid_cursor && valid_alignment &&
+         aligned_address >= data_address {
+        let offset = aligned_address - data_address
+        if offset <= chunk.capacity && size <= chunk.capacity - offset {
+          let previous_used = chunk.used
+          let new_used, valid_used = checked_add(offset, size)
+          if !valid_used {
+            return nil, false
+          }
+
+          chunk.used = new_used
+          let result = aligned_address.(*mut void)
+          self.record_allocation(
+            chunk,
+            result,
+            offset,
+            size,
+            align,
+            previous_used,
+          )
+          return result, true
+        }
+      }
+    }
+
+    chunk = self.grow(size, align)
+    if chunk == nil {
+      return nil, false
+    }
+
+    let data_address = chunk.data.(usz)
+    let aligned_address, valid_alignment = checked_align_forward(
+      data_address,
+      align,
+    )
+    if !valid_alignment || aligned_address < data_address {
+      return nil, false
+    }
+
+    let offset = aligned_address - data_address
+    if offset > chunk.capacity || size > chunk.capacity - offset {
+      return nil, false
+    }
+
+    let new_used, valid_used = checked_add(offset, size)
+    if !valid_used {
+      return nil, false
+    }
+
+    let previous_used = chunk.used
+    chunk.used = new_used
+    let result = aligned_address.(*mut void)
+    self.record_allocation(
+      chunk,
+      result,
+      offset,
+      size,
+      align,
+      previous_used,
+    )
+    return result, true
+  }
+
+  pub let free_bytes(
+    *mut self,
+    ptr: *mut void,
+    size: usz,
+    align: usz,
+  ): void {
+    // Individual allocations are deliberately ignored. Reclaim them with
+    // reset(), rewind(), deinit(), or free_all().
+  }
+
+  pub let resize_bytes(
+    *mut self,
+    ptr: *mut void,
+    old_size: usz,
+    new_size: usz,
+    align: usz,
+  ): (*mut void, bool) {
+    if ptr == nil {
+      return self.allocate_bytes(new_size, align)
+    }
+
+    if new_size == 0 {
+      return nil, true
+    }
+
+    if !is_power_of_two(align) || align > self.maximum_alignment {
+      return nil, false
+    }
+
+    // The newest allocation in the active chunk can be resized in place. The
+    // supplied old size is part of the raw allocator contract and is checked
+    // whenever the arena can know it.
+    if ptr == self.last_ptr &&
+       self.last_chunk == self.current &&
+       align == self.last_align &&
+       self.current != nil {
+      if old_size != self.last_size {
+        return nil, false
+      }
+
+      let mut chunk = self.current
+      let old_end, valid_old_end = checked_add(
+        self.last_offset,
+        self.last_size,
+      )
+      let new_end, valid_new_end = checked_add(self.last_offset, new_size)
+
+      if valid_old_end && valid_new_end &&
+         chunk.used == old_end && new_end <= chunk.capacity {
+        if new_end >= old_end {
+          self.total_used += new_end - old_end
+          if self.total_used > self.peak_used {
+            self.peak_used = self.total_used
+          }
+        } else {
+          self.total_used -= old_end - new_end
+        }
+
+        chunk.used = new_end
+        self.last_size = new_size
+        return ptr, true
+      }
+    }
+
+    let replacement, allocated = self.allocate_bytes(new_size, align)
+    if !allocated {
+      return nil, false
+    }
+
+    copy_bytes(replacement, ptr, min_usz(old_size, new_size))
+    return replacement, true
+  }
+
+  pub let new(*mut self, $T: type): (*mut T, bool) =
+    self.allocate(T, 1)
+
+  pub let allocate(*mut self, $T: type,
+    count: usz,
+  ): (*mut T, bool) {
+    let size, valid = checked_size(T, count)
+    if !valid {
+      return nil, false
+    }
+
+    let result, allocated = self.allocate_bytes(size, $alignof(T))
+    return result.(*mut T), allocated
+  }
+
+  pub let allocate_zeroed(*mut self, $T: type,
+    count: usz,
+  ): (*mut T, bool) {
+    let size, valid = checked_size(T, count)
+    if !valid {
+      return nil, false
+    }
+
+    let result, allocated = self.allocate_bytes(size, $alignof(T))
+    if !allocated {
+      return nil, false
+    }
+
+    if size != 0 {
+      zero_bytes(result, size)
+    }
+    return result.(*mut T), true
+  }
+
+  pub let new_zeroed(*mut self, $T: type): (*mut T, bool) =
+    self.allocate_zeroed(T, 1)
+
+  pub let duplicate(*mut self, $T: type,
+    source: *T,
+    count: usz,
+  ): (*mut T, bool) {
+    let size, valid = checked_size(T, count)
+    if !valid {
+      return nil, false
+    }
+
+    let result, allocated = self.duplicate_bytes(
+      source,
+      size,
+      $alignof(T),
+    )
+    return result.(*mut T), allocated
+  }
+
+  pub let duplicate_bytes(
+    *mut self,
+    source: *void,
+    size: usz,
+    align: usz,
+  ): (*mut void, bool) {
+    if size != 0 && source == nil {
+      return nil, false
+    }
+
+    let result, allocated = self.allocate_bytes(size, align)
+    if !allocated {
+      return nil, false
+    }
+
+    if size != 0 {
+      copy_bytes(result, source, size)
+    }
+    return result, true
+  }
+
+  pub let free(*mut self, $T: type,
+    ptr: *mut T,
+    count: usz,
+  ): void {
+    let size, valid = checked_size(T, count)
+    if !valid {
+      return
+    }
+
+    self.free_bytes(ptr, size, $alignof(T))
+  }
+
+  pub let resize(*mut self, $T: type,
+    ptr: *mut T,
+    old_count: usz,
+    new_count: usz,
+  ): (*mut T, bool) {
+    let old_size, valid_old_size = checked_size(T, old_count)
+    let new_size, valid_new_size = checked_size(T, new_count)
+    if !valid_old_size || !valid_new_size {
+      return nil, false
+    }
+
+    let result, resized = self.resize_bytes(
+      ptr,
+      old_size,
+      new_size,
+      $alignof(T),
+    )
+    return result.(*mut T), resized
+  }
+
+  pub let reset(*mut self): void {
+    let mut chunk = self.first
+    for chunk != nil {
+      chunk.used = 0
+      chunk = chunk.next
+    }
+
+    self.current = self.first
+    self.next_chunk_size = self.initial_chunk_size
+    self.total_used = 0
+    self.allocation_count = 0
+    self.clear_last_allocation()
+    self.advance_generation()
+  }
+
+  pub let mark(*mut self): ArenaMark =
+    .{
+      arena=self,
+      chunk=self.current,
+      used=if self.current != nil { self.current.used } else { 0 },
+      generation=self.generation,
+    }
+
+  pub let rewind(*mut self, mark: ArenaMark): bool {
+    if mark.arena != self || mark.generation != self.generation {
+      return false
+    }
+
+    // Validate the mark before changing any state. A nil chunk is the valid
+    // empty-arena mark and rewinds all subsequently allocated chunks.
+    let mut found = mark.chunk == nil
+    let mut candidate = self.first
+    for candidate != nil && candidate != self.current && !found {
+      found = candidate == mark.chunk
+      candidate = candidate.next
+    }
+    if candidate == mark.chunk {
+      found = true
+    }
+    if !found ||
+       (mark.chunk != nil &&
+        (mark.used > mark.chunk.capacity || mark.used > mark.chunk.used)) {
+      return false
+    }
+
+    let mut chunk = if mark.chunk != nil {
+      mark.chunk.next
+    } else {
+      self.first
+    }
+    for chunk != nil {
+      let next = chunk.next
+      self.total_used -= chunk.used
+      self.total_capacity -= chunk.capacity
+      self.chunk_count -= 1
+      std.libc.free(chunk)
+      chunk = next
+    }
+
+    self.current = mark.chunk
+    if self.current != nil {
+      self.total_used -= self.current.used - mark.used
+      self.current.used = mark.used
+      self.current.next = nil
+    } else {
+      self.first = nil
+      self.next_chunk_size = self.initial_chunk_size
+    }
+
+    self.clear_last_allocation()
+    return true
+  }
+
+  pub let deinit(*mut self): void {
+    let mut chunk = self.first
+    for chunk != nil {
+      let next = chunk.next
+      std.libc.free(chunk)
+      chunk = next
+    }
+
+    self.first = nil
+    self.current = nil
+    self.next_chunk_size = self.initial_chunk_size
+    self.total_capacity = 0
+    self.total_used = 0
+    self.chunk_count = 0
+    self.allocation_count = 0
+    self.clear_last_allocation()
+    self.advance_generation()
+  }
+
+  pub let free_all(*mut self): void {
+    self.deinit()
+  }
+
+  pub let as_allocator(*mut self): *mut dyn Allocator = self
 }
 
 let saturating_double(value: usz): usz =
@@ -88,537 +622,5 @@ let zero_bytes(destination: *mut void, size: usz): void {
   }
 }
 
-pub let Arena.init(
-  initial_chunk_size: usz = ArenaDefaultChunkSize,
-  maximum_total_size: usz = ~0.(usz),
-  maximum_alignment: usz = ~0.(usz),
-): Arena {
-  let chunk_size = max_usz(initial_chunk_size, 1)
-
-  return .{
-    first=nil,
-    current=nil,
-    initial_chunk_size=chunk_size,
-    next_chunk_size=chunk_size,
-    maximum_total_size=maximum_total_size,
-    maximum_alignment=maximum_alignment,
-    total_capacity=0,
-    total_used=0,
-    peak_used=0,
-    chunk_count=0,
-    allocation_count=0,
-    last_ptr=nil,
-    last_chunk=nil,
-    last_offset=0,
-    last_size=0,
-    last_align=1,
-    generation=1,
-  }
-}
-
-let Arena.clear_last_allocation(*mut self): void {
-  self.last_ptr = nil
-  self.last_chunk = nil
-  self.last_offset = 0
-  self.last_size = 0
-  self.last_align = 1
-}
-
-let Arena.advance_generation(*mut self): void {
-  self.generation = if self.generation != ~0.(usz) {
-    self.generation + 1
-  } else {
-    0
-  }
-}
-
-let Arena.allocate_chunk(
-  *mut self,
-  minimum_capacity: usz,
-  requested_align: usz,
-  previous: *mut ArenaChunk,
-): *mut ArenaChunk {
-  if minimum_capacity > self.maximum_total_size - self.total_capacity {
-    return nil
-  }
-
-  let header_size = $sizeof(ArenaChunk)
-  let data_align = max_usz(requested_align, $alignof(ArenaChunk))
-
-  let with_padding, valid_padding = checked_add(
-    header_size,
-    data_align - 1,
-  )
-  if !valid_padding {
-    return nil
-  }
-
-  let allocation_size, valid_size = checked_add(
-    with_padding,
-    minimum_capacity,
-  )
-  if !valid_size {
-    return nil
-  }
-
-  let raw = std.libc.malloc(allocation_size)
-  if raw == nil {
-    return nil
-  }
-
-  let unaligned_data, valid_data = checked_add(raw.(usz), header_size)
-  let data_address, valid_alignment = checked_align_forward(
-    unaligned_data,
-    data_align,
-  )
-  if !valid_data || !valid_alignment {
-    std.libc.free(raw)
-    return nil
-  }
-
-  let mut chunk = raw.(*mut ArenaChunk)
-  chunk.previous = previous
-  chunk.next = nil
-  chunk.data = data_address.(*mut u8)
-  chunk.capacity = minimum_capacity
-  chunk.used = 0
-
-  if previous != nil {
-    previous.next = chunk
-  } else {
-    self.first = chunk
-  }
-
-  self.current = chunk
-  self.total_capacity += minimum_capacity
-  self.chunk_count = saturating_increment(self.chunk_count)
-  return chunk
-}
-
-let Arena.grow(
-  *mut self,
-  size: usz,
-  align: usz,
-): *mut ArenaChunk {
-  let required_capacity, valid = checked_add(size, align - 1)
-  if !valid {
-    return nil
-  }
-
-  // After reset, walk retained chunks before asking libc for more memory.
-  let mut previous = self.current
-  let mut reusable = if previous != nil { previous.next } else { self.first }
-  for reusable != nil {
-    if reusable.capacity >= required_capacity {
-      self.current = reusable
-      return reusable
-    }
-
-    previous = reusable
-    reusable = reusable.next
-  }
-
-  let regular_capacity = self.next_chunk_size
-  let oversized = required_capacity > regular_capacity
-  let capacity = if oversized { required_capacity } else { regular_capacity }
-
-  let chunk = self.allocate_chunk(capacity, align, previous)
-  if chunk == nil {
-    return nil
-  }
-
-  // Oversized allocations do not perturb the regular geometric sequence.
-  if !oversized {
-    self.next_chunk_size = saturating_double(regular_capacity)
-  }
-
-  return chunk
-}
-
-let Arena.record_allocation(
-  *mut self,
-  chunk: *mut ArenaChunk,
-  result: *mut void,
-  offset: usz,
-  size: usz,
-  align: usz,
-  previous_used: usz,
-): void {
-  self.total_used += chunk.used - previous_used
-  if self.total_used > self.peak_used {
-    self.peak_used = self.total_used
-  }
-  self.allocation_count = saturating_increment(self.allocation_count)
-
-  self.last_ptr = result
-  self.last_chunk = chunk
-  self.last_offset = offset
-  self.last_size = size
-  self.last_align = align
-}
-
-pub let Arena.allocate_bytes(
-  *mut self,
-  size: usz,
-  align: usz,
-): (*mut void, bool) {
-  if size == 0 {
-    return nil, true
-  }
-
-  if !is_power_of_two(align) || align > self.maximum_alignment {
-    return nil, false
-  }
-
-  let mut chunk = self.current
-
-  if chunk != nil {
-    let data_address = chunk.data.(usz)
-    let cursor, valid_cursor = checked_add(data_address, chunk.used)
-    let aligned_address, valid_alignment = checked_align_forward(
-      cursor,
-      align,
-    )
-
-    if valid_cursor && valid_alignment &&
-       aligned_address >= data_address {
-      let offset = aligned_address - data_address
-      if offset <= chunk.capacity && size <= chunk.capacity - offset {
-        let previous_used = chunk.used
-        let new_used, valid_used = checked_add(offset, size)
-        if !valid_used {
-          return nil, false
-        }
-
-        chunk.used = new_used
-        let result = aligned_address.(*mut void)
-        self.record_allocation(
-          chunk,
-          result,
-          offset,
-          size,
-          align,
-          previous_used,
-        )
-        return result, true
-      }
-    }
-  }
-
-  chunk = self.grow(size, align)
-  if chunk == nil {
-    return nil, false
-  }
-
-  let data_address = chunk.data.(usz)
-  let aligned_address, valid_alignment = checked_align_forward(
-    data_address,
-    align,
-  )
-  if !valid_alignment || aligned_address < data_address {
-    return nil, false
-  }
-
-  let offset = aligned_address - data_address
-  if offset > chunk.capacity || size > chunk.capacity - offset {
-    return nil, false
-  }
-
-  let new_used, valid_used = checked_add(offset, size)
-  if !valid_used {
-    return nil, false
-  }
-
-  let previous_used = chunk.used
-  chunk.used = new_used
-  let result = aligned_address.(*mut void)
-  self.record_allocation(
-    chunk,
-    result,
-    offset,
-    size,
-    align,
-    previous_used,
-  )
-  return result, true
-}
-
-pub let Arena.free_bytes(
-  *mut self,
-  ptr: *mut void,
-  size: usz,
-  align: usz,
-): void {
-  // Individual allocations are deliberately ignored. Reclaim them with
-  // reset(), rewind(), deinit(), or free_all().
-}
-
-pub let Arena.resize_bytes(
-  *mut self,
-  ptr: *mut void,
-  old_size: usz,
-  new_size: usz,
-  align: usz,
-): (*mut void, bool) {
-  if ptr == nil {
-    return self.allocate_bytes(new_size, align)
-  }
-
-  if new_size == 0 {
-    return nil, true
-  }
-
-  if !is_power_of_two(align) || align > self.maximum_alignment {
-    return nil, false
-  }
-
-  // The newest allocation in the active chunk can be resized in place. The
-  // supplied old size is part of the raw allocator contract and is checked
-  // whenever the arena can know it.
-  if ptr == self.last_ptr &&
-     self.last_chunk == self.current &&
-     align == self.last_align &&
-     self.current != nil {
-    if old_size != self.last_size {
-      return nil, false
-    }
-
-    let mut chunk = self.current
-    let old_end, valid_old_end = checked_add(
-      self.last_offset,
-      self.last_size,
-    )
-    let new_end, valid_new_end = checked_add(self.last_offset, new_size)
-
-    if valid_old_end && valid_new_end &&
-       chunk.used == old_end && new_end <= chunk.capacity {
-      if new_end >= old_end {
-        self.total_used += new_end - old_end
-        if self.total_used > self.peak_used {
-          self.peak_used = self.total_used
-        }
-      } else {
-        self.total_used -= old_end - new_end
-      }
-
-      chunk.used = new_end
-      self.last_size = new_size
-      return ptr, true
-    }
-  }
-
-  let replacement, allocated = self.allocate_bytes(new_size, align)
-  if !allocated {
-    return nil, false
-  }
-
-  copy_bytes(replacement, ptr, min_usz(old_size, new_size))
-  return replacement, true
-}
-
-pub let Arena.new(*mut self, $T: type): (*mut T, bool) =
-  self.allocate(T, 1)
-
-pub let Arena.allocate(*mut self, $T: type,
-  count: usz,
-): (*mut T, bool) {
-  let size, valid = checked_size(T, count)
-  if !valid {
-    return nil, false
-  }
-
-  let result, allocated = self.allocate_bytes(size, $alignof(T))
-  return result.(*mut T), allocated
-}
-
-pub let Arena.allocate_zeroed(*mut self, $T: type,
-  count: usz,
-): (*mut T, bool) {
-  let size, valid = checked_size(T, count)
-  if !valid {
-    return nil, false
-  }
-
-  let result, allocated = self.allocate_bytes(size, $alignof(T))
-  if !allocated {
-    return nil, false
-  }
-
-  if size != 0 {
-    zero_bytes(result, size)
-  }
-  return result.(*mut T), true
-}
-
-pub let Arena.new_zeroed(*mut self, $T: type): (*mut T, bool) =
-  self.allocate_zeroed(T, 1)
-
-pub let Arena.duplicate(*mut self, $T: type,
-  source: *T,
-  count: usz,
-): (*mut T, bool) {
-  let size, valid = checked_size(T, count)
-  if !valid {
-    return nil, false
-  }
-
-  let result, allocated = self.duplicate_bytes(
-    source,
-    size,
-    $alignof(T),
-  )
-  return result.(*mut T), allocated
-}
-
-pub let Arena.duplicate_bytes(
-  *mut self,
-  source: *void,
-  size: usz,
-  align: usz,
-): (*mut void, bool) {
-  if size != 0 && source == nil {
-    return nil, false
-  }
-
-  let result, allocated = self.allocate_bytes(size, align)
-  if !allocated {
-    return nil, false
-  }
-
-  if size != 0 {
-    copy_bytes(result, source, size)
-  }
-  return result, true
-}
-
-pub let Arena.free(*mut self, $T: type,
-  ptr: *mut T,
-  count: usz,
-): void {
-  let size, valid = checked_size(T, count)
-  if !valid {
-    return
-  }
-
-  self.free_bytes(ptr, size, $alignof(T))
-}
-
-pub let Arena.resize(*mut self, $T: type,
-  ptr: *mut T,
-  old_count: usz,
-  new_count: usz,
-): (*mut T, bool) {
-  let old_size, valid_old_size = checked_size(T, old_count)
-  let new_size, valid_new_size = checked_size(T, new_count)
-  if !valid_old_size || !valid_new_size {
-    return nil, false
-  }
-
-  let result, resized = self.resize_bytes(
-    ptr,
-    old_size,
-    new_size,
-    $alignof(T),
-  )
-  return result.(*mut T), resized
-}
-
-pub let Arena.reset(*mut self): void {
-  let mut chunk = self.first
-  for chunk != nil {
-    chunk.used = 0
-    chunk = chunk.next
-  }
-
-  self.current = self.first
-  self.next_chunk_size = self.initial_chunk_size
-  self.total_used = 0
-  self.allocation_count = 0
-  self.clear_last_allocation()
-  self.advance_generation()
-}
-
-pub let Arena.mark(*mut self): ArenaMark =
-  .{
-    arena=self,
-    chunk=self.current,
-    used=if self.current != nil { self.current.used } else { 0 },
-    generation=self.generation,
-  }
-
-pub let Arena.rewind(*mut self, mark: ArenaMark): bool {
-  if mark.arena != self || mark.generation != self.generation {
-    return false
-  }
-
-  // Validate the mark before changing any state. A nil chunk is the valid
-  // empty-arena mark and rewinds all subsequently allocated chunks.
-  let mut found = mark.chunk == nil
-  let mut candidate = self.first
-  for candidate != nil && candidate != self.current && !found {
-    found = candidate == mark.chunk
-    candidate = candidate.next
-  }
-  if candidate == mark.chunk {
-    found = true
-  }
-  if !found ||
-     (mark.chunk != nil &&
-      (mark.used > mark.chunk.capacity || mark.used > mark.chunk.used)) {
-    return false
-  }
-
-  let mut chunk = if mark.chunk != nil {
-    mark.chunk.next
-  } else {
-    self.first
-  }
-  for chunk != nil {
-    let next = chunk.next
-    self.total_used -= chunk.used
-    self.total_capacity -= chunk.capacity
-    self.chunk_count -= 1
-    std.libc.free(chunk)
-    chunk = next
-  }
-
-  self.current = mark.chunk
-  if self.current != nil {
-    self.total_used -= self.current.used - mark.used
-    self.current.used = mark.used
-    self.current.next = nil
-  } else {
-    self.first = nil
-    self.next_chunk_size = self.initial_chunk_size
-  }
-
-  self.clear_last_allocation()
-  return true
-}
-
-pub let Arena.deinit(*mut self): void {
-  let mut chunk = self.first
-  for chunk != nil {
-    let next = chunk.next
-    std.libc.free(chunk)
-    chunk = next
-  }
-
-  self.first = nil
-  self.current = nil
-  self.next_chunk_size = self.initial_chunk_size
-  self.total_capacity = 0
-  self.total_used = 0
-  self.chunk_count = 0
-  self.allocation_count = 0
-  self.clear_last_allocation()
-  self.advance_generation()
-}
-
-pub let Arena.free_all(*mut self): void {
-  self.deinit()
-}
-
-pub let Arena.as_allocator(*mut self): *mut dyn Allocator = self
 
 }

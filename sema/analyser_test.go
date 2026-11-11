@@ -10,10 +10,10 @@ import (
 
 func TestParameterizedNominalMethodOwnerSyntax(t *testing.T) {
 	source := `
-let Box($T: type) = type struct { value: T }
+let Box($T: type) = struct { value: T }
 let Box($).get(self): T = self.value
 let Box($Foo).renamed(self): Foo = self.value
-let Pair($A: type, $B: type) = type struct { first: A, second: B }
+let Pair($A: type, $B: type) = struct { first: A, second: B }
 let Pair($).swap(self): Pair(B, A) = Pair(B, A).{ first=self.second, second=self.first }
 let Box($).keep(self, $U: type, value: U): U = value
 `

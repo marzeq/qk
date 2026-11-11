@@ -171,7 +171,7 @@ let result: i32 = $relay(i32, 7)
 }
 
 func TestCompileTimeLayoutUsesSelectedTarget(t *testing.T) {
-	source := "module test\nlet Header = type struct @packed { tag: u8, length: u32 }\nlet size(T: type): usz = sizeof(T)\nlet pointer_bytes: usz = $size(usz)\nlet pointer_alignment: usz = $alignof(usz)\nlet length_offset: usz = $offsetof(Header, length)\n"
+	source := "module test\nlet Header = struct @packed { tag: u8, length: u32 }\nlet size(T: type): usz = sizeof(T)\nlet pointer_bytes: usz = $size(usz)\nlet pointer_alignment: usz = $alignof(usz)\nlet length_offset: usz = $offsetof(Header, length)\n"
 	tokens, err := tokeniser.NewTokeniser(source, "layout_target.qk").Tokenise()
 	if err != nil {
 		t.Fatal(err)
@@ -359,8 +359,8 @@ func TestCompileTimeBindingExpandsInsideNestedArrayType(t *testing.T) {
 	source := `
 module test
 let pipe_buffer_size = $32
-let Pipe = type struct { x: f64 }
-let GameState = type struct { pipes: [pipe_buffer_size]Pipe }
+let Pipe = struct { x: f64 }
+let GameState = struct { pipes: [pipe_buffer_size]Pipe }
 `
 	tokens, err := tokeniser.NewTokeniser(source, "array_length.qk").Tokenise()
 	if err != nil {
@@ -397,7 +397,7 @@ func TestCompileTimeBindingsAreVisibleAcrossModuleFiles(t *testing.T) {
 		}
 		return root
 	}
-	consumer := parse("main.qk", "module test\nlet Buffer = type [pipe_buffer_size]u8\nlet use(): i32 = pipe_buffer_size\nlet make(): [pipe_buffer_size]u8 = [0; pipe_buffer_size]\n")
+	consumer := parse("main.qk", "module test\nlet Buffer = [pipe_buffer_size]u8\nlet use(): i32 = pipe_buffer_size\nlet make(): [pipe_buffer_size]u8 = [0; pipe_buffer_size]\n")
 	provider := parse("state.qk", "module test\nlet pipe_buffer_size = $32\n")
 	if err := SelectCompileTimeRoots([]*parser.RootNode{consumer, provider}, "test", StageConfig{}); err != nil {
 		t.Fatal(err)

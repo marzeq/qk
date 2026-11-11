@@ -691,6 +691,18 @@ func CanExplicitCast(from, to Type) bool {
 
 type PrimitiveType string
 
+// MetaType is the type of immutable compile-time type values. It has no
+// runtime layout; IR containing it must be consumed by compile-time execution.
+type MetaType struct{}
+
+func (MetaType) Equals(other Type) bool {
+	_, ok := other.(MetaType)
+	return ok
+}
+func (m MetaType) CanCoerceTo(other Type) bool { return m.Equals(other) }
+func (m MetaType) CanCastTo(other Type) bool   { return m.Equals(other) }
+func (MetaType) String() string                { return "type" }
+
 const (
 	PrimitiveI8  PrimitiveType = "i8"
 	PrimitiveI16 PrimitiveType = "i16"
@@ -1765,6 +1777,68 @@ func HasTraitPointer(t Type) bool {
 		return HasTraitPointer(t.Base)
 	case ArrayType:
 		return HasTraitPointer(t.Base)
+	}
+	return false
+}
+
+// HasMetaType reports whether a type or its stored components contain a
+// compile-time type value. Such values cannot cross a runtime ABI.
+func HasMetaType(t Type) bool {
+	return hasMetaType(t, make(map[string]bool), make(map[*AliasRef]bool))
+}
+
+func hasMetaType(t Type, defined map[string]bool, aliases map[*AliasRef]bool) bool {
+	switch t := t.(type) {
+	case MetaType:
+		return true
+	case DefinedType:
+		key := Identity(t)
+		if defined[key] {
+			return false
+		}
+		defined[key] = true
+		result := hasMetaType(t.Underlying, defined, aliases)
+		delete(defined, key)
+		return result
+	case *AliasRef:
+		if aliases[t] || t.Target == nil {
+			return false
+		}
+		aliases[t] = true
+		result := hasMetaType(*t.Target, defined, aliases)
+		delete(aliases, t)
+		return result
+	case PointerType:
+		return hasMetaType(t.Base, defined, aliases)
+	case SliceType:
+		return hasMetaType(t.Base, defined, aliases)
+	case ArrayType:
+		return hasMetaType(t.Base, defined, aliases)
+	case StructType:
+		for _, field := range t.Fields {
+			if hasMetaType(field.R, defined, aliases) {
+				return true
+			}
+		}
+	case UnionType:
+		for _, field := range t.Fields {
+			if hasMetaType(field.R, defined, aliases) {
+				return true
+			}
+		}
+	case FunctionType:
+		for _, parameter := range t.Parameters {
+			if hasMetaType(parameter, defined, aliases) {
+				return true
+			}
+		}
+		return hasMetaType(t.ReturnType, defined, aliases)
+	case MultipleReturnType:
+		for _, item := range t.Types {
+			if hasMetaType(item, defined, aliases) {
+				return true
+			}
+		}
 	}
 	return false
 }

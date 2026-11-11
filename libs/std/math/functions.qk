@@ -10,7 +10,7 @@ pub let LN10: f64 = 2.30258509299404568402
 pub let LOG2E: f64 = 1.44269504088896340736
 pub let LOG10E: f64 = 0.43429448190325182765
 
-let FloatBits = type union {
+let FloatBits = union {
   value: f64,
   bits: u64,
 }

@@ -171,15 +171,62 @@ type ConstantTypeNode struct {
 	Loc   shared.Location
 }
 
+// ResolvedTypeNode carries a type produced by staged compile-time execution.
+type ResolvedTypeNode struct {
+	Value types.Type
+	Loc   shared.Location
+}
+
+func (n ResolvedTypeNode) GetLoc() shared.Location { return n.Loc }
+func (n ResolvedTypeNode) _type()                  {}
+
+// TypeValueExprNode preserves a type constructor in an expression position
+// until a type-producing binding is lowered into the type resolver.
+type TypeValueExprNode struct {
+	Value     TypeNode
+	ValueType types.Type
+	Loc       shared.Location
+	Type      types.Type
+}
+
+func (n TypeValueExprNode) GetLoc() shared.Location { return n.Loc }
+func (n *TypeValueExprNode) SetType(t types.Type)   { n.Type = t }
+func (n *TypeValueExprNode) GetType() types.Type    { return n.Type }
+
+type TypePointerExprNode struct {
+	Base    ExpressionNode
+	Mutable bool
+	Loc     shared.Location
+	Type    types.Type
+}
+
+// StaticTypeNode inspects the operand's attributed type without evaluating it.
+type StaticTypeNode struct {
+	Operand   ExpressionNode
+	ValueType types.Type
+	Loc       shared.Location
+	Type      types.Type
+}
+
+func (n StaticTypeNode) GetLoc() shared.Location { return n.Loc }
+func (n *StaticTypeNode) SetType(t types.Type)   { n.Type = t }
+func (n *StaticTypeNode) GetType() types.Type    { return n.Type }
+
+func (n TypePointerExprNode) GetLoc() shared.Location { return n.Loc }
+func (n *TypePointerExprNode) SetType(t types.Type)   { n.Type = t }
+func (n *TypePointerExprNode) GetType() types.Type    { return n.Type }
+
 func (n ConstantTypeNode) GetLoc() shared.Location { return n.Loc }
 func (n ConstantTypeNode) _type()                  {}
 
 type StructField struct {
-	Name string
-	Type TypeNode
+	Name   string
+	Type   TypeNode
+	Spread ExpressionNode
 }
 type StructTypeNode struct {
 	Fields     []StructField
+	Methods    []*FunctionDefNode
 	Loc        shared.Location
 	Attributes attributes.Attributes
 }
@@ -200,6 +247,7 @@ type EnumTypeNode struct {
 	Module   string
 	Variants []string
 	Values   []string
+	Methods  []*FunctionDefNode
 	Loc      shared.Location
 }
 
@@ -212,6 +260,7 @@ type FlagsTypeNode struct {
 	Underlying TypeNode
 	Variants   []string
 	Values     []string
+	Methods    []*FunctionDefNode
 	Loc        shared.Location
 }
 
@@ -225,6 +274,7 @@ type UnionTypeNode struct {
 	AutoTag  bool
 	Fields   []StructField
 	Variants []TaggedUnionVariantNode
+	Methods  []*FunctionDefNode
 	Loc      shared.Location
 }
 

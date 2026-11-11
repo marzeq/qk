@@ -3,54 +3,86 @@ module std.random
 // Small deterministic generator suitable for simulation, randomized
 // algorithms, and tests. It is not a cryptographic random-number generator.
 // Use openSSL or similar for cryptographic randomness.
-pub let Random = type struct {
+pub let Random = struct {
   state: u64,
+
+
+  pub let init(seed: u64): Random = .{
+    state=if seed == 0 { 0x9e3779b97f4a7c15 } else { seed },
+  }
+
+  pub let next_u64(*mut self): u64 {
+    let mut value = self.state
+    value ^= value >> 12
+    value ^= value << 25
+    value ^= value >> 27
+    self.state = value
+    return value * 0x2545f4914f6cdd1d
+  }
+
+  pub let next_u32(*mut self): u32 = (self.next_u64() >> 32).(u32)
+
+  pub let next_bool(*mut self): bool = (self.next_u64() & (1 << 63)) != 0
+
+  pub let less_than(*mut self, upper: u64): u64 {
+    if upper == 0 { return 0 }
+    let threshold = ((~upper) + 1) % upper
+    for {
+      let value = self.next_u64()
+      if value >= threshold { return value % upper }
+    }
+    return 0
+  }
+
+  pub let range(*mut self, mut start: u64, mut end: u64): u64 {
+    if start >= end {
+      let tmp = start
+      start = end
+      end = tmp
+    }
+    let offset = self.less_than(end - start)
+    return start + offset
+  }
+
+  pub let next_f64(*mut self): f64 =
+    (self.next_u64() >> 11).(f64) * (1.0 / 9007199254740992.0)
+
+  pub let fill(*mut self, $T: type, values: []mut T): void {
+    for let mut value_index: usz = 0; value_index < len(values); value_index += 1 {
+      let bytes = values[value_index].&mut.(*mut u8)[0:$sizeof(T)]
+      let mut offset: usz = 0
+      for offset < len(bytes) {
+        let value = self.next_u64()
+        let mut byte_index: usz = 0
+        for byte_index < 8 && offset < len(bytes) {
+          bytes[offset] = (value >> (byte_index.(u64) * 8)).(u8)
+          offset += 1
+          byte_index += 1
+        }
+      }
+    }
+  }
+
+  pub let shuffle(*mut self, $T: type, values: []mut T): void {
+    let mut remaining = len(values)
+    for remaining > 1 {
+      let index = self.less_than(remaining.(u64))
+      remaining -= 1
+      values.swap(remaining, index.(usz))
+    }
+  }
 }
 
-pub let Random.init(seed: u64): Random = .{
-  state=if seed == 0 { 0x9e3779b97f4a7c15 } else { seed },
-}
 
 // xorshift64*: a compact generator with a period of 2^64 - 1.
-pub let Random.next_u64(*mut self): u64 {
-  let mut value = self.state
-  value ^= value >> 12
-  value ^= value << 25
-  value ^= value >> 27
-  self.state = value
-  return value * 0x2545f4914f6cdd1d
-}
 
-pub let Random.next_u32(*mut self): u32 = (self.next_u64() >> 32).(u32)
-
-pub let Random.next_bool(*mut self): bool = (self.next_u64() & (1 << 63)) != 0
 
 // Returns a uniformly distributed value in [0, upper).
-pub let Random.less_than(*mut self, upper: u64): u64 {
-  if upper == 0 { return 0 }
-  let threshold = ((~upper) + 1) % upper
-  for {
-    let value = self.next_u64()
-    if value >= threshold { return value % upper }
-  }
-  return 0
-}
 
 // Returns a uniformly distributed value in the half-open range [start, end).
 // If start >= end, the values are swapped.
-pub let Random.range(*mut self, mut start: u64, mut end: u64): u64 {
-  if start >= end {
-    let tmp = start
-    start = end
-    end = tmp
-  }
-  let offset = self.less_than(end - start)
-  return start + offset
-}
 
 // Returns a value in [0, 1) using 53 random significand bits.
-pub let Random.next_f64(*mut self): f64 =
-  (self.next_u64() >> 11).(f64) * (1.0 / 9007199254740992.0)
 
 // Fills each element's complete object representation. T is inferred from the
 // mutable slice. Every nonzero-sized element consumes at least one generator
@@ -58,27 +90,3 @@ pub let Random.next_f64(*mut self): f64 =
 // size requires.
 // This is a raw C-style operation: types with invalid bit patterns remain the
 // caller's responsibility.
-pub let Random.fill(*mut self, $T: type, values: []mut T): void {
-  for let mut value_index: usz = 0; value_index < len(values); value_index += 1 {
-    let bytes = values[value_index].&mut.(*mut u8)[0:$sizeof(T)]
-    let mut offset: usz = 0
-    for offset < len(bytes) {
-      let value = self.next_u64()
-      let mut byte_index: usz = 0
-      for byte_index < 8 && offset < len(bytes) {
-        bytes[offset] = (value >> (byte_index.(u64) * 8)).(u8)
-        offset += 1
-        byte_index += 1
-      }
-    }
-  }
-}
-
-pub let Random.shuffle(*mut self, $T: type, values: []mut T): void {
-  let mut remaining = len(values)
-  for remaining > 1 {
-    let index = self.less_than(remaining.(u64))
-    remaining -= 1
-    values.swap(remaining, index.(usz))
-  }
-}

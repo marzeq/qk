@@ -566,22 +566,34 @@ Pointers to `void` are permitted and are useful at foreign and allocation bounda
 
 ## Defined types and aliases
 
-`type` creates a new nominal type. Even when its representation is another type, it remains distinct and requires an explicit cast to cross that boundary:
+`distinct(T)` creates a new nominal type with `T` as its representation. It remains distinct and requires an explicit cast to cross that boundary:
 
 ```qk
-let UserId = type u64
+let UserId = distinct(u64)
 
 let raw: u64 = 42
 let user: UserId = raw.(UserId)
 ```
 
-`type alias` creates a transparent alias instead:
+A bare type reference creates a transparent alias:
 
 ```qk
-let Byte = type alias u8
+let Byte = u8
 ```
 
 Aliases and defined types may be parameterized by compile-time types. Defined parameterized types have distinct identities for each concrete argument list, while a transparent alias retains the identity of its substituted target.
+
+Type constructors can also appear directly in a top-level binding. A function with a bare `T: type` parameter and a `type` result can return a constructor; each concrete call selects its resulting type:
+
+```qk
+let Pair = struct { left: i32, right: i32 }
+let Byte = u8
+let UserId = distinct(u64)
+let Box(T: type): type = struct { value: T }
+let item: Box(i32) = .{ value=7 }
+```
+
+The bare `T: type` parameter makes `Box` compile-time-only. A `$T: type` parameter instead specializes a function that can still run at runtime. Local compile-time functions may hold type values, construct pointer types with `*T` or `*mut T`, and use the builders in `core.types`.
 
 ## Arrays
 
@@ -691,7 +703,7 @@ For a dynamic trait pointer, comparison with `nil` tests the erased data pointer
 A struct groups named fields in declaration order:
 
 ```qk
-let Point = type struct {
+let Point = struct {
   x: i32,
   y: i32,
 }
@@ -728,7 +740,7 @@ This form is intended for carefully controlled low-level code. Module-scope stor
 Place `@packed` after `struct` to remove implicit field and tail padding:
 
 ```qk
-let Header = type struct @packed {
+let Header = struct @packed {
   kind: u8,
   length: u32,
 }
@@ -741,7 +753,7 @@ A packed struct has byte alignment and may contain unaligned fields. QK generate
 An enum is a nominal set of named integer variants:
 
 ```qk
-let Direction = type enum {
+let Direction = enum {
   North,
   East,
   South,
@@ -754,7 +766,7 @@ let direction: Direction = .North
 Implicit values start at zero and increase in declaration order. Alternatively, every member may have an explicit integer value:
 
 ```qk
-let ExitCode = type enum {
+let ExitCode = enum {
   Success=0,
   Usage=64,
   Failure=1,
@@ -768,7 +780,7 @@ Implicit and explicit members cannot be mixed in one enum. A qualified value suc
 A flags type is a nominal fixed-width integer mask. Its backing type must be a fixed-width integer:
 
 ```qk
-let Permission = type flags(u8) {
+let Permission = flags(u8) {
   Read,
   Write,
   Execute,
@@ -780,7 +792,7 @@ let mut access = Permission.{ .Read, .Write }
 Implicit members receive consecutive bits beginning at `1 << 0`. An explicitly valued declaration must give every member a value, using hexadecimal values, `1 << bit`, earlier members, or `|` compositions:
 
 ```qk
-let OpenMode = type flags(u16) {
+let OpenMode = flags(u16) {
   Read=0x1,
   Write=0x2,
   ReadWrite=Read | Write,
@@ -804,7 +816,7 @@ Flags retain unknown backing bits. They cross the C ABI as their declared intege
 An untagged union overlays its fields in one storage location:
 
 ```qk
-let NumberBits = type union {
+let NumberBits = union {
   integer: u32,
   floating: f32,
 }
@@ -825,7 +837,7 @@ An anonymous union may appear directly inside a struct. Its fields are promoted 
 A tagged union pairs a variant tag with optional variant-specific data. An auto-tagged union asks QK to synthesize the private tag:
 
 ```qk
-let Result = type union(@auto) {
+let Result = union(@auto) {
   Ok(i32),
   Error(message: str),
   Cancelled,
@@ -853,13 +865,13 @@ For positional payloads, bindings follow declaration order. For named payloads, 
 An explicitly tagged union names an enum whose variants correspond exactly to the union variants:
 
 ```qk
-let TokenKind = type enum {
+let TokenKind = enum {
   Integer,
   Name,
   End,
 }
 
-let Token = type union(TokenKind) {
+let Token = union(TokenKind) {
   Integer(value: i64),
   Name(str),
   End,
@@ -881,7 +893,7 @@ Tagged unions cannot cross the C ABI directly, including through nested aggregat
 An opaque type declares a name whose size and fields are unavailable:
 
 ```qk
-pub let FILE = type opaque
+pub let FILE = opaque
 pub let fopen(path: cstr, mode: cstr): *FILE @foreign
 ```
 
@@ -892,7 +904,7 @@ Opaque values may only be used behind pointer indirection. Any operation that ne
 A method is a function attached to an owner type. Its first parameter is `self`, `*self`, or `*mut self`:
 
 ```qk
-let Counter = type struct {
+let Counter = struct {
   value: i32,
 }
 
@@ -927,7 +939,7 @@ Ordinary modules may attach methods only to nominal types they own. The trusted 
 A parameterized nominal owner uses `$` to capture all of its type parameters by their declared names:
 
 ```qk
-let Box($T: type) = type struct {
+let Box($T: type) = struct {
   value: T,
 }
 
@@ -951,7 +963,7 @@ Functions, methods, and type-producing bindings declare type parameters in their
 ```qk
 let identity($T: type, value: T): T = value
 
-let Pair($T: type, $U: type) = type struct {
+let Pair($T: type, $U: type) = struct {
   first: T,
   second: U,
 }
@@ -1003,7 +1015,7 @@ Parameterized bindings use function-like semantics: their compile-time arguments
 A trait declares a required method surface:
 
 ```qk
-let Writer = type trait {
+let Writer = trait {
   let write(*mut self, bytes: []u8): usz
 }
 ```
@@ -1013,7 +1025,7 @@ Traits are structural: a nominal type implements `Writer` by defining the requir
 A requirement may provide a default block or expression body. `Self` is available throughout the body, and the symbolic `self` value exposes only methods declared by the trait:
 
 ```qk
-let Measured = type trait {
+let Measured = trait {
   let measure(self): usz
   let double_measure(self): usz = self.measure() * 2
 }
@@ -1024,7 +1036,7 @@ A type may omit `double_measure` and inherit the default, or declare a matching 
 `Self` refers to the concrete implementing type within a trait:
 
 ```qk
-let PartialEq = type trait {
+let PartialEq = trait {
   let eq(self, other: Self): bool
 }
 ```
@@ -1188,7 +1200,7 @@ let choose($enabled: bool, value: i32): i32 =
 let chosen: i32 = choose($true, 7)
 ```
 
-A bare `T: type` means a different thing: it is an ordinary parameter holding a type value. A function with such a parameter can only run during compilation. Type-returning functions can return a type name, call another type-returning function, or select a type with `$if`. Their scalar parameters also receive compile-time values. These calls work in type annotations:
+A bare `T: type` means a different thing: it is an ordinary parameter holding a type value. A function with such a parameter can only run during compilation. Type-returning functions can use ordinary blocks, `if`, and loops, as well as `$if` for branch selection before analysis. Their scalar parameters also receive compile-time values. These calls work in type annotations:
 
 ```qk
 let identity_type(T: type): type = T
@@ -1197,7 +1209,44 @@ let choose_type(T: type, enabled: bool): type = $if enabled { T } else { i64 }
 let Other: choose_type(i32, $false) = 9
 ```
 
-Type values currently have no general operations. Type-returning functions can select among existing types using type names, calls, and `$if`; general type-valued computation is a later stage.
+Type values can be compared, queried for layout, and passed to `core.types` builders. A builder builds an immutable nominal type; copying a builder copies its pending fields. `self_type()` supplies a provisional type for recursive fields behind pointers:
+
+```qk
+import core.types
+
+let recursive_record(): type {
+  let mut builder = core.types.StructBuilder.new()
+  let SelfType = builder.self_type()
+  builder.add_field("next", *SelfType)
+  return builder.finish()
+}
+
+let Recursive = $recursive_record()
+```
+
+A lexical struct can combine generated fields with methods. A field-position
+`...` evaluates a compile-time `[]core.types.FieldSpec` and inserts its fields
+in order before the method body is analyzed:
+
+```qk
+let generated_fields(): []core.types.FieldSpec = [.{ name="value", field_type=i32 }]
+let Record = struct {
+  ...generated_fields(),
+  let get(self): i32 = self.value
+}
+```
+
+Duplicate or empty field names are rejected. The spread contributes fields
+only; methods remain declared in the lexical type body.
+
+`core.types.inspect(T)` returns a compile-time `TypeShape` for a known type.
+Its `kind` names the shape; `fields`, `variants`, and enum or flags `members`
+preserve source order.
+Pointer, slice, and array shapes expose `element`; arrays also expose `length`.
+The record includes `mutable` and `packed` where those properties apply.
+`core.types.static_type(expression)` returns the analyzed type of an expression
+without executing it, so a compile-time function can inspect the type of a
+runtime value.
 
 A bare type parameter can also specialize a function that returns an ordinary value. Such a function can only be called from a compile-time expression:
 

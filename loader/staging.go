@@ -51,35 +51,45 @@ const (
 	stageFloat
 	stageEnum
 	stageEnumLiteral
+	stageType
+	stageFields
 )
 
 type stageValue struct {
-	kind     stageKind
-	boolean  bool
-	integer  *big.Int
-	floating string
-	typ      types.Type
-	domain   string
-	name     string
+	kind      stageKind
+	boolean   bool
+	integer   *big.Int
+	floating  string
+	typ       types.Type
+	domain    string
+	name      string
+	typeValue types.Type
+	irValue   ir.EvalValue
 }
 
 type stageSelector struct {
-	config            StageConfig
-	module            string
-	bindings          map[string]stageValue
-	evaluated         map[parser.ExpressionNode]stageValue
-	unresolved        map[parser.ExpressionNode]struct{}
-	needsIR           bool
-	syntheticID       int
-	environment       *StageEnvironment
-	coreBuildImported bool
-	inFunction        bool
-	genericFunction   *parser.FunctionDefNode
-	genericAlias      *parser.TypeAliasNode
-	specializing      bool
-	stageMinimal      bool
-	stagingAliasName  string
-	typeBindings      map[string]types.Type
+	config              StageConfig
+	module              string
+	bindings            map[string]stageValue
+	evaluated           map[parser.ExpressionNode]stageValue
+	unresolved          map[parser.ExpressionNode]struct{}
+	needsIR             bool
+	syntheticID         int
+	environment         *StageEnvironment
+	coreBuildImported   bool
+	inFunction          bool
+	genericFunction     *parser.FunctionDefNode
+	genericAlias        *parser.TypeAliasNode
+	specializing        bool
+	stageMinimal        bool
+	stagingAliasName    string
+	typeBindings        map[string]types.Type
+	typeFunctions       map[string]bool
+	typeCalls           map[*parser.NamedTypeNode]parser.ExpressionNode
+	spreadAliases       map[string]bool
+	spreadExpressions   map[parser.ExpressionNode]struct{}
+	deferredExpressions map[parser.ExpressionNode]struct{}
+	currentAlias        string
 }
 
 // SelectCompileTime lowers unresolved staged expressions through the ordinary
@@ -96,12 +106,30 @@ func selectCompileTime(root *parser.RootNode, module string, config StageConfig,
 		config: config, module: module,
 		bindings: make(map[string]stageValue), evaluated: make(map[parser.ExpressionNode]stageValue),
 		unresolved: make(map[parser.ExpressionNode]struct{}), environment: environment,
+		typeFunctions: make(map[string]bool), typeCalls: make(map[*parser.NamedTypeNode]parser.ExpressionNode),
+		spreadAliases:     make(map[string]bool),
+		spreadExpressions: make(map[parser.ExpressionNode]struct{}),
 	}
 	for _, node := range root.Body {
+		if function, ok := node.(*parser.FunctionDefNode); ok && isTypeMarker(function.RetTypeNode) {
+			selector.typeFunctions[function.Name] = true
+		}
 		if imported, ok := node.(*parser.ImportNode); ok {
 			for _, module := range imported.Modules {
 				if module == "core.build" {
 					selector.coreBuildImported = true
+				}
+			}
+		}
+	}
+	if environment != nil {
+		for moduleName, module := range environment.Modules {
+			if module == nil || module.Root == nil {
+				continue
+			}
+			for _, node := range module.Root.Body {
+				if function, ok := node.(*parser.FunctionDefNode); ok && isTypeMarker(function.RetTypeNode) && function.Pub {
+					selector.typeFunctions[moduleName+"."+function.Name] = true
 				}
 			}
 		}
@@ -112,6 +140,27 @@ func selectCompileTime(root *parser.RootNode, module string, config StageConfig,
 		return err
 	}
 	root.Body = body
+	if len(selector.spreadExpressions) != 0 {
+		pending := selector.unresolved
+		selector.unresolved = selector.spreadExpressions
+		selector.deferredExpressions = pending
+		if err := selector.evaluateUnresolved(root); err != nil {
+			return err
+		}
+		selector.unresolved = pending
+		selector.deferredExpressions = nil
+		for expression := range selector.spreadExpressions {
+			delete(selector.unresolved, expression)
+		}
+		selector.spreadExpressions = make(map[parser.ExpressionNode]struct{})
+		selector.spreadAliases = make(map[string]bool)
+		selector.needsIR = len(selector.unresolved) != 0
+		body, err = selector.selectBody(root.Body)
+		if err != nil {
+			return err
+		}
+		root.Body = body
+	}
 	if selector.needsIR {
 		if err := selector.evaluateUnresolved(root); err != nil {
 			return err
@@ -126,6 +175,21 @@ func selectCompileTime(root *parser.RootNode, module string, config StageConfig,
 	}
 	if selector.needsIR {
 		return fmt.Errorf("compile-time selection left an unresolved when condition")
+	}
+	for index, node := range root.Body {
+		declaration, ok := node.(*parser.DeclarationNode)
+		if !ok || declaration.Mutable || len(declaration.GenericParameters) != 0 {
+			continue
+		}
+		value, ok := declaration.Value.(*parser.TypeValueExprNode)
+		if !ok {
+			continue
+		}
+		resolved, ok := value.Value.(*parser.ResolvedTypeNode)
+		if !ok {
+			continue
+		}
+		root.Body[index] = &parser.TypeAliasNode{Name: declaration.Name, Type: resolved, Transparent: true, Pub: declaration.Pub, Loc: declaration.Loc}
 	}
 	return nil
 }
@@ -269,10 +333,12 @@ func (s *stageSelector) selectNode(node parser.Node) ([]parser.Node, error) {
 		}
 	case *parser.TypeAliasNode:
 		previousAlias := s.genericAlias
+		previousCurrentAlias := s.currentAlias
+		s.currentAlias = node.Name
 		if len(node.GenericParameters) != 0 {
 			s.genericAlias = node
 		}
-		defer func() { s.genericAlias = previousAlias }()
+		defer func() { s.genericAlias, s.currentAlias = previousAlias, previousCurrentAlias }()
 		var err error
 		node.Type, err = s.selectType(node.Type)
 		if err != nil {
@@ -458,6 +524,8 @@ func (s *stageSelector) selectExpression(expression parser.ExpressionNode) (pars
 		_, err = s.selectNode(node)
 	case *parser.UnaryOpNode:
 		node.Operand, err = s.selectExpression(node.Operand)
+	case *parser.StaticTypeNode:
+		node.Operand, err = s.selectExpression(node.Operand)
 	case *parser.FieldAccessNode:
 		node.Subject, err = s.selectExpression(node.Subject)
 	case *parser.ReprNode:
@@ -629,6 +697,37 @@ func (s *stageSelector) selectType(typeNode parser.TypeNode) (parser.TypeNode, e
 			s.unresolved[node.Value] = struct{}{}
 		}
 	case *parser.NamedTypeNode:
+		functionName := node.Name
+		if node.ModName != "" {
+			functionName = node.ModName + "." + node.Name
+		}
+		if s.typeFunctions[functionName] {
+			call := s.typeCalls[node]
+			if call == nil {
+				arguments := make([]parser.ExpressionNode, 0, len(node.TypeArguments))
+				for _, argument := range node.TypeArguments {
+					expression := typeArgumentExpression(argument)
+					if expression == nil {
+						return nil, shared.NewError(argument.GetLoc(), "type-function argument is not a type value")
+					}
+					arguments = append(arguments, expression)
+				}
+				callee := &parser.IdentifierNode{Name: node.Name, Module: node.ModName, Loc: node.Loc}
+				call = &parser.FunctionCallNode{Callee: callee, Name: callee, Args: arguments, Loc: node.Loc}
+				s.typeCalls[node] = call
+			}
+			if value, resolved, evaluationError := s.evaluate(call); evaluationError != nil {
+				return nil, evaluationError
+			} else if resolved {
+				if value.kind != stageType {
+					return nil, shared.NewError(node.Loc, "type function did not return a type")
+				}
+				return &parser.ResolvedTypeNode{Value: value.typeValue, Loc: node.Loc}, nil
+			}
+			s.needsIR = true
+			s.unresolved[call] = struct{}{}
+			return node, nil
+		}
 		for index := range node.TypeArguments {
 			if err != nil {
 				break
@@ -667,12 +766,58 @@ func (s *stageSelector) selectType(typeNode parser.TypeNode) (parser.TypeNode, e
 			node.Types[index], err = s.selectType(node.Types[index])
 		}
 	case *parser.StructTypeNode:
-		for index := range node.Fields {
-			if err != nil {
-				break
+		fields := make([]parser.StructField, 0, len(node.Fields))
+		seen := make(map[string]bool)
+		for _, field := range node.Fields {
+			if field.Spread != nil {
+				if s.genericAlias != nil && !s.specializing {
+					s.genericAlias.DeferredStage = true
+					fields = append(fields, field)
+					continue
+				}
+				value, resolved, evaluationError := s.evaluate(field.Spread)
+				if evaluationError != nil {
+					return nil, evaluationError
+				}
+				if !resolved {
+					s.needsIR = true
+					s.unresolved[field.Spread] = struct{}{}
+					s.spreadExpressions[field.Spread] = struct{}{}
+					if s.currentAlias != "" {
+						s.spreadAliases[s.currentAlias] = true
+					}
+					fields = append(fields, field)
+					continue
+				}
+				if value.kind != stageFields {
+					return nil, shared.NewError(field.Spread.GetLoc(), "field spread requires []core.types.FieldSpec")
+				}
+				members, fieldError := value.irValue.FieldSpecs()
+				if fieldError != nil {
+					return nil, shared.NewError(field.Spread.GetLoc(), "%v", fieldError)
+				}
+				for _, member := range members {
+					if member.L == "" || seen[member.L] {
+						return nil, shared.NewError(field.Spread.GetLoc(), "duplicate or empty struct field %q", member.L)
+					}
+					seen[member.L] = true
+					fields = append(fields, parser.StructField{Name: member.L, Type: &parser.ResolvedTypeNode{Value: member.R, Loc: field.Spread.GetLoc()}})
+				}
+				continue
 			}
-			node.Fields[index].Type, err = s.selectType(node.Fields[index].Type)
+			field.Type, err = s.selectType(field.Type)
+			if err != nil {
+				return nil, err
+			}
+			if field.Name != "" {
+				if seen[field.Name] {
+					return nil, shared.NewError(node.Loc, "duplicate struct field %q", field.Name)
+				}
+				seen[field.Name] = true
+			}
+			fields = append(fields, field)
 		}
+		node.Fields = fields
 	case *parser.FlagsTypeNode:
 		node.Underlying, err = s.selectType(node.Underlying)
 	case *parser.UnionTypeNode:
@@ -700,7 +845,7 @@ func (s *stageSelector) inlineStageExpression(expression parser.ExpressionNode) 
 	switch node := expression.(type) {
 	case *parser.IdentifierNode:
 		if value, found := s.bindings[node.Name]; found &&
-			(value.kind == stageBool || value.kind == stageInteger || value.kind == stageFloat) {
+			(value.kind == stageBool || value.kind == stageInteger || value.kind == stageFloat || value.kind == stageType) {
 			return stageLiteral(value, node.Loc)
 		}
 	case *parser.UnaryOpNode:
@@ -862,6 +1007,9 @@ func (s *stageSelector) evaluateDirective(node *parser.CompilerDirectiveNode) er
 }
 
 func stageLiteral(value stageValue, loc shared.Location) parser.ExpressionNode {
+	if value.kind == stageType {
+		return &parser.TypeValueExprNode{Value: &parser.ResolvedTypeNode{Value: value.typeValue, Loc: loc}, ValueType: value.typeValue, Loc: loc}
+	}
 	if value.kind == stageEnum || value.kind == stageEnumLiteral {
 		return &parser.EnumLiteralNode{Variant: value.name, Loc: loc}
 	}
@@ -879,6 +1027,9 @@ func stageLiteral(value stageValue, loc shared.Location) parser.ExpressionNode {
 }
 
 func stageTypeNode(value stageValue, loc shared.Location) parser.TypeNode {
+	if value.kind == stageType {
+		return &parser.ResolvedTypeNode{Value: value.typeValue, Loc: loc}
+	}
 	if value.kind == stageEnum {
 		names := map[string]string{
 			"OS": "OperatingSystem", "Arch": "Architecture",
@@ -893,6 +1044,29 @@ func stageTypeNode(value stageValue, loc shared.Location) parser.TypeNode {
 		return nil
 	}
 	return &parser.NamedTypeNode{Name: string(primitive), Loc: loc}
+}
+
+func typeArgumentExpression(node parser.TypeNode) parser.ExpressionNode {
+	switch node := node.(type) {
+	case *parser.ConstantTypeNode:
+		return node.Value
+	case *parser.NamedTypeNode:
+		identifier := &parser.IdentifierNode{Name: node.Name, Module: node.ModName, Loc: node.Loc}
+		if len(node.TypeArguments) == 0 {
+			return identifier
+		}
+		return &parser.TypeValueExprNode{Value: node, Loc: node.Loc}
+	case *parser.ResolvedTypeNode:
+		return &parser.TypeValueExprNode{Value: node, ValueType: node.Value, Loc: node.Loc}
+	case *parser.PointerTypeNode:
+		base := typeArgumentExpression(node.BaseType)
+		if base == nil {
+			return nil
+		}
+		return &parser.TypePointerExprNode{Base: base, Mutable: node.Mutable, Loc: node.Loc}
+	default:
+		return &parser.TypeValueExprNode{Value: node, Loc: node.GetLoc()}
+	}
 }
 
 func (s *stageSelector) resolveStageType(node parser.TypeNode) (types.Type, bool) {
@@ -1199,10 +1373,15 @@ func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 				staged.Body = append(staged.Body, node)
 			}
 		case *parser.TypeAliasNode:
-			if node.Name != s.stagingAliasName {
+			if node.Name != s.stagingAliasName && !s.spreadAliases[node.Name] {
 				staged.Body = append(staged.Body, node)
 			}
 		case *parser.DeclarationNode:
+			if _, deferred := s.deferredExpressions[node.Value]; deferred {
+				if _, selected := s.unresolved[node.Value]; !selected {
+					continue
+				}
+			}
 			if !s.stageMinimal || node.Comptime {
 				staged.Body = append(staged.Body, node)
 			}
@@ -1220,6 +1399,7 @@ func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 		if prefixed, ok := expression.(*parser.CompileTimeExpressionNode); ok {
 			operand = prefixed.Operand
 		}
+		operand = s.inlineStageExpression(parser.CloneSyntax(operand).(parser.ExpressionNode))
 		staged.Body = append(staged.Body, &parser.DeclarationNode{
 			Name: name, NameLoc: expression.GetLoc(), Value: operand,
 			Comptime: true, Loc: expression.GetLoc(),
@@ -1517,6 +1697,14 @@ func findEvaluatedGlobal(globals map[string]ir.EvalValue, sourceName string) (ir
 }
 
 func stageValueFromIR(value ir.EvalValue) stageValue {
+	if slice, ok := types.Underlying(value.Type).(types.SliceType); ok {
+		if element, ok := slice.Base.(types.DefinedType); ok && element.Module == "core.types" && element.Name == "FieldSpec" {
+			return stageValue{kind: stageFields, irValue: value, typ: value.Type}
+		}
+	}
+	if value.TypeValue != nil {
+		return stageValue{kind: stageType, typeValue: value.TypeValue, typ: types.MetaType{}}
+	}
 	if value.Float != nil {
 		return stageValue{kind: stageFloat, floating: strconv.FormatFloat(*value.Float, 'g', -1, 64), typ: value.Type}
 	}

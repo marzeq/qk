@@ -2,17 +2,17 @@ module main
 
 import std.io
 
-let Measured = type trait {
+let Measured = trait {
   let measure(self): usz
   let double_measure(self): usz = self.measure() * 2
   let as_measured(*mut self): *mut dyn Measured
 }
 
-let Value = type struct { amount: usz }
+let Value = struct { amount: usz }
 let Value.measure(self): usz = self.amount
 let Value.as_measured(*mut self): *mut dyn Measured = self
 
-let OtherValue = type struct { amount: usz }
+let OtherValue = struct { amount: usz }
 let OtherValue.measure(self): usz = self.amount
 let OtherValue.as_measured(*mut self): *mut dyn Measured = self
 

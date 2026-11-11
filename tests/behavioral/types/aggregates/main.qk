@@ -3,16 +3,16 @@ module main
 import std.io
 import std.collections
 
-let Point = type struct { x: i32, y: i32 }
-let Direction = type enum { North, East, South, West }
-let Permission = type flags(u8) { Read, Write, Execute }
-let Result = type union(@auto) { Ok(i32), Error(message: str), Cancelled }
-let RecursiveChildren = type alias std.collections.DynamicArray(Recursive)
-let Recursive = type union(@auto) { Leaf, Branch(children: RecursiveChildren) }
-let ARecursiveList = type struct { items: std.collections.DynamicArray(BRecursiveItem) }
-let BRecursiveItem = type struct { parents: CRecursiveParents }
-let CRecursiveParents = type alias std.collections.DynamicArray(DRecursiveParent)
-let DRecursiveParent = type union(@auto) { List(ARecursiveList) }
+let Point = struct { x: i32, y: i32 }
+let Direction = enum { North, East, South, West }
+let Permission = flags(u8) { Read, Write, Execute }
+let Result = union(@auto) { Ok(i32), Error(message: str), Cancelled }
+let RecursiveChildren: type = std.collections.DynamicArray(Recursive)
+let Recursive = union(@auto) { Leaf, Branch(children: RecursiveChildren) }
+let ARecursiveList = struct { items: std.collections.DynamicArray(BRecursiveItem) }
+let BRecursiveItem = struct { parents: CRecursiveParents }
+let CRecursiveParents: type = std.collections.DynamicArray(DRecursiveParent)
+let DRecursiveParent = union(@auto) { List(ARecursiveList) }
 
 let result_value(result: Result): i32 = match result {
   .Ok(value) => { value }

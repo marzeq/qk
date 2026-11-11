@@ -1,0 +1,85 @@
+module core.types
+
+// A source-visible description of one field in a completed or pending type.
+pub let FieldSpec = struct {
+  name: str,
+  field_type: type,
+}
+
+pub let VariantSpec = struct {
+  name: str,
+  fields: []FieldSpec,
+}
+
+pub let MemberSpec = struct {
+  name: str,
+  value: str,
+}
+
+// A compile-time view of a completed type. Fields and variants retain source order.
+pub let TypeShape = struct {
+  kind: str,
+  fields: []FieldSpec,
+  variants: []VariantSpec,
+  element: type,
+  has_element: bool,
+  length: usz,
+  mutable: bool,
+  packed: bool,
+  members: []MemberSpec,
+}
+
+pub let inspect(T: type): TypeShape = .{
+  kind="", fields=[], variants=[], element=i32,
+  has_element=false, length=0, mutable=false, packed=false, members=[],
+}
+
+pub let StructBuilder = struct {
+  handle: u64,
+  marker: type,
+
+  pub let new(): StructBuilder = .{ handle=0, marker=i32 }
+  pub let add_field(*mut self, name: str, T: type): void {}
+  pub let add_fields(*mut self, fields: []FieldSpec): void {}
+  pub let set_packed(*mut self, packed: bool): void {}
+  pub let reflect_public(*mut self): void {}
+  pub let fields(self): []FieldSpec = []
+  pub let self_type(self): type = i32
+  pub let finish(self): type = i32
+}
+
+pub let EnumBuilder = struct {
+  handle: u64,
+  marker: type,
+
+  pub let new(): EnumBuilder = .{ handle=0, marker=i32 }
+  pub let add(*mut self, name: str): void {}
+  pub let add_value(*mut self, name: str, value: i64): void {}
+  pub let reflect_public(*mut self): void {}
+  pub let finish(self): type = i32
+}
+
+pub let FlagsBuilder = struct {
+  handle: u64,
+  marker: type,
+
+  pub let new(backing: type): FlagsBuilder = .{ handle=0, marker=backing }
+  pub let add(*mut self, name: str): void {}
+  pub let add_value(*mut self, name: str, value: u64): void {}
+  pub let reflect_public(*mut self): void {}
+  pub let finish(self): type = i32
+}
+
+pub let UnionBuilder = struct {
+  handle: u64,
+  marker: type,
+
+  pub let untagged(): UnionBuilder = .{ handle=0, marker=i32 }
+  pub let auto_tagged(): UnionBuilder = .{ handle=0, marker=i32 }
+  pub let tagged(tag: type): UnionBuilder = .{ handle=0, marker=tag }
+  pub let add_field(*mut self, name: str, T: type): void {}
+  pub let add_variant(*mut self, variant: VariantSpec): void {}
+  pub let reflect_public(*mut self): void {}
+  pub let self_type(self): type = i32
+  pub let finish(self): type = i32
+}

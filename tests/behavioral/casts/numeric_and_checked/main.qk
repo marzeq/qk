@@ -2,7 +2,7 @@ module main
 
 import std.io
 
-let Code = type u16
+let Code = distinct(u16)
 
 let main() {
   let small: u8 = 250

@@ -53,13 +53,10 @@ pub let exists(path: str): Result(bool, Error) {
   return .Err(file_result.unwrap_err())
 }
 
-pub let Path.exists(self): Result(bool, Error) = exists(self.as_str())
 
 pub let is_directory(path: str): Result(bool, Error) =
   path_is_directory(path)
 
-pub let Path.is_directory(self): Result(bool, Error) =
-  is_directory(self.as_str())
 
 pub let is_file(path: str): Result(bool, Error) {
   let directory = match is_directory(path) {
@@ -77,16 +74,6 @@ pub let is_file(path: str): Result(bool, Error) {
   }
 }
 
-pub let Path.is_file(self): Result(bool, Error) = is_file(self.as_str())
-
-pub let Path.open_reader(self): Result(std.io.FileReader, Error) =
-  std.io.FileReader.open(self.as_str())
-
-pub let Path.open_writer(
-  self,
-  append: bool = false,
-): Result(std.io.FileWriter, Error) =
-  std.io.FileWriter.open(self.as_str(), append)
 
 pub let file_size(path: str): Result(usz, Error) {
   let mut file = match std.io.FileReader.open(path) {
@@ -111,7 +98,6 @@ pub let file_size(path: str): Result(usz, Error) {
   return .Ok(size.(usz))
 }
 
-pub let Path.file_size(self): Result(usz, Error) = file_size(self.as_str())
 
 pub let read_file(
   allocator: *mut dyn std.alloc.Allocator,
@@ -137,11 +123,6 @@ pub let read_file(
   return .Ok(result)
 }
 
-pub let Path.read_file(
-  self,
-  allocator: *mut dyn std.alloc.Allocator,
-): Result(std.strings.StringBuilder, Error) =
-  read_file(allocator, self.as_str())
 
 pub let write_file(path: str, contents: []u8): Result(Unit, Error) {
   let mut file = match std.io.FileWriter.open(path) {
@@ -154,8 +135,6 @@ pub let write_file(path: str, contents: []u8): Result(Unit, Error) {
   return close_result
 }
 
-pub let Path.write_file(self, contents: []u8): Result(Unit, Error) =
-  write_file(self.as_str(), contents)
 
 pub let append_file(path: str, contents: []u8): Result(Unit, Error) {
   let mut file = match std.io.FileWriter.open(path, true) {
@@ -168,8 +147,6 @@ pub let append_file(path: str, contents: []u8): Result(Unit, Error) {
   return close_result
 }
 
-pub let Path.append_file(self, contents: []u8): Result(Unit, Error) =
-  append_file(self.as_str(), contents)
 
 pub let remove(path: str): Result(Unit, Error) {
   let mut lc = std.alloc.LibcAllocator.init()
@@ -183,7 +160,6 @@ pub let remove(path: str): Result(Unit, Error) {
   return .Ok(Unit.{})
 }
 
-pub let Path.remove(self): Result(Unit, Error) = remove(self.as_str())
 
 let create_directory_once(path: str, ok_if_exists: bool): Result(Unit, Error) {
   let mut lc = std.alloc.LibcAllocator.init()
@@ -219,11 +195,6 @@ pub let create_directory(
   return create_directory_once(path, ok_if_exists)
 }
 
-pub let Path.create_directory(
-  self,
-  ok_if_exists: bool = false,
-  recursive: bool = false,
-): Result(Unit, Error) = create_directory(self.as_str(), ok_if_exists, recursive)
 
 pub let remove_directory(path: str): Result(Unit, Error) {
   let mut lc = std.alloc.LibcAllocator.init()
@@ -237,8 +208,6 @@ pub let remove_directory(path: str): Result(Unit, Error) {
   return .Ok(Unit.{})
 }
 
-pub let Path.remove_directory(self): Result(Unit, Error) =
-  remove_directory(self.as_str())
 
 pub let rename(from: str, to: str): Result(Unit, Error) {
   let mut lc = std.alloc.LibcAllocator.init()
@@ -258,7 +227,6 @@ pub let rename(from: str, to: str): Result(Unit, Error) {
   return .Ok(Unit.{})
 }
 
-pub let Path.rename(self, to: str): Result(Unit, Error) = rename(self.as_str(), to)
 
 pub let change_directory(path: str): Result(Unit, Error) {
   let mut lc = std.alloc.LibcAllocator.init()
@@ -272,8 +240,6 @@ pub let change_directory(path: str): Result(Unit, Error) {
   return .Ok(Unit.{})
 }
 
-pub let Path.change_directory(self): Result(Unit, Error) =
-  change_directory(self.as_str())
 
 pub let current_directory(
   allocator: *mut dyn std.alloc.Allocator,

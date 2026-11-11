@@ -119,11 +119,16 @@ func (e *Emitter) EmitModule(out *strings.Builder, m *ir.Module) {
 		out.WriteString("\n")
 	}
 
-	for i, fn := range m.Functions {
-		if i > 0 {
+	writtenFunctions := 0
+	for _, fn := range m.Functions {
+		if fn.CompileTimeOnly {
+			continue
+		}
+		if writtenFunctions > 0 {
 			out.WriteString("\n")
 		}
 		e.EmitFunction(out, fn)
+		writtenFunctions++
 		if !strings.HasSuffix(out.String(), "\n") {
 			out.WriteString("\n")
 		}

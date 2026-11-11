@@ -21,7 +21,7 @@ func parseTestRoot(t *testing.T, source string) *RootNode {
 
 func TestComptimeTypeParametersAndOwnerCaptures(t *testing.T) {
 	root := parseTestRoot(t, `
-let Box($T: type) = type struct { value: T }
+let Box($T: type) = struct { value: T }
 let Size($T: type) = sizeof(T)
 let identity($T: type, value: T): T = value
 let make_box($T: type, value: T): Box(T) = Box(T).{ value=value }
@@ -58,6 +58,50 @@ let ([]$T: PartialEq).contains(self, value: T): bool = self[0] == value
 	}
 }
 
+func TestDirectTypeConstructors(t *testing.T) {
+	root := parseTestRoot(t, `
+let Pair = struct { left: i32, right: i32 }
+let Choice = enum { First, Second }
+let Byte = u8
+let UserId = distinct(u64)
+let Box(T: type): type = struct { value: T }
+`)
+	if _, ok := root.Body[0].(*TypeAliasNode); !ok {
+		t.Fatalf("direct struct constructor parsed as %T", root.Body[0])
+	}
+	if _, ok := root.Body[1].(*TypeAliasNode); !ok {
+		t.Fatalf("direct enum constructor parsed as %T", root.Body[1])
+	}
+	if alias, ok := root.Body[2].(*TypeAliasNode); !ok || !alias.Transparent {
+		t.Fatalf("primitive alias parsed as %#v", root.Body[2])
+	}
+	if alias, ok := root.Body[3].(*TypeAliasNode); !ok || alias.Transparent {
+		t.Fatalf("distinct constructor parsed as %#v", root.Body[3])
+	}
+	function, ok := root.Body[4].(*FunctionDefNode)
+	if !ok {
+		t.Fatalf("type factory parsed as %T", root.Body[4])
+	}
+	if _, ok := function.Body.(*TypeValueExprNode); !ok {
+		t.Fatalf("type factory result parsed as %T", function.Body)
+	}
+}
+
+func TestLegacyTypeConstructorPrefixIsRejected(t *testing.T) {
+	for _, source := range []string{
+		"let Record = type struct { value: i32 }",
+		"let Byte = type alias u8",
+	} {
+		tokens, err := tokeniser.NewTokeniser(source, "test.qk").Tokenise()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := NewParser(tokens).Parse(); err == nil {
+			t.Fatalf("accepted legacy constructor %q", source)
+		}
+	}
+}
+
 func TestParameterizedNominalMethodOwnerRejectsOuterParentheses(t *testing.T) {
 	tokens, err := tokeniser.NewTokeniser("let (Box($T)).get(self): T = self.value", "test.qk").Tokenise()
 	if err != nil {
@@ -68,13 +112,17 @@ func TestParameterizedNominalMethodOwnerRejectsOuterParentheses(t *testing.T) {
 	}
 }
 
-func TestTypeParametersRequireDollarBinders(t *testing.T) {
-	tokens, err := tokeniser.NewTokeniser("let Box(T: type) = type struct { value: T }", "test.qk").Tokenise()
+func TestBareTypeParameterParsesAsFunction(t *testing.T) {
+	tokens, err := tokeniser.NewTokeniser("let Box(T: type): type = struct { value: T }", "test.qk").Tokenise()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := NewParser(tokens).Parse(); err == nil {
-		t.Fatal("expected an unmarked type parameter to be rejected")
+	root, err := NewParser(tokens).Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := root.Body[0].(*FunctionDefNode); !ok {
+		t.Fatalf("bare type parameter parsed as %T", root.Body[0])
 	}
 }
 
@@ -110,7 +158,7 @@ let mut z = $5
 }
 
 func TestAngleBracketGenericDeclarationsAreRejected(t *testing.T) {
-	tokens, err := tokeniser.NewTokeniser("let Box<T> = type struct { value: T }", "test.qk").Tokenise()
+	tokens, err := tokeniser.NewTokeniser("let Box<T> = struct { value: T }", "test.qk").Tokenise()
 	if err != nil {
 		t.Fatal(err)
 	}

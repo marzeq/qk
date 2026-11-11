@@ -1,7 +1,7 @@
 module main
 
-let Runnable = type trait { let run(self): i32 }
-let Empty = type struct {}
+let Runnable = trait { let run(self): i32 }
+let Empty = struct {}
 
 let main() {
   let empty = Empty.{}

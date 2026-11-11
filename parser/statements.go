@@ -19,6 +19,8 @@ func (p *Parser) ParseBlockExpression() (*BlockNode, error) {
 
 func (p *Parser) parseBlock(expression bool) (*BlockNode, error) {
 	beginLoc := p.CurrLoc()
+	p.blockDepth++
+	defer func() { p.blockDepth-- }()
 	if !p.Expect(tokeniser.TokenOpenCurly) {
 		return nil, shared.NewError(p.PrevLoc(), "expected '{' to start block")
 	}
@@ -231,6 +233,18 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 				return nil, shared.NewError(p.PrevLoc(), "expected method name after '.'")
 			}
 			name = methodName
+		}
+	}
+
+	if p.lexicalMethod {
+		if methodOwner != "" || methodOwnerType != nil {
+			return nil, shared.NewError(name.Loc, "methods inside a type omit the owner prefix")
+		}
+		if len(p.lexicalOwnerArgs) == 0 {
+			methodOwner = p.lexicalOwner
+		} else {
+			methodOwnerType = &NamedTypeNode{Name: p.lexicalOwner,
+				TypeArguments: []TypeNode{&NamedTypeNode{Capture: true, Loc: name.Loc}}, Loc: name.Loc}
 		}
 	}
 
@@ -486,6 +500,24 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 
 	var body Node
 	expressionBody := false
+	previousOwner, previousOwnerArgs, previousLexicalMethod := p.lexicalOwner, p.lexicalOwnerArgs, p.lexicalMethod
+	defer func() {
+		p.lexicalOwner, p.lexicalOwnerArgs, p.lexicalMethod = previousOwner, previousOwnerArgs, previousLexicalMethod
+	}()
+	if p.lexicalMethod {
+		p.lexicalMethod = false
+	} else if isTypeResultNode(retType) && !((methodOwner != "") || methodOwnerType != nil) {
+		p.lexicalOwner = name.Value
+		p.lexicalOwnerArgs = nil
+		for _, parameter := range genericParameters {
+			p.lexicalOwnerArgs = append(p.lexicalOwnerArgs, parameter.Name)
+		}
+		for _, argument := range args {
+			if isTypeResultNode(argument.Type) {
+				p.lexicalOwnerArgs = append(p.lexicalOwnerArgs, argument.Name)
+			}
+		}
+	}
 
 	if expectsBody {
 		for p.Match(tokeniser.TokenNewline) {
@@ -851,6 +883,13 @@ func (p *Parser) ParseTypeAlias() (*TypeAliasNode, error) {
 	if !ok {
 		return nil, shared.NewError(p.PrevLoc(), "expected type alias name")
 	}
+	if p.Match(tokeniser.TokenColon) {
+		p.Inc()
+		if !p.Match(tokeniser.TokenKeyword) || p.Peek().Value != string(tokeniser.KeywordType) {
+			return nil, shared.NewError(p.CurrLoc(), "expected 'type' after ':'")
+		}
+		p.Inc()
+	}
 
 	genericParameters := []GenericParameterNode{}
 	if p.Match(tokeniser.TokenOpenParen) {
@@ -877,15 +916,35 @@ func (p *Parser) ParseTypeAlias() (*TypeAliasNode, error) {
 	if !p.Expect(tokeniser.TokenEquals) {
 		return nil, shared.NewError(p.PrevLoc(), "expected '='")
 	}
-
-	if !p.Match(tokeniser.TokenKeyword) || p.Peek().Value != string(tokeniser.KeywordType) {
-		return nil, shared.NewError(p.PrevLoc(), "expected 'type' keyword")
+	previousOwner, previousOwnerArgs := p.lexicalOwner, p.lexicalOwnerArgs
+	defer func() { p.lexicalOwner, p.lexicalOwnerArgs = previousOwner, previousOwnerArgs }()
+	p.lexicalOwner = name.Value
+	p.lexicalOwnerArgs = nil
+	for _, parameter := range genericParameters {
+		p.lexicalOwnerArgs = append(p.lexicalOwnerArgs, parameter.Name)
 	}
-	p.Inc()
+
 	transparent := false
-	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordAlias) {
-		transparent = true
+	if p.Match(tokeniser.TokenIdentifier) && p.Peek().Value == "distinct" && p.Next().Type == tokeniser.TokenOpenParen {
 		p.Inc()
+		p.Inc()
+		value, err := p.ParseType()
+		if err != nil {
+			return nil, err
+		}
+		if !p.Expect(tokeniser.TokenCloseParen) {
+			return nil, shared.NewError(p.PrevLoc(), "expected ')' after distinct type")
+		}
+		return &TypeAliasNode{Name: name.Value, GenericParameters: genericParameters,
+			Type: value, Loc: p.SpanFrom(beginLoc)}, nil
+	}
+	// A bare reference is an alias; a constructor creates a new type.
+	switch p.Peek().Value {
+	case string(tokeniser.KeywordStruct), string(tokeniser.KeywordEnum),
+		string(tokeniser.KeywordUnion), string(tokeniser.KeywordTrait),
+		string(tokeniser.KeywordOpaque), "flags":
+	default:
+		transparent = true
 	}
 
 	tpe, err := p.ParseType()
@@ -1080,16 +1139,29 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 			case p.Match(tokeniser.TokenColon):
 				// let x: T = ...
 				p.PopPos()
+				p.PushPos()
+				if alias, aliasErr := p.ParseTypeAlias(); aliasErr == nil {
+					p.CommitPos()
+					return alias, true, nil
+				}
+				p.PopPos()
 				node, err := p.ParseDeclaration()
 				return node, true, err
 
 			case p.Match(tokeniser.TokenEquals):
 				p.Inc() // look past '='
 
-				if p.Match(tokeniser.TokenKeyword) &&
-					p.Peek().Value == string(tokeniser.KeywordType) {
+				if p.blockDepth == 0 && (p.Match(tokeniser.TokenAsterisk, tokeniser.TokenOpenSquare) || (p.Match(tokeniser.TokenKeyword) &&
+					(p.Peek().Value == string(tokeniser.KeywordStruct) ||
+						p.Peek().Value == string(tokeniser.KeywordEnum) ||
+						p.Peek().Value == string(tokeniser.KeywordUnion) ||
+						p.Peek().Value == string(tokeniser.KeywordTrait) ||
+						p.Peek().Value == string(tokeniser.KeywordOpaque))) ||
+					(p.Match(tokeniser.TokenIdentifier) &&
+						(((p.Peek().Value == "flags" || p.Peek().Value == "distinct") && p.Next().Type == tokeniser.TokenOpenParen) ||
+							isPrimitiveTypeName(p.Peek().Value)))) {
 
-					// let A = type ...
+					// Type-producing binding with either constructor spelling.
 					p.PopPos()
 					node, err := p.ParseTypeAlias()
 					return node, true, err
@@ -1194,6 +1266,19 @@ expressionStatement:
 	return expr, true, nil
 }
 
+func isPrimitiveTypeName(name string) bool {
+	switch name {
+	case "bool", "i8", "i16", "i32", "i64", "isz", "u8", "u16", "u32", "u64", "usz", "f32", "f64", "str", "cstr":
+		return true
+	}
+	return false
+}
+
+func isTypeResultNode(node TypeNode) bool {
+	named, ok := node.(*NamedTypeNode)
+	return ok && named.Name == "type" && named.ModName == "" && len(named.TypeArguments) == 0
+}
+
 func (p *Parser) bindingParametersIntroduce(initializer string) bool {
 	p.PushPos()
 	defer p.PopPos()
@@ -1226,7 +1311,16 @@ func (p *Parser) bindingParametersIntroduce(initializer string) bool {
 				for p.Match(tokeniser.TokenNewline) {
 					p.Inc()
 				}
-				return p.Peek().Value == initializer
+				if p.Peek().Value == initializer {
+					return true
+				}
+				if initializer == "type" {
+					switch p.Peek().Value {
+					case string(tokeniser.KeywordStruct), string(tokeniser.KeywordEnum), string(tokeniser.KeywordUnion), string(tokeniser.KeywordTrait), string(tokeniser.KeywordOpaque), "flags":
+						return true
+					}
+				}
+				return false
 			}
 		}
 		p.Inc()

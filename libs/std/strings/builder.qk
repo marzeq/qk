@@ -2,18 +2,150 @@ module std.strings
 
 import std.alloc
 
-pub let StringBuilder = type struct {
+pub let StringBuilder = struct {
   allocator: *mut dyn std.alloc.Allocator,
   ptr: *mut u8,
   count: usz,
   capacity: usz,
   read_offset: usz,
+
+
+  pub let init(
+    allocator: *mut dyn std.alloc.Allocator,
+  ): StringBuilder = .{
+    allocator=allocator,
+    ptr=nil,
+    count=0,
+    capacity=0,
+    read_offset=0,
+  }
+
+  pub let as_str(self): str {
+    let bytes: []u8 = self.ptr[0:self.count]
+    return bytes.(str)
+  }
+
+  pub let ensure_capacity(
+    *mut self,
+    minimum_capacity: usz,
+  ): bool {
+    if minimum_capacity <= self.capacity {
+      return true
+    }
+
+    let mut new_capacity: usz = if self.capacity == 0 { 8 } else { self.capacity }
+    for new_capacity < minimum_capacity {
+      if new_capacity > (~0.(usz)) / 2 {
+        new_capacity = minimum_capacity
+      } else {
+        new_capacity *= 2
+      }
+    }
+
+    let resized, success = std.alloc.resize(u8,
+      self.allocator,
+      self.ptr[0:self.capacity],
+      new_capacity,
+    )
+    if !success {
+      return false
+    }
+
+    self.ptr = resized[:]
+    self.capacity = new_capacity
+    return true
+  }
+
+  pub let append(*mut self, bytes: []u8): bool {
+    if len(bytes) == 0 {
+      return true
+    }
+    if len(bytes) > (~0.(usz)) - self.count {
+      return false
+    }
+    if !self.ensure_capacity(self.count + len(bytes)) {
+      return false
+    }
+
+    let mut index: usz = 0
+    for index < len(bytes) {
+      self.ptr[self.count + index] = bytes[index]
+      index += 1
+    }
+    self.count += len(bytes)
+    return true
+  }
+
+  pub let write(
+    *mut self,
+    bytes: []u8,
+  ): Result(usz, Error) {
+    if !self.append(bytes) { return .Err(Error.OutOfMemory) }
+    return .Ok(len(bytes))
+  }
+
+  pub let read(
+    *mut self,
+    buffer: []mut u8,
+  ): Result(usz, Error) {
+    let remaining = self.count - self.read_offset
+    let count = if len(buffer) < remaining { len(buffer) } else { remaining }
+
+    let mut index: usz = 0
+    for index < count {
+      buffer[index] = self.ptr[self.read_offset + index]
+      index += 1
+    }
+    self.read_offset += count
+    return .Ok(count)
+  }
+
+  pub let reset_reader(*mut self): void {
+    self.read_offset = 0
+  }
+
+  pub let clear(*mut self): void {
+    self.count = 0
+    self.read_offset = 0
+  }
+
+  pub let deinit(*mut self): void {
+    std.alloc.free(u8, self.allocator, self.ptr[0:self.capacity])
+    self.ptr = nil
+    self.count = 0
+    self.capacity = 0
+    self.read_offset = 0
+  }
 }
 
-pub let SplitIterator = type struct {
+pub let SplitIterator = struct {
   remaining: str,
   separator: str,
   finished: bool,
+
+
+  pub let next(*mut self): (str, bool) {
+    if self.finished { return "", false }
+    if len(self.separator) == 0 {
+      if len(self.remaining) == 0 {
+        self.finished = true
+        return "", false
+      }
+      let result = self.remaining[0:1]
+      self.remaining = self.remaining[1:]
+      return result, true
+    }
+
+    let index, found = self.remaining.find(self.separator)
+    if !found {
+      self.finished = true
+      return self.remaining, true
+    }
+
+    let result = self.remaining[0:index]
+    self.remaining = self.remaining[index + len(self.separator):]
+    return result, true
+  }
 }
 
 pub let split(value: str, separator: str): SplitIterator = .{
@@ -22,28 +154,6 @@ pub let split(value: str, separator: str): SplitIterator = .{
   finished=false,
 }
 
-pub let SplitIterator.next(*mut self): (str, bool) {
-  if self.finished { return "", false }
-  if len(self.separator) == 0 {
-    if len(self.remaining) == 0 {
-      self.finished = true
-      return "", false
-    }
-    let result = self.remaining[0:1]
-    self.remaining = self.remaining[1:]
-    return result, true
-  }
-
-  let index, found = self.remaining.find(self.separator)
-  if !found {
-    self.finished = true
-    return self.remaining, true
-  }
-
-  let result = self.remaining[0:index]
-  self.remaining = self.remaining[index + len(self.separator):]
-  return result, true
-}
 
 pub let replace(
   allocator: *mut dyn std.alloc.Allocator,
@@ -74,111 +184,4 @@ pub let replace(
     remaining = remaining[index + len(needle):]
   }
   return result, true
-}
-
-pub let StringBuilder.init(
-  allocator: *mut dyn std.alloc.Allocator,
-): StringBuilder = .{
-  allocator=allocator,
-  ptr=nil,
-  count=0,
-  capacity=0,
-  read_offset=0,
-}
-
-pub let StringBuilder.as_str(self): str {
-  let bytes: []u8 = self.ptr[0:self.count]
-  return bytes.(str)
-}
-
-pub let StringBuilder.ensure_capacity(
-  *mut self,
-  minimum_capacity: usz,
-): bool {
-  if minimum_capacity <= self.capacity {
-    return true
-  }
-
-  let mut new_capacity: usz = if self.capacity == 0 { 8 } else { self.capacity }
-  for new_capacity < minimum_capacity {
-    if new_capacity > (~0.(usz)) / 2 {
-      new_capacity = minimum_capacity
-    } else {
-      new_capacity *= 2
-    }
-  }
-
-  let resized, success = std.alloc.resize(u8,
-    self.allocator,
-    self.ptr[0:self.capacity],
-    new_capacity,
-  )
-  if !success {
-    return false
-  }
-
-  self.ptr = resized[:]
-  self.capacity = new_capacity
-  return true
-}
-
-pub let StringBuilder.append(*mut self, bytes: []u8): bool {
-  if len(bytes) == 0 {
-    return true
-  }
-  if len(bytes) > (~0.(usz)) - self.count {
-    return false
-  }
-  if !self.ensure_capacity(self.count + len(bytes)) {
-    return false
-  }
-
-  let mut index: usz = 0
-  for index < len(bytes) {
-    self.ptr[self.count + index] = bytes[index]
-    index += 1
-  }
-  self.count += len(bytes)
-  return true
-}
-
-pub let StringBuilder.write(
-  *mut self,
-  bytes: []u8,
-): Result(usz, Error) {
-  if !self.append(bytes) { return .Err(Error.OutOfMemory) }
-  return .Ok(len(bytes))
-}
-
-pub let StringBuilder.read(
-  *mut self,
-  buffer: []mut u8,
-): Result(usz, Error) {
-  let remaining = self.count - self.read_offset
-  let count = if len(buffer) < remaining { len(buffer) } else { remaining }
-
-  let mut index: usz = 0
-  for index < count {
-    buffer[index] = self.ptr[self.read_offset + index]
-    index += 1
-  }
-  self.read_offset += count
-  return .Ok(count)
-}
-
-pub let StringBuilder.reset_reader(*mut self): void {
-  self.read_offset = 0
-}
-
-pub let StringBuilder.clear(*mut self): void {
-  self.count = 0
-  self.read_offset = 0
-}
-
-pub let StringBuilder.deinit(*mut self): void {
-  std.alloc.free(u8, self.allocator, self.ptr[0:self.capacity])
-  self.ptr = nil
-  self.count = 0
-  self.capacity = 0
-  self.read_offset = 0
 }

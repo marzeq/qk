@@ -18,6 +18,9 @@ const builtinModule = "builtin"
 //go:embed builtin.qk
 var builtinSource string
 
+//go:embed core_types.qk
+var coreTypesSource string
+
 type frontendResult struct {
 	modules    map[string]*loader.ModuleInfo
 	partials   []*loader.PartialModuleInfo
@@ -47,6 +50,10 @@ func runFrontend(
 	sources[coreBuildOrigin] = coreBuildSource(config)
 	sourcePackages[coreBuildOrigin] = "core.build"
 	trustedSources[coreBuildOrigin] = false
+	const coreTypesOrigin = "<core.types>"
+	sources[coreTypesOrigin] = coreTypesSource
+	sourcePackages[coreTypesOrigin] = "core.types"
+	trustedSources[coreTypesOrigin] = false
 	graphModules, origins, err := sourceModuleGraph(sources, sourcePackages, trustedSources, importResolutions, args.noStdlib)
 	if err != nil {
 		return nil, err
@@ -106,7 +113,7 @@ func runFrontend(
 		if info == nil {
 			return nil, fmt.Errorf("module %q has no source", name)
 		}
-		if !args.noStdlib && name != builtinModule && name != "core.build" && name != "std" && !strings.HasPrefix(name, "std.") && !containsString(info.Imports, "std") {
+		if !args.noStdlib && name != builtinModule && name != "core.build" && name != "core.types" && name != "std" && !strings.HasPrefix(name, "std.") && !containsString(info.Imports, "std") {
 			info.Imports = append(info.Imports, "std")
 		}
 		stageModules[name] = &loader.ModuleInfo{
@@ -207,7 +214,7 @@ func sourceModuleGraph(sources, sourcePackages map[string]string, trustedSources
 		if name != builtinModule && !containsString(module.Imports, builtinModule) {
 			module.Imports = append(module.Imports, builtinModule)
 		}
-		if !noStdlib && name != builtinModule && name != "core.build" && name != "std" && !strings.HasPrefix(name, "std.") && !containsString(module.Imports, "std") {
+		if !noStdlib && name != builtinModule && name != "core.build" && name != "core.types" && name != "std" && !strings.HasPrefix(name, "std.") && !containsString(module.Imports, "std") {
 			module.Imports = append(module.Imports, "std")
 		}
 	}

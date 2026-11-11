@@ -303,6 +303,29 @@ func (a *Attributor) attributeNode(node parser.Node) {
 
 func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 	switch n := node.(type) {
+	case *parser.StaticTypeNode:
+		a.attributeExpr(n.Operand)
+		n.ValueType = n.Operand.GetType()
+		if types.HasError(n.ValueType) {
+			n.SetType(types.ErrorType{})
+		} else {
+			n.SetType(types.MetaType{})
+		}
+	case *parser.TypeValueExprNode:
+		n.ValueType = a.analyser.typeValueFromSyntax(n)
+		if types.HasError(n.ValueType) {
+			n.SetType(types.ErrorType{})
+		} else {
+			n.SetType(types.MetaType{})
+		}
+	case *parser.TypePointerExprNode:
+		a.attributeExpr(n.Base)
+		if n.Base.GetType() == nil || !n.Base.GetType().Equals(types.MetaType{}) {
+			a.analyser.errorf(n.Base, "pointer type constructor requires a type value")
+			n.SetType(types.ErrorType{})
+		} else {
+			n.SetType(types.MetaType{})
+		}
 	case *parser.LambdaNode:
 		a.attributeLambda(n, nil, false)
 
@@ -338,6 +361,8 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 				ret = types.PrimitiveVoid
 			}
 			n.SetType(types.PointerType{Base: types.FunctionType{Parameters: n.Symbol.Signature.Parameters, ReturnType: ret, TypedVariadic: n.Symbol.Signature.TypedVariadic, VariadicElement: n.Symbol.Signature.VariadicElement}})
+		} else if n.Symbol != nil && n.Symbol.Kind == symbols.SymbolKindType {
+			n.SetType(types.MetaType{})
 		} else if n.Symbol == nil || n.Symbol.Type == nil {
 			a.errorf(n, "undefined identifier: %s", n.String())
 			n.SetType(types.ErrorType{})

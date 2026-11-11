@@ -278,6 +278,19 @@ func (p *Parser) parseLeftAssociative(
 
 func (p *Parser) ParseUnary() (ExpressionNode, error) {
 	beginLoc := p.CurrLoc()
+	if p.Match(tokeniser.TokenAsterisk) {
+		p.Inc()
+		mutable := false
+		if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordMut) {
+			p.Inc()
+			mutable = true
+		}
+		base, err := p.ParseUnary()
+		if err != nil {
+			return nil, err
+		}
+		return &TypePointerExprNode{Base: base, Mutable: mutable, Loc: p.SpanFrom(beginLoc)}, nil
+	}
 	if p.Match(tokeniser.TokenDollar) {
 		if p.matchCompileTimeIf() {
 			return p.parseWhen(WhenExpression)
@@ -378,6 +391,13 @@ func (p *Parser) ParsePostfix() (ExpressionNode, error) {
 			}
 			if identifier, ok := expr.(*IdentifierNode); ok {
 				call.Name = identifier
+			}
+			if qualified, ok := dottedIdentifier(expr); ok && qualified.Module == "core.types" && qualified.Name == "static_type" {
+				if len(call.Args) != 1 || call.VariadicExpansion {
+					return nil, shared.NewError(call.Loc, "core.types.static_type expects one expression")
+				}
+				expr = &StaticTypeNode{Operand: call.Args[0], Loc: call.Loc}
+				continue
 			}
 			expr = call
 		case p.MatchAdjacentPair(tokeniser.TokenPlus):
@@ -672,6 +692,25 @@ func (p *Parser) ParseMulDiv() (ExpressionNode, error) {
 
 func (p *Parser) ParseTerm() (ExpressionNode, error) {
 	beginLoc := p.CurrLoc()
+	if p.Match(tokeniser.TokenKeyword) {
+		switch p.Peek().Value {
+		case string(tokeniser.KeywordStruct), string(tokeniser.KeywordEnum),
+			string(tokeniser.KeywordUnion), string(tokeniser.KeywordTrait),
+			string(tokeniser.KeywordOpaque):
+			value, err := p.ParseType()
+			if err != nil {
+				return nil, err
+			}
+			return &TypeValueExprNode{Value: value, Loc: value.GetLoc()}, nil
+		}
+	}
+	if p.matchIntrinsic("flags") && p.Next().Type == tokeniser.TokenOpenParen {
+		value, err := p.ParseFlagsType()
+		if err != nil {
+			return nil, err
+		}
+		return &TypeValueExprNode{Value: value, Loc: value.GetLoc()}, nil
+	}
 	if p.Match(tokeniser.TokenPipe, tokeniser.TokenLogicalOr) {
 		return p.ParseLambdaExpression()
 	}
@@ -1445,6 +1484,14 @@ func (p *Parser) ParseType() (TypeNode, error) {
 	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordTrait) {
 		return p.ParseTraitType()
 	}
+	if p.lexicalOwner != "" && p.traitDepth == 0 && p.Match(tokeniser.TokenIdentifier) && p.Peek().Value == "Self" {
+		loc := p.Consume().Loc
+		arguments := make([]TypeNode, len(p.lexicalOwnerArgs))
+		for index, name := range p.lexicalOwnerArgs {
+			arguments[index] = &NamedTypeNode{Name: name, Loc: loc}
+		}
+		return &NamedTypeNode{Name: p.lexicalOwner, TypeArguments: arguments, Loc: loc}, nil
+	}
 
 	return p.ParseNamedType()
 }
@@ -1462,6 +1509,8 @@ func (p *Parser) ParseDynType(begin shared.Location, mutable bool) (*DynTypeNode
 
 func (p *Parser) ParseTraitType() (*TraitTypeNode, error) {
 	begin := p.CurrLoc()
+	p.traitDepth++
+	defer func() { p.traitDepth-- }()
 	p.Inc()
 	if !p.Expect(tokeniser.TokenOpenCurly) {
 		return nil, shared.NewError(p.PrevLoc(), "expected '{' after trait")
@@ -1630,6 +1679,8 @@ func (p *Parser) ParseTraitType() (*TraitTypeNode, error) {
 
 func (p *Parser) ParseUnionType() (*UnionTypeNode, error) {
 	beginLoc := p.CurrLoc()
+	p.typeLiteralDepth++
+	defer func() { p.typeLiteralDepth-- }()
 	if !p.Match(tokeniser.TokenKeyword) || p.Peek().Value != string(tokeniser.KeywordUnion) {
 		return nil, shared.NewError(p.CurrLoc(), "expected 'union'")
 	}
@@ -1673,8 +1724,20 @@ func (p *Parser) ParseUnionType() (*UnionTypeNode, error) {
 	}
 	fields := []StructField{}
 	variants := []TaggedUnionVariantNode{}
+	var methods []*FunctionDefNode
 	seen := map[string]struct{}{}
 	for !p.Match(tokeniser.TokenCloseCurly) {
+		if p.atLexicalMethod() {
+			method, err := p.parseLexicalMethod()
+			if err != nil {
+				return nil, err
+			}
+			methods = append(methods, method)
+			for p.Match(tokeniser.TokenComma, tokeniser.TokenSemicolon, tokeniser.TokenNewline) {
+				p.Inc()
+			}
+			continue
+		}
 		name, err := p.ParseIdent()
 		if err != nil {
 			return nil, err
@@ -1723,6 +1786,12 @@ func (p *Parser) ParseUnionType() (*UnionTypeNode, error) {
 				variant.Loc = name.Loc.WithEnd(p.PrevLoc())
 			}
 			variants = append(variants, variant)
+			for p.Match(tokeniser.TokenNewline) {
+				p.Inc()
+			}
+			if p.atLexicalMethod() {
+				continue
+			}
 			if p.Match(tokeniser.TokenCloseCurly) {
 				break
 			}
@@ -1742,6 +1811,12 @@ func (p *Parser) ParseUnionType() (*UnionTypeNode, error) {
 			return nil, err
 		}
 		fields = append(fields, StructField{Name: name.Name, Type: fieldType})
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+		if p.atLexicalMethod() {
+			continue
+		}
 		if p.Match(tokeniser.TokenCloseCurly) {
 			break
 		}
@@ -1761,7 +1836,7 @@ func (p *Parser) ParseUnionType() (*UnionTypeNode, error) {
 	if autoTag && len(variants) == 0 {
 		return nil, shared.NewError(beginLoc, "auto-tagged union must declare at least one variant")
 	}
-	return &UnionTypeNode{TagType: tagType, AutoTag: autoTag, Fields: fields, Variants: variants, Loc: p.SpanFrom(beginLoc)}, nil
+	return &UnionTypeNode{TagType: tagType, AutoTag: autoTag, Fields: fields, Variants: variants, Methods: methods, Loc: p.SpanFrom(beginLoc)}, nil
 }
 
 func (p *Parser) ParseMatch(expression bool) (*MatchNode, error) {
@@ -2012,6 +2087,8 @@ func (p *Parser) parseMatchPatternLiteral() (ExpressionNode, error) {
 
 func (p *Parser) ParseEnumType() (*EnumTypeNode, error) {
 	beginLoc := p.CurrLoc()
+	p.typeLiteralDepth++
+	defer func() { p.typeLiteralDepth-- }()
 	if !p.Match(tokeniser.TokenKeyword) || p.Peek().Value != string(tokeniser.KeywordEnum) {
 		return nil, shared.NewError(p.CurrLoc(), "expected 'enum'")
 	}
@@ -2021,6 +2098,7 @@ func (p *Parser) ParseEnumType() (*EnumTypeNode, error) {
 	}
 	variants := []string{}
 	values := []string{}
+	var methods []*FunctionDefNode
 	seen := map[string]struct{}{}
 	valueMode := -1 // 0 is implicit, 1 is explicit.
 	for {
@@ -2030,6 +2108,17 @@ func (p *Parser) ParseEnumType() (*EnumTypeNode, error) {
 		if p.Match(tokeniser.TokenCloseCurly) {
 			p.Inc()
 			break
+		}
+		if p.atLexicalMethod() {
+			method, err := p.parseLexicalMethod()
+			if err != nil {
+				return nil, err
+			}
+			methods = append(methods, method)
+			for p.Match(tokeniser.TokenComma, tokeniser.TokenSemicolon, tokeniser.TokenNewline) {
+				p.Inc()
+			}
+			continue
 		}
 		variant, ok := p.ExpectGet(tokeniser.TokenIdentifier)
 		if !ok {
@@ -2065,6 +2154,9 @@ func (p *Parser) ParseEnumType() (*EnumTypeNode, error) {
 		for p.Match(tokeniser.TokenNewline) {
 			p.Inc()
 		}
+		if p.atLexicalMethod() {
+			continue
+		}
 		if p.Match(tokeniser.TokenComma) {
 			p.Inc()
 			continue
@@ -2076,7 +2168,7 @@ func (p *Parser) ParseEnumType() (*EnumTypeNode, error) {
 	if len(variants) == 0 {
 		return nil, shared.NewError(beginLoc, "enum must declare at least one variant")
 	}
-	return &EnumTypeNode{Variants: variants, Values: values, Loc: p.SpanFrom(beginLoc)}, nil
+	return &EnumTypeNode{Variants: variants, Values: values, Methods: methods, Loc: p.SpanFrom(beginLoc)}, nil
 }
 
 func enumValueFits32Bits(value string) bool {
@@ -2091,6 +2183,8 @@ func enumValueFits32Bits(value string) bool {
 
 func (p *Parser) ParseFlagsType() (*FlagsTypeNode, error) {
 	beginLoc := p.CurrLoc()
+	p.typeLiteralDepth++
+	defer func() { p.typeLiteralDepth-- }()
 	p.Inc()
 	if !p.Expect(tokeniser.TokenOpenParen) {
 		return nil, shared.NewError(p.PrevLoc(), "expected '(' after flags")
@@ -2104,6 +2198,7 @@ func (p *Parser) ParseFlagsType() (*FlagsTypeNode, error) {
 	}
 	known := map[string]*big.Int{}
 	var variants, values []string
+	var methods []*FunctionDefNode
 	valueMode := -1 // 0 is implicit, 1 is explicit.
 	for {
 		for p.Match(tokeniser.TokenNewline) {
@@ -2112,6 +2207,17 @@ func (p *Parser) ParseFlagsType() (*FlagsTypeNode, error) {
 		if p.Match(tokeniser.TokenCloseCurly) {
 			p.Inc()
 			break
+		}
+		if p.atLexicalMethod() {
+			method, err := p.parseLexicalMethod()
+			if err != nil {
+				return nil, err
+			}
+			methods = append(methods, method)
+			for p.Match(tokeniser.TokenComma, tokeniser.TokenSemicolon, tokeniser.TokenNewline) {
+				p.Inc()
+			}
+			continue
 		}
 		name, ok := p.ExpectGet(tokeniser.TokenIdentifier)
 		if !ok {
@@ -2145,6 +2251,9 @@ func (p *Parser) ParseFlagsType() (*FlagsTypeNode, error) {
 		for p.Match(tokeniser.TokenNewline) {
 			p.Inc()
 		}
+		if p.atLexicalMethod() {
+			continue
+		}
 		if p.Match(tokeniser.TokenComma) {
 			p.Inc()
 			continue
@@ -2156,7 +2265,7 @@ func (p *Parser) ParseFlagsType() (*FlagsTypeNode, error) {
 	if len(variants) == 0 {
 		return nil, shared.NewError(beginLoc, "flags must declare at least one member")
 	}
-	return &FlagsTypeNode{Underlying: underlying, Variants: variants, Values: values, Loc: p.SpanFrom(beginLoc)}, nil
+	return &FlagsTypeNode{Underlying: underlying, Variants: variants, Values: values, Methods: methods, Loc: p.SpanFrom(beginLoc)}, nil
 }
 
 func (p *Parser) parseFlagValue(known map[string]*big.Int) (*big.Int, error) {
@@ -2202,6 +2311,8 @@ func (p *Parser) parseFlagValue(known map[string]*big.Int) (*big.Int, error) {
 
 func (p *Parser) ParseStructType() (*StructTypeNode, error) {
 	beginLoc := p.CurrLoc()
+	p.typeLiteralDepth++
+	defer func() { p.typeLiteralDepth-- }()
 
 	if !p.Match(tokeniser.TokenKeyword) || p.Peek().Value != string(tokeniser.KeywordStruct) {
 		return nil, shared.NewError(p.PrevLoc(), "expected 'struct' keyword")
@@ -2222,13 +2333,52 @@ func (p *Parser) ParseStructType() (*StructTypeNode, error) {
 	}
 
 	var fields []StructField
+	var methods []*FunctionDefNode
 	for !p.Match(tokeniser.TokenCloseCurly) {
+		if p.atLexicalMethod() {
+			method, err := p.parseLexicalMethod()
+			if err != nil {
+				return nil, err
+			}
+			methods = append(methods, method)
+			for p.Match(tokeniser.TokenSemicolon, tokeniser.TokenNewline, tokeniser.TokenComma) {
+				p.Inc()
+			}
+			continue
+		}
+		if p.Match(tokeniser.Token3Dots) {
+			p.Inc()
+			spread, err := p.ParseExpression()
+			if err != nil {
+				return nil, err
+			}
+			fields = append(fields, StructField{Spread: spread})
+			for p.Match(tokeniser.TokenNewline) {
+				p.Inc()
+			}
+			if p.Match(tokeniser.TokenCloseCurly) {
+				break
+			}
+			if !p.Expect(tokeniser.TokenComma) {
+				return nil, shared.NewError(p.PrevLoc(), "expected ',' after field spread")
+			}
+			for p.Match(tokeniser.TokenNewline) {
+				p.Inc()
+			}
+			continue
+		}
 		if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordUnion) {
 			fieldType, err := p.ParseUnionType()
 			if err != nil {
 				return nil, err
 			}
 			fields = append(fields, StructField{Type: fieldType})
+			for p.Match(tokeniser.TokenNewline) {
+				p.Inc()
+			}
+			if p.Match(tokeniser.TokenKeyword) && (p.Peek().Value == string(tokeniser.KeywordLet) || p.Peek().Value == string(tokeniser.KeywordPub)) {
+				continue
+			}
 			if p.Match(tokeniser.TokenCloseCurly) {
 				break
 			}
@@ -2258,6 +2408,12 @@ func (p *Parser) ParseStructType() (*StructTypeNode, error) {
 			Name: fieldName.Name,
 			Type: fieldType,
 		})
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+		if p.Match(tokeniser.TokenKeyword) && (p.Peek().Value == string(tokeniser.KeywordLet) || p.Peek().Value == string(tokeniser.KeywordPub)) {
+			continue
+		}
 
 		if p.Match(tokeniser.TokenCloseCurly) {
 			break
@@ -2277,9 +2433,32 @@ func (p *Parser) ParseStructType() (*StructTypeNode, error) {
 
 	return &StructTypeNode{
 		Fields:     fields,
+		Methods:    methods,
 		Loc:        p.SpanFrom(beginLoc),
 		Attributes: attrs,
 	}, nil
+}
+
+func (p *Parser) atLexicalMethod() bool {
+	return p.Match(tokeniser.TokenKeyword) &&
+		(p.Peek().Value == string(tokeniser.KeywordLet) || p.Peek().Value == string(tokeniser.KeywordPub))
+}
+
+func (p *Parser) parseLexicalMethod() (*FunctionDefNode, error) {
+	if p.lexicalOwner == "" || p.typeLiteralDepth != 1 {
+		return nil, shared.NewError(p.CurrLoc(), "methods require a named lexical type")
+	}
+	p.lexicalMethod = true
+	defer func() { p.lexicalMethod = false }()
+	declaration, err := p.parseTopLevel()
+	if err != nil {
+		return nil, err
+	}
+	method, ok := declaration.(*FunctionDefNode)
+	if !ok {
+		return nil, shared.NewError(declaration.GetLoc(), "expected method declaration")
+	}
+	return method, nil
 }
 
 func (p *Parser) ParseArrayOrSliceType() (TypeNode, error) {
@@ -2502,7 +2681,11 @@ func (p *Parser) parseCallTypeArguments() ([]TypeNode, error) {
 		}
 		var argument TypeNode
 		var err error
-		if p.Match(tokeniser.TokenDollar) && !p.allowTypeCapture {
+		literalArgument := p.Match(tokeniser.TokenString, tokeniser.TokenCString, tokeniser.TokenNumber, tokeniser.TokenFloat)
+		if p.Match(tokeniser.TokenKeyword) && (p.Peek().Value == string(tokeniser.KeywordTrue) || p.Peek().Value == string(tokeniser.KeywordFalse)) {
+			literalArgument = true
+		}
+		if (p.Match(tokeniser.TokenDollar) && !p.allowTypeCapture) || literalArgument {
 			value, parseErr := p.ParseExpression()
 			err = parseErr
 			if err == nil {

@@ -2318,6 +2318,21 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			v.errorf(n, "%v has no field %q", n.OperandType, n.Field)
 		}
 
+	case *parser.TypeValueExprNode:
+		if !v.inCompileTimeContext() {
+			v.errorf(n, "type values are only available during compile-time execution")
+		}
+	case *parser.StaticTypeNode:
+		v.validateExpr(n.Operand)
+		if !v.inCompileTimeContext() {
+			v.errorf(n, "static_type is only available in a compile-time context")
+		}
+	case *parser.TypePointerExprNode:
+		v.validateExpr(n.Base)
+		if !v.inCompileTimeContext() {
+			v.errorf(n, "type values are only available during compile-time execution")
+		}
+
 	default:
 		panic(fmt.Sprintf("unhandled expression type %T", n))
 	}
@@ -3157,7 +3172,7 @@ func (v *Validator) completeGenericCall(call *parser.FunctionCallNode, expected 
 	template := call.Symbol.TemplateSymbol
 	unresolved := false
 	for i, argument := range call.Symbol.TypeArguments {
-		if i < len(template.GenericParameters) && argument.Equals(template.GenericParameters[i]) {
+		if i < len(template.GenericParameters) && (argument == nil || argument.Equals(template.GenericParameters[i])) {
 			unresolved = true
 			break
 		}

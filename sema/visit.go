@@ -173,6 +173,11 @@ func (a *Analyser) visitLocalDeclaration(n *parser.DeclarationNode) {
 
 	if n.Value != nil {
 		a.visitExpression(n.Value)
+		if value := a.typeValueFromSyntax(n.Value); value != nil {
+			sym.Type = types.MetaType{}
+			sym.TypeInfo = value
+			sym.Comptime = true
+		}
 	}
 	a.current.Symbols[sym.Name] = sym
 	if len(a.lambdaOwnedSymbols) != 0 {
@@ -342,6 +347,13 @@ func (a *Analyser) visitExpression(expr parser.ExpressionNode) {
 
 	case *parser.OffsetOfNode:
 		a.resolveTypeNode(e.Operand)
+
+	case *parser.TypeValueExprNode:
+		a.resolveTypeNode(e.Value)
+	case *parser.TypePointerExprNode:
+		a.visitExpression(e.Base)
+	case *parser.StaticTypeNode:
+		a.visitExpression(e.Operand)
 
 	case *parser.IntegerLiteralNode,
 		*parser.FloatLiteralNode,

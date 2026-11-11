@@ -26,6 +26,7 @@ const (
 	OperandZeroConst
 	OperandSizeofConst
 	OperandBinaryConst
+	OperandTypeConst
 )
 
 type Operand struct {
@@ -61,6 +62,10 @@ func FloatConstOperand(value string, ty types.Type) Operand {
 
 func BoolConstOperand(value bool) Operand {
 	return Operand{Kind: OperandBoolConst, BoolValue: value, Type: types.PrimitiveBool}
+}
+
+func TypeConstOperand(value types.Type) Operand {
+	return Operand{Kind: OperandTypeConst, Type: types.MetaType{}, SubjectType: value}
 }
 
 func NullConstOperand(ty types.Type) Operand {
@@ -144,15 +149,16 @@ const (
 )
 
 type Function struct {
-	Name       string
-	Linkage    Linkage
-	Visibility Visibility
-	Signature  FunctionSignature
-	Parameters []Parameter
-	Slots      []Slot
-	Attributes attributes.Attributes
-	Values     map[ValueID]types.Type
-	Origins    map[InstructionLocation]SourceOrigin
+	Name            string
+	CompileTimeOnly bool
+	Linkage         Linkage
+	Visibility      Visibility
+	Signature       FunctionSignature
+	Parameters      []Parameter
+	Slots           []Slot
+	Attributes      attributes.Attributes
+	Values          map[ValueID]types.Type
+	Origins         map[InstructionLocation]SourceOrigin
 
 	Blocks []*Block
 	Entry  BlockID
@@ -533,16 +539,25 @@ type ElementAddress struct {
 func (ElementAddress) isInstr() {}
 
 type Call struct {
-	Dest        ValueID
-	Name        string
-	Callee      *Operand
-	Args        []Operand
-	Signature   FunctionSignature
-	Generic     *GenericReference
-	Requirement *TraitRequirementReference
-	SourceName  string
-	SourceLoc   shared.Location
+	Dest            ValueID
+	Name            string
+	Callee          *Operand
+	Args            []Operand
+	CompileTimeArgs map[int]Operand
+	Signature       FunctionSignature
+	Generic         *GenericReference
+	Requirement     *TraitRequirementReference
+	SourceName      string
+	SourceLoc       shared.Location
 }
+
+type TypePointer struct {
+	Dest    ValueID
+	Base    Operand
+	Mutable bool
+}
+
+func (TypePointer) isInstr() {}
 
 func (Call) isInstr() {}
 
@@ -686,12 +701,26 @@ type Sizeof struct {
 
 func (Sizeof) isInstr() {}
 
+type SizeofValue struct {
+	Dest  ValueID
+	Value Operand
+}
+
+func (SizeofValue) isInstr() {}
+
 type Alignof struct {
 	Dest ValueID
 	Type types.Type
 }
 
 func (Alignof) isInstr() {}
+
+type AlignofValue struct {
+	Dest  ValueID
+	Value Operand
+}
+
+func (AlignofValue) isInstr() {}
 
 type Offsetof struct {
 	Dest  ValueID

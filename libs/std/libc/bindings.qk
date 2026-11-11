@@ -15,14 +15,14 @@ $if core.build.has_libc {
 
 import std.ctypes
 
-pub let FILE = type opaque
-pub let DIR = type opaque
+pub let FILE = opaque
+pub let DIR = opaque
 
 // -----------------------------------------------------------------------------
 // C ABI types
 // -----------------------------------------------------------------------------
 
-pub let time_t = type
+pub let time_t: type =
   $if core.build.os == .Windows
     || core.build.os == .MacOS
     || core.build.os == .FreeBSD
@@ -35,7 +35,7 @@ pub let time_t = type
     compiler_error("Unsupported time_t ABI")
   }
 
-pub let clock_t = type
+pub let clock_t: type =
   $if core.build.os == .Windows
     || core.build.os == .FreeBSD
     || core.build.os == .OpenBSD
@@ -44,7 +44,7 @@ pub let clock_t = type
     else { std.ctypes.long }
 
 $if core.build.os != .Windows {
-  pub let Timespec = type struct {
+  pub let Timespec = struct {
     seconds: time_t,
     nanoseconds: std.ctypes.long,
   }
@@ -87,7 +87,7 @@ pub let fwrite(
   stream: *FILE,
 ): std.ctypes.size_t @foreign
 
-pub let SeekOrigin = type enum {
+pub let SeekOrigin = enum {
   Set = 0,
   Cur = 1,
   End = 2,
@@ -125,7 +125,7 @@ $if core.build.os == .Windows {
   pub let ErrorFileNotFound: std.ctypes.unsigned_long = 2
   pub let ErrorNoMoreFiles: std.ctypes.unsigned_long = 18
 
-  pub let WindowsFindData = type struct {
+  pub let WindowsFindData = struct {
     file_attributes: std.ctypes.unsigned_long,
     creation_time_low: std.ctypes.unsigned_long,
     creation_time_high: std.ctypes.unsigned_long,
@@ -158,7 +158,7 @@ $if core.build.os == .Windows {
   pub let opendir(path: cstr): *DIR @foreign
   pub let closedir(directory: *DIR): std.ctypes.int @foreign
 
-  pub let Dirent = type
+  pub let Dirent: type =
     $if core.build.os == .Linux {
       $if core.build.pointer_bits == 64 {
         struct {
@@ -447,12 +447,12 @@ $if core.build.os == .Linux
   || core.build.os == .DragonFly {
 
   // On the supported Unix ABIs, pid_t is a signed 32-bit integer.
-  pub let pid_t = type std.ctypes.int
+  pub let pid_t = distinct(std.ctypes.int)
 
   // POSIX uses int for file descriptors, signals and wait status values.
-  pub let fd_t = type std.ctypes.int
-  pub let signal_t = type std.ctypes.int
-  pub let wait_status_t = type std.ctypes.int
+  pub let fd_t = distinct(std.ctypes.int)
+  pub let signal_t = distinct(std.ctypes.int)
+  pub let wait_status_t = distinct(std.ctypes.int)
 
   // Environment inherited by exec-family calls.
   pub let environ: *mut *mut std.ctypes.char @foreign

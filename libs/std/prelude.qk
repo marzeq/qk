@@ -2,62 +2,62 @@ module std
 
 import std.os
 
-pub let Add = type trait {
+pub let Add = trait {
   let add(self, other: Self): Self
 }
 
-pub let Sub = type trait {
+pub let Sub = trait {
   let sub(self, other: Self): Self
 }
 
-pub let Mul = type trait {
+pub let Mul = trait {
   let mul(self, other: Self): Self
 }
 
-pub let Div = type trait {
+pub let Div = trait {
   let div(self, other: Self): Self
 }
 
-pub let Rem = type trait {
+pub let Rem = trait {
   let rem(self, other: Self): Self
 }
 
-pub let Neg = type trait {
+pub let Neg = trait {
   let neg(self): Self
 }
 
-pub let PartialEq = type trait {
+pub let PartialEq = trait {
   let eq(self, other: Self): bool
 }
 
-pub let PartialOrd = type trait {
+pub let PartialOrd = trait {
   let lt(self, other: Self): bool
   let le(self, other: Self): bool
   let gt(self, other: Self): bool
   let ge(self, other: Self): bool
 }
 
-pub let BitAnd = type trait {
+pub let BitAnd = trait {
   let bit_and(self, other: Self): Self
 }
 
-pub let BitOr = type trait {
+pub let BitOr = trait {
   let bit_or(self, other: Self): Self
 }
 
-pub let BitXor = type trait {
+pub let BitXor = trait {
   let bit_xor(self, other: Self): Self
 }
 
-pub let Shl = type trait {
+pub let Shl = trait {
   let shl(self, other: Self): Self
 }
 
-pub let Shr = type trait {
+pub let Shr = trait {
   let shr(self, other: Self): Self
 }
 
-pub let BitNot = type trait {
+pub let BitNot = trait {
   let bit_not(self): Self
 }
 

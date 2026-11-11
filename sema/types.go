@@ -37,6 +37,8 @@ func (a *Analyser) resolveTypeNode(n parser.TypeNode) types.Type {
 
 func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Type {
 	switch t := n.(type) {
+	case *parser.ResolvedTypeNode:
+		return t.Value
 	case *parser.ConstantTypeNode:
 		value := t.Value
 		if prefix, ok := value.(*parser.CompileTimeExpressionNode); ok {
@@ -71,6 +73,9 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 		return types.MultipleReturnType{Types: result}
 
 	case *parser.NamedTypeNode:
+		if t.ModName == "" && t.Name == "type" && len(t.TypeArguments) == 0 {
+			return types.MetaType{}
+		}
 		if a.resolvingTraitMethodTypes && t.ModName == "" && t.Name == "Self" {
 			if len(t.TypeArguments) != 0 {
 				a.errorf(t, "Self does not accept type arguments")
@@ -85,6 +90,10 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 					return types.ErrorType{}
 				}
 				return parameter
+			}
+			if symbol, ok := a.current.Resolve(t.Name); ok && symbol.Kind == symbols.SymbolKindVariable &&
+				symbol.Type != nil && symbol.Type.Equals(types.MetaType{}) && symbol.TypeInfo != nil {
+				return symbol.TypeInfo
 			}
 		}
 		if info, ok := a.aliases[t.Name]; ok && t.ModName == "" {

@@ -2,7 +2,7 @@ module std.io
 
 import std.strings
 
-pub let Format = type trait {
+pub let Format = trait {
   let format(self, writer: *mut dyn Writer): Result(Unit, Error)
 }
 

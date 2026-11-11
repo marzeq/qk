@@ -4,7 +4,7 @@ module std.alloc
 // requested alignment; free and resize receive the original alignment. An
 // implementation may otherwise ignore align when its natural alignment is
 // already sufficient. A zero-byte allocation or resize succeeds with nil.
-pub let Allocator = type trait {
+pub let Allocator = trait {
   let allocate_bytes(
     *mut self,
     size: usz,

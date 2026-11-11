@@ -7,53 +7,137 @@ import std.alloc
 import std.collections
 import std.strings
 
-pub let Path = type struct {
+pub let Path = struct {
   bytes: std.collections.DynamicArray(u8),
+
+
+  pub let exists(self): Result(bool, Error) = exists(self.as_str())
+
+  pub let is_directory(self): Result(bool, Error) =
+    is_directory(self.as_str())
+
+  pub let is_file(self): Result(bool, Error) = is_file(self.as_str())
+
+  pub let open_reader(self): Result(std.io.FileReader, Error) =
+    std.io.FileReader.open(self.as_str())
+
+  pub let open_writer(
+    self,
+    append: bool = false,
+  ): Result(std.io.FileWriter, Error) =
+    std.io.FileWriter.open(self.as_str(), append)
+
+  pub let file_size(self): Result(usz, Error) = file_size(self.as_str())
+
+  pub let read_file(
+    self,
+    allocator: *mut dyn std.alloc.Allocator,
+  ): Result(std.strings.StringBuilder, Error) =
+    read_file(allocator, self.as_str())
+
+  pub let write_file(self, contents: []u8): Result(Unit, Error) =
+    write_file(self.as_str(), contents)
+
+  pub let append_file(self, contents: []u8): Result(Unit, Error) =
+    append_file(self.as_str(), contents)
+
+  pub let remove(self): Result(Unit, Error) = remove(self.as_str())
+
+  pub let create_directory(
+    self,
+    ok_if_exists: bool = false,
+    recursive: bool = false,
+  ): Result(Unit, Error) = create_directory(self.as_str(), ok_if_exists, recursive)
+
+  pub let remove_directory(self): Result(Unit, Error) =
+    remove_directory(self.as_str())
+
+  pub let rename(self, to: str): Result(Unit, Error) = rename(self.as_str(), to)
+
+  pub let change_directory(self): Result(Unit, Error) =
+    change_directory(self.as_str())
+
+  pub let init(allocator: *mut dyn std.alloc.Allocator): Path = .{
+    bytes=std.collections.DynamicArray(u8).init(allocator),
+  }
+
+  pub let with_capacity(
+    allocator: *mut dyn std.alloc.Allocator,
+    capacity: usz,
+  ): (Path, bool) {
+    let bytes, success = std.collections.DynamicArray(u8).with_capacity(
+      allocator,
+      capacity,
+    )
+    return .{ bytes=bytes }, success
+  }
+
+  pub let from_str(
+    allocator: *mut dyn std.alloc.Allocator,
+    value: str,
+  ): (Path, bool) {
+    let bytes, success = std.collections.DynamicArray(u8).from_slice(
+      allocator,
+      value.([]u8),
+    )
+    return .{ bytes=bytes }, success
+  }
+
+  pub let from_cstr(
+    allocator: *mut dyn std.alloc.Allocator,
+    value: cstr,
+  ): (Path, bool) {
+    if value == nil { return Path.init(allocator), false }
+    return Path.from_str(allocator, value.to_str())
+  }
+
+  pub let from_builder(value: *std.strings.StringBuilder): (Path, bool) =
+    Path.from_str(value.allocator, value.as_str())
+
+  pub let as_str(self): str = self.bytes.as_slice().(str)
+
+  pub let duplicate(self): (Path, bool) =
+    Path.from_str(self.bytes.allocator, self.as_str())
+
+  pub let deinit(*mut self): void { self.bytes.deinit() }
+
+  pub let is_absolute(self): bool = is_absolute(self.as_str())
+
+  pub let basename(self): str = basename(self.as_str())
+
+  pub let dirname(self): str = dirname(self.as_str())
+
+  pub let extension(self): str = extension(self.as_str())
+
+  let push_one(*mut self, right: str): bool {
+    if is_absolute(right) {
+      self.bytes.clear()
+      return self.bytes.append_slice(right.([]u8))
+    }
+    if self.bytes.count > 0 && !is_separator(self.bytes.ptr[self.bytes.count - 1]) {
+      if !self.bytes.append(Separator) { return false }
+    }
+    return self.bytes.append_slice(right.([]u8))
+  }
+
+  pub let push(*mut self, right: ...str): bool {
+    for component in right {
+      if !self.push_one(component) { return false }
+    }
+    return true
+  }
+
+  pub let join(self, right: ...str): (Path, bool) {
+    let mut result, success = self.duplicate()
+    if !success { return result, false }
+    if !result.push(right...) {
+      result.deinit()
+      return Path.init(self.bytes.allocator), false
+    }
+    return result, true
+  }
 }
 
-pub let Path.init(allocator: *mut dyn std.alloc.Allocator): Path = .{
-  bytes=std.collections.DynamicArray(u8).init(allocator),
-}
-
-pub let Path.with_capacity(
-  allocator: *mut dyn std.alloc.Allocator,
-  capacity: usz,
-): (Path, bool) {
-  let bytes, success = std.collections.DynamicArray(u8).with_capacity(
-    allocator,
-    capacity,
-  )
-  return .{ bytes=bytes }, success
-}
-
-pub let Path.from_str(
-  allocator: *mut dyn std.alloc.Allocator,
-  value: str,
-): (Path, bool) {
-  let bytes, success = std.collections.DynamicArray(u8).from_slice(
-    allocator,
-    value.([]u8),
-  )
-  return .{ bytes=bytes }, success
-}
-
-pub let Path.from_cstr(
-  allocator: *mut dyn std.alloc.Allocator,
-  value: cstr,
-): (Path, bool) {
-  if value == nil { return Path.init(allocator), false }
-  return Path.from_str(allocator, value.to_str())
-}
-
-pub let Path.from_builder(value: *std.strings.StringBuilder): (Path, bool) =
-  Path.from_str(value.allocator, value.as_str())
-
-pub let Path.as_str(self): str = self.bytes.as_slice().(str)
-
-pub let Path.duplicate(self): (Path, bool) =
-  Path.from_str(self.bytes.allocator, self.as_str())
-
-pub let Path.deinit(*mut self): void { self.bytes.deinit() }
 
 $if core.build.os == .Windows {
   pub let Separator: u8 = '\\'
@@ -77,7 +161,6 @@ pub let is_absolute(path: str): bool {
   }
 }
 
-pub let Path.is_absolute(self): bool = is_absolute(self.as_str())
 
 pub let basename(path: str): str {
   let mut end = len(path)
@@ -87,7 +170,6 @@ pub let basename(path: str): str {
   return path[start:end]
 }
 
-pub let Path.basename(self): str = basename(self.as_str())
 
 pub let dirname(path: str): str {
   let mut end = len(path)
@@ -98,7 +180,6 @@ pub let dirname(path: str): str {
   return path[0:end]
 }
 
-pub let Path.dirname(self): str = dirname(self.as_str())
 
 pub let extension(path: str): str {
   let name = basename(path)
@@ -113,35 +194,8 @@ pub let extension(path: str): str {
   return ""
 }
 
-pub let Path.extension(self): str = extension(self.as_str())
-
-let Path.push_one(*mut self, right: str): bool {
-  if is_absolute(right) {
-    self.bytes.clear()
-    return self.bytes.append_slice(right.([]u8))
-  }
-  if self.bytes.count > 0 && !is_separator(self.bytes.ptr[self.bytes.count - 1]) {
-    if !self.bytes.append(Separator) { return false }
-  }
-  return self.bytes.append_slice(right.([]u8))
-}
 
 // Appends path components in place without taking ownership of their storage.
-pub let Path.push(*mut self, right: ...str): bool {
-  for component in right {
-    if !self.push_one(component) { return false }
-  }
-  return true
-}
 
 // Returns an independently owned path; the receiver remains owned by the
 // caller and must still be deinitialized normally.
-pub let Path.join(self, right: ...str): (Path, bool) {
-  let mut result, success = self.duplicate()
-  if !success { return result, false }
-  if !result.push(right...) {
-    result.deinit()
-    return Path.init(self.bytes.allocator), false
-  }
-  return result, true
-}

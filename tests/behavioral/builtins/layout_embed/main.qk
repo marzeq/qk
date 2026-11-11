@@ -2,7 +2,7 @@ module main
 
 import std.io
 
-let Header = type struct @packed { kind: u8, length: u32 }
+let Header = struct @packed { kind: u8, length: u32 }
 
 let main() {
   let header = Header.{ kind=1, length=4 }

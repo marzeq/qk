@@ -51,6 +51,10 @@ func cloneSyntaxValue(value reflect.Value, pointers map[clonePointer]reflect.Val
 	if !value.IsValid() {
 		return value
 	}
+	if value.Type() == reflect.TypeOf((*ResolvedTypeNode)(nil)) && !value.IsNil() {
+		resolved := value.Interface().(*ResolvedTypeNode)
+		return reflect.ValueOf(&ResolvedTypeNode{Value: resolved.Value, Loc: resolved.Loc})
+	}
 	if value.Type() == symbolPointer {
 		return reflect.Zero(value.Type())
 	}

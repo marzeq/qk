@@ -3,69 +3,69 @@ module std.ctypes
 import core.build
 
 $if core.build.c_char_signed {
-  pub let char = type alias i8
+  pub let char: type = i8
 } else {
-  pub let char = type alias u8
+  pub let char: type = u8
 }
-pub let signed_char = type alias i8
-pub let unsigned_char = type alias u8
+pub let signed_char: type = i8
+pub let unsigned_char: type = u8
 
-pub let short = type alias i16
-pub let signed_short = type alias i16
-pub let unsigned_short = type alias u16
+pub let short: type = i16
+pub let signed_short: type = i16
+pub let unsigned_short: type = u16
 
-pub let int = type alias i32
-pub let signed_int = type alias i32
-pub let unsigned_int = type alias u32
+pub let int: type = i32
+pub let signed_int: type = i32
+pub let unsigned_int: type = u32
 
-pub let bool = type alias u8
+pub let bool: type = u8
 
 $if core.build.os == .Windows || core.build.pointer_bits == 32 {
-  pub let long = type alias i32
-  pub let unsigned_long = type alias u32
+  pub let long: type = i32
+  pub let unsigned_long: type = u32
 } else if core.build.pointer_bits == 64 {
-  pub let long = type alias i64
-  pub let unsigned_long = type alias u64
+  pub let long: type = i64
+  pub let unsigned_long: type = u64
 } else {
   compiler_error("Unsupported C long width")
 }
 
-pub let signed_long = type alias long
+pub let signed_long: type = long
 
-pub let long_long = type alias i64
-pub let signed_long_long = type alias i64
-pub let unsigned_long_long = type alias u64
+pub let long_long: type = i64
+pub let signed_long_long: type = i64
+pub let unsigned_long_long: type = u64
 
-pub let float = type alias f32
-pub let double = type alias f64
+pub let float: type = f32
+pub let double: type = f64
 
-pub let size_t = type alias usz
-pub let ptrdiff_t = type alias isz
-pub let ssize_t = type alias isz
+pub let size_t: type = usz
+pub let ptrdiff_t: type = isz
+pub let ssize_t: type = isz
 
-pub let va_list = type alias *mut void
+pub let va_list: type = *mut void
 
 // Exact widths of wchar_t are ABI/platform dependent.
 $if core.build.os == .Windows {
-  pub let wchar_t = type alias u16
+  pub let wchar_t: type = u16
 } else {
-  pub let wchar_t = type alias i32
+  pub let wchar_t: type = i32
 }
 
-pub let char16_t = type alias u16
-pub let char32_t = type alias u32
+pub let char16_t: type = u16
+pub let char32_t: type = u32
 
-pub let int8_t = type alias i8
-pub let uint8_t = type alias u8
-pub let int16_t = type alias i16
-pub let uint16_t = type alias u16
-pub let int32_t = type alias i32
-pub let uint32_t = type alias u32
-pub let int64_t = type alias i64
-pub let uint64_t = type alias u64
+pub let int8_t: type = i8
+pub let uint8_t: type = u8
+pub let int16_t: type = i16
+pub let uint16_t: type = u16
+pub let int32_t: type = i32
+pub let uint32_t: type = u32
+pub let int64_t: type = i64
+pub let uint64_t: type = u64
 
-pub let intptr_t = type alias isz
-pub let uintptr_t = type alias usz
+pub let intptr_t: type = isz
+pub let uintptr_t: type = usz
 
-pub let intmax_t = type alias i64
-pub let uintmax_t = type alias u64
+pub let intmax_t: type = i64
+pub let uintmax_t: type = u64

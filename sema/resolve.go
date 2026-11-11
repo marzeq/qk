@@ -261,6 +261,11 @@ func (a *Analyser) explicitCallTypeArguments(
 
 func expressionAsTypeNode(expression parser.ExpressionNode) (parser.TypeNode, bool) {
 	switch n := expression.(type) {
+	case *parser.TypeValueExprNode:
+		if n.ValueType != nil {
+			return &parser.ResolvedTypeNode{Value: n.ValueType, Loc: n.Loc}, true
+		}
+		return n.Value, n.Value != nil
 	case *parser.IdentifierNode:
 		return &parser.NamedTypeNode{ModName: n.Module, Name: n.Name, TypeArguments: n.TypeArguments, Loc: n.Loc}, true
 	case *parser.FieldAccessNode:

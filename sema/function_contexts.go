@@ -5,6 +5,7 @@ import (
 
 	"github.com/marzeq/qk/parser"
 	"github.com/marzeq/qk/symbols"
+	"github.com/marzeq/qk/types"
 )
 
 // InferFunctionContexts propagates compile-time-only requirements through
@@ -23,8 +24,24 @@ func (a *Analyser) InferFunctionContexts(roots ...*parser.RootNode) {
 				continue
 			}
 			current := entry{function: function}
+			if types.HasMetaType(function.Symbol.Signature.ReturnType) {
+				function.Symbol.CompileTimeOnly = true
+			}
+			for _, parameter := range function.Symbol.Signature.Parameters {
+				if types.HasMetaType(parameter) {
+					function.Symbol.CompileTimeOnly = true
+				}
+			}
 			walkRuntimeSyntax(function.Body, func(node parser.Node) {
 				switch node := node.(type) {
+				case *parser.IdentifierNode:
+					if node.Symbol != nil && node.Symbol.Kind == symbols.SymbolKindType && node.GetType() != nil && node.GetType().Equals(types.MetaType{}) {
+						function.Symbol.CompileTimeOnly = true
+					}
+				case *parser.DeclarationNode:
+					if node.Symbol != nil && types.HasMetaType(node.Symbol.Type) {
+						function.Symbol.CompileTimeOnly = true
+					}
 				case *parser.SizeOfNode:
 					if !node.CompileTime {
 						function.Symbol.CompileTimeOnly = true
@@ -45,6 +62,12 @@ func (a *Analyser) InferFunctionContexts(roots ...*parser.RootNode) {
 					if !node.CompileTime {
 						function.Symbol.CompileTimeOnly = true
 					}
+				case *parser.TypeValueExprNode:
+					function.Symbol.CompileTimeOnly = true
+				case *parser.StaticTypeNode:
+					function.Symbol.CompileTimeOnly = true
+				case *parser.TypePointerExprNode:
+					function.Symbol.CompileTimeOnly = true
 				case *parser.FunctionCallNode:
 					if node.Symbol != nil {
 						current.calls = append(current.calls, node.Symbol)

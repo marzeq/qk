@@ -15,27 +15,170 @@ pub let NanosecondsPerSecond: u64 = 1000000000
 pub let NanosecondsPerMinute: u64 = 60000000000
 pub let NanosecondsPerHour: u64 = 3600000000000
 
-pub let Duration = type struct {
+pub let Duration = struct {
   nanoseconds: u64,
+
+
+  pub let zero(): Duration = .{ nanoseconds=0 }
+
+  pub let from_nanoseconds(value: u64): Duration = .{
+    nanoseconds=value,
+  }
+
+  pub let from_microseconds(value: u64): (Duration, bool) =
+    duration_from_units(value, NanosecondsPerMicrosecond)
+
+  pub let from_milliseconds(value: u64): (Duration, bool) =
+    duration_from_units(value, NanosecondsPerMillisecond)
+
+  pub let from_seconds(value: u64): (Duration, bool) =
+    duration_from_units(value, NanosecondsPerSecond)
+
+  pub let from_minutes(value: u64): (Duration, bool) =
+    duration_from_units(value, NanosecondsPerMinute)
+
+  pub let from_hours(value: u64): (Duration, bool) =
+    duration_from_units(value, NanosecondsPerHour)
+
+  pub let as_nanoseconds(self): u64 = self.nanoseconds
+
+  pub let as_microseconds(self): u64 =
+    self.nanoseconds / NanosecondsPerMicrosecond
+
+  pub let as_milliseconds(self): u64 =
+    self.nanoseconds / NanosecondsPerMillisecond
+
+  pub let as_seconds(self): u64 =
+    self.nanoseconds / NanosecondsPerSecond
+
+  pub let subsecond_nanoseconds(self): u32 =
+    (self.nanoseconds % NanosecondsPerSecond).(u32)
+
+  pub let add(self, other: Duration): (Duration, bool) {
+    if other.nanoseconds > (~0.(u64)) - self.nanoseconds {
+      return Duration.zero(), false
+    }
+    return .{ nanoseconds=self.nanoseconds + other.nanoseconds }, true
+  }
+
+  pub let subtract(self, other: Duration): (Duration, bool) {
+    if other.nanoseconds > self.nanoseconds { return Duration.zero(), false }
+    return .{ nanoseconds=self.nanoseconds - other.nanoseconds }, true
+  }
 }
 
-pub let Timestamp = type struct {
+pub let Timestamp = struct {
   seconds: i64,
   nanosecond: u32,
+
+
+  pub let now(): Result(Timestamp, Error) {
+    $if core.build.os == .Windows {
+      let mut file_time: FileTime = .{ low=0, high=0 }
+      get_system_time(file_time.&mut)
+      let intervals = (file_time.high.(u64) << 32) | file_time.low.(u64)
+      let UnixEpochIntervals: u64 = 116444736000000000
+      if intervals < UnixEpochIntervals {
+        return .Err(Error.OutOfRange)
+      }
+      let unix_intervals = intervals - UnixEpochIntervals
+      return .Ok(.{
+        seconds=(unix_intervals / 10000000).(i64),
+        nanosecond=((unix_intervals % 10000000) * 100).(u32),
+      })
+    } else {
+      let mut value: std.libc.Timespec = .{ seconds=0, nanoseconds=0 }
+      if std.libc.clock_gettime(0, value.&mut) != 0 {
+        return .Err(std.os.last_error())
+      }
+      if value.nanoseconds < 0 || value.nanoseconds >= NanosecondsPerSecond.(std.ctypes.long) {
+        return .Err(Error.InvalidData)
+      }
+      return .Ok(.{
+        seconds=value.seconds.(i64),
+        nanosecond=value.nanoseconds.(u32),
+      })
+    }
+  }
+
+  pub let unix_seconds(self): i64 = self.seconds
+
+  pub let subsecond_nanoseconds(self): u32 = self.nanosecond
 }
 
 // Instant is opaque clock state. Values are meaningful only when compared
 // with other instants produced by this module in the same process.
-pub let Instant = type struct {
+pub let Instant = struct {
   ticks: u64,
   frequency: u64,
+
+
+  pub let now(): Result(Instant, Error) {
+    $if core.build.os == .Windows {
+      let mut counter: i64 = 0
+      let mut frequency: i64 = 0
+      if query_performance_frequency(frequency.&mut) == 0 || frequency <= 0 {
+        return .Err(Error.IoFailed)
+      }
+      if query_performance_counter(counter.&mut) == 0 || counter < 0 {
+        return .Err(Error.IoFailed)
+      }
+      return .Ok(.{
+        ticks=counter.(u64),
+        frequency=frequency.(u64),
+      })
+    } else {
+      let mut value: std.libc.Timespec = .{ seconds=0, nanoseconds=0 }
+      if std.libc.clock_gettime(MonotonicClock, value.&mut) != 0 {
+        return .Err(std.os.last_error())
+      }
+      if value.seconds < 0 || value.nanoseconds < 0 ||
+        value.nanoseconds >= NanosecondsPerSecond.(std.ctypes.long) {
+        return .Err(Error.InvalidData)
+      }
+      let seconds = value.seconds.(u64)
+      if seconds > (~0.(u64)) / NanosecondsPerSecond {
+        return .Err(Error.OutOfRange)
+      }
+      return .Ok(.{
+        ticks=seconds * NanosecondsPerSecond + value.nanoseconds.(u64),
+        frequency=NanosecondsPerSecond,
+      })
+    }
+  }
+
+  pub let duration_since(self, earlier: Instant): (Duration, bool) {
+    if self.frequency == 0 || self.frequency != earlier.frequency ||
+      self.ticks < earlier.ticks {
+      return Duration.zero(), false
+    }
+    let difference = self.ticks - earlier.ticks
+    let seconds = difference / self.frequency
+    let remainder = difference % self.frequency
+    if seconds > (~0.(u64)) / NanosecondsPerSecond {
+      return Duration.zero(), false
+    }
+    let mut nanoseconds = seconds * NanosecondsPerSecond
+    // Clock frequencies on supported platforms are small enough for this
+    // product; retain an explicit guard for unusual Windows hardware clocks.
+    if remainder != 0 && NanosecondsPerSecond > (~0.(u64)) / remainder {
+      return Duration.zero(), false
+    }
+    nanoseconds += (remainder * NanosecondsPerSecond) / self.frequency
+    return .{ nanoseconds=nanoseconds }, true
+  }
+
+  pub let elapsed(self): Result(Duration, Error) {
+    let current = match Instant.now() {
+      .Ok(value) => value,
+      .Err(error) => { return .Err(error) },
+    }
+    let elapsed, valid = current.duration_since(self)
+    if !valid { return .Err(Error.InvalidData) }
+    return .Ok(elapsed)
+  }
 }
 
-pub let Duration.zero(): Duration = .{ nanoseconds=0 }
-
-pub let Duration.from_nanoseconds(value: u64): Duration = .{
-  nanoseconds=value,
-}
 
 let duration_from_units(value: u64, scale: u64): (Duration, bool) {
   if value != 0 && scale > (~0.(u64)) / value {
@@ -44,49 +187,9 @@ let duration_from_units(value: u64, scale: u64): (Duration, bool) {
   return .{ nanoseconds=value * scale }, true
 }
 
-pub let Duration.from_microseconds(value: u64): (Duration, bool) =
-  duration_from_units(value, NanosecondsPerMicrosecond)
-
-pub let Duration.from_milliseconds(value: u64): (Duration, bool) =
-  duration_from_units(value, NanosecondsPerMillisecond)
-
-pub let Duration.from_seconds(value: u64): (Duration, bool) =
-  duration_from_units(value, NanosecondsPerSecond)
-
-pub let Duration.from_minutes(value: u64): (Duration, bool) =
-  duration_from_units(value, NanosecondsPerMinute)
-
-pub let Duration.from_hours(value: u64): (Duration, bool) =
-  duration_from_units(value, NanosecondsPerHour)
-
-pub let Duration.as_nanoseconds(self): u64 = self.nanoseconds
-
-pub let Duration.as_microseconds(self): u64 =
-  self.nanoseconds / NanosecondsPerMicrosecond
-
-pub let Duration.as_milliseconds(self): u64 =
-  self.nanoseconds / NanosecondsPerMillisecond
-
-pub let Duration.as_seconds(self): u64 =
-  self.nanoseconds / NanosecondsPerSecond
-
-pub let Duration.subsecond_nanoseconds(self): u32 =
-  (self.nanoseconds % NanosecondsPerSecond).(u32)
-
-pub let Duration.add(self, other: Duration): (Duration, bool) {
-  if other.nanoseconds > (~0.(u64)) - self.nanoseconds {
-    return Duration.zero(), false
-  }
-  return .{ nanoseconds=self.nanoseconds + other.nanoseconds }, true
-}
-
-pub let Duration.subtract(self, other: Duration): (Duration, bool) {
-  if other.nanoseconds > self.nanoseconds { return Duration.zero(), false }
-  return .{ nanoseconds=self.nanoseconds - other.nanoseconds }, true
-}
 
 $if core.build.os == .Windows {
-  let FileTime = type struct {
+  let FileTime = struct {
     low: u32,
     high: u32,
   }
@@ -108,103 +211,6 @@ $if core.build.os == .Windows {
     else { compiler_error("Unsupported monotonic clock") }
 }
 
-pub let Timestamp.now(): Result(Timestamp, Error) {
-  $if core.build.os == .Windows {
-    let mut file_time: FileTime = .{ low=0, high=0 }
-    get_system_time(file_time.&mut)
-    let intervals = (file_time.high.(u64) << 32) | file_time.low.(u64)
-    let UnixEpochIntervals: u64 = 116444736000000000
-    if intervals < UnixEpochIntervals {
-      return .Err(Error.OutOfRange)
-    }
-    let unix_intervals = intervals - UnixEpochIntervals
-    return .Ok(.{
-      seconds=(unix_intervals / 10000000).(i64),
-      nanosecond=((unix_intervals % 10000000) * 100).(u32),
-    })
-  } else {
-    let mut value: std.libc.Timespec = .{ seconds=0, nanoseconds=0 }
-    if std.libc.clock_gettime(0, value.&mut) != 0 {
-      return .Err(std.os.last_error())
-    }
-    if value.nanoseconds < 0 || value.nanoseconds >= NanosecondsPerSecond.(std.ctypes.long) {
-      return .Err(Error.InvalidData)
-    }
-    return .Ok(.{
-      seconds=value.seconds.(i64),
-      nanosecond=value.nanoseconds.(u32),
-    })
-  }
-}
-
-pub let Timestamp.unix_seconds(self): i64 = self.seconds
-
-pub let Timestamp.subsecond_nanoseconds(self): u32 = self.nanosecond
-
-pub let Instant.now(): Result(Instant, Error) {
-  $if core.build.os == .Windows {
-    let mut counter: i64 = 0
-    let mut frequency: i64 = 0
-    if query_performance_frequency(frequency.&mut) == 0 || frequency <= 0 {
-      return .Err(Error.IoFailed)
-    }
-    if query_performance_counter(counter.&mut) == 0 || counter < 0 {
-      return .Err(Error.IoFailed)
-    }
-    return .Ok(.{
-      ticks=counter.(u64),
-      frequency=frequency.(u64),
-    })
-  } else {
-    let mut value: std.libc.Timespec = .{ seconds=0, nanoseconds=0 }
-    if std.libc.clock_gettime(MonotonicClock, value.&mut) != 0 {
-      return .Err(std.os.last_error())
-    }
-    if value.seconds < 0 || value.nanoseconds < 0 ||
-      value.nanoseconds >= NanosecondsPerSecond.(std.ctypes.long) {
-      return .Err(Error.InvalidData)
-    }
-    let seconds = value.seconds.(u64)
-    if seconds > (~0.(u64)) / NanosecondsPerSecond {
-      return .Err(Error.OutOfRange)
-    }
-    return .Ok(.{
-      ticks=seconds * NanosecondsPerSecond + value.nanoseconds.(u64),
-      frequency=NanosecondsPerSecond,
-    })
-  }
-}
-
-pub let Instant.duration_since(self, earlier: Instant): (Duration, bool) {
-  if self.frequency == 0 || self.frequency != earlier.frequency ||
-    self.ticks < earlier.ticks {
-    return Duration.zero(), false
-  }
-  let difference = self.ticks - earlier.ticks
-  let seconds = difference / self.frequency
-  let remainder = difference % self.frequency
-  if seconds > (~0.(u64)) / NanosecondsPerSecond {
-    return Duration.zero(), false
-  }
-  let mut nanoseconds = seconds * NanosecondsPerSecond
-  // Clock frequencies on supported platforms are small enough for this
-  // product; retain an explicit guard for unusual Windows hardware clocks.
-  if remainder != 0 && NanosecondsPerSecond > (~0.(u64)) / remainder {
-    return Duration.zero(), false
-  }
-  nanoseconds += (remainder * NanosecondsPerSecond) / self.frequency
-  return .{ nanoseconds=nanoseconds }, true
-}
-
-pub let Instant.elapsed(self): Result(Duration, Error) {
-  let current = match Instant.now() {
-    .Ok(value) => value,
-    .Err(error) => { return .Err(error) },
-  }
-  let elapsed, valid = current.duration_since(self)
-  if !valid { return .Err(Error.InvalidData) }
-  return .Ok(elapsed)
-}
 
 pub let sleep(duration: Duration): Result(Unit, Error) {
   $if core.build.os == .Windows {

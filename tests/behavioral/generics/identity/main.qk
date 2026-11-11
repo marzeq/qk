@@ -2,10 +2,10 @@ module main
 
 import std.io
 
-let Pair($T: type, $U: type) = type struct { first: T, second: U }
+let Pair($T: type, $U: type) = struct { first: T, second: U }
 let identity($T: type, value: T): T = value
-let Box($T: type) = type struct { value: T }
-let Option($T: type) = type union(@auto) { Some(T), None }
+let Box($T: type) = struct { value: T }
+let Option($T: type) = union(@auto) { Some(T), None }
 let type_size($T: type): usz = $sizeof(T)
 let size_is_four(size: usz): bool = size == 4
 let size_class($T: type): i32 = $if size_is_four(sizeof(T)) { 1 } else { 2 }
@@ -13,7 +13,7 @@ let selected_only($T: type, value: T): T = $if sizeof(T) == 4 { value } else { m
 let choose($enabled: bool, value: i32): i32 = $if enabled { value } else { -value }
 let relay_choice($enabled: bool, value: i32): i32 = choose(enabled, value)
 let add_fixed($amount: i32, value: i32): i32 = value + amount
-let Counter = type struct { value: i32 }
+let Counter = struct { value: i32 }
 let Counter.select(self, $enabled: bool): i32 = $if enabled { self.value } else { -self.value }
 let Size($T: type) = $sizeof(T)
 

@@ -15,6 +15,12 @@ type Parser struct {
 	posStack         []int
 	allowTypeCapture bool
 	compileTimeDepth int
+	lexicalOwner     string
+	lexicalOwnerArgs []string
+	lexicalMethod    bool
+	typeLiteralDepth int
+	traitDepth       int
+	blockDepth       int
 }
 
 func NewParser(tokens []tokeniser.Token) *Parser {
