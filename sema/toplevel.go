@@ -195,7 +195,7 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 		return
 	}
 	if len(n.MethodOwnerParameterizedParameters) != 0 {
-		a.errorf(n, "parameterized method owners use a capture such as Type($).%s(...)", n.Name)
+		a.errorf(n, "methods on named types must be declared inside the type body")
 		return
 	}
 	var ownerType types.Type
@@ -211,7 +211,7 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 		}
 		ownerType = a.resolveAlias(info, n, false)
 	} else if ownerSymbol, ok := a.current.Resolve(n.MethodOwner); ok && ownerSymbol.Kind == symbols.SymbolKindType && ownerSymbol.Template {
-		a.errorf(n, "parameterized method owner %q requires a capture such as %s($).%s(...)", n.MethodOwner, n.MethodOwner, n.Name)
+		a.errorf(n, "methods on named types must be declared inside the type body")
 		return
 	} else if builtin, ok := a.universe.Resolve(n.MethodOwner); ok && builtin.Kind == symbols.SymbolKindType {
 		if len(n.MethodOwnerParameterizedParameters) != 0 {
@@ -435,6 +435,10 @@ func (a *Analyser) classifyPatternMethodOwner(n *parser.FunctionDefNode, ownerTy
 			}
 			return owner.Module, name, false, true
 		}
+		if !n.LexicalMethod {
+			a.errorf(n, "methods on named types must be declared inside the type body")
+			return "", "", false, false
+		}
 		if n.Pub {
 			if symbol, ok := a.current.Resolve(name); ok && !symbol.Public {
 				a.errorf(n, "public method %q requires public owner type %q", n.Name, name)
@@ -449,6 +453,10 @@ func (a *Analyser) classifyPatternMethodOwner(n *parser.FunctionDefNode, ownerTy
 				return "", "", false, false
 			}
 			return owner.Module, owner.Name, false, true
+		}
+		if !n.LexicalMethod {
+			a.errorf(n, "methods on named types must be declared inside the type body")
+			return "", "", false, false
 		}
 		return owner.Module, owner.Name, false, true
 	case types.PrimitiveType:

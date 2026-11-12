@@ -901,6 +901,7 @@ type FunctionDefNode struct {
 	Name                               string
 	MethodOwner                        string
 	MethodOwnerType                    TypeNode
+	LexicalMethod                      bool
 	MethodOwnerParameterizedParameters []ParameterizedParameterNode
 	Receiver                           MethodReceiverKind
 	ParameterizedParameters            []ParameterizedParameterNode

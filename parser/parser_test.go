@@ -21,15 +21,17 @@ func parseTestRoot(t *testing.T, source string) *RootNode {
 
 func TestComptimeTypeParametersAndOwnerCaptures(t *testing.T) {
 	root := parseTestRoot(t, `
-let Box($T: type) = struct { value: T }
+let Box($T: type) = struct {
+  value: T,
+  let get(self): T = self.value
+  let keep(self, $U: type, value: U): U = value
+}
 let Size($T: type) = sizeof(T)
 let identity($T: type, value: T): T = value
 let make_box($T: type, value: T): Box(T) = Box(T).{ value=value }
-let Box($).get(self): T = self.value
-let Box($Foo).renamed(self): Foo = self.value
 let ([]$T: PartialEq).contains(self, value: T): bool = self[0] == value
 `)
-	if len(root.Body) != 7 {
+	if len(root.Body) != 5 {
 		t.Fatalf("got %d declarations", len(root.Body))
 	}
 	box := root.Body[0].(*TypeAliasNode)
@@ -44,15 +46,11 @@ let ([]$T: PartialEq).contains(self, value: T): bool = self[0] == value
 	if len(identity.ParameterizedParameters) != 1 || len(identity.Args) != 1 {
 		t.Fatalf("unexpected function parameters: %#v, args=%d", identity.ParameterizedParameters, len(identity.Args))
 	}
-	method := root.Body[4].(*FunctionDefNode)
-	if method.MethodOwnerType == nil || len(method.ParameterizedParameters) != 0 {
-		t.Fatalf("unexpected implicit owner capture: %#v", method)
+	methods := box.Type.(*StructTypeNode).Methods
+	if len(methods) != 2 || methods[0].MethodOwnerType == nil || methods[1].MethodOwnerType == nil {
+		t.Fatalf("unexpected lexical methods: %#v", methods)
 	}
-	renamed := root.Body[5].(*FunctionDefNode)
-	if len(renamed.ParameterizedParameters) != 1 || renamed.ParameterizedParameters[0].Name != "Foo" {
-		t.Fatalf("unexpected renamed owner capture: %#v", renamed.ParameterizedParameters)
-	}
-	constrained := root.Body[6].(*FunctionDefNode)
+	constrained := root.Body[4].(*FunctionDefNode)
 	if len(constrained.ParameterizedParameters) != 1 || constrained.ParameterizedParameters[0].Constraint == nil {
 		t.Fatalf("missing captured constraint: %#v", constrained.ParameterizedParameters)
 	}
@@ -102,13 +100,28 @@ func TestLegacyTypeConstructorPrefixIsRejected(t *testing.T) {
 	}
 }
 
-func TestParameterizedNominalMethodOwnerRejectsOuterParentheses(t *testing.T) {
+func TestParenthesizedParameterizedNominalMethodOwnerRejected(t *testing.T) {
 	tokens, err := tokeniser.NewTokeniser("let (Box($T)).get(self): T = self.value", "test.qk").Tokenise()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := NewParser(tokens).Parse(); err == nil {
-		t.Fatal("expected outer parentheses around a nominal owner to be rejected")
+		t.Fatal("accepted an external method on a parameterized nominal type")
+	}
+}
+
+func TestNamedMethodOwnerRequiresLexicalDeclaration(t *testing.T) {
+	for _, source := range []string{
+		"let Counter.get(self): i32 = 1",
+		"let Box($).get(self): i32 = 1",
+	} {
+		tokens, err := tokeniser.NewTokeniser(source, "test.qk").Tokenise()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := NewParser(tokens).Parse(); err == nil {
+			t.Fatalf("accepted external named method %q", source)
+		}
 	}
 }
 

@@ -15,14 +15,14 @@ let strlen(s: cstr): usz {
 // important: this method does not copy self, it just creates a str view of the cstr
 // therefore, the c string must live as long as the returned str is used, otherwise it will be a dangling pointer
 // passing a null pointer is undefined behaviour
-pub let cstr.to_str(self): str =
+pub let (cstr).to_str(self): str =
   self[:strlen(self)].(str)
 
 import std.alloc
 
-pub let str.is_empty(self): bool = len(self) == 0
+pub let (str).is_empty(self): bool = len(self) == 0
 
-pub let str.starts_with(self, prefix: str): bool {
+pub let (str).starts_with(self, prefix: str): bool {
   if len(prefix) > len(self) { return false }
   let mut index: usz = 0
   for index < len(prefix) {
@@ -32,7 +32,7 @@ pub let str.starts_with(self, prefix: str): bool {
   return true
 }
 
-pub let str.ends_with(self, suffix: str): bool {
+pub let (str).ends_with(self, suffix: str): bool {
   if len(suffix) > len(self) { return false }
   let offset = len(self) - len(suffix)
   let mut index: usz = 0
@@ -43,7 +43,7 @@ pub let str.ends_with(self, suffix: str): bool {
   return true
 }
 
-pub let str.find(self, needle: str): (usz, bool) {
+pub let (str).find(self, needle: str): (usz, bool) {
   if len(needle) == 0 { return 0, true }
   if len(needle) > len(self) { return 0, false }
 
@@ -55,7 +55,7 @@ pub let str.find(self, needle: str): (usz, bool) {
   return 0, false
 }
 
-pub let str.rfind(self, needle: str): (usz, bool) {
+pub let (str).rfind(self, needle: str): (usz, bool) {
   if len(needle) == 0 { return len(self), true }
   if len(needle) > len(self) { return 0, false }
 
@@ -68,28 +68,28 @@ pub let str.rfind(self, needle: str): (usz, bool) {
   return 0, false
 }
 
-pub let str.contains(self, needle: str): bool {
+pub let (str).contains(self, needle: str): bool {
   let _, found = self.find(needle)
   return found
 }
 
 let is_ascii_whitespace(value: u8): bool = value == ' ' || value == '\t' || value == '\n' || value == '\r' || value == '\v' || value == '\f'
 
-pub let str.trim_start(self): str {
+pub let (str).trim_start(self): str {
   let mut start: usz = 0
   for start < len(self) && is_ascii_whitespace(self[start]) { start += 1 }
   return self[start:]
 }
 
-pub let str.trim_end(self): str {
+pub let (str).trim_end(self): str {
   let mut end = len(self)
   for end > 0 && is_ascii_whitespace(self[end - 1]) { end -= 1 }
   return self[0:end]
 }
 
-pub let str.trim(self): str = self.trim_start().trim_end()
+pub let (str).trim(self): str = self.trim_start().trim_end()
 
-pub let str.read(*mut self, buffer: []mut u8): Result(usz, Error) {
+pub let (str).read(*mut self, buffer: []mut u8): Result(usz, Error) {
   let count = if len(buffer) < len(self.*) { len(buffer) } else { len(self.*) }
 
   let mut index: usz = 0
@@ -101,7 +101,7 @@ pub let str.read(*mut self, buffer: []mut u8): Result(usz, Error) {
   return .Ok(count)
 }
 
-pub let cstr.read(*mut self, buffer: []mut u8): Result(usz, Error) {
+pub let (cstr).read(*mut self, buffer: []mut u8): Result(usz, Error) {
   if self.* == nil {
     return .Ok(0)
   }
@@ -117,7 +117,7 @@ pub let cstr.read(*mut self, buffer: []mut u8): Result(usz, Error) {
 
 // important: due to us not being able to guarantee that self contains a null terminator,
 // this method is forced to allocate a new buffer and copy the contents of self into it, appending a null terminator at the end
-pub let str.to_cstr(self, allocator: *mut dyn std.alloc.Allocator): *mut u8 {
+pub let (str).to_cstr(self, allocator: *mut dyn std.alloc.Allocator): *mut u8 {
   if allocator == nil || len(self) == ~0.(usz) {
     return nil
   }

@@ -143,29 +143,29 @@ let write_f64_fixed(writer: *mut dyn Writer, value: f64): Result(Unit, Error) {
   return write_fraction(writer, rounded % 1000000, 6)
 }
 
-let i8.format(self, writer: *mut dyn Writer): Result(Unit, Error) = write_signed_decimal(writer, self.(i64))
-let i16.format(self, writer: *mut dyn Writer): Result(Unit, Error) = write_signed_decimal(writer, self.(i64))
-let i32.format(self, writer: *mut dyn Writer): Result(Unit, Error) = write_signed_decimal(writer, self.(i64))
-let i64.format(self, writer: *mut dyn Writer): Result(Unit, Error) = write_signed_decimal(writer, self)
-let isz.format(self, writer: *mut dyn Writer): Result(Unit, Error) = write_signed_decimal(writer, self.(i64))
+let (i8).format(self, writer: *mut dyn Writer): Result(Unit, Error) = write_signed_decimal(writer, self.(i64))
+let (i16).format(self, writer: *mut dyn Writer): Result(Unit, Error) = write_signed_decimal(writer, self.(i64))
+let (i32).format(self, writer: *mut dyn Writer): Result(Unit, Error) = write_signed_decimal(writer, self.(i64))
+let (i64).format(self, writer: *mut dyn Writer): Result(Unit, Error) = write_signed_decimal(writer, self)
+let (isz).format(self, writer: *mut dyn Writer): Result(Unit, Error) = write_signed_decimal(writer, self.(i64))
 
-let u8.format(self, writer: *mut dyn Writer): Result(Unit, Error) = write_unsigned_decimal(writer, self.(u64))
-let u16.format(self, writer: *mut dyn Writer): Result(Unit, Error) = write_unsigned_decimal(writer, self.(u64))
-let u32.format(self, writer: *mut dyn Writer): Result(Unit, Error) = write_unsigned_decimal(writer, self.(u64))
-let u64.format(self, writer: *mut dyn Writer): Result(Unit, Error) = write_unsigned_decimal(writer, self)
-let usz.format(self, writer: *mut dyn Writer): Result(Unit, Error) = write_unsigned_decimal(writer, self.(u64))
+let (u8).format(self, writer: *mut dyn Writer): Result(Unit, Error) = write_unsigned_decimal(writer, self.(u64))
+let (u16).format(self, writer: *mut dyn Writer): Result(Unit, Error) = write_unsigned_decimal(writer, self.(u64))
+let (u32).format(self, writer: *mut dyn Writer): Result(Unit, Error) = write_unsigned_decimal(writer, self.(u64))
+let (u64).format(self, writer: *mut dyn Writer): Result(Unit, Error) = write_unsigned_decimal(writer, self)
+let (usz).format(self, writer: *mut dyn Writer): Result(Unit, Error) = write_unsigned_decimal(writer, self.(u64))
 
-let f32.format(self, writer: *mut dyn Writer): Result(Unit, Error) = write_f64_fixed(writer, self.(f64))
-let f64.format(self, writer: *mut dyn Writer): Result(Unit, Error) = write_f64_fixed(writer, self)
+let (f32).format(self, writer: *mut dyn Writer): Result(Unit, Error) = write_f64_fixed(writer, self.(f64))
+let (f64).format(self, writer: *mut dyn Writer): Result(Unit, Error) = write_f64_fixed(writer, self)
 
-let bool.format(self, writer: *mut dyn Writer): Result(Unit, Error) =
+let (bool).format(self, writer: *mut dyn Writer): Result(Unit, Error) =
   if self { write_bytes(writer, "true".([]u8)) }
   else { write_bytes(writer, "false".([]u8)) }
 
-let str.format(self, writer: *mut dyn Writer): Result(Unit, Error) =
+let (str).format(self, writer: *mut dyn Writer): Result(Unit, Error) =
   write_bytes(writer, self.([]u8))
 
-let cstr.format(self, writer: *mut dyn Writer): Result(Unit, Error) {
+let (cstr).format(self, writer: *mut dyn Writer): Result(Unit, Error) {
   if self == nil { return write_bytes(writer, "nil".([]u8)) }
   let mut length: usz = 0
   for self[length] != '\0' { length += 1 }

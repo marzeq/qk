@@ -927,12 +927,12 @@ A method is a function attached to an owner type. Its first parameter is `self`,
 ```qk
 let Counter = struct {
   value: i32,
-}
 
-let Counter.get(self): i32 = self.value
+  let get(self): i32 = self.value
 
-let Counter.increment(*mut self): void {
-  self.value += 1
+  let increment(*mut self): void {
+    self.value += 1
+  }
 }
 ```
 
@@ -948,29 +948,25 @@ counter.increment()
 A static method omits the receiver and is called through the owner:
 
 ```qk
-let Counter.init(value: i32): Counter = .{ value=value }
+let Counter = struct {
+  value: i32,
+  let init(value: i32): Counter = .{ value=value }
+}
 
 let counter = Counter.init(10)
 ```
 
-Ordinary modules may attach methods only to nominal types they own. The trusted standard library also supplies methods for primitive types, pointers, slices, `str`, and `cstr`.
+Methods on named types are declared inside their type bodies. The trusted standard library also supplies methods for primitive types, pointers, slices, `str`, and `cstr` through parenthesized owner patterns such as `let (i32).add(self, other: i32): i32 = self + other`.
 
 ## Methods on type-producing and structural owners
 
-A parameterized nominal owner uses `$` to capture all of its type parameters by their declared names:
+A parameterized nominal type's lexical methods capture its type parameters by their declared names:
 
 ```qk
 let Box($T: type) = struct {
   value: T,
+  let get(self): T = self.value
 }
-
-let Box($).get(self): T = self.value
-```
-
-Name a capture to rename it within the method. Here, `Box`'s `T` is called `Foo` in `renamed`:
-
-```qk
-let Box($Foo).renamed(self): Foo = self.value
 ```
 
 Owner captures form the leading part of the method's compile-time type parameter list in owner order. A call normally infers them from the receiver or from typed value parameters.

@@ -163,7 +163,7 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 		if nominal, ok := methodOwnerType.(*NamedTypeNode); ok && len(nominal.TypeArguments) != 0 {
 			for _, argument := range nominal.TypeArguments {
 				if capture, ok := argument.(*NamedTypeNode); ok && capture.Capture {
-					return nil, shared.NewError(nominal.Loc, "parameterized nominal method owner uses Type($).method(...) without outer parentheses")
+					return nil, shared.NewError(nominal.Loc, "methods on named types must be declared inside the type body")
 				}
 			}
 		}
@@ -181,12 +181,13 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 		}
 	} else {
 		var ok bool
-		ownerStart := p.pos
 		name, ok = p.ExpectGet(tokeniser.TokenIdentifier)
 		if !ok {
 			return nil, shared.NewError(p.PrevLoc(), "expected function name")
 		}
-		ownerApplication := false
+		if p.Match(tokeniser.TokenDot) {
+			return nil, shared.NewError(name.Loc, "methods on named types must be declared inside the type body")
+		}
 		if p.Match(tokeniser.TokenOpenParen) {
 			depth := 0
 			for i := p.pos; i < len(p.tokens); i++ {
@@ -195,9 +196,8 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 					depth++
 				case tokeniser.TokenCloseParen:
 					depth--
-					if depth == 0 {
-						ownerApplication = i+1 < len(p.tokens) && p.tokens[i+1].Type == tokeniser.TokenDot
-						break
+					if depth == 0 && i+1 < len(p.tokens) && p.tokens[i+1].Type == tokeniser.TokenDot {
+						return nil, shared.NewError(name.Loc, "methods on named types must be declared inside the type body")
 					}
 				}
 				if depth == 0 {
@@ -205,35 +205,7 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 				}
 			}
 		}
-		if ownerApplication {
-			p.pos = ownerStart
-			previousCaptureMode := p.allowTypeCapture
-			p.allowTypeCapture = true
-			methodOwnerType, err = p.ParseType()
-			p.allowTypeCapture = previousCaptureMode
-			if err != nil {
-				return nil, err
-			}
-			parameterizedParameters, err = capturedTypeParameters(methodOwnerType)
-			if err != nil {
-				return nil, err
-			}
-			if !p.Expect(tokeniser.TokenDot) {
-				return nil, shared.NewError(p.PrevLoc(), "expected '.' after method owner type")
-			}
-			name, ok = p.ExpectGet(tokeniser.TokenIdentifier)
-			if !ok {
-				return nil, shared.NewError(p.PrevLoc(), "expected method name after '.'")
-			}
-		} else if p.Match(tokeniser.TokenDot) {
-			p.Inc()
-			methodOwner = name.Value
-			methodName, ok := p.ExpectGet(tokeniser.TokenIdentifier)
-			if !ok {
-				return nil, shared.NewError(p.PrevLoc(), "expected method name after '.'")
-			}
-			name = methodName
-		}
+
 	}
 
 	if p.lexicalMethod {
@@ -561,6 +533,7 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 		MethodOwner:                        methodOwner,
 		MethodOwnerType:                    methodOwnerType,
 		MethodOwnerParameterizedParameters: methodOwnerParameterizedParameters,
+		LexicalMethod:                      previousLexicalMethod,
 		Receiver:                           receiver,
 		ParameterizedParameters:            parameterizedParameters,
 		Args:                               args,

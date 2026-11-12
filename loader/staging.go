@@ -342,6 +342,11 @@ func (s *stageSelector) selectNode(node parser.Node) ([]parser.Node, error) {
 		if err != nil {
 			return nil, err
 		}
+		for _, method := range node.Methods {
+			if _, err := s.selectNode(method); err != nil {
+				return nil, err
+			}
+		}
 	case *parser.FunctionDefNode:
 		previousFunction := s.inFunction
 		previousParameterizedFunction := s.parameterizedFunction
@@ -836,6 +841,27 @@ func (s *stageSelector) selectType(typeNode parser.TypeNode) (parser.TypeNode, e
 				field := &node.Variants[variantIndex].Fields[fieldIndex]
 				field.Type, err = s.selectType(field.Type)
 			}
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	var methods []*parser.FunctionDefNode
+	switch node := typeNode.(type) {
+	case *parser.StructTypeNode:
+		methods = node.Methods
+	case *parser.EnumTypeNode:
+		methods = node.Methods
+	case *parser.FlagsTypeNode:
+		methods = node.Methods
+	case *parser.UnionTypeNode:
+		methods = node.Methods
+	case *parser.DistinctTypeNode:
+		methods = node.Methods
+	}
+	for _, method := range methods {
+		if _, err = s.selectNode(method); err != nil {
+			return nil, err
 		}
 	}
 	return typeNode, err
@@ -1375,7 +1401,7 @@ func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 			copy.Attributes = nil
 			staged.Body = append(staged.Body, &copy)
 		case *parser.FunctionDefNode:
-			if reachableFunctions[node] || node.MethodOwner != "" && stagedOwners[node.MethodOwner] {
+			if reachableFunctions[node] || node.MethodOwner != "" && stagedOwners[node.MethodOwner] && !node.DeferredStage {
 				staged.Body = append(staged.Body, node)
 			}
 		case *parser.TypeAliasNode:

@@ -8,13 +8,17 @@ let Measured = trait {
   let as_measured(*mut self): *mut dyn Measured
 }
 
-let Value = struct { amount: usz }
-let Value.measure(self): usz = self.amount
-let Value.as_measured(*mut self): *mut dyn Measured = self
+let Value = struct {
+  amount: usz,
+  let measure(self): usz = self.amount
+  let as_measured(*mut self): *mut dyn Measured = self
+}
 
-let OtherValue = struct { amount: usz }
-let OtherValue.measure(self): usz = self.amount
-let OtherValue.as_measured(*mut self): *mut dyn Measured = self
+let OtherValue = struct {
+  amount: usz,
+  let measure(self): usz = self.amount
+  let as_measured(*mut self): *mut dyn Measured = self
+}
 
 let dynamic_measure(value: *dyn Measured): usz = value.double_measure()
 

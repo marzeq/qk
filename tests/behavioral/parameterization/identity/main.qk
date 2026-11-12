@@ -4,7 +4,10 @@ import std.io
 
 let Pair($T: type, $U: type) = struct { first: T, second: U }
 let identity($T: type, value: T): T = value
-let Box($T: type) = struct { value: T }
+let Box($T: type) = struct {
+  value: T,
+  let get(self): T = self.value
+}
 let Option($T: type) = union(@auto) { Some(T), None }
 let type_size($T: type): usz = $sizeof(T)
 let size_is_four(size: usz): bool = size == 4
@@ -13,8 +16,10 @@ let selected_only($T: type, value: T): T = $if sizeof(T) == 4 { value } else { m
 let choose($enabled: bool, value: i32): i32 = $if enabled { value } else { -value }
 let relay_choice($enabled: bool, value: i32): i32 = choose(enabled, value)
 let add_fixed($amount: i32, value: i32): i32 = value + amount
-let Counter = struct { value: i32 }
-let Counter.select(self, $enabled: bool): i32 = $if enabled { self.value } else { -self.value }
+let Counter = struct {
+  value: i32,
+  let select(self, $enabled: bool): i32 = $if enabled { self.value } else { -self.value }
+}
 let Size($T: type) = $sizeof(T)
 
 let option_value(option: Option(i32)): i32 = match option {
@@ -31,7 +36,7 @@ let main() {
   let nested: Box(Box(i32)) = .{ value=box }
   let some = Option(i32).Some(5)
   let none = Option(i32).None
-  assert(box.value == 42 && explicit == 42 && pair.second.eq("parameterized"), "parameterized values")
+  assert(box.get() == 42 && explicit == 42 && pair.second.eq("parameterized"), "parameterized values")
   assert(nested.value.value == 42 && type_size(Box(i32)) > 0, "type arguments")
   assert(size_class(i32) == 1 && size_class(i64) == 2, "specialized compile-time branches")
   assert(selected_only(i32, 7) == 7, "unselected branch is not analyzed")

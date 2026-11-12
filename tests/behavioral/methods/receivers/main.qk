@@ -2,11 +2,14 @@ module main
 
 import std.io
 
-let Counter = struct { value: i32 }
+let Counter = struct {
+  value: i32,
 
-let Counter.init(value: i32): Counter = .{ value=value }
-let Counter.get(self): i32 = self.value
-let Counter.read(*self): i32 = self.value
+  let init(value: i32): Counter = .{ value=value }
+  let get(self): i32 = self.value
+  let read(*self): i32 = self.value
+  let increment(*mut self): void { self.value += 1 }
+}
 
 let main() {
   let mut counter = Counter.init(10)

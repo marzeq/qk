@@ -136,6 +136,11 @@ func lowerTypeFunctionsInBody(body []parser.Node) ([]parser.Node, error) {
 		case *parser.DistinctTypeNode:
 			methods, value.Methods = value.Methods, nil
 		}
+		for _, method := range methods {
+			if err := lowerBareTypeParameters(method, false); err != nil {
+				return nil, err
+			}
+		}
 		body = append(body, methodNodes(methods)...)
 	}
 	return body, nil

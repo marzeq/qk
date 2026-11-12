@@ -8,15 +8,8 @@ import (
 	"github.com/marzeq/qk/types"
 )
 
-func TestParameterizedNominalMethodOwnerSyntax(t *testing.T) {
-	source := `
-let Box($T: type) = struct { value: T }
-let Box($).get(self): T = self.value
-let Box($Foo).renamed(self): Foo = self.value
-let Pair($A: type, $B: type) = struct { first: A, second: B }
-let Pair($).swap(self): Pair(B, A) = Pair(B, A).{ first=self.second, second=self.first }
-let Box($).keep(self, $U: type, value: U): U = value
-`
+func TestParenthesizedNominalMethodOwnerRequiresLexicalDeclaration(t *testing.T) {
+	const source = "module main\nlet Counter = struct { value: i32 }\nlet (Counter).get(self): i32 = self.value\n"
 	tokens, err := tokeniser.NewTokeniser(source, "test.qk").Tokenise()
 	if err != nil {
 		t.Fatal(err)
@@ -26,26 +19,9 @@ let Box($).keep(self, $U: type, value: U): U = value
 		t.Fatal(err)
 	}
 	analyser := NewAnalyser()
-	analyser.AnalyseModule(root, "test", false)
-	if len(analyser.Errors()) != 0 {
-		t.Fatalf("unexpected semantic errors: %v", analyser.Errors())
-	}
-	for _, test := range []struct {
-		index int
-		name  string
-	}{{1, "T"}, {2, "Foo"}} {
-		method := root.Body[test.index].(*parser.FunctionDefNode)
-		if method.Symbol == nil || len(method.Symbol.ParameterizedParameters) != 1 || method.Symbol.ParameterizedParameters[0].Name != test.name {
-			t.Fatalf("method %d did not capture %q: %#v", test.index, test.name, method.Symbol)
-		}
-	}
-	pairMethod := root.Body[4].(*parser.FunctionDefNode)
-	if len(pairMethod.Symbol.ParameterizedParameters) != 2 || pairMethod.Symbol.ParameterizedParameters[1].Name != "B" {
-		t.Fatalf("method did not capture both owner parameters: %#v", pairMethod.Symbol.ParameterizedParameters)
-	}
-	keep := root.Body[5].(*parser.FunctionDefNode)
-	if len(keep.Symbol.ParameterizedParameters) != 2 || keep.Symbol.ParameterizedParameters[0].Name != "T" || keep.Symbol.ParameterizedParameters[1].Name != "U" {
-		t.Fatalf("method did not preserve its own type parameter after owner captures: %#v", keep.Symbol.ParameterizedParameters)
+	analyser.AnalyseModule(root, "main", false)
+	if len(analyser.Errors()) == 0 {
+		t.Fatal("accepted external nominal method")
 	}
 }
 
