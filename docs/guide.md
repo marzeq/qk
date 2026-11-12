@@ -1230,6 +1230,8 @@ let choose_type(T: type, enabled: bool): type = $if enabled { T } else { i64 }
 let Other: choose_type(i32, $false) = 9
 ```
 
+These are functions even when the body is a single type expression. They can call other compile-time functions and select a type from their results.
+
 Type values can be compared, queried for layout, and passed to `core.types` builders. A builder builds an immutable nominal type; copying a builder copies its pending fields. `self_type()` supplies a provisional type for recursive fields behind pointers:
 
 ```qk

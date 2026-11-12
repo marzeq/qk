@@ -7,9 +7,8 @@ import (
 	"github.com/marzeq/qk/shared"
 )
 
-// Simple type-returning functions use the existing parameterized transparent
-// type resolver. Functions with general bodies remain compile-time-only and
-// are evaluated through staging when called in type annotations.
+// Direct nominal constructors retain the type-binding path for owner identity
+// and lexical methods. Other type-returning functions execute through staging.
 func lowerTypeFunctions(root *parser.RootNode) error {
 	var err error
 	root.Body, err = lowerTypeFunctionsInBody(root.Body)
@@ -37,7 +36,7 @@ func lowerTypeFunctionsInBody(body []parser.Node) ([]parser.Node, error) {
 			continue
 		}
 		if !isTypeMarker(function.RetTypeNode) {
-			if err := lowerBareTypeParameters(function); err != nil {
+			if err := lowerBareTypeParameters(function, false); err != nil {
 				return nil, err
 			}
 			continue
@@ -99,6 +98,18 @@ func lowerTypeFunctionsInBody(body []parser.Node) ([]parser.Node, error) {
 			*parser.UnionTypeNode, *parser.TraitTypeNode, *parser.OpaqueTypeNode, *parser.DistinctTypeNode:
 			transparent = false
 		}
+		if transparent {
+			for _, argument := range function.Args {
+				if !isTypeMarker(argument.Type) {
+					argument.CompileTime = true
+				}
+			}
+			function.CompileTimeOnly = true
+			if err := lowerBareTypeParameters(function, true); err != nil {
+				return nil, err
+			}
+			continue
+		}
 		body[index] = &parser.TypeAliasNode{
 			Name: function.Name, ParameterizedParameters: parameters, Type: typeNode,
 			Transparent: transparent, Pub: function.Pub, Loc: function.Loc,
@@ -138,8 +149,7 @@ func methodNodes(methods []*parser.FunctionDefNode) []parser.Node {
 	return result
 }
 
-func lowerBareTypeParameters(function *parser.FunctionDefNode) error {
-	needsSpecialization := false
+func lowerBareTypeParameters(function *parser.FunctionDefNode, needsSpecialization bool) error {
 	for _, argument := range function.Args {
 		if !isTypeMarker(argument.Type) {
 			continue

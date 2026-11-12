@@ -1385,6 +1385,16 @@ func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 				staged.Body = append(staged.Body, node)
 			}
 		case *parser.DeclarationNode:
+			if strings.HasPrefix(node.Name, "__qk_stage_") {
+				continue
+			}
+			if annotation, ok := node.TypeNode.(*parser.NamedTypeNode); ok {
+				if call := s.typeCalls[annotation]; call != nil {
+					if _, resolved := s.evaluated[call]; !resolved {
+						continue
+					}
+				}
+			}
 			if _, deferred := s.deferredExpressions[node.Value]; deferred {
 				if _, selected := s.unresolved[node.Value]; !selected {
 					continue
@@ -1414,7 +1424,11 @@ func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 		})
 	}
 	staged = parser.CloneSyntax(staged).(*parser.RootNode)
-	stripCompileTimeExpressions(reflect.ValueOf(staged))
+	for _, node := range staged.Body {
+		if _, function := node.(*parser.FunctionDefNode); !function {
+			stripCompileTimeExpressions(reflect.ValueOf(node))
+		}
+	}
 
 	modules, order, err := s.stageModules(staged)
 	if err != nil {
@@ -1647,6 +1661,18 @@ func collectStageCalls(node parser.Node, names map[string]bool) {
 		}
 		if node.ElseBranch != nil {
 			collectStageCalls(node.ElseBranch, names)
+		}
+	case *parser.WhenNode:
+		for _, branch := range node.Branches {
+			collectStageCalls(branch.Condition, names)
+			collectStageCalls(branch.Value, names)
+			for _, child := range branch.Body {
+				collectStageCalls(child, names)
+			}
+		}
+		collectStageCalls(node.ElseValue, names)
+		for _, child := range node.ElseBody {
+			collectStageCalls(child, names)
 		}
 	case *parser.ForNode:
 		for _, child := range node.ExprsOrStmts {

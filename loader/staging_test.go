@@ -49,6 +49,18 @@ let value: relay(i32) = 7
 	if err := SelectCompileTime(root, "test", StageConfig{}); err != nil {
 		t.Fatal(err)
 	}
+	for _, name := range []string{"identity", "relay"} {
+		found := false
+		for _, node := range root.Body {
+			if function, ok := node.(*parser.FunctionDefNode); ok && function.Name == name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("type-returning function %s was lowered to a binding", name)
+		}
+	}
 	partial, err := CollectModuleInfo(root, false)
 	if err != nil {
 		t.Fatal(err)
@@ -136,6 +148,36 @@ func TestBareTypeParameterRequiresCompileTimeCall(t *testing.T) {
 				t.Fatalf("errors = %v, want error %t", errors, test.wantError)
 			}
 		})
+	}
+}
+
+func TestExplicitTypeArgumentWithoutRuntimeTypeEvidence(t *testing.T) {
+	source := `module test
+let answer($T: type, $enabled: bool): i32 = 7
+let value: i32 = answer(i32, $true)
+`
+	tokens, err := tokeniser.NewTokeniser(source, "explicit_type_argument.qk").Tokenise()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := parser.NewParser(tokens).Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := SelectCompileTime(root, "test", StageConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	partial, err := CollectModuleInfo(root, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	partial.Path = "test"
+	modules, err := BuildModules([]*PartialModuleInfo{partial})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if errors, _ := RunSemanticModule(modules["test"], sema.NewAnalyser(), false, false); len(errors) != 0 {
+		t.Fatal(errors[0])
 	}
 }
 

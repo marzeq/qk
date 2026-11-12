@@ -3184,15 +3184,15 @@ func (v *Validator) completeParameterizedCall(call *parser.FunctionCallNode, exp
 	var arguments []types.Type
 	var err error
 	if expected == nil {
-		arguments, err = inferParameterizedArguments(
+		arguments, err = inferParameterizedArgumentsForCall(
 			template.ParameterizedParameters, template.Signature.Parameters, expressionTypes(call.Args),
-			template.Signature.TypedVariadic, call.VariadicExpansion,
+			nil, nil, template.Signature.TypedVariadic, call.VariadicExpansion, true,
 		)
 	} else {
-		arguments, err = inferParameterizedArgumentsWithResult(
+		arguments, err = inferParameterizedArgumentsForCall(
 			template.ParameterizedParameters, template.Signature.Parameters, expressionTypes(call.Args),
 			template.Signature.ReturnType, expected,
-			template.Signature.TypedVariadic, call.VariadicExpansion,
+			template.Signature.TypedVariadic, call.VariadicExpansion, true,
 		)
 	}
 	if err != nil {
