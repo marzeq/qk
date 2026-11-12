@@ -5,6 +5,7 @@ import core.build
 $if core.build.has_libc {
 
 import std.libc
+import std.ctypes
 
 let ArenaDefaultChunkSize: usz = $(64 * 1024)
 
@@ -17,6 +18,28 @@ let ArenaChunk = struct {
 
   capacity: usz,
   used: usz,
+  mapping_size: usz,
+}
+
+let map_arena_chunk(size: usz): *mut void {
+  $if core.build.os == .Windows {
+    // MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE.
+    return std.libc.VirtualAlloc(nil, size, 0x3000, 0x04)
+  } else {
+    // PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON.
+    let anonymous_flag: std.ctypes.int = $if core.build.os == .Linux { 0x20 } else { 0x1000 }
+    let result = std.libc.mmap(nil, size, 0x03, 0x02 | anonymous_flag, -1, 0)
+    return if result.(usz) == ~0.(usz) { nil } else { result }
+  }
+}
+
+let unmap_arena_chunk(chunk: *mut ArenaChunk): void {
+  $if core.build.os == .Windows {
+    // MEM_RELEASE requires a zero length.
+    std.libc.VirtualFree(chunk, 0, 0x8000)
+  } else {
+    std.libc.munmap(chunk, chunk.mapping_size)
+  }
 }
 
 pub let ArenaMark = struct {
@@ -128,7 +151,7 @@ pub let Arena = struct {
       return nil
     }
 
-    let raw = std.libc.malloc(allocation_size)
+    let raw = map_arena_chunk(allocation_size)
     if raw == nil {
       return nil
     }
@@ -139,7 +162,11 @@ pub let Arena = struct {
       data_align,
     )
     if !valid_data || !valid_alignment {
-      std.libc.free(raw)
+      $if core.build.os == .Windows {
+        std.libc.VirtualFree(raw, 0, 0x8000)
+      } else {
+        std.libc.munmap(raw, allocation_size)
+      }
       return nil
     }
 
@@ -149,6 +176,7 @@ pub let Arena = struct {
     chunk.data = data_address.(*mut u8)
     chunk.capacity = minimum_capacity
     chunk.used = 0
+    chunk.mapping_size = allocation_size
 
     if previous != nil {
       previous.next = chunk
@@ -172,7 +200,7 @@ pub let Arena = struct {
       return nil
     }
 
-    // After reset, walk retained chunks before asking libc for more memory.
+    // After reset, walk retained chunks before mapping more memory.
     let mut previous = self.current
     let mut reusable = if previous != nil { previous.next } else { self.first }
     for reusable != nil {
@@ -545,7 +573,7 @@ pub let Arena = struct {
       self.total_used -= chunk.used
       self.total_capacity -= chunk.capacity
       self.chunk_count -= 1
-      std.libc.free(chunk)
+      unmap_arena_chunk(chunk)
       chunk = next
     }
 
@@ -567,7 +595,7 @@ pub let Arena = struct {
     let mut chunk = self.first
     for chunk != nil {
       let next = chunk.next
-      std.libc.free(chunk)
+      unmap_arena_chunk(chunk)
       chunk = next
     }
 

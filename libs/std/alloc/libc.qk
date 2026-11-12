@@ -12,12 +12,8 @@ let LibcAllocationHeader = struct {
 // LibcAllocator adapts malloc/free to Allocator. It supports arbitrary
 // power-of-two alignment by retaining the original allocation in a header
 // immediately before the aligned result.
-pub let LibcAllocator = struct {
-  state: u8,
-
-
-  pub let init(): LibcAllocator =
-    .{ state=0 }
+pub let LibcAllocator = distinct(Unit) {
+  pub let init(): LibcAllocator = LibcAllocator.{}
 
   pub let allocate_bytes(
     *mut self,

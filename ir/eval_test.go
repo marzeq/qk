@@ -35,6 +35,36 @@ func TestEvaluatorRunsRegularIRCallsAndBranches(t *testing.T) {
 	}
 }
 
+func TestEvaluatorWrapsTypedIntegerArithmetic(t *testing.T) {
+	for _, test := range []struct {
+		name, triple, left, right, want string
+		typ                             types.Type
+	}{
+		{"unsigned byte", "x86_64-unknown-linux-gnu", "255", "1", "0", types.PrimitiveU8},
+		{"signed byte", "x86_64-unknown-linux-gnu", "127", "1", "-128", types.PrimitiveI8},
+		{"target usz", "wasm32-unknown-wasi", "4294967295", "1", "0", types.PrimitiveUsz},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			function := NewFunction("wrap", LinkageInternal, nil)
+			function.Signature = FunctionSignature{ReturnType: test.typ}
+			entry := function.NewBlock("entry")
+			function.Entry = entry.ID
+			result := function.NewValueOfType(test.typ)
+			entry.Instr = []Instr{
+				Add{Dest: result, Left: IntConstOperand(test.left, test.typ), Right: IntConstOperand(test.right, test.typ)},
+				Return{HasValue: true, Value: ValueOperand(result, test.typ)},
+			}
+			value, err := NewEvaluatorForTarget(test.triple, &Module{Functions: []*Function{function}}).Run("wrap")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if value.Integer == nil || value.Integer.String() != test.want {
+				t.Fatalf("got %#v, want %s", value, test.want)
+			}
+		})
+	}
+}
+
 func TestEvaluatorRejectsOnlyExecutedUnavailableInstruction(t *testing.T) {
 	function := NewFunction("choose", LinkageInternal, nil)
 	function.Signature = FunctionSignature{ParamTypes: []types.Type{types.PrimitiveBool}, ReturnType: types.PrimitiveI32}

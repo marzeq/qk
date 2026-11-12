@@ -224,6 +224,37 @@ func EvalInteger(value *big.Int, typ types.Type) EvalValue {
 	return EvalValue{Type: typ, Integer: new(big.Int).Set(value)}
 }
 
+// Typed integer operations in IR have the same fixed-width representation as
+// the generated machine code. Untyped literals retain arbitrary precision.
+func (e *Evaluator) integer(value *big.Int, typ types.Type) EvalValue {
+	primitive, ok := types.Underlying(typ).(types.PrimitiveType)
+	if !ok {
+		return EvalInteger(value, typ)
+	}
+	bits := 0
+	switch primitive {
+	case types.PrimitiveI8, types.PrimitiveU8:
+		bits = 8
+	case types.PrimitiveI16, types.PrimitiveU16:
+		bits = 16
+	case types.PrimitiveI32, types.PrimitiveU32:
+		bits = 32
+	case types.PrimitiveI64, types.PrimitiveU64:
+		bits = 64
+	case types.PrimitiveIsz, types.PrimitiveUsz:
+		bits, _ = qktarget.PointerBits(e.TargetTriple)
+	}
+	if bits == 0 {
+		return EvalInteger(value, typ)
+	}
+	modulus := new(big.Int).Lsh(big.NewInt(1), uint(bits))
+	wrapped := new(big.Int).Mod(value, modulus)
+	if types.IsSigned(typ) && wrapped.Bit(bits-1) != 0 {
+		wrapped.Sub(wrapped, modulus)
+	}
+	return EvalInteger(wrapped, typ)
+}
+
 func EvalFloat(value float64, typ types.Type) EvalValue {
 	return EvalValue{Type: typ, Float: &value}
 }
@@ -469,7 +500,7 @@ func (e *Evaluator) run(name string, arguments []EvalValue, depth int) (EvalValu
 				if right.Sign() == 0 {
 					return EvalValue{}, fmt.Errorf("division by zero during compile-time evaluation")
 				}
-				frame.values[instruction.Dest] = EvalInteger(new(big.Int).Quo(left, right), frame.function.ValueType(instruction.Dest))
+				frame.values[instruction.Dest] = e.integer(new(big.Int).Quo(left, right), frame.function.ValueType(instruction.Dest))
 			case Mod:
 				left, right, err := e.integerOperands(instruction.Left, instruction.Right, frame)
 				if err != nil {
@@ -478,7 +509,7 @@ func (e *Evaluator) run(name string, arguments []EvalValue, depth int) (EvalValu
 				if right.Sign() == 0 {
 					return EvalValue{}, fmt.Errorf("division by zero during compile-time evaluation")
 				}
-				frame.values[instruction.Dest] = EvalInteger(new(big.Int).Rem(left, right), frame.function.ValueType(instruction.Dest))
+				frame.values[instruction.Dest] = e.integer(new(big.Int).Rem(left, right), frame.function.ValueType(instruction.Dest))
 			case BitwiseAnd:
 				if err := e.binaryInteger(frame, instruction.Dest, instruction.Left, instruction.Right, new(big.Int).And); err != nil {
 					return EvalValue{}, err
@@ -499,7 +530,7 @@ func (e *Evaluator) run(name string, arguments []EvalValue, depth int) (EvalValu
 				if !right.IsUint64() {
 					return EvalValue{}, fmt.Errorf("invalid compile-time shift amount")
 				}
-				frame.values[instruction.Dest] = EvalInteger(new(big.Int).Lsh(left, uint(right.Uint64())), frame.function.ValueType(instruction.Dest))
+				frame.values[instruction.Dest] = e.integer(new(big.Int).Lsh(left, uint(right.Uint64())), frame.function.ValueType(instruction.Dest))
 			case ShiftRight:
 				left, right, err := e.integerOperands(instruction.Left, instruction.Right, frame)
 				if err != nil {
@@ -508,13 +539,13 @@ func (e *Evaluator) run(name string, arguments []EvalValue, depth int) (EvalValu
 				if !right.IsUint64() {
 					return EvalValue{}, fmt.Errorf("invalid compile-time shift amount")
 				}
-				frame.values[instruction.Dest] = EvalInteger(new(big.Int).Rsh(left, uint(right.Uint64())), frame.function.ValueType(instruction.Dest))
+				frame.values[instruction.Dest] = e.integer(new(big.Int).Rsh(left, uint(right.Uint64())), frame.function.ValueType(instruction.Dest))
 			case BitwiseNot:
 				value, err := e.operand(instruction.Operand, frame)
 				if err != nil || value.Integer == nil {
 					return EvalValue{}, fmt.Errorf("compile-time bitwise complement requires an integer")
 				}
-				frame.values[instruction.Dest] = EvalInteger(new(big.Int).Not(value.Integer), frame.function.ValueType(instruction.Dest))
+				frame.values[instruction.Dest] = e.integer(new(big.Int).Not(value.Integer), frame.function.ValueType(instruction.Dest))
 			case CmpEq:
 				if err := e.compare(frame, instruction.Dest, instruction.Left, instruction.Right, false, func(c int) bool { return c == 0 }); err != nil {
 					return EvalValue{}, err
@@ -557,20 +588,23 @@ func (e *Evaluator) run(name string, arguments []EvalValue, depth int) (EvalValu
 				if value.Integer == nil {
 					return EvalValue{}, fmt.Errorf("compile-time negation requires a number")
 				}
-				frame.values[instruction.Dest] = EvalInteger(new(big.Int).Neg(value.Integer), frame.function.ValueType(instruction.Dest))
+				frame.values[instruction.Dest] = e.integer(new(big.Int).Neg(value.Integer), frame.function.ValueType(instruction.Dest))
 			case Cast:
 				value, err := e.operand(instruction.From, frame)
 				if err != nil {
 					return EvalValue{}, err
 				}
 				value.Type = instruction.To
+				if value.Integer != nil {
+					value = e.integer(value.Integer, instruction.To)
+				}
 				frame.values[instruction.Dest] = value
 			case Sizeof:
 				size, _, err := qktarget.LayoutOf(instruction.Type, e.TargetTriple)
 				if err != nil {
 					return EvalValue{}, err
 				}
-				frame.values[instruction.Dest] = EvalInteger(big.NewInt(int64(size)), types.PrimitiveUsz)
+				frame.values[instruction.Dest] = e.integer(big.NewInt(int64(size)), types.PrimitiveUsz)
 			case SizeofValue:
 				value, err := e.operand(instruction.Value, frame)
 				if err != nil {
@@ -583,13 +617,13 @@ func (e *Evaluator) run(name string, arguments []EvalValue, depth int) (EvalValu
 				if err != nil {
 					return EvalValue{}, err
 				}
-				frame.values[instruction.Dest] = EvalInteger(big.NewInt(int64(size)), types.PrimitiveUsz)
+				frame.values[instruction.Dest] = e.integer(big.NewInt(int64(size)), types.PrimitiveUsz)
 			case Alignof:
 				_, align, err := qktarget.LayoutOf(instruction.Type, e.TargetTriple)
 				if err != nil {
 					return EvalValue{}, err
 				}
-				frame.values[instruction.Dest] = EvalInteger(big.NewInt(int64(align)), types.PrimitiveUsz)
+				frame.values[instruction.Dest] = e.integer(big.NewInt(int64(align)), types.PrimitiveUsz)
 			case AlignofValue:
 				value, err := e.operand(instruction.Value, frame)
 				if err != nil {
@@ -602,7 +636,7 @@ func (e *Evaluator) run(name string, arguments []EvalValue, depth int) (EvalValu
 				if err != nil {
 					return EvalValue{}, err
 				}
-				frame.values[instruction.Dest] = EvalInteger(big.NewInt(int64(align)), types.PrimitiveUsz)
+				frame.values[instruction.Dest] = e.integer(big.NewInt(int64(align)), types.PrimitiveUsz)
 			case TypePointer:
 				base, err := e.operand(instruction.Base, frame)
 				if err != nil {
@@ -617,7 +651,7 @@ func (e *Evaluator) run(name string, arguments []EvalValue, depth int) (EvalValu
 				if err != nil {
 					return EvalValue{}, err
 				}
-				frame.values[instruction.Dest] = EvalInteger(big.NewInt(int64(offset)), types.PrimitiveUsz)
+				frame.values[instruction.Dest] = e.integer(big.NewInt(int64(offset)), types.PrimitiveUsz)
 			case Call:
 				if instruction.Callee != nil || instruction.Requirement != nil {
 					return EvalValue{}, annotateUnavailable(
@@ -742,7 +776,7 @@ func (e *Evaluator) operand(operand Operand, frame *evalFrame) (EvalValue, error
 		if !ok {
 			return EvalValue{}, fmt.Errorf("invalid integer IR constant %q", operand.IntValue)
 		}
-		return EvalInteger(value, operand.Type), nil
+		return e.integer(value, operand.Type), nil
 	case OperandFloatConst:
 		value, err := strconv.ParseFloat(operand.FloatValue, 64)
 		if err != nil {
@@ -1579,7 +1613,7 @@ func (e *Evaluator) binaryInteger(frame *evalFrame, dest ValueID, left, right Op
 	if err != nil {
 		return err
 	}
-	frame.values[dest] = EvalInteger(operation(new(big.Int).Set(l), r), frame.function.ValueType(dest))
+	frame.values[dest] = e.integer(operation(new(big.Int).Set(l), r), frame.function.ValueType(dest))
 	return nil
 }
 
@@ -1603,7 +1637,7 @@ func (e *Evaluator) binaryNumber(frame *evalFrame, dest ValueID, left, right Ope
 	if l.Integer == nil || r.Integer == nil {
 		return fmt.Errorf("compile-time numeric operation requires matching numeric operands")
 	}
-	frame.values[dest] = EvalInteger(integerOp(new(big.Int).Set(l.Integer), r.Integer), frame.function.ValueType(dest))
+	frame.values[dest] = e.integer(integerOp(new(big.Int).Set(l.Integer), r.Integer), frame.function.ValueType(dest))
 	return nil
 }
 

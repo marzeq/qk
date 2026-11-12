@@ -1,0 +1,21 @@
+module main
+
+import std.alloc
+
+let main() {
+  let mut arena = std.alloc.Arena.init(64)
+  defer arena.deinit()
+
+  let first, first_ok = arena.allocate_bytes(32, 64)
+  assert(first_ok && first != nil, "first arena mapping failed")
+  assert(first.(usz) % 64 == 0, "arena alignment failed")
+  let mark = arena.mark()
+  let second, second_ok = arena.allocate_bytes(256, 16)
+  assert(second_ok && second != nil, "second arena mapping failed")
+  assert(arena.rewind(mark), "arena rewind failed")
+  let third, third_ok = arena.allocate_bytes(256, 16)
+  assert(third_ok && third != nil, "mapping after rewind failed")
+  arena.reset()
+  let reused, reused_ok = arena.allocate_bytes(32, 64)
+  assert(reused_ok && reused == first, "arena reset did not reuse first chunk")
+}

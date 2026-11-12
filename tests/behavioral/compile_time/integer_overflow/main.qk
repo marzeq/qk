@@ -1,0 +1,25 @@
+module main
+
+let fib(n: usz): usz {
+  let mut a: usz = 0
+  let mut b: usz = 1
+  for _ in 0..n {
+    let next = a + b
+    a = b
+    b = next
+  }
+  return a
+}
+
+let wrap_i8(): i8 {
+  let value: i8 = 127
+  return value + 1
+}
+
+let main() {
+  let actual = $fib(3000)
+  assert(actual == 13610447686354989216, "compile-time usz overflow did not wrap")
+  assert(actual == fib(3000), "compile-time and runtime usz results differ")
+  let signed = $wrap_i8()
+  assert(signed == -128, "compile-time signed overflow did not wrap")
+}

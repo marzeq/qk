@@ -78,7 +78,7 @@
     },
     {
       "name": "compile-time selection",
-      "positive": ["comptime/selection"],
+      "positive": ["comptime/selection", "compile_time/integer_overflow"],
       "negative": ["diagnostics/comptime_error"]
     },
     {
@@ -154,7 +154,7 @@
     },
     {
       "name": "standard-library core behavior",
-      "positive": ["stdlib/core", "stdlib/directory_iteration", "stdlib/integer_parsing"],
+      "positive": ["stdlib/core", "stdlib/directory_iteration", "stdlib/integer_parsing", "runtime/arena_virtual_memory"],
       "negativeNotApplicable": true
     },
     {

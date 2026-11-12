@@ -308,6 +308,35 @@ pub let calloc(count: std.ctypes.size_t, size: std.ctypes.size_t): *mut void @fo
 pub let realloc(ptr: *void, size: std.ctypes.size_t): *mut void @foreign
 pub let free(ptr: *void): void @foreign
 
+// Anonymous virtual memory used by std.alloc.Arena.
+$if core.build.os == .Windows {
+  pub let VirtualAlloc(
+    address: *mut void,
+    size: std.ctypes.size_t,
+    allocation_type: std.ctypes.unsigned_long,
+    protect: std.ctypes.unsigned_long,
+  ): *mut void @foreign
+  pub let VirtualFree(
+    address: *mut void,
+    size: std.ctypes.size_t,
+    free_type: std.ctypes.unsigned_long,
+  ): std.ctypes.int @foreign
+} else {
+  pub let mmap_offset_t: type =
+    $if core.build.os == .Linux { std.ctypes.long }
+    else { std.ctypes.long_long }
+
+  pub let mmap(
+    address: *mut void,
+    length: std.ctypes.size_t,
+    protection: std.ctypes.int,
+    flags: std.ctypes.int,
+    fd: std.ctypes.int,
+    offset: mmap_offset_t,
+  ): *mut void @foreign
+  pub let munmap(address: *mut void, length: std.ctypes.size_t): std.ctypes.int @foreign
+}
+
 pub let memcpy(dest: *mut void, src: *void, n: std.ctypes.size_t): *mut void @foreign
 pub let memmove(dest: *mut void, src: *void, n: std.ctypes.size_t): *mut void @foreign
 pub let memset(dest: *mut void, value: std.ctypes.int, n: std.ctypes.size_t): *mut void @foreign
