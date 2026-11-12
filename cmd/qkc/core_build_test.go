@@ -38,7 +38,7 @@ let main(): i32 = selected
 			map[string]string{"main.qk": source},
 			map[string]string{"main.qk": "."},
 			map[string]bool{"main.qk": false},
-			nil, false, false,
+			nil,
 		)
 		if err != nil {
 			t.Errorf("%s: %v", target.triple, err)

@@ -70,7 +70,7 @@ let value: relay(i32) = 7
 	if err != nil {
 		t.Fatal(err)
 	}
-	if errors, _ := RunSemanticModule(modules["test"], sema.NewAnalyser(), false, false); len(errors) != 0 {
+	if errors, _ := RunSemanticModule(modules["test"], sema.NewAnalyser()); len(errors) != 0 {
 		t.Fatal(errors[0])
 	}
 }
@@ -108,7 +108,7 @@ let fourth: sized(i32) = 13
 	}
 	analyser := sema.NewAnalyser()
 	ConfigureDeferredStage(analyser, StageConfig{})
-	if errors, _ := RunSemanticModule(modules["test"], analyser, false, false); len(errors) != 0 {
+	if errors, _ := RunSemanticModule(modules["test"], analyser); len(errors) != 0 {
 		t.Fatal(errors[0])
 	}
 }
@@ -143,7 +143,7 @@ func TestBareTypeParameterRequiresCompileTimeCall(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			errors, _ := RunSemanticModule(modules["test"], sema.NewAnalyser(), false, false)
+			errors, _ := RunSemanticModule(modules["test"], sema.NewAnalyser())
 			if test.wantError != (len(errors) != 0) {
 				t.Fatalf("errors = %v, want error %t", errors, test.wantError)
 			}
@@ -176,7 +176,7 @@ let value: i32 = answer(i32, $true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if errors, _ := RunSemanticModule(modules["test"], sema.NewAnalyser(), false, false); len(errors) != 0 {
+	if errors, _ := RunSemanticModule(modules["test"], sema.NewAnalyser()); len(errors) != 0 {
 		t.Fatal(errors[0])
 	}
 }
@@ -207,7 +207,7 @@ let result: i32 = $relay(i32, 7)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if errors, _ := RunSemanticModule(modules["test"], sema.NewAnalyser(), false, false); len(errors) != 0 {
+	if errors, _ := RunSemanticModule(modules["test"], sema.NewAnalyser()); len(errors) != 0 {
 		t.Fatal(errors[0])
 	}
 }
@@ -257,7 +257,7 @@ func TestBareLayoutOperationRequiresCompileTimeContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	errors, _ := RunSemanticModule(modules["test"], sema.NewAnalyser(), false, false)
+	errors, _ := RunSemanticModule(modules["test"], sema.NewAnalyser())
 	if len(errors) == 0 || !strings.Contains(errors[0].Error(), "compile-time context") {
 		t.Fatalf("expected compile-time context diagnostic, got %v", errors)
 	}
@@ -291,13 +291,13 @@ func TestParameterizedCompileTimeBranchDefersUntilSpecialization(t *testing.T) {
 	}
 	analyser := sema.NewAnalyser()
 	ConfigureDeferredStage(analyser, StageConfig{})
-	if errors, _ := RunSemanticModule(modules["test"], analyser, false, false); len(errors) != 0 {
+	if errors, _ := RunSemanticModule(modules["test"], analyser); len(errors) != 0 {
 		t.Fatal(errors[0])
 	}
 	if len(modules["test"].Root.Body) < 6 {
 		t.Fatalf("expected two concrete instances, got %d nodes", len(modules["test"].Root.Body))
 	}
-	irModules := GenerateIRModules(modules, "test", []string{"test"}, false, false)
+	irModules := GenerateIRModules(modules, "test", []string{"test"})
 	templates := map[string][]ir.ParameterizedTemplate{"test": GenerateModuleParameterizedTemplateIR(modules["test"])}
 	specializations, err := ExtractParameterizedSpecializations(irModules, templates, analyser.MethodTargets())
 	if err != nil {
@@ -419,7 +419,7 @@ let GameState = struct { pipes: [pipe_buffer_size]Pipe }
 		t.Fatalf("expected expanded array length 32, got %#v", array.Length)
 	}
 	info := &ModuleInfo{Path: "test", Name: "test", Root: root}
-	if errors, _ := RunSemanticModule(info, sema.NewAnalyser(), false, false); len(errors) != 0 {
+	if errors, _ := RunSemanticModule(info, sema.NewAnalyser()); len(errors) != 0 {
 		t.Fatal(errors[0])
 	}
 }
@@ -468,7 +468,7 @@ func TestCompileTimeBindingsAreVisibleAcrossModuleFiles(t *testing.T) {
 	if declaration, ok := modules["test"].Root.Body[4].(*parser.DeclarationNode); !ok || declaration.Name != "pipe_buffer_size" {
 		t.Fatalf("merged provider declaration is %#v", modules["test"].Root.Body[4])
 	}
-	if errors, _ := RunSemanticModule(modules["test"], sema.NewAnalyser(), false, false); len(errors) != 0 {
+	if errors, _ := RunSemanticModule(modules["test"], sema.NewAnalyser()); len(errors) != 0 {
 		declaration := modules["test"].Root.Body[4].(*parser.DeclarationNode)
 		function := modules["test"].Root.Body[2].(*parser.FunctionDefNode)
 		identifier := function.Body.(*parser.IdentifierNode)

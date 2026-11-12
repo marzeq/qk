@@ -57,8 +57,6 @@ let main() {}
 		map[string]string{path: "."},
 		map[string]bool{path: false},
 		map[string]map[string]string{".": {}},
-		false,
-		false,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -130,7 +128,6 @@ let main() {
 		map[string]string{path: "."},
 		map[string]bool{path: false},
 		map[string]map[string]string{".": {}},
-		false, false,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -162,7 +159,7 @@ let main() {}
 `
 	frontend, err := runFrontend(&Args{mainModule: ".", noStdlib: true}, loader.StageConfig{},
 		map[string]string{path: source}, map[string]string{path: "."}, map[string]bool{path: false},
-		map[string]map[string]string{".": {}}, false, false)
+		map[string]map[string]string{".": {}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +203,7 @@ let main() {}
 	packages := map[string]string{"model/model.qk": "model", "main.qk": "."}
 	trusted := map[string]bool{"model/model.qk": false, "main.qk": false}
 	frontend, err := runFrontend(&Args{mainModule: ".", noStdlib: true}, loader.StageConfig{},
-		sources, packages, trusted, map[string]map[string]string{"model": {}, ".": {}}, false, false)
+		sources, packages, trusted, map[string]map[string]string{"model": {}, ".": {}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -264,7 +261,7 @@ let main() {
 	_, err := runFrontend(
 		&Args{mainModule: ".", noStdlib: true}, loader.StageConfig{},
 		map[string]string{path: source}, map[string]string{path: "."},
-		map[string]bool{path: false}, map[string]map[string]string{".": {}}, false, false,
+		map[string]bool{path: false}, map[string]map[string]string{".": {}},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -326,7 +323,7 @@ let main() {
 `
 	frontend, err := runFrontend(&Args{mainModule: ".", noStdlib: true}, loader.StageConfig{},
 		map[string]string{path: source}, map[string]string{path: "."},
-		map[string]bool{path: false}, map[string]map[string]string{".": {}}, false, false)
+		map[string]bool{path: false}, map[string]map[string]string{".": {}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -351,7 +348,7 @@ let main() {}
 `
 	_, err := runFrontend(&Args{mainModule: ".", noStdlib: true}, loader.StageConfig{},
 		map[string]string{path: source}, map[string]string{path: "."},
-		map[string]bool{path: false}, map[string]map[string]string{".": {}}, false, false)
+		map[string]bool{path: false}, map[string]map[string]string{".": {}})
 	if err == nil || !strings.Contains(err.Error(), "duplicate or empty struct field \"value\"") {
 		t.Fatalf("expected duplicate spread field diagnostic, got %v", err)
 	}
@@ -509,7 +506,7 @@ let main() {
 `
 	frontend, err := runFrontend(&Args{mainModule: ".", noStdlib: true}, loader.StageConfig{},
 		map[string]string{path: source}, map[string]string{path: "."}, map[string]bool{path: false},
-		map[string]map[string]string{".": {}}, false, false)
+		map[string]map[string]string{".": {}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -560,7 +557,7 @@ let main() {
 	packages := map[string]string{"factory/factory.qk": "factory", "main.qk": "."}
 	trusted := map[string]bool{"factory/factory.qk": false, "main.qk": false}
 	_, err := runFrontend(&Args{mainModule: ".", noStdlib: true}, loader.StageConfig{},
-		sources, packages, trusted, map[string]map[string]string{"factory": {}, ".": {}}, false, false)
+		sources, packages, trusted, map[string]map[string]string{"factory": {}, ".": {}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -581,8 +578,6 @@ let main() { let result: usz = fib(8) }
 		map[string]string{path: "."},
 		map[string]bool{path: false},
 		map[string]map[string]string{".": {}},
-		false,
-		false,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -611,7 +606,7 @@ let main() { let selected: i32 = choice.select(7) }
 	_, err := runFrontend(
 		&Args{mainModule: ".", noStdlib: true},
 		loader.StageConfig{}, sources, packages, trusted,
-		map[string]map[string]string{"helper": {}, "choice": {}, ".": {}}, false, false,
+		map[string]map[string]string{"helper": {}, "choice": {}, ".": {}},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -630,7 +625,6 @@ let main() { let selected: i32 = select(7) }
 		loader.StageConfig{},
 		map[string]string{path: source}, map[string]string{path: "."},
 		map[string]bool{path: false}, map[string]map[string]string{".": {}},
-		false, false,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -651,7 +645,6 @@ let main() { let selected: i32 = require_four(7) }
 		loader.StageConfig{},
 		map[string]string{path: source}, map[string]string{path: "."},
 		map[string]bool{path: false}, map[string]map[string]string{".": {}},
-		false, false,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -661,7 +654,7 @@ let main() { let selected: i32 = require_four(7) }
 		loader.StageConfig{},
 		map[string]string{path: strings.Replace(source, "let selected: i32 = require_four(7)", "let selected: i64 = require_four(7)", 1)},
 		map[string]string{path: "."}, map[string]bool{path: false},
-		map[string]map[string]string{".": {}}, false, false,
+		map[string]map[string]string{".": {}},
 	)
 	if err == nil || !strings.Contains(err.Error(), "four byte type required") {
 		t.Fatalf("expected selected compiler assertion to fail, got %v", err)
@@ -680,7 +673,6 @@ let relay(): usz = leaf()
 			loader.StageConfig{},
 			map[string]string{path: source}, map[string]string{path: "."},
 			map[string]bool{path: false}, map[string]map[string]string{".": {}},
-			false, false,
 		)
 		return err
 	}
@@ -710,7 +702,7 @@ let main() { let size: usz = relay() }
 		loader.StageConfig{}, sources,
 		map[string]string{helperPath: "helper", mainPath: "."},
 		map[string]bool{helperPath: false, mainPath: false},
-		map[string]map[string]string{"helper": {}, ".": {}}, false, false,
+		map[string]map[string]string{"helper": {}, ".": {}},
 	)
 	if err == nil || !strings.Contains(err.Error(), "runtime entry") {
 		t.Fatalf("expected cross-module runtime boundary error, got %v", err)
@@ -728,7 +720,6 @@ let main() { let size: usz = bytes(i32) }
 		loader.StageConfig{},
 		map[string]string{path: source}, map[string]string{path: "."},
 		map[string]bool{path: false}, map[string]map[string]string{".": {}},
-		false, false,
 	)
 	if err == nil || !strings.Contains(err.Error(), "runtime entry") {
 		t.Fatalf("expected selected specialization to require compile-time execution, got %v", err)
@@ -749,7 +740,6 @@ let main() {
 		loader.StageConfig{},
 		map[string]string{path: source}, map[string]string{path: "."},
 		map[string]bool{path: false}, map[string]map[string]string{".": {}},
-		false, false,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -775,7 +765,7 @@ let main() {
 		&Args{mainModule: ".", noStdlib: true}, loader.StageConfig{},
 		sources, map[string]string{libraryPath: "choice", mainPath: "."},
 		map[string]bool{libraryPath: false, mainPath: false},
-		map[string]map[string]string{"choice": {}, ".": {}}, false, false,
+		map[string]map[string]string{"choice": {}, ".": {}},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -803,7 +793,7 @@ let main() {
 	_, err := runFrontend(
 		&Args{mainModule: ".", noStdlib: true},
 		loader.StageConfig{}, sources, packages, trusted,
-		map[string]map[string]string{"types": {}, ".": {}}, false, false,
+		map[string]map[string]string{"types": {}, ".": {}},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -820,7 +810,7 @@ let main() {}
 	_, err := runFrontend(
 		&Args{mainModule: ".", noStdlib: true}, loader.StageConfig{},
 		map[string]string{path: source}, map[string]string{path: "."},
-		map[string]bool{path: false}, map[string]map[string]string{".": {}}, false, false,
+		map[string]bool{path: false}, map[string]map[string]string{".": {}},
 	)
 	if err == nil || !strings.Contains(err.Error(), "must be known at compile time") {
 		t.Fatalf("expected retained parameter diagnostic, got %v", err)

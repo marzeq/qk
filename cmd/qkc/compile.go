@@ -97,7 +97,7 @@ func llvmBackendOptions(args *Args) llvmbackend.Options {
 		OptLevel:        string(args.optLevel),
 		RelocationModel: relocation,
 		CodeModel:       args.codeModel,
-		Verbose:         args.verbose && args.debug,
+		Verbose:         args.verbose,
 	}
 }
 

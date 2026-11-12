@@ -86,7 +86,7 @@ func main() {
 		fatal("cannot build executable from package %q: package must declare module main", discovered[0].Name)
 	}
 	frontend, err := runFrontend(
-		args, comptimeConfig, compileTimeSources, sourcePackagePaths, trustedSources, importResolutions, args.verbose, args.debug, parsedSources,
+		args, comptimeConfig, compileTimeSources, sourcePackagePaths, trustedSources, importResolutions, parsedSources,
 	)
 	check(err)
 	modules, order := frontend.modules, frontend.order
@@ -316,7 +316,7 @@ func main() {
 			defer os.RemoveAll(buildDir)
 		}
 
-		if args.verbose && args.debug {
+		if args.verbose {
 			fmt.Printf("emitted LLVM for module %s to %s\n", moduleName, buildDir)
 		}
 

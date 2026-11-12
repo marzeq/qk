@@ -1,8 +1,6 @@
 package loader
 
 import (
-	"fmt"
-
 	"github.com/marzeq/qk/codegen/irgen"
 	"github.com/marzeq/qk/ir"
 	"github.com/marzeq/qk/parser"
@@ -20,14 +18,14 @@ type CompiledModules struct {
 
 // CompileSelectedModules runs the one semantic-to-IR path after staged
 // selection has produced the final module roots.
-func CompileSelectedModules(mods map[string]*ModuleInfo, mainModule string, order []string, analyser *sema.Analyser, verbose, debug bool) (*CompiledModules, []error) {
-	errors, warnings := RunSemanticPipeline(mods, analyser, order, verbose, debug)
+func CompileSelectedModules(mods map[string]*ModuleInfo, mainModule string, order []string, analyser *sema.Analyser) (*CompiledModules, []error) {
+	errors, warnings := RunSemanticPipeline(mods, analyser, order)
 	if len(errors) != 0 {
 		return nil, errors
 	}
 	PropagateSpecializationDemands(mods, order)
 	result := &CompiledModules{
-		IRModules:     GenerateIRModules(mods, mainModule, order, verbose, debug),
+		IRModules:     GenerateIRModules(mods, mainModule, order),
 		Templates:     make(map[string][]ir.ParameterizedTemplate, len(order)),
 		MethodTargets: analyser.MethodTargets(),
 		Warnings:      warnings,
@@ -46,7 +44,7 @@ func moduleRoots(mods map[string]*ModuleInfo, order []string) []*parser.RootNode
 	return roots
 }
 
-func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, order []string, verbose, debug bool) (errors []error, warnings []error) {
+func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, order []string) (errors []error, warnings []error) {
 	for _, name := range order {
 		info := mods[name]
 		analyser.DeclareModule(info.Root, name, info.TrustedStandardLibrary)
@@ -59,22 +57,19 @@ func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, o
 		}
 	}
 
-	if verbose && debug {
-		fmt.Println("completed analysis phase")
-	}
-	return runSemanticModuleBodies(mods, analyser, order, verbose, debug)
+	return runSemanticModuleBodies(mods, analyser, order)
 }
 
 // RunSemanticModule analyses one source-backed module after its dependencies
 // have been declared.
-func RunSemanticModule(info *ModuleInfo, analyser *sema.Analyser, verbose, debug bool) (errors []error, warnings []error) {
-	return RunSemanticPipeline(map[string]*ModuleInfo{info.Path: info}, analyser, []string{info.Path}, verbose, debug)
+func RunSemanticModule(info *ModuleInfo, analyser *sema.Analyser) (errors []error, warnings []error) {
+	return RunSemanticPipeline(map[string]*ModuleInfo{info.Path: info}, analyser, []string{info.Path})
 }
 
 // runSemanticModuleBodies completes attribution and validation for modules
 // whose declarations and analysed bodies have already been installed. This
 // preserves the language's global structural-method declaration phase.
-func runSemanticModuleBodies(mods map[string]*ModuleInfo, analyser *sema.Analyser, order []string, verbose, debug bool) (errors []error, warnings []error) {
+func runSemanticModuleBodies(mods map[string]*ModuleInfo, analyser *sema.Analyser, order []string) (errors []error, warnings []error) {
 	attributor := analyser.NewAttributor()
 	for _, name := range order {
 		attributor.AttributeParameterizedTemplates(mods[name].Root)
@@ -108,18 +103,10 @@ func runSemanticModuleBodies(mods map[string]*ModuleInfo, analyser *sema.Analyse
 	if len(validator.Errors()) != 0 {
 		return validator.Errors(), warnings
 	}
-	if debug {
-		for _, name := range order {
-			analyser.DebugCheck(mods[name].Root)
-		}
-	}
-	if verbose && debug {
-		fmt.Println("completed semantic body pipeline")
-	}
 	return nil, warnings
 }
 
-func GenerateIRModules(mods map[string]*ModuleInfo, mainModule string, order []string, verbose bool, debug bool) map[string]*ir.Module {
+func GenerateIRModules(mods map[string]*ModuleInfo, mainModule string, order []string) map[string]*ir.Module {
 	out := make(map[string]*ir.Module, len(order))
 
 	for _, name := range order {
@@ -137,10 +124,6 @@ func GenerateIRModules(mods map[string]*ModuleInfo, mainModule string, order []s
 		modIR := gen.Generate(info.Root)
 		deduplicateIRDeclarations(modIR)
 		out[name] = modIR
-	}
-
-	if verbose && debug {
-		fmt.Println("completed ir generation phase")
 	}
 
 	return out

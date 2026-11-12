@@ -1435,7 +1435,7 @@ func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 	analyser := sema.NewAnalyser()
 	analyser.SetStaging(true)
 	ConfigureDeferredStage(analyser, s.config, func(string) *StageEnvironment { return s.environment })
-	compiled, compileErrors := CompileSelectedModules(modules, s.module, order, analyser, false, false)
+	compiled, compileErrors := CompileSelectedModules(modules, s.module, order, analyser)
 	if len(compileErrors) != 0 {
 		return compileErrors[0]
 	}

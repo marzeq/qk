@@ -120,7 +120,7 @@ func TestLibraryTreeThroughCompilerFrontend(t *testing.T) {
 	}
 	config := loader.StageConfig{}
 	args := &Args{mainModule: "."}
-	if _, err := runFrontend(args, config, sources, sourcePackages, trustedSources, importResolutions, false, false); err != nil {
+	if _, err := runFrontend(args, config, sources, sourcePackages, trustedSources, importResolutions); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -136,7 +136,7 @@ func TestWordCountExampleUsesRuntimeStaticMethod(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := runFrontend(&Args{mainModule: "."}, loader.StageConfig{},
-		sources, sourcePackages, trustedSources, importResolutions, false, false); err != nil {
+		sources, sourcePackages, trustedSources, importResolutions); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -156,7 +156,7 @@ func TestCompileTimeEvaluationUsesImportedPureLibraryCode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	frontend, err := runFrontend(&Args{mainModule: "."}, loader.StageConfig{}, sources, sourcePackages, trustedSources, importResolutions, false, false)
+	frontend, err := runFrontend(&Args{mainModule: "."}, loader.StageConfig{}, sources, sourcePackages, trustedSources, importResolutions)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +193,7 @@ func TestCompileTimeEvaluationRejectsExecutedForeignCall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = runFrontend(&Args{mainModule: "."}, loader.StageConfig{}, sources, sourcePackages, trustedSources, importResolutions, false, false)
+	_, err = runFrontend(&Args{mainModule: "."}, loader.StageConfig{}, sources, sourcePackages, trustedSources, importResolutions)
 	if err == nil || !strings.Contains(err.Error(), "std.libc.putchar is not available in a compile-time context") {
 		t.Fatalf("expected executed foreign call to be rejected, got %v", err)
 	}
@@ -228,7 +228,7 @@ let main() {}
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = runFrontend(&Args{mainModule: "."}, loader.StageConfig{}, sources, sourcePackages, trustedSources, importResolutions, false, false)
+	_, err = runFrontend(&Args{mainModule: "."}, loader.StageConfig{}, sources, sourcePackages, trustedSources, importResolutions)
 	if err == nil || !strings.Contains(err.Error(), "sum cannot be evaluated at compile time") ||
 		!strings.Contains(err.Error(), "evaluation reaches std.io.print, which is not available in a compile-time context") {
 		t.Fatalf("expected nested print call to be rejected, got %v", err)

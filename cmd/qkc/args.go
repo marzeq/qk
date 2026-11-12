@@ -71,7 +71,6 @@ type Args struct {
 	optLevel     OptimisationLevel
 	verbose      bool
 	quietLink    bool
-	debug        bool
 	warningMode  WarningMode
 	warningModes map[string]WarningMode
 	dumpIR       bool
@@ -272,10 +271,6 @@ func (p *argumentParser) parseCurrent() error {
 
 	case tok == "-v":
 		p.args.verbose = true
-		p.index++
-
-	case tok == "-d":
-		p.args.debug = true
 		p.index++
 
 	case tok == "-warn":
@@ -510,7 +505,6 @@ Build options:
 Diagnostics:
   -warn <mode>          Set warnings to show, off, or error (default: show)
   -warn-<name> <mode>   Override one warning category
-  -d                    Enable compiler debug output
   -v                    Print verbose compiler and linker output
   -dump-ir              Print target-independent QK IR
   -dump-llvm            Print generated LLVM IR

@@ -37,7 +37,6 @@ func runFrontend(
 	sources, sourcePackages map[string]string,
 	trustedSources map[string]bool,
 	importResolutions map[string]map[string]string,
-	verbose, debug bool,
 	parsedSources ...map[string]*parser.RootNode,
 ) (*frontendResult, error) {
 	sources = cloneStringMap(sources)
@@ -134,7 +133,7 @@ func runFrontend(
 			stageModules[name].Root = parser.CloneSyntax(stageModules[name].Root).(*parser.RootNode)
 		}
 	}
-	compiled, errs := loader.CompileSelectedModules(result.modules, args.mainModule, sourceOrder, analyser, verbose, debug)
+	compiled, errs := loader.CompileSelectedModules(result.modules, args.mainModule, sourceOrder, analyser)
 	if len(errs) != 0 {
 		return nil, errs[0]
 	}
