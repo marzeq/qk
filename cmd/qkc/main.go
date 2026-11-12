@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/pprof"
+	"sort"
 	"sync"
 
 	"github.com/marzeq/qk/attributes"
@@ -155,11 +156,44 @@ func main() {
 		frontend.partials, irModules, args.outputType == OutputObject || args.outputType == OutputStaticLibrary,
 	)
 	moduleLinks := requestedModuleLinks
+	// Declarations alone do not contribute anything to an object. In particular,
+	// injected compile-time modules and foreign binding modules often have no
+	// runtime definitions after executable reachability pruning.
+	emissionOrder := make([]string, 0, len(order))
+	emissionModules := make(map[string]*ir.Module, len(order))
+	for _, moduleName := range order {
+		module := irModules[moduleName]
+		hasDefinition := len(module.Globals) != 0
+		for _, fn := range module.Functions {
+			if !fn.CompileTimeOnly && len(fn.Blocks) != 0 {
+				hasDefinition = true
+				break
+			}
+		}
+		if !hasDefinition {
+			continue
+		}
+		units := []*ir.Module{module}
+		if args.outputType == OutputExecutable && !args.freestanding {
+			units = splitEmissionModule(module)
+		}
+		for index, unit := range units {
+			name := emissionUnitName(moduleName, index)
+			emissionOrder = append(emissionOrder, name)
+			emissionModules[name] = unit
+		}
+	}
+	if len(emissionOrder) == 0 {
+		// An explicit object or archive may consist entirely of type declarations.
+		// Keep one empty unit so the requested artifact remains well formed.
+		emissionOrder = append(emissionOrder, args.mainModule)
+		emissionModules[args.mainModule] = irModules[args.mainModule]
+	}
 
 	llvmOutputs := make(map[string]string, len(irModules))
-	for _, moduleName := range order {
+	for _, moduleName := range emissionOrder {
 		llvmOutputs[moduleName] = buildLLVMModule(
-			irModules[moduleName],
+			emissionModules[moduleName],
 			moduleName,
 			args.outputType == OutputExecutable,
 			args.target,
@@ -187,7 +221,7 @@ func main() {
 	}
 
 	if args.dumpLLVM {
-		for _, moduleName := range order {
+		for _, moduleName := range emissionOrder {
 			dumpLLVMModule(llvmOutputs[moduleName])
 		}
 		if hostedRuntime != "" {
@@ -247,7 +281,7 @@ func main() {
 
 	if args.noEmit {
 		if args.dumpAsm {
-			for _, moduleName := range order {
+			for _, moduleName := range emissionOrder {
 				buildDir, err := emitLLVMFile(llvmOutputs[moduleName])
 				check(err)
 				defer os.RemoveAll(buildDir)
@@ -268,12 +302,12 @@ func main() {
 		return
 	}
 
-	buildDirs := make([]string, len(order))
-	objFiles := make([]string, len(order))
-	compileErrors := make([]error, len(order))
-	compileSlots := make(chan struct{}, min(runtime.GOMAXPROCS(0), 4))
+	buildDirs := make([]string, len(emissionOrder))
+	objFiles := make([]string, len(emissionOrder))
+	compileErrors := make([]error, len(emissionOrder))
+	compileSlots := make(chan struct{}, min(runtime.GOMAXPROCS(0), 6))
 	var compileJobs sync.WaitGroup
-	for index, moduleName := range order {
+	for index, moduleName := range emissionOrder {
 		buildDir, err := emitLLVMFile(llvmOutputs[moduleName])
 		check(err)
 		buildDirs[index] = buildDir
@@ -293,23 +327,15 @@ func main() {
 			check(err)
 		}
 
-		objFile := filepath.Join(buildDir, "module.o")
-		objFiles[index] = objFile
-		compileSlots <- struct{}{}
-		compileJobs.Add(1)
-		go func() {
-			defer compileJobs.Done()
-			defer func() { <-compileSlots }()
-			_, compileErrors[index] = compileLLVMModule(buildDir, moduleName, llvmOutputs[moduleName], args)
-		}()
+		objFiles[index] = filepath.Join(buildDir, "module.o")
 	}
-	compileJobs.Wait()
-	for _, err := range compileErrors {
-		check(err)
-	}
+	var runtimeObject string
+	var runtimeError error
+	var runtimeBuildDir string
 	if hostedRuntime != "" {
 		buildDir, err := emitLLVMFile(hostedRuntime)
 		check(err)
+		runtimeBuildDir = buildDir
 		buildDirs = append(buildDirs, buildDir)
 		if !args.keepBuildDir {
 			defer os.RemoveAll(buildDir)
@@ -318,10 +344,41 @@ func main() {
 			check(emitAssemblyFile(buildDir, args))
 			check(dumpAssemblyFile(buildDir))
 		}
-		objFile := filepath.Join(buildDir, "module.o")
-		objFile, err = compileLLVMModule(buildDir, "hosted runtime", hostedRuntime, args)
+	}
+	compileOrder := make([]int, len(emissionOrder))
+	for index := range compileOrder {
+		compileOrder[index] = index
+	}
+	sort.Slice(compileOrder, func(i, j int) bool {
+		return len(llvmOutputs[emissionOrder[compileOrder[i]]]) > len(llvmOutputs[emissionOrder[compileOrder[j]]])
+	})
+	for _, index := range compileOrder {
+		moduleName := emissionOrder[index]
+		buildDir := buildDirs[index]
+		compileSlots <- struct{}{}
+		compileJobs.Add(1)
+		go func() {
+			defer compileJobs.Done()
+			defer func() { <-compileSlots }()
+			_, compileErrors[index] = compileLLVMModule(buildDir, moduleName, llvmOutputs[moduleName], args)
+		}()
+	}
+	if runtimeBuildDir != "" {
+		compileSlots <- struct{}{}
+		compileJobs.Add(1)
+		go func() {
+			defer compileJobs.Done()
+			defer func() { <-compileSlots }()
+			runtimeObject, runtimeError = compileLLVMModule(runtimeBuildDir, "hosted runtime", hostedRuntime, args)
+		}()
+	}
+	compileJobs.Wait()
+	for _, err := range compileErrors {
 		check(err)
-		objFiles = append(objFiles, objFile)
+	}
+	check(runtimeError)
+	if runtimeObject != "" {
+		objFiles = append(objFiles, runtimeObject)
 	}
 	stat, err := os.Stat(args.output)
 

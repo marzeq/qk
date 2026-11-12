@@ -96,10 +96,10 @@ let format_specified_argument(
   return write_format_error(writer)
 }
 
-pub let wprint(
+let wprint_slice(
   writer: *mut dyn Writer,
   format: str,
-  arguments: ...*dyn Any
+  arguments: []*dyn Any
 ): Result(Unit, Error) {
   let mut format_index: usz = 0
   let mut argument_index: usz = 0
@@ -189,6 +189,12 @@ pub let wprint(
   }
   return .Ok(Unit.{})
 }
+
+pub let wprint(
+  writer: *mut dyn Writer,
+  format: str,
+  arguments: ...*dyn Any
+): Result(Unit, Error) = wprint_slice(writer, format, arguments)
 
 pub let wprintln(
   writer: *mut dyn Writer,

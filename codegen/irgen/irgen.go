@@ -2252,7 +2252,7 @@ func traitErasedReceiverType(method types.TraitMethod) types.PointerType {
 
 func (g *Generator) ensureTraitVTable(node *parser.CastNode, trait types.TraitType) string {
 	key := traitRuntimeName(node.ConcreteType) + "__" + trait.String()
-	name := fmt.Sprintf("__qk_vtable_%s_%x", sanitizeName(key), stringHash(key))
+	name := fmt.Sprintf("__qk_vtable_%s_%s_%x", sanitizeName(g.ModuleName), sanitizeName(key), stringHash(key))
 	for _, global := range g.Module.Globals {
 		if global.Name == name {
 			return name

@@ -73,6 +73,7 @@ func runFrontend(
 	}
 	var sourceOrder []string
 	stageModules := make(map[string]*loader.ModuleInfo)
+	needsDeferredSnapshots := false
 	analyser := sema.NewAnalyser()
 	loader.ConfigureDeferredStage(analyser, config, func(module string) *loader.StageEnvironment {
 		current := stageModules[module]
@@ -117,13 +118,21 @@ func runFrontend(
 		if !args.noStdlib && name != builtinModule && name != "core.build" && name != "core.types" && name != "std" && !strings.HasPrefix(name, "std.") && !containsString(info.Imports, "std") {
 			info.Imports = append(info.Imports, "std")
 		}
+		if moduleNeedsDeferredSnapshots(info.Root) {
+			needsDeferredSnapshots = true
+		}
 		stageModules[name] = &loader.ModuleInfo{
 			Path: name, Name: info.Name, Imports: append([]string(nil), info.Imports...),
-			Root:                   parser.CloneSyntax(info.Root).(*parser.RootNode),
+			Root:                   info.Root,
 			TrustedStandardLibrary: info.TrustedStandardLibrary,
 		}
 		result.modules[name] = info
 		sourceOrder = append(sourceOrder, name)
+	}
+	if needsDeferredSnapshots {
+		for _, name := range sourceOrder {
+			stageModules[name].Root = parser.CloneSyntax(stageModules[name].Root).(*parser.RootNode)
+		}
 	}
 	compiled, errs := loader.CompileSelectedModules(result.modules, args.mainModule, sourceOrder, analyser, verbose, debug)
 	if len(errs) != 0 {
@@ -134,6 +143,27 @@ func runFrontend(
 	result.methodTargets = compiled.MethodTargets
 	result.warnings = compiled.Warnings
 	return result, nil
+}
+
+func moduleNeedsDeferredSnapshots(root *parser.RootNode) bool {
+	for _, node := range root.Body {
+		switch node := node.(type) {
+		case *parser.FunctionDefNode:
+			if node.DeferredStage {
+				return true
+			}
+		case *parser.TypeAliasNode:
+			if node.DeferredStage {
+				return true
+			}
+			for _, method := range node.Methods {
+				if method.DeferredStage {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 func cloneStringMap(source map[string]string) map[string]string {

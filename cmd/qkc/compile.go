@@ -41,13 +41,17 @@ func emitLLVMFile(output string) (string, error) {
 
 func compileLLVMModule(buildDir, moduleName, llvmOutput string, args *Args) (string, error) {
 	objPath := filepath.Join(buildDir, "module.o")
+	optimizedIRPath := ""
+	if args.keepBuildDir {
+		optimizedIRPath = filepath.Join(buildDir, "module.opt.ll")
+	}
 	if args.verbose {
 		fmt.Printf("> libLLVM emit object %s\n", objPath)
 	}
 	err := llvmbackend.Compile(
 		llvmOutput,
 		objPath,
-		filepath.Join(buildDir, "module.opt.ll"),
+		optimizedIRPath,
 		llvmbackend.OutputObject,
 		llvmBackendOptions(args),
 	)
@@ -64,13 +68,17 @@ func emitAssemblyFile(buildDir string, args *Args) error {
 		return err
 	}
 	asmPath := filepath.Join(buildDir, "module.s")
+	optimizedIRPath := ""
+	if args.keepBuildDir {
+		optimizedIRPath = filepath.Join(buildDir, "module.opt.ll")
+	}
 	if args.verbose {
 		fmt.Printf("> libLLVM emit assembly %s\n", asmPath)
 	}
 	return llvmbackend.Compile(
 		string(llvmOutput),
 		asmPath,
-		filepath.Join(buildDir, "module.opt.ll"),
+		optimizedIRPath,
 		llvmbackend.OutputAssembly,
 		llvmBackendOptions(args),
 	)
