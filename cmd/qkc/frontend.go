@@ -38,6 +38,7 @@ func runFrontend(
 	trustedSources map[string]bool,
 	importResolutions map[string]map[string]string,
 	verbose, debug bool,
+	parsedSources ...map[string]*parser.RootNode,
 ) (*frontendResult, error) {
 	sources = cloneStringMap(sources)
 	sourcePackages = cloneStringMap(sourcePackages)
@@ -54,18 +55,21 @@ func runFrontend(
 	sources[coreTypesOrigin] = coreTypesSource
 	sourcePackages[coreTypesOrigin] = "core.types"
 	trustedSources[coreTypesOrigin] = false
-	graphModules, origins, parsed, err := sourceModuleGraph(sources, sourcePackages, trustedSources, importResolutions, args.noStdlib)
+	var preParsed map[string]*parser.RootNode
+	if len(parsedSources) != 0 {
+		preParsed = parsedSources[0]
+	}
+	graphModules, origins, parsed, err := sourceModuleGraph(sources, sourcePackages, trustedSources, importResolutions, args.noStdlib, preParsed)
 	if err != nil {
 		return nil, err
 	}
-	order, errs := loader.ComputeModuleOrder(graphModules, args.mainModule)
-	if len(errs) != 0 {
-		return nil, errs[0]
+	order, err := loader.ModuleDependencyOrder(graphModules, args.mainModule)
+	if err != nil {
+		return nil, err
 	}
 	result := &frontendResult{
-		modules: make(map[string]*loader.ModuleInfo), irModules: make(map[string]*ir.Module),
-		templates: make(map[string][]ir.ParameterizedTemplate),
-		order:     order,
+		modules: make(map[string]*loader.ModuleInfo),
+		order:   order,
 	}
 	var sourceOrder []string
 	stageModules := make(map[string]*loader.ModuleInfo)
@@ -118,36 +122,17 @@ func runFrontend(
 			Root:                   parser.CloneSyntax(info.Root).(*parser.RootNode),
 			TrustedStandardLibrary: info.TrustedStandardLibrary,
 		}
-		analyser.DeclareModule(info.Root, name, info.TrustedStandardLibrary)
-		if len(analyser.Errors()) != 0 {
-			return nil, analyser.Errors()[0]
-		}
-		analyser.AnalyseModuleBody(info.Root, name)
-		if len(analyser.Errors()) != 0 {
-			return nil, analyser.Errors()[0]
-		}
 		result.modules[name] = info
 		sourceOrder = append(sourceOrder, name)
 	}
-	if errs, warnings := loader.RunSemanticModuleBodies(result.modules, analyser, sourceOrder, verbose, debug); len(errs) != 0 {
+	compiled, errs := loader.CompileSelectedModules(result.modules, args.mainModule, sourceOrder, analyser, verbose, debug)
+	if len(errs) != 0 {
 		return nil, errs[0]
-	} else {
-		result.warnings = append(result.warnings, warnings...)
 	}
-	loader.PropagateSpecializationDemands(result.modules, sourceOrder)
-	result.methodTargets = analyser.MethodTargets()
-	for _, name := range sourceOrder {
-		info := result.modules[name]
-		dependencyInitializers := make([]string, 0, len(info.Imports))
-		for _, imported := range info.Imports {
-			if dependency := result.irModules[imported]; dependency != nil && dependency.Initializer != "" {
-				dependencyInitializers = append(dependencyInitializers, dependency.Initializer)
-			}
-		}
-		moduleIR := loader.GenerateIRModule(info, args.mainModule, dependencyInitializers)
-		result.irModules[name] = moduleIR
-		result.templates[name] = loader.GenerateModuleParameterizedTemplateIR(info)
-	}
+	result.irModules = compiled.IRModules
+	result.templates = compiled.Templates
+	result.methodTargets = compiled.MethodTargets
+	result.warnings = compiled.Warnings
 	return result, nil
 }
 
@@ -167,7 +152,7 @@ func cloneBoolMap(source map[string]bool) map[string]bool {
 	return result
 }
 
-func sourceModuleGraph(sources, sourcePackages map[string]string, trustedSources map[string]bool, importResolutions map[string]map[string]string, noStdlib bool) (map[string]*loader.ModuleInfo, map[string][]string, map[string]*parser.RootNode, error) {
+func sourceModuleGraph(sources, sourcePackages map[string]string, trustedSources map[string]bool, importResolutions map[string]map[string]string, noStdlib bool, preParsed map[string]*parser.RootNode) (map[string]*loader.ModuleInfo, map[string][]string, map[string]*parser.RootNode, error) {
 	modules := make(map[string]*loader.ModuleInfo)
 	origins := make(map[string][]string)
 	parsed := make(map[string]*parser.RootNode, len(sources))
@@ -181,19 +166,19 @@ func sourceModuleGraph(sources, sourcePackages map[string]string, trustedSources
 		if name == "" {
 			return nil, nil, nil, fmt.Errorf("source %s has no canonical module path", origin)
 		}
-		tokens, err := tokeniser.NewTokeniser(sources[origin], origin).Tokenise()
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		header, err := parser.ScanSourceHeader(tokens)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		root, err := parser.NewParser(tokens).Parse()
-		if err != nil {
-			return nil, nil, nil, err
+		root := preParsed[origin]
+		if root == nil {
+			tokens, err := tokeniser.NewTokeniser(sources[origin], origin).Tokenise()
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			root, err = parser.NewParser(tokens).Parse()
+			if err != nil {
+				return nil, nil, nil, err
+			}
 		}
 		parsed[origin] = root
+		header := sourceHeader(root)
 		module := modules[name]
 		if module == nil {
 			module = &loader.ModuleInfo{Path: name, Name: header.Module, TrustedStandardLibrary: trustedSources[origin]}
@@ -222,12 +207,26 @@ func sourceModuleGraph(sources, sourcePackages map[string]string, trustedSources
 	return modules, origins, parsed, nil
 }
 
-func resolveRootImports(root *parser.RootNode, resolutions map[string]string) {
+type sourceHeaderInfo struct {
+	Module  string
+	Imports []string
+}
+
+func sourceHeader(root *parser.RootNode) sourceHeaderInfo {
+	var header sourceHeaderInfo
 	for _, node := range root.Body {
-		importNode, ok := node.(*parser.ImportNode)
-		if !ok {
-			continue
+		if module, ok := node.(*parser.ModuleNode); ok && header.Module == "" {
+			header.Module = module.Name
 		}
+	}
+	walkImports(root.Body, func(node *parser.ImportNode) {
+		header.Imports = append(header.Imports, node.Modules...)
+	})
+	return header
+}
+
+func resolveRootImports(root *parser.RootNode, resolutions map[string]string) {
+	walkImports(root.Body, func(importNode *parser.ImportNode) {
 		importNode.ResolvedModules = make([]string, len(importNode.Modules))
 		for i, visible := range importNode.Modules {
 			resolved := resolutions[visible]
@@ -235,6 +234,20 @@ func resolveRootImports(root *parser.RootNode, resolutions map[string]string) {
 				resolved = visible
 			}
 			importNode.ResolvedModules[i] = resolved
+		}
+	})
+}
+
+func walkImports(body []parser.Node, visit func(*parser.ImportNode)) {
+	for _, node := range body {
+		switch node := node.(type) {
+		case *parser.ImportNode:
+			visit(node)
+		case *parser.WhenNode:
+			for _, branch := range node.Branches {
+				walkImports(branch.Body, visit)
+			}
+			walkImports(node.ElseBody, visit)
 		}
 	}
 }

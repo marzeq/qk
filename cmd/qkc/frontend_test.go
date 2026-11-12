@@ -7,7 +7,39 @@ import (
 	"github.com/marzeq/qk/ir"
 	"github.com/marzeq/qk/loader"
 	"github.com/marzeq/qk/parser"
+	"github.com/marzeq/qk/tokeniser"
 )
+
+func TestConditionalImportsKeepMountedModuleIdentity(t *testing.T) {
+	const source = `module main
+$if true {
+  import vendor.first
+} else {
+  import vendor.second
+}
+let main() {}
+`
+	tokens, err := tokeniser.NewTokeniser(source, "conditional_imports.qk").Tokenise()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := parser.NewParser(tokens).Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	header := sourceHeader(root)
+	if len(header.Imports) != 2 || header.Imports[0] != "vendor.first" || header.Imports[1] != "vendor.second" {
+		t.Fatalf("conditional imports missing from dependency graph: %v", header.Imports)
+	}
+	resolveRootImports(root, map[string]string{"vendor.first": "first", "vendor.second": "second"})
+	var resolved []string
+	walkImports(root.Body, func(node *parser.ImportNode) {
+		resolved = append(resolved, node.ResolvedModules...)
+	})
+	if len(resolved) != 2 || resolved[0] != "first" || resolved[1] != "second" {
+		t.Fatalf("conditional imports lost semantic module identity: %v", resolved)
+	}
+}
 
 func TestSelectedWhenGlobalUsesConstantInitializer(t *testing.T) {
 	const path = "selected_global.qk"

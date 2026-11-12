@@ -1437,25 +1437,17 @@ func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 	analyser := sema.NewAnalyser()
 	analyser.SetStaging(true)
 	ConfigureDeferredStage(analyser, s.config, func(string) *StageEnvironment { return s.environment })
-	if errors, _ := RunSemanticPipeline(modules, analyser, order, false, false); len(errors) != 0 {
-		return errors[0]
+	compiled, compileErrors := CompileSelectedModules(modules, s.module, order, analyser, false, false)
+	if len(compileErrors) != 0 {
+		return compileErrors[0]
 	}
-	PropagateSpecializationDemands(modules, order)
-	irModules, irErrors := GenerateIRModules(modules, s.module, order, false, false)
-	if len(irErrors) != 0 {
-		return irErrors[0]
-	}
-	templates := make(map[string][]ir.ParameterizedTemplate, len(order))
-	for _, name := range order {
-		templates[name] = GenerateModuleParameterizedTemplateIR(modules[name])
-	}
-	specializations, err := ExtractParameterizedSpecializations(irModules, templates, analyser.MethodTargets())
+	specializations, err := ExtractParameterizedSpecializations(compiled.IRModules, compiled.Templates, compiled.MethodTargets)
 	if err != nil {
 		return err
 	}
 	allIR := make([]*ir.Module, 0, len(order)+1)
 	for _, name := range order {
-		if moduleIR := irModules[name]; moduleIR != nil {
+		if moduleIR := compiled.IRModules[name]; moduleIR != nil {
 			allIR = append(allIR, moduleIR)
 		}
 	}
@@ -1464,7 +1456,7 @@ func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 	}
 	evaluator := ir.NewEvaluatorForTarget(s.config.TargetTriple, allIR...)
 	evaluator.TypeSatisfies = analyser.TypeSatisfies
-	moduleIR := irModules[s.module]
+	moduleIR := compiled.IRModules[s.module]
 	if moduleIR.Initializer != "" {
 		if _, err := evaluator.Run(moduleIR.Initializer); err != nil {
 			var unavailable *ir.CompileTimeUnavailableError

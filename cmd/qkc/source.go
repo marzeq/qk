@@ -19,6 +19,7 @@ type sourcePackage struct {
 	Name    string
 	Files   []string
 	Imports []string
+	Roots   map[string]*parser.RootNode
 }
 
 type packageRequest struct {
@@ -67,16 +68,6 @@ func resolvePackageDirectory(root, path string) (string, bool, error) {
 	return current, true, nil
 }
 
-func parseSource(path, source string) (*parser.RootNode, error) {
-	t := tokeniser.NewTokeniser(source, path)
-	toks, err := t.Tokenise()
-	if err != nil {
-		return nil, err
-	}
-	p := parser.NewParser(toks)
-	return p.Parse()
-}
-
 func collectPackageFiles(dir string) ([]string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -94,7 +85,7 @@ func collectPackageFiles(dir string) ([]string, error) {
 }
 
 func inspectPackage(path string, files []string, libraryRoot string, sources, sourcePackages map[string]string, trustedSources map[string]bool) (*sourcePackage, error) {
-	pkg := &sourcePackage{Path: path, Files: append([]string(nil), files...)}
+	pkg := &sourcePackage{Path: path, Files: append([]string(nil), files...), Roots: make(map[string]*parser.RootNode, len(files))}
 	seenImports := map[string]bool{}
 	for _, file := range files {
 		data, err := os.ReadFile(file)
@@ -106,10 +97,11 @@ func inspectPackage(path string, files []string, libraryRoot string, sources, so
 		if err != nil {
 			return nil, err
 		}
-		header, err := parser.ScanSourceHeader(tokens)
+		root, err := parser.NewParser(tokens).Parse()
 		if err != nil {
 			return nil, err
 		}
+		header := sourceHeader(root)
 		if header.Module == "" {
 			return nil, fmt.Errorf("%s: module declaration is missing or empty", file)
 		}
@@ -127,6 +119,7 @@ func inspectPackage(path string, files []string, libraryRoot string, sources, so
 		sources[file] = source
 		sourcePackages[file] = path
 		trustedSources[file] = trustedStandardLibrarySource(file, libraryRoot)
+		pkg.Roots[file] = root
 	}
 	return pkg, nil
 }

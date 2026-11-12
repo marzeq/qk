@@ -11,13 +11,31 @@ import (
 	"github.com/marzeq/qk/types"
 )
 
-func ComputeModuleOrder(mods map[string]*ModuleInfo, primaryModule string) ([]string, []error) {
-	order, err := ModuleDependencyOrder(mods, primaryModule)
-	if err != nil {
-		return nil, []error{err}
-	}
+type CompiledModules struct {
+	IRModules     map[string]*ir.Module
+	Templates     map[string][]ir.ParameterizedTemplate
+	MethodTargets []sema.MethodTarget
+	Warnings      []error
+}
 
-	return order, nil
+// CompileSelectedModules runs the one semantic-to-IR path after staged
+// selection has produced the final module roots.
+func CompileSelectedModules(mods map[string]*ModuleInfo, mainModule string, order []string, analyser *sema.Analyser, verbose, debug bool) (*CompiledModules, []error) {
+	errors, warnings := RunSemanticPipeline(mods, analyser, order, verbose, debug)
+	if len(errors) != 0 {
+		return nil, errors
+	}
+	PropagateSpecializationDemands(mods, order)
+	result := &CompiledModules{
+		IRModules:     GenerateIRModules(mods, mainModule, order, verbose, debug),
+		Templates:     make(map[string][]ir.ParameterizedTemplate, len(order)),
+		MethodTargets: analyser.MethodTargets(),
+		Warnings:      warnings,
+	}
+	for _, name := range order {
+		result.Templates[name] = GenerateModuleParameterizedTemplateIR(mods[name])
+	}
+	return result, nil
 }
 
 func moduleRoots(mods map[string]*ModuleInfo, order []string) []*parser.RootNode {
@@ -44,7 +62,7 @@ func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, o
 	if verbose && debug {
 		fmt.Println("completed analysis phase")
 	}
-	return RunSemanticModuleBodies(mods, analyser, order, verbose, debug)
+	return runSemanticModuleBodies(mods, analyser, order, verbose, debug)
 }
 
 // RunSemanticModule analyses one source-backed module after its dependencies
@@ -53,10 +71,10 @@ func RunSemanticModule(info *ModuleInfo, analyser *sema.Analyser, verbose, debug
 	return RunSemanticPipeline(map[string]*ModuleInfo{info.Path: info}, analyser, []string{info.Path}, verbose, debug)
 }
 
-// RunSemanticModuleBodies completes attribution and validation for modules
+// runSemanticModuleBodies completes attribution and validation for modules
 // whose declarations and analysed bodies have already been installed. This
 // preserves the language's global structural-method declaration phase.
-func RunSemanticModuleBodies(mods map[string]*ModuleInfo, analyser *sema.Analyser, order []string, verbose, debug bool) (errors []error, warnings []error) {
+func runSemanticModuleBodies(mods map[string]*ModuleInfo, analyser *sema.Analyser, order []string, verbose, debug bool) (errors []error, warnings []error) {
 	attributor := analyser.NewAttributor()
 	for _, name := range order {
 		attributor.AttributeParameterizedTemplates(mods[name].Root)
@@ -101,7 +119,7 @@ func RunSemanticModuleBodies(mods map[string]*ModuleInfo, analyser *sema.Analyse
 	return nil, warnings
 }
 
-func GenerateIRModules(mods map[string]*ModuleInfo, mainModule string, order []string, verbose bool, debug bool) (map[string]*ir.Module, []error) {
+func GenerateIRModules(mods map[string]*ModuleInfo, mainModule string, order []string, verbose bool, debug bool) map[string]*ir.Module {
 	out := make(map[string]*ir.Module, len(order))
 
 	for _, name := range order {
@@ -125,17 +143,7 @@ func GenerateIRModules(mods map[string]*ModuleInfo, mainModule string, order []s
 		fmt.Println("completed ir generation phase")
 	}
 
-	return out, nil
-}
-
-func GenerateIRModule(info *ModuleInfo, mainModule string, dependencyInitializers []string) *ir.Module {
-	gen := &irgen.Generator{
-		ModuleName: info.Path, MainModule: mainModule,
-		DependencyInitializers: append([]string(nil), dependencyInitializers...),
-	}
-	module := gen.Generate(info.Root)
-	deduplicateIRDeclarations(module)
-	return module
+	return out
 }
 
 func GenerateModuleParameterizedTemplateIR(info *ModuleInfo) []ir.ParameterizedTemplate {

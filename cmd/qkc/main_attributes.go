@@ -7,10 +7,11 @@ import (
 
 	"github.com/marzeq/qk/attributes"
 	"github.com/marzeq/qk/parser"
+	"github.com/marzeq/qk/tokeniser"
 )
 
 // Resolve build mode before staging, since target capabilities select stdlib code.
-func applyMainModuleAttributes(args *Args, sources, packages map[string]string) error {
+func applyMainModuleAttributes(args *Args, sources, packages map[string]string, parsed ...map[string]*parser.RootNode) error {
 	var module *parser.ModuleNode
 	paths := make([]string, 0, len(sources))
 	for path := range sources {
@@ -23,9 +24,19 @@ func applyMainModuleAttributes(args *Args, sources, packages map[string]string) 
 		if packages[path] != args.mainModule {
 			continue
 		}
-		root, err := parseSource(path, sources[path])
-		if err != nil {
-			return err
+		var root *parser.RootNode
+		if len(parsed) != 0 {
+			root = parsed[0][path]
+		}
+		if root == nil {
+			tokens, err := tokeniser.NewTokeniser(sources[path], path).Tokenise()
+			if err != nil {
+				return err
+			}
+			root, err = parser.NewParser(tokens).Parse()
+			if err != nil {
+				return err
+			}
 		}
 		for _, node := range root.Body {
 			if declaration, ok := node.(*parser.ModuleNode); ok {

@@ -297,10 +297,7 @@ func TestParameterizedCompileTimeBranchDefersUntilSpecialization(t *testing.T) {
 	if len(modules["test"].Root.Body) < 6 {
 		t.Fatalf("expected two concrete instances, got %d nodes", len(modules["test"].Root.Body))
 	}
-	irModules, irErrors := GenerateIRModules(modules, "test", []string{"test"}, false, false)
-	if len(irErrors) != 0 {
-		t.Fatal(irErrors[0])
-	}
+	irModules := GenerateIRModules(modules, "test", []string{"test"}, false, false)
 	templates := map[string][]ir.ParameterizedTemplate{"test": GenerateModuleParameterizedTemplateIR(modules["test"])}
 	specializations, err := ExtractParameterizedSpecializations(irModules, templates, analyser.MethodTargets())
 	if err != nil {

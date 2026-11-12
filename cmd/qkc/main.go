@@ -65,7 +65,13 @@ func main() {
 		args.mainModule, args.baseDir, args.file, searchPaths, args.sourceMounts, libraryRoot, !args.noStdlib,
 	)
 	check(err)
-	check(applyMainModuleAttributes(args, compileTimeSources, sourcePackagePaths))
+	parsedSources := make(map[string]*parser.RootNode, len(compileTimeSources))
+	for _, pkg := range discovered {
+		for path, root := range pkg.Roots {
+			parsedSources[path] = root
+		}
+	}
+	check(applyMainModuleAttributes(args, compileTimeSources, sourcePackagePaths, parsedSources))
 	comptimeConfig.Freestanding = args.freestanding
 	if args.run && discovered[0].Name != "main" {
 		fatal("cannot run package %q: package must declare module main", discovered[0].Name)
@@ -81,7 +87,7 @@ func main() {
 		fatal("cannot build executable from package %q: package must declare module main", discovered[0].Name)
 	}
 	frontend, err := runFrontend(
-		args, comptimeConfig, compileTimeSources, sourcePackagePaths, trustedSources, importResolutions, args.verbose, args.debug,
+		args, comptimeConfig, compileTimeSources, sourcePackagePaths, trustedSources, importResolutions, args.verbose, args.debug, parsedSources,
 	)
 	check(err)
 	modules, order := frontend.modules, frontend.order
