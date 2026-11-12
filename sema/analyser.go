@@ -7,12 +7,19 @@ import (
 	"github.com/marzeq/qk/types"
 )
 
+type moduleState struct {
+	root          *parser.RootNode
+	aliases       map[string]*aliasInfo
+	imports       map[string]bool
+	importAliases map[string]string
+}
+
 type Analyser struct {
 	universe                      *symbols.Scope
 	current                       *symbols.Scope
 	modules                       map[string]*symbols.Module
-	aliases                       map[string]*aliasInfo
-	aliasesByModule               map[string]map[string]*aliasInfo
+	moduleStates                  map[string]*moduleState
+	currentState                  *moduleState
 	methods                       map[string]map[string]*symbols.Symbol
 	structuralMethods             map[string][]*symbols.Symbol
 	concreteTypes                 map[string]types.Type
@@ -20,13 +27,8 @@ type Analyser struct {
 	errors                        []error
 	currentMod                    string
 	currentTrustedStandardLibrary bool
-	currentImports                map[string]bool
-	importsByModule               map[string]map[string]bool
-	currentImportAliases          map[string]string
-	importAliasesByModule         map[string]map[string]string
 	typeParameterBindings         map[string]types.Type
 	resolvingTraitMethodTypes     bool
-	currentRoot                   *parser.RootNode
 	modulePaths                   map[*parser.RootNode]string
 	functionDefinitions           map[*symbols.Symbol]*functionDefinitionInfo
 	parameterizedFunctions        map[*symbols.Symbol]*parameterizedFunctionInfo
@@ -57,14 +59,11 @@ func NewAnalyser() *Analyser {
 	a := &Analyser{
 		universe:               u,
 		modules:                make(map[string]*symbols.Module),
-		aliases:                make(map[string]*aliasInfo),
-		aliasesByModule:        make(map[string]map[string]*aliasInfo),
+		moduleStates:           make(map[string]*moduleState),
 		methods:                make(map[string]map[string]*symbols.Symbol),
 		structuralMethods:      make(map[string][]*symbols.Symbol),
 		concreteTypes:          make(map[string]types.Type),
 		nominalTraits:          make(map[string]types.TraitType),
-		importsByModule:        make(map[string]map[string]bool),
-		importAliasesByModule:  make(map[string]map[string]string),
 		modulePaths:            make(map[*parser.RootNode]string),
 		functionDefinitions:    make(map[*symbols.Symbol]*functionDefinitionInfo),
 		parameterizedFunctions: make(map[*symbols.Symbol]*parameterizedFunctionInfo),
@@ -96,16 +95,29 @@ func (a *Analyser) AnalyseModule(root *parser.RootNode, path string, trustedStan
 	a.AnalyseModuleBody(root, path)
 }
 
+func (a *Analyser) selectModule(path string) {
+	a.currentMod = path
+	if mod := a.modules[path]; mod != nil {
+		a.current = mod.Scope
+		a.currentTrustedStandardLibrary = mod.TrustedStandardLibrary
+	}
+	a.currentState = a.moduleStates[path]
+}
+
 // DeclareModule installs module-level declarations before body analysis so
 // imports and structural methods are available in dependency order.
 func (a *Analyser) DeclareModule(root *parser.RootNode, path string, trustedStandardLibrary bool) {
 	a.modulePaths[root] = path
 	// Aliases are module-local; method tables remain available so later modules
 	// can resolve methods exported by their imports.
-	if a.aliasesByModule[path] == nil {
-		a.aliasesByModule[path] = make(map[string]*aliasInfo)
+	if a.moduleStates[path] == nil {
+		a.moduleStates[path] = &moduleState{
+			aliases:       make(map[string]*aliasInfo),
+			imports:       make(map[string]bool),
+			importAliases: make(map[string]string),
+		}
 	}
-	a.aliases = a.aliasesByModule[path]
+	a.moduleStates[path].root = root
 	mod := a.modules[path]
 	if mod == nil {
 		mod = &symbols.Module{
@@ -116,20 +128,7 @@ func (a *Analyser) DeclareModule(root *parser.RootNode, path string, trustedStan
 		a.modules[path] = mod
 	}
 
-	a.current = mod.Scope
-	a.currentMod = path
-	a.currentTrustedStandardLibrary = trustedStandardLibrary
-	a.currentImports = a.importsByModule[path]
-	a.currentImportAliases = a.importAliasesByModule[path]
-	a.currentRoot = root
-	if a.currentImports == nil {
-		a.currentImports = make(map[string]bool)
-		a.importsByModule[path] = a.currentImports
-	}
-	if a.currentImportAliases == nil {
-		a.currentImportAliases = make(map[string]string)
-		a.importAliasesByModule[path] = a.currentImportAliases
-	}
+	a.selectModule(path)
 
 	a.collectTopLevel(root)
 	if path == "builtin" {
@@ -148,12 +147,6 @@ func (a *Analyser) AnalyseModuleBody(root *parser.RootNode, path string) {
 	if mod == nil {
 		return
 	}
-	a.current = mod.Scope
-	a.currentMod = path
-	a.currentTrustedStandardLibrary = mod.TrustedStandardLibrary
-	a.currentImports = a.importsByModule[path]
-	a.currentImportAliases = a.importAliasesByModule[path]
-	a.currentRoot = root
-	a.aliases = a.aliasesByModule[path]
+	a.selectModule(path)
 	a.resolveBodies(root)
 }

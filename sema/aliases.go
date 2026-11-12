@@ -52,7 +52,7 @@ func (a *Analyser) resolveAlias(info *aliasInfo, node parser.Node, indirect bool
 		trait.Name = info.node.Name
 		resolved = trait
 		a.nominalTraits[trait.Module+":"+trait.Name] = trait
-		a.registerTraitDefaults(info.node, trait, a.currentRoot)
+		a.registerTraitDefaults(info.node, trait, a.currentState.root)
 	} else if !info.node.Transparent {
 		resolved = types.DefinedType{Module: a.currentMod, Name: info.node.Name, Underlying: resolved}
 		a.concreteTypes[a.currentMod+":"+info.node.Name] = resolved

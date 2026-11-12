@@ -46,13 +46,13 @@ func (v *Validator) warnIfUnused(symbol *symbols.Symbol, loc shared.Location, wa
 
 func (v *Validator) ValidateModule(root *parser.RootNode) {
 	v.validatingTemplate = false
-	v.selectModule(root)
+	v.analyser.selectModule(v.analyser.modulePaths[root])
 	v.validateNode(root)
 }
 
 func (v *Validator) ValidateParameterizedTemplates(root *parser.RootNode) {
 	v.validatingTemplate = true
-	v.selectModule(root)
+	v.analyser.selectModule(v.analyser.modulePaths[root])
 	for _, node := range root.Body {
 		function, ok := node.(*parser.FunctionDefNode)
 		if !ok || !function.IsParameterized() || function.DeferredStage {
@@ -61,24 +61,11 @@ func (v *Validator) ValidateParameterizedTemplates(root *parser.RootNode) {
 		bindings := v.analyser.templateBindings(function.Symbol)
 		v.analyser.withDefinitionContext(
 			v.analyser.currentMod,
-			v.analyser.currentTrustedStandardLibrary,
 			bindings,
 			func() { v.validateNode(function) },
 		)
 	}
 	v.validatingTemplate = false
-}
-
-func (v *Validator) selectModule(root *parser.RootNode) {
-	path := v.analyser.modulePaths[root]
-	v.analyser.currentMod = path
-	if mod := v.analyser.modules[path]; mod != nil {
-		v.analyser.current = mod.Scope
-		v.analyser.currentTrustedStandardLibrary = mod.TrustedStandardLibrary
-	}
-	v.analyser.currentImports = v.analyser.importsByModule[path]
-	v.analyser.currentImportAliases = v.analyser.importAliasesByModule[path]
-	v.analyser.aliases = v.analyser.aliasesByModule[path]
 }
 
 func (v *Validator) Errors() []error {

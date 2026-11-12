@@ -32,7 +32,7 @@ func (a *Analyser) resolveIdentifier(n *parser.IdentifierNode) (*symbols.Symbol,
 		return resolved, ok
 	}
 
-	modulePath := a.currentImportAliases[n.Module]
+	modulePath := a.currentState.importAliases[n.Module]
 	if modulePath == "" {
 		modulePath = n.Module
 	}
@@ -405,7 +405,7 @@ func (a *Analyser) resolveModuleField(n *parser.FieldAccessNode) bool {
 	}
 
 	candidate := path + "." + n.Field.Name
-	resolvedCandidate := a.currentImportAliases[candidate]
+	resolvedCandidate := a.currentState.importAliases[candidate]
 	if resolvedCandidate == "" {
 		resolvedCandidate = candidate
 	}
@@ -413,13 +413,13 @@ func (a *Analyser) resolveModuleField(n *parser.FieldAccessNode) bool {
 		n.ModulePath = candidate
 		return true
 	}
-	for imported := range a.currentImportAliases {
+	for imported := range a.currentState.importAliases {
 		if strings.HasPrefix(imported, candidate+".") {
 			n.ModulePath = candidate
 			return true
 		}
 	}
-	resolvedPath := a.currentImportAliases[path]
+	resolvedPath := a.currentState.importAliases[path]
 	if resolvedPath == "" {
 		resolvedPath = path
 	}
@@ -451,13 +451,13 @@ func (a *Analyser) resolveModuleField(n *parser.FieldAccessNode) bool {
 }
 
 func (a *Analyser) modulePathAccessible(path string, exact bool) bool {
-	if a.currentImports[path] {
+	if a.currentState.imports[path] {
 		return true
 	}
 	if exact {
 		return false
 	}
-	for imported := range a.currentImports {
+	for imported := range a.currentState.imports {
 		if strings.HasPrefix(imported, path+".") {
 			return true
 		}

@@ -88,7 +88,6 @@ type parameterizedValueInfo struct {
 	node            *parser.DeclarationNode
 	root            *parser.RootNode
 	module          string
-	trusted         bool
 	specializations map[string]*parser.DeclarationNode
 }
 
@@ -330,25 +329,18 @@ func (a *Analyser) checkParameterizedArgumentsFrom(node parser.Node, parameters 
 	return valid
 }
 
-func (a *Analyser) withDefinitionContext(module string, trusted bool, bindings map[string]types.Type, action func()) {
+func (a *Analyser) withDefinitionContext(module string, bindings map[string]types.Type, action func()) {
 	previousScope, previousModule := a.current, a.currentMod
-	previousTrusted, previousImports := a.currentTrustedStandardLibrary, a.currentImports
-	previousImportAliases := a.currentImportAliases
-	previousAliases, previousBindings := a.aliases, a.typeParameterBindings
+	previousTrusted, previousState := a.currentTrustedStandardLibrary, a.currentState
+	previousBindings := a.typeParameterBindings
 	previousTraitContext := a.resolvingTraitMethodTypes
-	a.currentMod = module
-	a.current = a.modules[module].Scope
-	a.currentTrustedStandardLibrary = trusted
-	a.currentImports = a.importsByModule[module]
-	a.currentImportAliases = a.importAliasesByModule[module]
-	a.aliases = a.aliasesByModule[module]
+	a.selectModule(module)
 	a.typeParameterBindings = bindings
 	a.resolvingTraitMethodTypes = false
 	action()
 	a.current, a.currentMod = previousScope, previousModule
-	a.currentTrustedStandardLibrary, a.currentImports = previousTrusted, previousImports
-	a.currentImportAliases = previousImportAliases
-	a.aliases, a.typeParameterBindings = previousAliases, previousBindings
+	a.currentTrustedStandardLibrary, a.currentState = previousTrusted, previousState
+	a.typeParameterBindings = previousBindings
 	a.resolvingTraitMethodTypes = previousTraitContext
 }
 
@@ -401,7 +393,7 @@ func (a *Analyser) specializeParameterizedAlias(info *parameterizedAliasInfo, ar
 	info.specializations[key] = specialization
 	bindings := typeArgumentBindings(info.parameters, arguments)
 	var selectionError error
-	a.withDefinitionContext(info.module, a.modules[info.module].TrustedStandardLibrary, bindings, func() {
+	a.withDefinitionContext(info.module, bindings, func() {
 		selectedType := info.node.Type
 		if info.node.DeferredStage {
 			if a.deferredTypeSelector == nil {
@@ -480,7 +472,7 @@ func (a *Analyser) specializeParameterizedValue(template *symbols.Symbol, argume
 	info.specializations[key] = clone
 	info.root.Body = append(info.root.Body, clone)
 	bindings := typeArgumentBindings(template.ParameterizedParameters, arguments)
-	a.withDefinitionContext(info.module, info.trusted, bindings, func() {
+	a.withDefinitionContext(info.module, bindings, func() {
 		a.collectGlobalVariable(clone)
 		if clone.Symbol != nil {
 			clone.Symbol.TemplateSymbol = template
@@ -545,8 +537,7 @@ func (a *Analyser) specializeParameterizedFunction(template *symbols.Symbol, arg
 			}
 		}
 		var selectionError error
-		trusted := a.modules[info.module].TrustedStandardLibrary
-		a.withDefinitionContext(info.module, trusted, bindings, func() {
+		a.withDefinitionContext(info.module, bindings, func() {
 			selectionError = a.deferredStageSelector(cloned, info.root, stageBindings)
 			if selectionError != nil {
 				return

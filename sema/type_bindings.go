@@ -41,7 +41,7 @@ func (a *Analyser) isTypeBinding(name *parser.NamedTypeNode) bool {
 		symbol, ok := a.current.Resolve(name.Name)
 		return ok && symbol.Kind == symbols.SymbolKindType
 	}
-	modulePath := a.currentImportAliases[name.ModName]
+	modulePath := a.currentState.importAliases[name.ModName]
 	if modulePath == "" {
 		return false
 	}

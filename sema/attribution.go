@@ -50,13 +50,13 @@ func (a *Attributor) errorf(node parser.Node, format string, args ...any) {
 
 func (a *Attributor) AttributeModule(root *parser.RootNode) {
 	a.templatesOnly = false
-	a.selectModule(root)
+	a.analyser.selectModule(a.analyser.modulePaths[root])
 	a.attributeNode(root)
 }
 
 func (a *Attributor) AttributeParameterizedTemplates(root *parser.RootNode) {
 	a.templatesOnly = true
-	a.selectModule(root)
+	a.analyser.selectModule(a.analyser.modulePaths[root])
 	for _, node := range root.Body {
 		function, ok := node.(*parser.FunctionDefNode)
 		if !ok || !function.IsParameterized() || function.DeferredStage {
@@ -65,24 +65,11 @@ func (a *Attributor) AttributeParameterizedTemplates(root *parser.RootNode) {
 		bindings := a.analyser.templateBindings(function.Symbol)
 		a.analyser.withDefinitionContext(
 			a.analyser.currentMod,
-			a.analyser.currentTrustedStandardLibrary,
 			bindings,
 			func() { a.attributeNode(function) },
 		)
 	}
 	a.templatesOnly = false
-}
-
-func (a *Attributor) selectModule(root *parser.RootNode) {
-	path := a.analyser.modulePaths[root]
-	a.analyser.currentMod = path
-	if mod := a.analyser.modules[path]; mod != nil {
-		a.analyser.current = mod.Scope
-		a.analyser.currentTrustedStandardLibrary = mod.TrustedStandardLibrary
-	}
-	a.analyser.currentImports = a.analyser.importsByModule[path]
-	a.analyser.currentImportAliases = a.analyser.importAliasesByModule[path]
-	a.analyser.aliases = a.analyser.aliasesByModule[path]
 }
 
 func (a *Attributor) Errors() []error {
@@ -1539,7 +1526,7 @@ func (a *Attributor) attributeFunctionDefinition(symbol *symbols.Symbol) {
 	previousTemplatesOnly := a.templatesOnly
 	a.templatesOnly = definition.node.IsParameterized()
 	defer func() { a.templatesOnly = previousTemplatesOnly }()
-	a.analyser.withDefinitionContext(definition.module, mod.TrustedStandardLibrary, bindings, func() {
+	a.analyser.withDefinitionContext(definition.module, bindings, func() {
 		a.attributeNode(definition.node)
 	})
 }

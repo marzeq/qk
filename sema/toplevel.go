@@ -43,13 +43,13 @@ func (a *Analyser) collectTopLevel(root *parser.RootNode) {
 }
 
 func (a *Analyser) resolveBodies(root *parser.RootNode) {
-	aliasNames := make([]string, 0, len(a.aliases))
-	for name := range a.aliases {
+	aliasNames := make([]string, 0, len(a.currentState.aliases))
+	for name := range a.currentState.aliases {
 		aliasNames = append(aliasNames, name)
 	}
 	sort.Strings(aliasNames)
 	for _, name := range aliasNames {
-		info := a.aliases[name]
+		info := a.currentState.aliases[name]
 		if info.state == aliasUnseen {
 			a.resolveAlias(info, info.node, false)
 		}
@@ -102,33 +102,7 @@ func (a *Analyser) collectPlainFunctionSignature(n *parser.FunctionDefNode) {
 		}
 		defer func() { a.typeParameterBindings = previousBindings }()
 	}
-	paramTypes := a.resolveFunctionParameterTypes(n.Args)
-	requiredParameters := len(n.Args)
-
-	for i, arg := range n.Args {
-		if arg.Default != nil && requiredParameters == len(n.Args) {
-			requiredParameters = i
-		}
-	}
-	if n.TypedVariadic && requiredParameters == len(n.Args) {
-		requiredParameters--
-	}
-
-	var retType types.Type
-	if n.RetTypeNode != nil {
-		retType = a.resolveTypeNode(n.RetTypeNode)
-	}
-
-	sig := &symbols.FunctionSignature{
-		Parameters:         paramTypes,
-		RequiredParameters: requiredParameters,
-		ReturnType:         retType,
-		Variadic:           n.HasVariadic,
-		TypedVariadic:      n.TypedVariadic,
-	}
-	if n.TypedVariadic {
-		sig.VariadicElement = types.Underlying(paramTypes[len(paramTypes)-1]).(types.SliceType).Base
-	}
+	sig := a.resolveFunctionSignature(n)
 
 	sym := &symbols.Symbol{
 		Name:                    n.Name,
@@ -144,14 +118,55 @@ func (a *Analyser) collectPlainFunctionSignature(n *parser.FunctionDefNode) {
 	setValueParameterPositions(sym, n.Args)
 
 	if a.defineSymbol(sym, n) {
-		n.Symbol = sym
-		a.functionDefinitions[sym] = &functionDefinitionInfo{node: n, module: a.currentMod}
-		if sym.Template {
-			a.parameterizedFunctions[sym] = &parameterizedFunctionInfo{
-				node: n, root: a.currentRoot, module: a.currentMod,
-				specializations: make(map[string]*parser.FunctionDefNode),
-			}
+		a.recordFunctionDefinition(n, sym)
+	}
+}
+
+func (a *Analyser) resolveFunctionSignature(n *parser.FunctionDefNode) *symbols.FunctionSignature {
+	parameters := a.resolveFunctionParameterTypes(n.Args)
+	required := len(n.Args)
+	for i, arg := range n.Args {
+		if arg.Default != nil {
+			required = i
+			break
 		}
+	}
+	if n.TypedVariadic && required == len(n.Args) {
+		required--
+	}
+	var result types.Type
+	if n.RetTypeNode != nil {
+		result = a.resolveTypeNode(n.RetTypeNode)
+	}
+	signature := &symbols.FunctionSignature{
+		Parameters: parameters, RequiredParameters: required, ReturnType: result,
+		Variadic: n.HasVariadic, TypedVariadic: n.TypedVariadic,
+	}
+	if n.TypedVariadic {
+		signature.VariadicElement = types.Underlying(parameters[len(parameters)-1]).(types.SliceType).Base
+	}
+	return signature
+}
+
+func (a *Analyser) recordFunctionDefinition(n *parser.FunctionDefNode, symbol *symbols.Symbol) {
+	n.Symbol = symbol
+	a.functionDefinitions[symbol] = &functionDefinitionInfo{node: n, module: a.currentMod}
+	if symbol.Template {
+		a.parameterizedFunctions[symbol] = &parameterizedFunctionInfo{
+			node: n, root: a.currentState.root, module: a.currentMod,
+			specializations: make(map[string]*parser.FunctionDefNode),
+		}
+	}
+}
+
+func methodReceiverKind(n *parser.FunctionDefNode) types.TraitReceiverKind {
+	switch n.Receiver {
+	case parser.MethodReceiverPointer:
+		return types.TraitReceiverPointer
+	case parser.MethodReceiverMutablePointer:
+		return types.TraitReceiverMutablePointer
+	default:
+		return types.TraitReceiverValue
 	}
 }
 
@@ -185,7 +200,7 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 	}
 	var ownerType types.Type
 	ownerModule := a.currentMod
-	if info, ok := a.aliases[n.MethodOwner]; ok {
+	if info, ok := a.currentState.aliases[n.MethodOwner]; ok {
 		if info.node.Transparent {
 			a.errorf(n, "cannot attach method to type alias %q", n.MethodOwner)
 			return
@@ -256,44 +271,13 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 		a.errorf(n, "method %q already defined on type %q", n.Name, n.MethodOwner)
 		return
 	}
-	paramTypes := a.resolveFunctionParameterTypes(n.Args)
-	requiredParameters := len(n.Args)
-	for i, arg := range n.Args {
-		if arg.Default != nil && requiredParameters == len(n.Args) {
-			requiredParameters = i
-		}
-	}
-	if n.TypedVariadic && requiredParameters == len(n.Args) {
-		requiredParameters--
-	}
-	var ret types.Type
-	if n.RetTypeNode != nil {
-		ret = a.resolveTypeNode(n.RetTypeNode)
-	}
-	receiver := types.TraitReceiverValue
-	switch n.Receiver {
-	case parser.MethodReceiverPointer:
-		receiver = types.TraitReceiverPointer
-	case parser.MethodReceiverMutablePointer:
-		receiver = types.TraitReceiverMutablePointer
-	}
 	sym := &symbols.Symbol{Name: n.MethodOwner + "." + n.Name, Kind: symbols.SymbolKindFunction,
-		Signature: &symbols.FunctionSignature{Parameters: paramTypes, RequiredParameters: requiredParameters, ReturnType: ret, Variadic: n.HasVariadic, TypedVariadic: n.TypedVariadic},
+		Signature: a.resolveFunctionSignature(n),
 		Public:    n.Pub, Attributes: n.Attributes, Method: true, StaticMethod: n.Receiver == parser.MethodReceiverNone,
-		MethodReceiver: receiver, DefinitionModule: a.currentMod, ParameterizedParameters: parameterizedParameters, Template: len(parameterizedParameters) != 0}
+		MethodReceiver: methodReceiverKind(n), DefinitionModule: a.currentMod, ParameterizedParameters: parameterizedParameters, Template: len(parameterizedParameters) != 0}
 	setValueParameterPositions(sym, n.Args)
 	a.methods[key][n.Name] = sym
-	if n.TypedVariadic {
-		sym.Signature.VariadicElement = types.Underlying(paramTypes[len(paramTypes)-1]).(types.SliceType).Base
-	}
-	n.Symbol = sym
-	a.functionDefinitions[sym] = &functionDefinitionInfo{node: n, module: a.currentMod}
-	if sym.Template {
-		a.parameterizedFunctions[sym] = &parameterizedFunctionInfo{
-			node: n, root: a.currentRoot, module: a.currentMod,
-			specializations: make(map[string]*parser.FunctionDefNode),
-		}
-	}
+	a.recordFunctionDefinition(n, sym)
 }
 
 func (a *Analyser) collectPatternMethodSignature(n *parser.FunctionDefNode) {
@@ -378,37 +362,13 @@ func (a *Analyser) collectPatternMethodSignature(n *parser.FunctionDefNode) {
 		return
 	}
 
-	paramTypes := a.resolveFunctionParameterTypes(n.Args)
-	requiredParameters := len(n.Args)
-	for i, arg := range n.Args {
-		if arg.Default != nil && requiredParameters == len(n.Args) {
-			requiredParameters = i
-		}
-	}
-	if n.TypedVariadic && requiredParameters == len(n.Args) {
-		requiredParameters--
-	}
-	var ret types.Type
-	if n.RetTypeNode != nil {
-		ret = a.resolveTypeNode(n.RetTypeNode)
-	}
-	receiver := types.TraitReceiverValue
-	switch n.Receiver {
-	case parser.MethodReceiverPointer:
-		receiver = types.TraitReceiverPointer
-	case parser.MethodReceiverMutablePointer:
-		receiver = types.TraitReceiverMutablePointer
-	}
 	displayOwner := ownerType.String()
 	sym := &symbols.Symbol{Name: displayOwner + "." + n.Name, Kind: symbols.SymbolKindFunction,
-		Signature: &symbols.FunctionSignature{Parameters: paramTypes, RequiredParameters: requiredParameters, ReturnType: ret, Variadic: n.HasVariadic, TypedVariadic: n.TypedVariadic},
+		Signature: a.resolveFunctionSignature(n),
 		Public:    n.Pub, Attributes: n.Attributes, Method: true, StaticMethod: n.Receiver == parser.MethodReceiverNone,
-		MethodReceiver: receiver, MethodOwnerType: ownerType, DefinitionModule: a.currentMod,
+		MethodReceiver: methodReceiverKind(n), MethodOwnerType: ownerType, DefinitionModule: a.currentMod,
 		ParameterizedParameters: parameterizedParameters, Template: len(parameterizedParameters) != 0}
 	setValueParameterPositions(sym, n.Args)
-	if n.TypedVariadic {
-		sym.Signature.VariadicElement = types.Underlying(paramTypes[len(paramTypes)-1]).(types.SliceType).Base
-	}
 
 	if structural {
 		for _, existing := range a.structuralMethods[n.Name] {
@@ -430,14 +390,7 @@ func (a *Analyser) collectPatternMethodSignature(n *parser.FunctionDefNode) {
 		a.methods[key][n.Name] = sym
 	}
 
-	n.Symbol = sym
-	a.functionDefinitions[sym] = &functionDefinitionInfo{node: n, module: a.currentMod}
-	if sym.Template {
-		a.parameterizedFunctions[sym] = &parameterizedFunctionInfo{
-			node: n, root: a.currentRoot, module: a.currentMod,
-			specializations: make(map[string]*parser.FunctionDefNode),
-		}
-	}
+	a.recordFunctionDefinition(n, sym)
 }
 
 func (a *Analyser) resolveFunctionParameterTypes(args []*parser.FunctionNodeArg) []types.Type {
@@ -616,7 +569,7 @@ func (a *Analyser) precollectTypeAlias(n *parser.TypeAliasNode) {
 		return
 	}
 
-	a.aliases[n.Name] = &aliasInfo{
+	a.currentState.aliases[n.Name] = &aliasInfo{
 		node:  n,
 		state: aliasUnseen,
 	}
@@ -629,7 +582,7 @@ func (a *Analyser) finishParameterizedTypeAlias(n *parser.TypeAliasNode) {
 	parameterizedParameters := a.makeParameterizedParameters(n.Name, n.ParameterizedParameters)
 	n.Symbol.ParameterizedParameters = parameterizedParameters
 	a.parameterizedAliases[n.Symbol] = &parameterizedAliasInfo{
-		node: n, root: a.currentRoot, module: a.currentMod, parameters: parameterizedParameters,
+		node: n, root: a.currentState.root, module: a.currentMod, parameters: parameterizedParameters,
 		specializations: make(map[string]*parameterizedAliasSpecialization),
 	}
 }
@@ -695,8 +648,8 @@ func (a *Analyser) collectGlobalVariable(n *parser.DeclarationNode) {
 		n.Symbol = sym
 		if sym.Template {
 			a.parameterizedValues[sym] = &parameterizedValueInfo{
-				node: n, root: a.currentRoot, module: a.currentMod,
-				trusted: a.currentTrustedStandardLibrary, specializations: make(map[string]*parser.DeclarationNode),
+				node: n, root: a.currentState.root, module: a.currentMod,
+				specializations: make(map[string]*parser.DeclarationNode),
 			}
 		}
 	}
@@ -727,14 +680,14 @@ func (a *Analyser) collectImport(n *parser.ImportNode) {
 			continue
 		}
 
-		a.currentImports[target] = true
-		a.currentImportAliases[name] = target
+		a.currentState.imports[target] = true
+		a.currentState.importAliases[name] = target
 		visibleParts := strings.Split(name, ".")
 		targetParts := strings.Split(target, ".")
 		for visibleCount := 1; visibleCount < len(visibleParts); visibleCount++ {
 			targetCount := len(targetParts) - (len(visibleParts) - visibleCount)
 			if targetCount > 0 {
-				a.currentImportAliases[strings.Join(visibleParts[:visibleCount], ".")] = strings.Join(targetParts[:targetCount], ".")
+				a.currentState.importAliases[strings.Join(visibleParts[:visibleCount], ".")] = strings.Join(targetParts[:targetCount], ".")
 			}
 		}
 		alias := strings.Split(name, ".")[0]

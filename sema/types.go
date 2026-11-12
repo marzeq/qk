@@ -98,7 +98,7 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 				return symbol.TypeInfo
 			}
 		}
-		if info, ok := a.aliases[t.Name]; ok && t.ModName == "" {
+		if info, ok := a.currentState.aliases[t.Name]; ok && t.ModName == "" {
 			if len(t.TypeArguments) != 0 {
 				a.errorf(t, "non-parameterized type %q does not accept type arguments", t.Name)
 				return types.ErrorType{}
@@ -135,7 +135,7 @@ func (a *Analyser) resolveTypeNodeAt(n parser.TypeNode, indirect bool) types.Typ
 			return sym.TypeInfo
 		}
 
-		modulePath := a.currentImportAliases[t.ModName]
+		modulePath := a.currentState.importAliases[t.ModName]
 		if modulePath == "" {
 			modulePath = t.ModName
 		}
