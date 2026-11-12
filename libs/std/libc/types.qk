@@ -1,0 +1,42 @@
+module std.libc
+
+import core.build
+
+$if core.build.has_libc {
+import std.ctypes
+
+pub let FILE = opaque
+pub let DIR = opaque
+
+// -----------------------------------------------------------------------------
+// C ABI types
+// -----------------------------------------------------------------------------
+
+pub let time_t: type =
+  $if core.build.os == .Windows
+    || core.build.os == .MacOS
+    || core.build.os == .FreeBSD
+    || core.build.os == .OpenBSD
+    || core.build.os == .NetBSD
+    || core.build.os == .DragonFly
+    || core.build.os == .WASI { std.ctypes.long_long }
+    else if core.build.os == .Linux { std.ctypes.long }
+    else {
+    compiler_error("Unsupported time_t ABI")
+  }
+
+pub let clock_t: type =
+  $if core.build.os == .Windows
+    || core.build.os == .FreeBSD
+    || core.build.os == .OpenBSD
+    || core.build.os == .NetBSD
+    || core.build.os == .DragonFly { std.ctypes.int }
+    else { std.ctypes.long }
+
+$if core.build.os != .Windows {
+  pub let Timespec = struct {
+    seconds: time_t,
+    nanoseconds: std.ctypes.long,
+  }
+}
+}

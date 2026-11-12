@@ -1,0 +1,23 @@
+module std.libc
+
+import core.build
+
+$if core.build.has_libc {
+import std.ctypes
+
+$if core.build.os == .Windows {
+  pub let errno_location(): *mut std.ctypes.int @foreign(symbol "_errno")
+} else if core.build.os == .Linux || core.build.os == .WASI {
+  pub let errno_location(): *mut std.ctypes.int @foreign(symbol "__errno_location")
+} else if core.build.os == .MacOS
+  || core.build.os == .FreeBSD
+  || core.build.os == .OpenBSD
+  || core.build.os == .NetBSD
+  || core.build.os == .DragonFly {
+  pub let errno_location(): *mut std.ctypes.int @foreign(symbol "__error")
+} else {
+  compiler_error("Unsupported errno ABI")
+}
+
+pub let strerror(error: std.ctypes.int): cstr @foreign
+}

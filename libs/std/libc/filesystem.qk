@@ -1,0 +1,91 @@
+module std.libc
+
+import core.build
+
+$if core.build.has_libc {
+import std.ctypes
+
+$if core.build.os == .Windows {
+  pub let mkdir(path: cstr): std.ctypes.int @foreign(symbol "_mkdir")
+  pub let rmdir(path: cstr): std.ctypes.int @foreign(symbol "_rmdir")
+  pub let chdir(path: cstr): std.ctypes.int @foreign(symbol "_chdir")
+  pub let getcwd(buffer: *mut std.ctypes.char, size: std.ctypes.int): *mut std.ctypes.char @foreign(symbol "_getcwd")
+} else {
+  pub let mkdir(path: cstr, mode: std.ctypes.unsigned_int): std.ctypes.int @foreign
+  pub let rmdir(path: cstr): std.ctypes.int @foreign
+  pub let opendir(path: cstr): *DIR @foreign
+  pub let closedir(directory: *DIR): std.ctypes.int @foreign
+
+  pub let Dirent: type =
+    $if core.build.os == .Linux {
+      $if core.build.pointer_bits == 64 {
+        struct {
+          inode: u64,
+          offset: i64,
+          record_length: u16,
+          entry_type: u8,
+          name: [256]std.ctypes.char,
+        }
+      } else {
+        struct {
+          inode: u32,
+          offset: i32,
+          record_length: u16,
+          entry_type: u8,
+          name: [256]std.ctypes.char,
+        }
+      }
+    } else if core.build.os == .MacOS {
+      struct {
+        inode: u64,
+        seek_offset: i64,
+        record_length: u16,
+        name_length: u16,
+        entry_type: u8,
+        name: [1024]std.ctypes.char,
+      }
+    } else if core.build.os == .FreeBSD {
+      struct {
+        inode: u64,
+        offset: i64,
+        record_length: u16,
+        entry_type: u8,
+        padding_0: u8,
+        name_length: u16,
+        padding_1: u16,
+        name: [256]std.ctypes.char,
+      }
+    } else if core.build.os == .OpenBSD {
+      struct {
+        inode: u64,
+        offset: i64,
+        record_length: u16,
+        entry_type: u8,
+        name_length: u8,
+        padding: [4]u8,
+        name: [256]std.ctypes.char,
+      }
+    } else if core.build.os == .NetBSD {
+      struct {
+        inode: u64,
+        record_length: u16,
+        name_length: u16,
+        entry_type: u8,
+        name: [512]std.ctypes.char,
+      }
+    } else if core.build.os == .DragonFly {
+      struct {
+        inode: u64,
+        name_length: u16,
+        entry_type: u8,
+        padding_0: u8,
+        padding_1: u32,
+        name: [256]std.ctypes.char,
+      }
+    } else {
+      compiler_error("Unsupported dirent ABI")
+    }
+
+  pub let readdir(directory: *DIR): *mut Dirent @foreign
+}
+}

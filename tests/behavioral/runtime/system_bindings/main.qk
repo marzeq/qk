@@ -1,0 +1,23 @@
+module main
+
+import core.build
+import std.libc
+import std.sys
+
+let main() {
+  let memory = std.sys.map_anonymous(4096)
+  assert(memory != nil, "anonymous mapping failed")
+  let bytes = memory.(*mut u8)
+  bytes[0] = 42
+  bytes[4095] = 7
+  assert(bytes[0] == 42 && bytes[4095] == 7, "mapped memory is not writable")
+  assert(std.sys.unmap(memory, 4096), "unmapping failed")
+
+  $if core.build.os != .Windows {
+    assert(std.sys.getpagesize() > 0, "invalid page size")
+  }
+
+  assert(std.libc.isdigit(50) != 0, "C character classification failed")
+  assert(std.libc.strspn(c"abc12", c"abc") == 3, "C string span failed")
+  assert(std.libc.strtod(c"2.5", nil) == 2.5, "C number conversion failed")
+}

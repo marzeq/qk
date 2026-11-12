@@ -1,0 +1,9 @@
+module std.sys
+  @link(
+    $if core.build.has_libc {
+      $if core.build.os == .Windows { system "kernel32", }
+      else { system "c", }
+    }
+  )
+
+import core.build

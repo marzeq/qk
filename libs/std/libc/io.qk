@@ -1,0 +1,51 @@
+module std.libc
+
+import core.build
+
+$if core.build.has_libc {
+import std.ctypes
+
+$if core.build.os == .Windows {
+  let windows_read(
+    fd: std.ctypes.int,
+    buf: *mut void,
+    count: std.ctypes.unsigned_int,
+  ): std.ctypes.int @foreign(symbol "_read")
+
+  let windows_write(
+    fd: std.ctypes.int,
+    buf: *void,
+    count: std.ctypes.unsigned_int,
+  ): std.ctypes.int @foreign(symbol "_write")
+
+  pub let read(
+    fd: std.ctypes.int,
+    buf: *mut void,
+    count: std.ctypes.size_t,
+  ): std.ctypes.ssize_t {
+    let limited = if count > 0xffffffff.(std.ctypes.size_t) { 0xffffffff.(std.ctypes.size_t) } else { count }
+    return windows_read(fd, buf, limited.(std.ctypes.unsigned_int)).(std.ctypes.ssize_t)
+  }
+
+  pub let write(
+    fd: std.ctypes.int,
+    buf: *void,
+    count: std.ctypes.size_t,
+  ): std.ctypes.ssize_t {
+    let limited = if count > 0xffffffff.(std.ctypes.size_t) { 0xffffffff.(std.ctypes.size_t) } else { count }
+    return windows_write(fd, buf, limited.(std.ctypes.unsigned_int)).(std.ctypes.ssize_t)
+  }
+} else {
+  pub let read(
+    fd: std.ctypes.int,
+    buf: *mut void,
+    count: std.ctypes.size_t,
+  ): std.ctypes.ssize_t @foreign
+
+  pub let write(
+    fd: std.ctypes.int,
+    buf: *void,
+    count: std.ctypes.size_t,
+  ): std.ctypes.ssize_t @foreign
+}
+}

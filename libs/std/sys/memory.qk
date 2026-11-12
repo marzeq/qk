@@ -1,0 +1,78 @@
+module std.sys
+
+import core.build
+
+$if core.build.has_libc {
+import std.ctypes
+
+$if core.build.os == .Windows {
+  pub let MemCommit: std.ctypes.unsigned_long = 0x1000
+  pub let MemReserve: std.ctypes.unsigned_long = 0x2000
+  pub let MemRelease: std.ctypes.unsigned_long = 0x8000
+  pub let PageReadWrite: std.ctypes.unsigned_long = 0x04
+
+  pub let virtual_alloc(
+    address: *mut void,
+    size: std.ctypes.size_t,
+    allocation_type: std.ctypes.unsigned_long,
+    protect: std.ctypes.unsigned_long,
+  ): *mut void @foreign(symbol "VirtualAlloc")
+
+  pub let virtual_free(
+    address: *mut void,
+    size: std.ctypes.size_t,
+    free_type: std.ctypes.unsigned_long,
+  ): std.ctypes.int @foreign(symbol "VirtualFree")
+
+  pub let virtual_protect(
+    address: *mut void,
+    size: std.ctypes.size_t,
+    new_protect: std.ctypes.unsigned_long,
+    old_protect: *mut std.ctypes.unsigned_long,
+  ): std.ctypes.int @foreign(symbol "VirtualProtect")
+} else {
+  pub let ProtNone: std.ctypes.int = 0
+  pub let ProtRead: std.ctypes.int = 1
+  pub let ProtWrite: std.ctypes.int = 2
+  pub let ProtExec: std.ctypes.int = 4
+  pub let MapPrivate: std.ctypes.int = 2
+  pub let MapAnonymous: std.ctypes.int =
+    $if core.build.os == .Linux { 0x20 } else { 0x1000 }
+
+  pub let mmap_offset_t: type =
+    $if core.build.os == .Linux { std.ctypes.long }
+    else { std.ctypes.long_long }
+
+  pub let mmap(
+    address: *mut void,
+    length: std.ctypes.size_t,
+    protection: std.ctypes.int,
+    flags: std.ctypes.int,
+    fd: std.ctypes.int,
+    offset: mmap_offset_t,
+  ): *mut void @foreign
+
+  pub let munmap(address: *mut void, length: std.ctypes.size_t): std.ctypes.int @foreign
+  pub let mprotect(address: *mut void, length: std.ctypes.size_t, protection: std.ctypes.int): std.ctypes.int @foreign
+  pub let msync(address: *mut void, length: std.ctypes.size_t, flags: std.ctypes.int): std.ctypes.int @foreign
+  pub let getpagesize(): std.ctypes.int @foreign
+}
+
+// Reserve committed, readable and writable anonymous pages.
+pub let map_anonymous(size: usz): *mut void {
+  $if core.build.os == .Windows {
+    return virtual_alloc(nil, size, MemReserve | MemCommit, PageReadWrite)
+  } else {
+    let result = mmap(nil, size, ProtRead | ProtWrite, MapPrivate | MapAnonymous, -1, 0)
+    return if result.(usz) == ~0.(usz) { nil } else { result }
+  }
+}
+
+pub let unmap(address: *mut void, size: usz): bool {
+  $if core.build.os == .Windows {
+    return virtual_free(address, 0, MemRelease) != 0
+  } else {
+    return munmap(address, size) == 0
+  }
+}
+}

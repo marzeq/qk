@@ -1,0 +1,106 @@
+module std.libc
+
+import core.build
+
+$if core.build.has_libc {
+import std.ctypes
+
+pub let printf(fmt: cstr, ...): std.ctypes.int @foreign
+pub let fprintf(stream: *FILE, fmt: cstr, ...): std.ctypes.int @foreign
+pub let sprintf(buffer: *mut std.ctypes.char, fmt: cstr, ...): std.ctypes.int @foreign
+pub let snprintf(buffer: *mut std.ctypes.char, n: std.ctypes.size_t, fmt: cstr, ...): std.ctypes.int @foreign
+
+pub let scanf(fmt: cstr, ...): std.ctypes.int @foreign
+pub let fscanf(stream: *FILE, fmt: cstr, ...): std.ctypes.int @foreign
+pub let sscanf(str: cstr, fmt: cstr, ...): std.ctypes.int @foreign
+
+pub let putchar(ch: std.ctypes.int): std.ctypes.int @foreign
+pub let getchar(): std.ctypes.int @foreign
+pub let puts(str: cstr): std.ctypes.int @foreign
+
+pub let fopen(path: cstr, mode: cstr): *FILE @foreign
+$if core.build.os != .Windows {
+  pub let fdopen(fd: std.ctypes.int, mode: cstr): *FILE @foreign
+}
+pub let fclose(file: *FILE): std.ctypes.int @foreign
+
+pub let fread(
+  ptr: *mut void,
+  size: std.ctypes.size_t,
+  count: std.ctypes.size_t,
+  stream: *FILE,
+): std.ctypes.size_t @foreign
+
+pub let fwrite(
+  ptr: *void,
+  size: std.ctypes.size_t,
+  count: std.ctypes.size_t,
+  stream: *FILE,
+): std.ctypes.size_t @foreign
+
+pub let SeekOrigin = enum {
+  Set = 0,
+  Cur = 1,
+  End = 2,
+}
+
+pub let fseek(stream: *FILE, offset: std.ctypes.long, whence: SeekOrigin): std.ctypes.int @foreign
+
+pub let ftell(stream: *FILE): std.ctypes.long @foreign
+
+pub let rewind(stream: *FILE): void @foreign
+pub let fflush(stream: *FILE): std.ctypes.int @foreign
+pub let feof(stream: *FILE): std.ctypes.int @foreign
+pub let ferror(stream: *FILE): std.ctypes.int @foreign
+pub let clearerr(stream: *FILE): void @foreign
+
+pub let fgets(s: *mut std.ctypes.char, n: std.ctypes.int, stream: *FILE): *mut std.ctypes.char @foreign
+pub let fgetc(stream: *FILE): std.ctypes.int @foreign
+pub let fputs(s: cstr, stream: *FILE): std.ctypes.int @foreign
+pub let fputc(ch: std.ctypes.int, stream: *FILE): std.ctypes.int @foreign
+
+pub let remove(path: cstr): std.ctypes.int @foreign
+pub let rename(old: cstr, new: cstr): std.ctypes.int @foreign
+pub let tmpfile(): *FILE @foreign
+
+pub let EOF: std.ctypes.int = $-1
+
+$if core.build.os == .Windows {
+  pub let fileno(stream: *FILE): std.ctypes.int @foreign(symbol "_fileno")
+} else {
+  pub let fileno(stream: *FILE): std.ctypes.int @foreign
+}
+
+$if core.build.os == .Linux || core.build.os == .WASI {
+
+  pub let stdin: *FILE @foreign
+  pub let stdout: *FILE @foreign
+  pub let stderr: *FILE @foreign
+
+} else if core.build.os == .MacOS
+  || core.build.os == .FreeBSD
+  || core.build.os == .OpenBSD
+  || core.build.os == .NetBSD
+  || core.build.os == .DragonFly {
+
+  // On the BSD libc ABIs these names are macros backed by non-portable
+  // symbols (for example __stdinp on macOS and FreeBSD, and __sF on
+  // NetBSD). Obtain the POSIX streams from their standard descriptors
+  // instead of referring to nonexistent stdin/stdout/stderr symbols. Keep
+  // these lazy so merely importing the bindings does not open three streams.
+  pub let stdin(): *FILE = fdopen(0, c"r")
+  pub let stdout(): *FILE = fdopen(1, c"w")
+  pub let stderr(): *FILE = fdopen(2, c"w")
+
+} else if core.build.os == .Windows {
+
+  let _acrt_iob_func(index: std.ctypes.unsigned_int): *FILE @foreign(symbol "__acrt_iob_func")
+
+  pub let stdin(): *FILE = _acrt_iob_func(0)
+  pub let stdout(): *FILE = _acrt_iob_func(1)
+  pub let stderr(): *FILE = _acrt_iob_func(2)
+
+} else {
+  compiler_error("Unsupported OS")
+}
+}

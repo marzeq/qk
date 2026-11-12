@@ -10,6 +10,7 @@ import std.io
 import std.libc
 import std.os
 import std.strings
+import std.sys
 
 let path_is_directory(path: str): Result(bool, Error) {
   let mut lc = std.alloc.LibcAllocator.init()
@@ -20,11 +21,11 @@ let path_is_directory(path: str): Result(bool, Error) {
   let mut result = false
   let mut failure: Option(Error) = .None
   $if core.build.os == .Windows {
-    let attributes = std.libc.get_file_attributes(c_path)
-    if attributes == std.libc.InvalidFileAttributes {
-      failure = Option(Error).Some(std.os.last_error())
+    let attributes = std.sys.get_file_attributes(c_path)
+    if attributes == std.sys.InvalidFileAttributes {
+      failure = Option(Error).Some(Error.Native(std.sys.get_last_error().(i32)))
     } else {
-      result = (attributes & std.libc.FileAttributeDirectory) != 0
+      result = (attributes & std.sys.FileAttributeDirectory) != 0
     }
   } else {
     let directory = std.libc.opendir(c_path)

@@ -154,7 +154,7 @@
     },
     {
       "name": "standard-library core behavior",
-      "positive": ["stdlib/core", "stdlib/directory_iteration", "stdlib/integer_parsing", "runtime/arena_virtual_memory"],
+      "positive": ["stdlib/core", "stdlib/directory_iteration", "stdlib/integer_parsing", "runtime/arena_virtual_memory", "runtime/system_bindings"],
       "negativeNotApplicable": true
     },
     {

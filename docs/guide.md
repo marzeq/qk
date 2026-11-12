@@ -1577,7 +1577,7 @@ defer std.alloc.free(allocator, values)
 
 `create` and `destroy` work with pointers. `allocate`, `free`, and `resize` work with mutable slices so the element count travels with the allocation.
 
-Hosted builds provide `std.alloc.LibcAllocator`. `std.alloc.Arena` is also hosted-only and obtains chunks directly from libc.
+Hosted builds provide `std.alloc.LibcAllocator`. `std.alloc.Arena` is also hosted-only and obtains anonymous virtual-memory chunks through `std.sys`.
 
 ## Collections and strings
 
@@ -1607,11 +1607,13 @@ Hosted `std.io.FileReader` and `FileWriter` provide checked open, read, write, f
 
 `std.os.Error` wraps platform errors while reserving negative codes for library-originated failures. `std.os.args` holds command-line arguments for hosted executables, and `std.os.exit` terminates the process. Hosted programs can query environment variables with `std.os.environment_variable` (or `std.os.getenv`); the returned `str` is borrowed from the host environment. `std.os.environment_variable_owned` and `std.os.getenv_owned` copy the value into an allocator-backed `StringBuilder`.
 
-## C library bindings
+## C library and system bindings
 
-Hosted builds expose focused declarations in `std.libc`. Their platform-dependent C types and symbols are selected with `$if`, making the bindings follow the effective target rather than the compiler host.
+Hosted builds expose C runtime and POSIX bindings in `std.libc`, organized by area: character classification, conversion, errors, files, I/O, memory, process, strings, and time. Their platform-dependent C types and symbols follow the effective target through `$if`.
 
-Prefer the higher-level allocation, stream, filesystem, and string packages when they fit. Use `std.libc` when direct C interoperability is the actual requirement.
+`std.sys` contains operating-system APIs: anonymous memory mapping on all hosted targets, Unix page and memory-protection calls, and Windows Kernel32 file and virtual-memory calls. `map_anonymous(size)` returns `nil` on failure; `unmap(address, size)` returns whether release succeeded. The address and size passed to `unmap` must be the original mapping pair.
+
+Prefer the higher-level allocation, stream, filesystem, and string packages when they fit. Use `std.libc` for direct C interoperability and `std.sys` for direct operating-system calls.
 
 ## Mathematics
 

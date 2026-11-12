@@ -1,0 +1,16 @@
+module std.libc
+
+import core.build
+
+$if core.build.has_libc {
+import std.ctypes
+
+pub let atoi(str: cstr): std.ctypes.int @foreign
+pub let atol(str: cstr): std.ctypes.long @foreign
+pub let atof(str: cstr): std.ctypes.double @foreign
+
+pub let strtol(str: cstr, end: *mut *mut std.ctypes.char, base: std.ctypes.int): std.ctypes.long @foreign
+
+pub let strtoul(str: cstr, end: *mut *mut std.ctypes.char, base: std.ctypes.int): std.ctypes.unsigned_long @foreign
+pub let strtod(str: cstr, end: *mut *mut std.ctypes.char): std.ctypes.double @foreign
+}

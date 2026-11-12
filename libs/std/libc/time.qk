@@ -1,0 +1,30 @@
+module std.libc
+
+import core.build
+
+$if core.build.has_libc {
+import std.ctypes
+
+$if core.build.os == .Windows {
+  pub let time(t: *mut time_t): time_t @foreign(symbol "_time64")
+} else {
+  pub let time(t: *mut time_t): time_t @foreign
+}
+
+pub let clock(): clock_t @foreign
+
+$if core.build.os != .Windows {
+  pub let clock_gettime(
+    clock_id: std.ctypes.int,
+    value: *mut Timespec,
+  ): std.ctypes.int @foreign
+
+  pub let nanosleep(
+    duration: *Timespec,
+    remaining: *mut Timespec,
+  ): std.ctypes.int @foreign
+}
+
+pub let srand(seed: std.ctypes.unsigned_int): void @foreign
+pub let rand(): std.ctypes.int @foreign
+}

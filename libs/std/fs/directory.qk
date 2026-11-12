@@ -8,6 +8,7 @@ import std.io
 import std.libc
 import std.os
 import std.strings
+import std.sys
 
 pub let DirectoryEntryKind = enum {
   Unknown,
@@ -92,26 +93,26 @@ pub let DirectoryIterator = struct {
         pattern.deinit()
         return .Err(Error.OutOfMemory)
       }
-      let attributes = std.libc.get_file_attributes(c_path)
-      let attributes_error = std.libc.get_last_error()
+      let attributes = std.sys.get_file_attributes(c_path)
+      let attributes_error = std.sys.get_last_error()
       allocator.free_bytes(c_path, len(path) + 1, $alignof(u8))
-      if attributes == std.libc.InvalidFileAttributes {
+      if attributes == std.sys.InvalidFileAttributes {
         allocator.free_bytes(c_pattern, len(pattern.as_str()) + 1, $alignof(u8))
         pattern.deinit()
         return .Err(Error.Native(attributes_error.(i32)))
       }
-      if (attributes & std.libc.FileAttributeDirectory) == 0 {
+      if (attributes & std.sys.FileAttributeDirectory) == 0 {
         allocator.free_bytes(c_pattern, len(pattern.as_str()) + 1, $alignof(u8))
         pattern.deinit()
         return .Err(Error.InvalidData)
       }
 
-      let handle = std.libc.find_first_file(c_pattern, windows_find_data(result.&mut))
-      let error_code = std.libc.get_last_error()
+      let handle = std.sys.find_first_file(c_pattern, windows_find_data(result.&mut))
+      let error_code = std.sys.get_last_error()
       allocator.free_bytes(c_pattern, len(pattern.as_str()) + 1, $alignof(u8))
       pattern.deinit()
       if handle == (~0.(usz)).(*void) {
-        if error_code == std.libc.ErrorFileNotFound || error_code == std.libc.ErrorNoMoreFiles {
+        if error_code == std.sys.ErrorFileNotFound || error_code == std.sys.ErrorNoMoreFiles {
           result.opened = true
           result.exhausted = true
           return .Ok(result)
@@ -150,9 +151,9 @@ pub let DirectoryIterator = struct {
         let data = windows_find_data(self)
         if self.first_pending {
           self.first_pending = false
-        } else if std.libc.find_next_file(self.handle, data) == 0 {
-          let error_code = std.libc.get_last_error()
-          if error_code == std.libc.ErrorNoMoreFiles {
+        } else if std.sys.find_next_file(self.handle, data) == 0 {
+          let error_code = std.sys.get_last_error()
+          if error_code == std.sys.ErrorNoMoreFiles {
             self.exhausted = true
             return .Ok(Option(DirectoryEntryKind).None)
           }
@@ -220,8 +221,8 @@ pub let DirectoryIterator = struct {
     if handle == nil { return .Ok(Unit.{}) }
 
     $if core.build.os == .Windows {
-      if std.libc.find_close(handle) == 0 {
-        return .Err(Error.Native(std.libc.get_last_error().(i32)))
+      if std.sys.find_close(handle) == 0 {
+        return .Err(Error.Native(std.sys.get_last_error().(i32)))
       }
     } else {
       if std.libc.closedir(handle.(*std.libc.DIR)) != 0 {
@@ -252,15 +253,15 @@ let directory_iterator_fail(
 $if core.build.os == .Windows {
   let windows_find_data(
     iterator: *mut DirectoryIterator,
-  ): *mut std.libc.WindowsFindData =
-    iterator.native_data.&mut.(*mut std.libc.WindowsFindData)
+  ): *mut std.sys.WindowsFindData =
+    iterator.native_data.&mut.(*mut std.sys.WindowsFindData)
 
-  let windows_entry_kind(data: *std.libc.WindowsFindData): DirectoryEntryKind {
-    if (data.file_attributes & std.libc.FileAttributeReparsePoint) != 0 {
-      if data.reserved_0 == std.libc.IoReparseTagSymlink { return .Symlink }
+  let windows_entry_kind(data: *std.sys.WindowsFindData): DirectoryEntryKind {
+    if (data.file_attributes & std.sys.FileAttributeReparsePoint) != 0 {
+      if data.reserved_0 == std.sys.IoReparseTagSymlink { return .Symlink }
       return .Other
     }
-    if (data.file_attributes & std.libc.FileAttributeDirectory) != 0 {
+    if (data.file_attributes & std.sys.FileAttributeDirectory) != 0 {
       return .Directory
     }
     return .File

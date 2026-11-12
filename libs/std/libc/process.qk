@@ -1,0 +1,362 @@
+module std.libc
+
+import core.build
+
+$if core.build.has_libc {
+import std.ctypes
+
+pub let exit(code: std.ctypes.int): void @foreign @noreturn
+pub let abort(): void @foreign @noreturn
+
+pub let system(command: cstr): std.ctypes.int @foreign
+pub let getenv(name: cstr): *std.ctypes.char @foreign
+
+$if core.build.os == .Linux
+  || core.build.os == .MacOS
+  || core.build.os == .FreeBSD
+  || core.build.os == .OpenBSD
+  || core.build.os == .NetBSD
+  || core.build.os == .DragonFly {
+
+  // On the supported Unix ABIs, pid_t is a signed 32-bit integer.
+  pub let pid_t = distinct(std.ctypes.int)
+
+  // POSIX uses int for file descriptors, signals and wait status values.
+  pub let fd_t = distinct(std.ctypes.int)
+  pub let signal_t = distinct(std.ctypes.int)
+  pub let wait_status_t = distinct(std.ctypes.int)
+
+  // Environment inherited by exec-family calls.
+  pub let environ: *mut *mut std.ctypes.char @foreign
+
+  // ---------------------------------------------------------------------------
+  // Process creation and termination
+  // ---------------------------------------------------------------------------
+
+  pub let fork(): pid_t @foreign
+
+  // vfork() imposes substantially stricter rules than fork(). The child must
+  // call exec*() or _exit() without returning or modifying shared state.
+  pub let vfork(): pid_t @foreign
+
+  pub let _exit(status: std.ctypes.int): void @foreign @noreturn
+
+  // ---------------------------------------------------------------------------
+  // Program execution
+  // ---------------------------------------------------------------------------
+
+  // The vector forms are generally the easiest and safest FFI bindings.
+  //
+  // argv must be terminated by a null pointer.
+  // envp must be terminated by a null pointer.
+  pub let execve(
+    path: cstr,
+    argv: **std.ctypes.char,
+    envp: **std.ctypes.char,
+  ): std.ctypes.int @foreign
+
+  pub let execv(
+    path: cstr,
+    argv: **std.ctypes.char,
+  ): std.ctypes.int @foreign
+
+  pub let execvp(
+    file: cstr,
+    argv: **std.ctypes.char,
+  ): std.ctypes.int @foreign
+
+  // Variadic exec forms. The argument list must end with a null pointer.
+  pub let execl(path: cstr, arg0: cstr, ...): std.ctypes.int @foreign
+  pub let execlp(file: cstr, arg0: cstr, ...): std.ctypes.int @foreign
+
+  // execle() also requires envp after the null argument-list terminator.
+  pub let execle(path: cstr, arg0: cstr, ...): std.ctypes.int @foreign
+
+  // exec*() returns only when execution fails, in which case it returns -1.
+
+  // ---------------------------------------------------------------------------
+  // Waiting for child processes
+  // ---------------------------------------------------------------------------
+
+  pub let wait(status: *mut wait_status_t): pid_t @foreign
+
+  pub let waitpid(
+    pid: pid_t,
+    status: *mut wait_status_t,
+    options: std.ctypes.int,
+  ): pid_t @foreign
+
+  // waitpid() pid argument meanings.
+  pub let WaitAny: pid_t = -1
+  pub let WaitMyProcessGroup: pid_t = 0
+
+  // POSIX waitpid() option bits.
+  pub let WaitNoHang: std.ctypes.int = 1
+  pub let WaitUntraced: std.ctypes.int = 2
+
+  // WCONTINUED is available on the supported contemporary Unix systems,
+  // although its numeric value is ABI-specific.
+  pub let WaitContinued: std.ctypes.int =
+    $if core.build.os == .Linux { 8 }
+    else if core.build.os == .MacOS
+      || core.build.os == .FreeBSD
+      || core.build.os == .OpenBSD
+      || core.build.os == .NetBSD
+      || core.build.os == .DragonFly { 16 }
+    else { 0 }
+
+  // Equivalent to the standard WIFEXITED(status) macro.
+  pub let wait_exited(status: wait_status_t): bool {
+    return (status & 0x7f) == 0.(wait_status_t)
+  }
+
+  // Equivalent to WEXITSTATUS(status).
+  // Call only when wait_exited(status) is true.
+  pub let wait_exit_status(status: wait_status_t): std.ctypes.int {
+    return ((status >> 8) & 0xff).(std.ctypes.int)
+  }
+
+  // Equivalent to WIFSIGNALED(status).
+  pub let wait_signalled(status: wait_status_t): bool {
+    let signal = status & 0x7f
+    return signal != 0.(wait_status_t) && signal != (0x7f).(wait_status_t)
+  }
+
+  // Equivalent to WTERMSIG(status).
+  // Call only when wait_signalled(status) is true.
+  pub let wait_term_signal(status: wait_status_t): signal_t {
+    return (status & (0x7f).(wait_status_t)).(signal_t)
+  }
+
+  // Equivalent to WIFSTOPPED(status).
+  pub let wait_stopped(status: wait_status_t): bool {
+    return (status & 0xff) == (0x7f).(wait_status_t)
+  }
+
+  // Equivalent to WSTOPSIG(status).
+  // Call only when wait_stopped(status) is true.
+  pub let wait_stop_signal(status: wait_status_t): signal_t {
+    return ((status >> 8) & 0xff).(signal_t)
+  }
+
+  // Equivalent to WCOREDUMP(status). This is widely available but is not
+  // required by POSIX.
+  pub let wait_core_dumped(status: wait_status_t): bool {
+    return (status & 0x80) != 0.(wait_status_t)
+  }
+
+  // WIFCONTINUED has different encodings between Linux and BSD-derived ABIs.
+  pub let wait_continued(status: wait_status_t): bool {
+    $if core.build.os == .Linux {
+      return status == (0xffff).(wait_status_t)
+    } else {
+      return status == (0x13).(wait_status_t)
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Process identity
+  // ---------------------------------------------------------------------------
+
+  pub let getpid(): pid_t @foreign
+  pub let getppid(): pid_t @foreign
+
+  // ---------------------------------------------------------------------------
+  // Process groups and sessions
+  // ---------------------------------------------------------------------------
+
+  pub let getpgrp(): pid_t @foreign
+
+  pub let getpgid(pid: pid_t): pid_t @foreign
+
+  pub let setpgid(
+    pid: pid_t,
+    pgid: pid_t,
+  ): std.ctypes.int @foreign
+
+  pub let getsid(pid: pid_t): pid_t @foreign
+  pub let setsid(): pid_t @foreign
+
+  // Foreground process-group management for terminals.
+  pub let tcgetpgrp(fd: fd_t): pid_t @foreign
+
+  pub let tcsetpgrp(
+    fd: fd_t,
+    pgrp: pid_t,
+  ): std.ctypes.int @foreign
+
+  // ---------------------------------------------------------------------------
+  // Signals
+  // ---------------------------------------------------------------------------
+
+  pub let kill(
+    pid: pid_t,
+    signal: signal_t,
+  ): std.ctypes.int @foreign
+
+  pub let raise(signal: signal_t): std.ctypes.int @foreign
+
+  // kill() pid argument behaviour:
+  //
+  //   pid > 0   send to one process
+  //   pid == 0  send to the caller's process group
+  //   pid == -1 send to every permitted process
+  //   pid < -1  send to process group -pid
+
+  pub let SignalHangup: signal_t = 1
+  pub let SignalInterrupt: signal_t = 2
+  pub let SignalQuit: signal_t = 3
+  pub let SignalIllegalInstruction: signal_t = 4
+  pub let SignalAbort: signal_t = 6
+  pub let SignalFloatingPointException: signal_t = 8
+  pub let SignalKill: signal_t = 9
+  pub let SignalSegmentationFault: signal_t = 11
+  pub let SignalPipe: signal_t = 13
+  pub let SignalAlarm: signal_t = 14
+  pub let SignalTerminate: signal_t = 15
+
+  // These values differ on Linux and BSD-derived systems.
+  pub let SignalChild: signal_t =
+    $if core.build.os == .Linux { 17 }
+    else if core.build.os == .MacOS
+      || core.build.os == .FreeBSD
+      || core.build.os == .OpenBSD
+      || core.build.os == .NetBSD
+      || core.build.os == .DragonFly { 20 }
+    else { 0 }
+
+  pub let SignalContinue: signal_t =
+    $if core.build.os == .Linux { 18 }
+    else if core.build.os == .MacOS
+      || core.build.os == .FreeBSD
+      || core.build.os == .OpenBSD
+      || core.build.os == .NetBSD
+      || core.build.os == .DragonFly { 19 }
+    else { 0 }
+
+  pub let SignalStop: signal_t =
+    $if core.build.os == .Linux { 19 }
+    else if core.build.os == .MacOS
+      || core.build.os == .FreeBSD
+      || core.build.os == .OpenBSD
+      || core.build.os == .NetBSD
+      || core.build.os == .DragonFly { 17 }
+    else { 0 }
+
+  pub let SignalTerminalStop: signal_t =
+    $if core.build.os == .Linux { 20 }
+    else if core.build.os == .MacOS
+      || core.build.os == .FreeBSD
+      || core.build.os == .OpenBSD
+      || core.build.os == .NetBSD
+      || core.build.os == .DragonFly { 18 }
+    else { 0 }
+
+  // ---------------------------------------------------------------------------
+  // File descriptors and redirection
+  // ---------------------------------------------------------------------------
+
+  pub let StandardInput: fd_t = 0
+  pub let StandardOutput: fd_t = 1
+  pub let StandardError: fd_t = 2
+
+  pub let PipeRead: std.ctypes.size_t = 0
+  pub let PipeWrite: std.ctypes.size_t = 1
+
+  // pipefd must point to storage for two std.ctypes.int values:
+  // pipefd[PipeRead] and pipefd[PipeWrite].
+  pub let pipe(pipefd: *mut fd_t): std.ctypes.int @foreign
+
+  pub let dup(oldfd: fd_t): fd_t @foreign
+
+  pub let dup2(
+    oldfd: fd_t,
+    newfd: fd_t,
+  ): fd_t @foreign
+
+  pub let close(fd: fd_t): std.ctypes.int @foreign
+
+  // ---------------------------------------------------------------------------
+  // Environment and working directory
+  // ---------------------------------------------------------------------------
+
+  pub let chdir(path: cstr): std.ctypes.int @foreign
+  pub let fchdir(fd: fd_t): std.ctypes.int @foreign
+
+  pub let getcwd(
+    buffer: *mut std.ctypes.char,
+    size: std.ctypes.size_t,
+  ): *mut std.ctypes.char @foreign
+
+  pub let setenv(
+    name: cstr,
+    value: cstr,
+    overwrite: std.ctypes.int,
+  ): std.ctypes.int @foreign
+
+  pub let unsetenv(name: cstr): std.ctypes.int @foreign
+
+  // ---------------------------------------------------------------------------
+  // Process scheduling
+  // ---------------------------------------------------------------------------
+
+  pub let nice(increment: std.ctypes.int): std.ctypes.int @foreign
+
+  pub let PriorityProcess: std.ctypes.int = 0
+  pub let PriorityProcessGroup: std.ctypes.int = 1
+  pub let PriorityUser: std.ctypes.int = 2
+
+  pub let getpriority(
+    which: std.ctypes.int,
+    who: std.ctypes.unsigned_int,
+  ): std.ctypes.int @foreign
+
+  pub let setpriority(
+    which: std.ctypes.int,
+    who: std.ctypes.unsigned_int,
+    priority: std.ctypes.int,
+  ): std.ctypes.int @foreign
+}
+
+// -----------------------------------------------------------------------------
+// Linux-specific process APIs
+// -----------------------------------------------------------------------------
+
+$if core.build.os == .Linux {
+
+  // GNU extension: PATH lookup with an explicit environment.
+  pub let execvpe(
+    file: cstr,
+    argv: **std.ctypes.char,
+    envp: **std.ctypes.char,
+  ): std.ctypes.int @foreign
+
+  // Linux versions allowing atomic close-on-exec configuration.
+  pub let pipe2(
+    pipefd: *mut fd_t,
+    flags: std.ctypes.int,
+  ): std.ctypes.int @foreign
+
+  pub let dup3(
+    oldfd: fd_t,
+    newfd: fd_t,
+    flags: std.ctypes.int,
+  ): fd_t @foreign
+
+  pub let CloseOnExec: std.ctypes.int = 0x80000
+  pub let NonBlocking: std.ctypes.int = 0x800
+
+  // Linux pidfd APIs provide race-resistant references to processes.
+  pub let pidfd_open(
+    pid: pid_t,
+    flags: std.ctypes.unsigned_int,
+  ): fd_t @foreign
+
+  pub let pidfd_send_signal(
+    pidfd: fd_t,
+    signal: signal_t,
+    info: *void,
+    flags: std.ctypes.unsigned_int,
+  ): std.ctypes.int @foreign
+}
+}

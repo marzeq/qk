@@ -1,0 +1,47 @@
+module std.sys
+
+import core.build
+
+$if core.build.os == .Windows && core.build.has_libc {
+import std.ctypes
+
+  pub let InvalidFileAttributes: std.ctypes.unsigned_long = 0xffffffff
+  pub let FileAttributeDirectory: std.ctypes.unsigned_long = 0x10
+  pub let FileAttributeReparsePoint: std.ctypes.unsigned_long = 0x400
+  pub let IoReparseTagSymlink: std.ctypes.unsigned_long = 0xa000000c
+  pub let ErrorFileNotFound: std.ctypes.unsigned_long = 2
+  pub let ErrorNoMoreFiles: std.ctypes.unsigned_long = 18
+
+  pub let WindowsFindData = struct {
+    file_attributes: std.ctypes.unsigned_long,
+    creation_time_low: std.ctypes.unsigned_long,
+    creation_time_high: std.ctypes.unsigned_long,
+    access_time_low: std.ctypes.unsigned_long,
+    access_time_high: std.ctypes.unsigned_long,
+    write_time_low: std.ctypes.unsigned_long,
+    write_time_high: std.ctypes.unsigned_long,
+    file_size_high: std.ctypes.unsigned_long,
+    file_size_low: std.ctypes.unsigned_long,
+    reserved_0: std.ctypes.unsigned_long,
+    reserved_1: std.ctypes.unsigned_long,
+    file_name: [260]std.ctypes.char,
+    alternate_file_name: [14]std.ctypes.char,
+  }
+
+  pub let get_file_attributes(path: cstr): std.ctypes.unsigned_long @foreign(symbol "GetFileAttributesA")
+  pub let find_first_file(
+    pattern: cstr,
+    data: *mut WindowsFindData,
+  ): *void @foreign(symbol "FindFirstFileA")
+  pub let find_next_file(
+    handle: *void,
+    data: *mut WindowsFindData,
+  ): std.ctypes.int @foreign(symbol "FindNextFileA")
+  pub let find_close(handle: *void): std.ctypes.int @foreign(symbol "FindClose")
+  pub let get_last_error(): std.ctypes.unsigned_long @foreign(symbol "GetLastError")
+
+  pub let create_directory(path: cstr, security_attributes: *void): std.ctypes.int @foreign(symbol "CreateDirectoryA")
+  pub let remove_directory(path: cstr): std.ctypes.int @foreign(symbol "RemoveDirectoryA")
+  pub let delete_file(path: cstr): std.ctypes.int @foreign(symbol "DeleteFileA")
+  pub let move_file(from: cstr, to: cstr): std.ctypes.int @foreign(symbol "MoveFileA")
+}

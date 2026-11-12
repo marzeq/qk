@@ -1,0 +1,41 @@
+module std.libc
+
+import core.build
+
+$if core.build.has_libc {
+import std.ctypes
+
+pub let strlen(s: cstr): std.ctypes.size_t @foreign
+pub let strnlen(s: cstr, maxlen: std.ctypes.size_t): std.ctypes.size_t @foreign
+pub let strcmp(a: cstr, b: cstr): std.ctypes.int @foreign
+pub let strncmp(a: cstr, b: cstr, n: std.ctypes.size_t): std.ctypes.int @foreign
+
+pub let strcpy(dest: *mut std.ctypes.char, src: cstr): *mut std.ctypes.char @foreign
+
+pub let strncpy(dest: *mut std.ctypes.char, src: cstr, n: std.ctypes.size_t): *mut std.ctypes.char @foreign
+
+pub let strcat(dest: *mut std.ctypes.char, src: cstr): *mut std.ctypes.char @foreign
+
+pub let strncat(
+  dest: *mut std.ctypes.char,
+  src: cstr,
+  n: std.ctypes.size_t,
+): *mut std.ctypes.char @foreign
+
+pub let strchr(s: cstr, ch: std.ctypes.int): *std.ctypes.char @foreign
+pub let strrchr(s: cstr, ch: std.ctypes.int): *std.ctypes.char @foreign
+pub let strstr(haystack: cstr, needle: cstr): *std.ctypes.char @foreign
+pub let strspn(s: cstr, accept: cstr): std.ctypes.size_t @foreign
+pub let strcspn(s: cstr, reject: cstr): std.ctypes.size_t @foreign
+pub let strpbrk(s: cstr, accept: cstr): *std.ctypes.char @foreign
+
+pub let strtok(str: *mut std.ctypes.char, delim: cstr): *mut std.ctypes.char @foreign
+
+$if core.build.os == .Windows {
+  pub let strdup(str: cstr): *mut std.ctypes.char @foreign(symbol "_strdup")
+  pub let strcasecmp(a: cstr, b: cstr): std.ctypes.int @foreign(symbol "_stricmp")
+} else {
+  pub let strdup(str: cstr): *mut std.ctypes.char @foreign
+  pub let strcasecmp(a: cstr, b: cstr): std.ctypes.int @foreign
+}
+}

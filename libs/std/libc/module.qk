@@ -1,0 +1,10 @@
+module std.libc
+  @link(
+    $if core.build.has_libc {
+      $if core.build.environment == .MSVC { system "ucrt", }
+      else if core.build.os == .Windows { system "msvcrt", }
+      else { system "c", }
+    }
+  )
+
+import core.build

@@ -1,0 +1,18 @@
+module std.libc
+
+import core.build
+
+$if core.build.has_libc {
+import std.ctypes
+
+pub let malloc(size: std.ctypes.size_t): *mut void @foreign
+pub let calloc(count: std.ctypes.size_t, size: std.ctypes.size_t): *mut void @foreign
+pub let realloc(ptr: *void, size: std.ctypes.size_t): *mut void @foreign
+pub let free(ptr: *void): void @foreign
+
+pub let memcpy(dest: *mut void, src: *void, n: std.ctypes.size_t): *mut void @foreign
+pub let memmove(dest: *mut void, src: *void, n: std.ctypes.size_t): *mut void @foreign
+pub let memset(dest: *mut void, value: std.ctypes.int, n: std.ctypes.size_t): *mut void @foreign
+pub let memcmp(s1: *void, s2: *void, n: std.ctypes.size_t): std.ctypes.int @foreign
+pub let memchr(ptr: *void, value: std.ctypes.int, n: std.ctypes.size_t): *void @foreign
+}

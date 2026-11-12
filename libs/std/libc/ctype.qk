@@ -1,0 +1,21 @@
+module std.libc
+
+import core.build
+
+$if core.build.has_libc {
+import std.ctypes
+
+pub let isalnum(ch: std.ctypes.int): std.ctypes.int @foreign
+pub let isalpha(ch: std.ctypes.int): std.ctypes.int @foreign
+pub let iscntrl(ch: std.ctypes.int): std.ctypes.int @foreign
+pub let isdigit(ch: std.ctypes.int): std.ctypes.int @foreign
+pub let isgraph(ch: std.ctypes.int): std.ctypes.int @foreign
+pub let islower(ch: std.ctypes.int): std.ctypes.int @foreign
+pub let isprint(ch: std.ctypes.int): std.ctypes.int @foreign
+pub let ispunct(ch: std.ctypes.int): std.ctypes.int @foreign
+pub let isspace(ch: std.ctypes.int): std.ctypes.int @foreign
+pub let isupper(ch: std.ctypes.int): std.ctypes.int @foreign
+pub let isxdigit(ch: std.ctypes.int): std.ctypes.int @foreign
+pub let tolower(ch: std.ctypes.int): std.ctypes.int @foreign
+pub let toupper(ch: std.ctypes.int): std.ctypes.int @foreign
+}
