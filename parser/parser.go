@@ -2,7 +2,6 @@ package parser
 
 import (
 	"errors"
-	"fmt"
 	"slices"
 
 	"github.com/marzeq/qk/shared"
@@ -168,10 +167,6 @@ func (p *Parser) ConsumeBuiltin(name string) bool {
 	}
 	p.Inc().Inc()
 	return true
-}
-
-func (p *Parser) DumpCurrent() {
-	fmt.Printf("Current token: %v\n", p.Peek())
 }
 
 func (p *Parser) Parse() (*RootNode, error) {

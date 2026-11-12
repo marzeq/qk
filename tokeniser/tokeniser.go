@@ -1,9 +1,7 @@
 package tokeniser
 
 import (
-	"fmt"
 	"math/big"
-	"os"
 	"strings"
 
 	"github.com/marzeq/qk/shared"
@@ -17,23 +15,6 @@ type Tokeniser struct {
 	sourceText string
 	fileOrigin string
 	tokens     []Token
-}
-
-func NewTokeniserFromFile(path string) (*Tokeniser, error) {
-	text, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open file '%s'", path)
-	}
-
-	source := string(text)
-	return &Tokeniser{
-		pos:        0,
-		line:       1,
-		col:        1,
-		fileOrigin: path,
-		text:       []rune(source),
-		sourceText: source,
-	}, nil
 }
 
 func NewTokeniser(text, origin string) *Tokeniser {

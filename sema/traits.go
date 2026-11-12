@@ -113,20 +113,6 @@ func (v *Validator) traitConversion(node parser.ExpressionNode, expected types.T
 	return &parser.CastNode{Operand: node, Loc: node.GetLoc(), Type: expected, TraitConversion: true, ConcreteType: pointer.Base, TraitMethods: methods}, true
 }
 
-func (a *Analyser) runtimeTraitImplementers(trait types.TraitType, at parser.Node) []types.Type {
-	if trait.Any || len(trait.Methods) == 0 {
-		return nil
-	}
-	target := types.TraitPointerType{Trait: trait}
-	result := []types.Type{}
-	for _, concrete := range a.sortedConcreteTypes() {
-		if _, ok := a.structuralConformance(types.PointerType{Base: concrete}, target, at); ok {
-			result = append(result, concrete)
-		}
-	}
-	return result
-}
-
 func (a *Analyser) runtimeTraitCastCandidates(trait types.TraitType, mutable bool, at parser.Node) []parser.TraitCastCandidate {
 	target := types.TraitPointerType{Trait: trait, Mutable: mutable}
 	result := []parser.TraitCastCandidate{}

@@ -86,7 +86,6 @@ type ModuleInfo struct {
 	Name                   string
 	Imports                []string
 	Root                   *parser.RootNode
-	Links                  []attributes.Link
 	TrustedStandardLibrary bool
 }
 
@@ -107,14 +106,12 @@ func BuildModules(partials []*PartialModuleInfo) (map[string]*ModuleInfo, error)
 			}
 			mergeModuleRoot(existing.Root, p.Root)
 			existing.Imports = mergeImports(existing.Imports, p.Imports)
-			existing.Links = append(existing.Links, p.Links...)
 		} else {
 			modules[path] = &ModuleInfo{
 				Path:                   path,
 				Name:                   p.Name,
 				Imports:                unique(p.Imports),
 				Root:                   cloneModuleRoot(p.Root),
-				Links:                  append([]attributes.Link(nil), p.Links...),
 				TrustedStandardLibrary: p.TrustedStandardLibrary,
 			}
 		}

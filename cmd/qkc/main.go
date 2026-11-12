@@ -42,9 +42,7 @@ func main() {
 	}
 	comptimeConfig := loader.StageConfig{
 		TargetTriple: args.target,
-		Sysroot:      args.sysroot,
 		ReleaseMode:  releaseMode,
-		NoStdlib:     args.noStdlib,
 	}
 	libraryRoot := ""
 	if args.noStdlib {

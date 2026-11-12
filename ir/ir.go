@@ -178,10 +178,6 @@ func NewFunction(name string, linkage Linkage, attributes attributes.Attributes)
 	}
 }
 
-func (f *Function) NewValue() ValueID {
-	return f.NewValueOfType(nil)
-}
-
 func (f *Function) NewValueOfType(ty types.Type) ValueID {
 	f.nextValue++
 	id := f.nextValue

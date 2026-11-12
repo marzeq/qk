@@ -740,17 +740,3 @@ func unusedDynamicLibrariesFlag(target string) string {
 		return "-Wl,--as-needed"
 	}
 }
-
-func linkerUndefinedFlag(target, symbol string) string {
-	target = effectiveTargetName(target)
-	switch {
-	case targetIsApple(target):
-		return "-Wl,-u,_" + symbol
-	case isWindowsGNUTarget(target):
-		return "-Wl,-u," + symbol
-	case strings.Contains(target, "windows"), strings.Contains(target, "msvc"):
-		return "-Wl,/INCLUDE:" + symbol
-	default:
-		return "-Wl,-u," + symbol
-	}
-}

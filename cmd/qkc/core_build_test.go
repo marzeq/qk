@@ -34,7 +34,7 @@ let main(): i32 = selected
 `
 		_, err := runFrontend(
 			&Args{mainModule: ".", noStdlib: true},
-			loader.StageConfig{TargetTriple: target.triple, NoStdlib: true},
+			loader.StageConfig{TargetTriple: target.triple},
 			map[string]string{"main.qk": source},
 			map[string]string{"main.qk": "."},
 			map[string]bool{"main.qk": false},

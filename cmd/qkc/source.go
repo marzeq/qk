@@ -1,9 +1,7 @@
 package main
 
 import (
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -17,7 +15,6 @@ import (
 type sourcePackage struct {
 	Path    string
 	Name    string
-	Files   []string
 	Imports []string
 	Roots   map[string]*parser.RootNode
 }
@@ -85,7 +82,7 @@ func collectPackageFiles(dir string) ([]string, error) {
 }
 
 func inspectPackage(path string, files []string, libraryRoot string, sources, sourcePackages map[string]string, trustedSources map[string]bool) (*sourcePackage, error) {
-	pkg := &sourcePackage{Path: path, Files: append([]string(nil), files...), Roots: make(map[string]*parser.RootNode, len(files))}
+	pkg := &sourcePackage{Path: path, Roots: make(map[string]*parser.RootNode, len(files))}
 	seenImports := map[string]bool{}
 	for _, file := range files {
 		data, err := os.ReadFile(file)
@@ -408,68 +405,6 @@ func trustedStandardLibrarySource(source, libraryRoot string) bool {
 		return false
 	}
 	return pathWithin(resolvedSource, resolvedRoot)
-}
-
-func collectSourceFiles(paths []string, exclude []string) ([]string, error) {
-	seen := map[string]struct{}{}
-	excluded := map[string]struct{}{}
-	for _, e := range exclude {
-		abs, err := filepath.Abs(e)
-		if err != nil {
-			return nil, err
-		}
-		excluded[abs] = struct{}{}
-	}
-
-	var files []string
-	for _, root := range paths {
-		info, err := os.Stat(root)
-		if err != nil || !info.IsDir() {
-			continue
-		}
-
-		err = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-			if err != nil {
-				if path != root && errors.Is(err, fs.ErrPermission) {
-					if d != nil && d.IsDir() {
-						return filepath.SkipDir
-					}
-					return nil
-				}
-				return err
-			}
-			if path != root && strings.HasPrefix(d.Name(), ".") {
-				if d.IsDir() {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-			abs, err := filepath.Abs(path)
-			if err != nil {
-				return err
-			}
-			for ex := range excluded {
-				if pathWithin(abs, ex) {
-					if d.IsDir() {
-						return filepath.SkipDir
-					}
-					return nil
-				}
-			}
-			if !d.IsDir() && strings.EqualFold(filepath.Ext(path), ".qk") {
-				key := pathKey(abs)
-				if _, ok := seen[key]; !ok {
-					seen[key] = struct{}{}
-					files = append(files, abs)
-				}
-			}
-			return nil
-		})
-		if err != nil {
-			return nil, err
-		}
-	}
-	return files, nil
 }
 
 func pathKey(path string) string {

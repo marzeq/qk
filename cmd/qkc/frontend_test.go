@@ -52,7 +52,7 @@ let main() {}
 `
 	frontend, err := runFrontend(
 		&Args{mainModule: ".", noStdlib: true},
-		loader.StageConfig{TargetTriple: "x86_64-unknown-linux-gnu", NoStdlib: true},
+		loader.StageConfig{TargetTriple: "x86_64-unknown-linux-gnu"},
 		map[string]string{path: source},
 		map[string]string{path: "."},
 		map[string]bool{path: false},
@@ -125,7 +125,7 @@ let main() {
 `
 	_, err := runFrontend(
 		&Args{mainModule: ".", noStdlib: true},
-		loader.StageConfig{NoStdlib: true},
+		loader.StageConfig{},
 		map[string]string{path: source},
 		map[string]string{path: "."},
 		map[string]bool{path: false},
@@ -160,7 +160,7 @@ $if core.types.satisfies(Record, HasValue) {
 }
 let main() {}
 `
-	frontend, err := runFrontend(&Args{mainModule: ".", noStdlib: true}, loader.StageConfig{NoStdlib: true},
+	frontend, err := runFrontend(&Args{mainModule: ".", noStdlib: true}, loader.StageConfig{},
 		map[string]string{path: source}, map[string]string{path: "."}, map[string]bool{path: false},
 		map[string]map[string]string{".": {}}, false, false)
 	if err != nil {
@@ -205,7 +205,7 @@ let main() {}
 	}
 	packages := map[string]string{"model/model.qk": "model", "main.qk": "."}
 	trusted := map[string]bool{"model/model.qk": false, "main.qk": false}
-	frontend, err := runFrontend(&Args{mainModule: ".", noStdlib: true}, loader.StageConfig{NoStdlib: true},
+	frontend, err := runFrontend(&Args{mainModule: ".", noStdlib: true}, loader.StageConfig{},
 		sources, packages, trusted, map[string]map[string]string{"model": {}, ".": {}}, false, false)
 	if err != nil {
 		t.Fatal(err)
@@ -262,7 +262,7 @@ let main() {
 }
 `
 	_, err := runFrontend(
-		&Args{mainModule: ".", noStdlib: true}, loader.StageConfig{NoStdlib: true},
+		&Args{mainModule: ".", noStdlib: true}, loader.StageConfig{},
 		map[string]string{path: source}, map[string]string{path: "."},
 		map[string]bool{path: false}, map[string]map[string]string{".": {}}, false, false,
 	)
@@ -324,7 +324,7 @@ let main() {
   _ = parameterized_result
 }
 `
-	frontend, err := runFrontend(&Args{mainModule: ".", noStdlib: true}, loader.StageConfig{NoStdlib: true},
+	frontend, err := runFrontend(&Args{mainModule: ".", noStdlib: true}, loader.StageConfig{},
 		map[string]string{path: source}, map[string]string{path: "."},
 		map[string]bool{path: false}, map[string]map[string]string{".": {}}, false, false)
 	if err != nil {
@@ -349,7 +349,7 @@ let fields(): []core.types.FieldSpec = [.{ name="value", field_type=i32 }]
 let Record = struct { value: i32, ...fields() }
 let main() {}
 `
-	_, err := runFrontend(&Args{mainModule: ".", noStdlib: true}, loader.StageConfig{NoStdlib: true},
+	_, err := runFrontend(&Args{mainModule: ".", noStdlib: true}, loader.StageConfig{},
 		map[string]string{path: source}, map[string]string{path: "."},
 		map[string]bool{path: false}, map[string]map[string]string{".": {}}, false, false)
 	if err == nil || !strings.Contains(err.Error(), "duplicate or empty struct field \"value\"") {
@@ -507,7 +507,7 @@ let main() {
   _ = chosen
 }
 `
-	frontend, err := runFrontend(&Args{mainModule: ".", noStdlib: true}, loader.StageConfig{NoStdlib: true},
+	frontend, err := runFrontend(&Args{mainModule: ".", noStdlib: true}, loader.StageConfig{},
 		map[string]string{path: source}, map[string]string{path: "."}, map[string]bool{path: false},
 		map[string]map[string]string{".": {}}, false, false)
 	if err != nil {
@@ -559,7 +559,7 @@ let main() {
 	}
 	packages := map[string]string{"factory/factory.qk": "factory", "main.qk": "."}
 	trusted := map[string]bool{"factory/factory.qk": false, "main.qk": false}
-	_, err := runFrontend(&Args{mainModule: ".", noStdlib: true}, loader.StageConfig{NoStdlib: true},
+	_, err := runFrontend(&Args{mainModule: ".", noStdlib: true}, loader.StageConfig{},
 		sources, packages, trusted, map[string]map[string]string{"factory": {}, ".": {}}, false, false)
 	if err != nil {
 		t.Fatal(err)
@@ -576,7 +576,7 @@ let main() { let result: usz = fib(8) }
 `
 	_, err := runFrontend(
 		&Args{mainModule: ".", noStdlib: true},
-		loader.StageConfig{NoStdlib: true},
+		loader.StageConfig{},
 		map[string]string{path: source},
 		map[string]string{path: "."},
 		map[string]bool{path: false},
@@ -610,7 +610,7 @@ let main() { let selected: i32 = choice.select(7) }
 	trusted := map[string]bool{helperPath: false, libraryPath: false, mainPath: false}
 	_, err := runFrontend(
 		&Args{mainModule: ".", noStdlib: true},
-		loader.StageConfig{NoStdlib: true}, sources, packages, trusted,
+		loader.StageConfig{}, sources, packages, trusted,
 		map[string]map[string]string{"helper": {}, "choice": {}, ".": {}}, false, false,
 	)
 	if err != nil {
@@ -627,7 +627,7 @@ let main() { let selected: i32 = select(7) }
 `
 	_, err := runFrontend(
 		&Args{mainModule: ".", noStdlib: true},
-		loader.StageConfig{NoStdlib: true},
+		loader.StageConfig{},
 		map[string]string{path: source}, map[string]string{path: "."},
 		map[string]bool{path: false}, map[string]map[string]string{".": {}},
 		false, false,
@@ -648,7 +648,7 @@ let main() { let selected: i32 = require_four(7) }
 `
 	_, err := runFrontend(
 		&Args{mainModule: ".", noStdlib: true},
-		loader.StageConfig{NoStdlib: true},
+		loader.StageConfig{},
 		map[string]string{path: source}, map[string]string{path: "."},
 		map[string]bool{path: false}, map[string]map[string]string{".": {}},
 		false, false,
@@ -658,7 +658,7 @@ let main() { let selected: i32 = require_four(7) }
 	}
 	_, err = runFrontend(
 		&Args{mainModule: ".", noStdlib: true},
-		loader.StageConfig{NoStdlib: true},
+		loader.StageConfig{},
 		map[string]string{path: strings.Replace(source, "let selected: i32 = require_four(7)", "let selected: i64 = require_four(7)", 1)},
 		map[string]string{path: "."}, map[string]bool{path: false},
 		map[string]map[string]string{".": {}}, false, false,
@@ -677,7 +677,7 @@ let relay(): usz = leaf()
 	compile := func(source string) error {
 		_, err := runFrontend(
 			&Args{mainModule: ".", noStdlib: true},
-			loader.StageConfig{NoStdlib: true},
+			loader.StageConfig{},
 			map[string]string{path: source}, map[string]string{path: "."},
 			map[string]bool{path: false}, map[string]map[string]string{".": {}},
 			false, false,
@@ -707,7 +707,7 @@ let main() { let size: usz = relay() }
 	}
 	_, err := runFrontend(
 		&Args{mainModule: ".", noStdlib: true},
-		loader.StageConfig{NoStdlib: true}, sources,
+		loader.StageConfig{}, sources,
 		map[string]string{helperPath: "helper", mainPath: "."},
 		map[string]bool{helperPath: false, mainPath: false},
 		map[string]map[string]string{"helper": {}, ".": {}}, false, false,
@@ -725,7 +725,7 @@ let main() { let size: usz = bytes(i32) }
 `
 	_, err := runFrontend(
 		&Args{mainModule: ".", noStdlib: true},
-		loader.StageConfig{NoStdlib: true},
+		loader.StageConfig{},
 		map[string]string{path: source}, map[string]string{path: "."},
 		map[string]bool{path: false}, map[string]map[string]string{".": {}},
 		false, false,
@@ -746,7 +746,7 @@ let main() {
 `
 	_, err := runFrontend(
 		&Args{mainModule: ".", noStdlib: true},
-		loader.StageConfig{NoStdlib: true},
+		loader.StageConfig{},
 		map[string]string{path: source}, map[string]string{path: "."},
 		map[string]bool{path: false}, map[string]map[string]string{".": {}},
 		false, false,
@@ -772,7 +772,7 @@ let main() {
 `,
 	}
 	_, err := runFrontend(
-		&Args{mainModule: ".", noStdlib: true}, loader.StageConfig{NoStdlib: true},
+		&Args{mainModule: ".", noStdlib: true}, loader.StageConfig{},
 		sources, map[string]string{libraryPath: "choice", mainPath: "."},
 		map[string]bool{libraryPath: false, mainPath: false},
 		map[string]map[string]string{"choice": {}, ".": {}}, false, false,
@@ -802,7 +802,7 @@ let main() {
 	trusted := map[string]bool{libraryPath: false, mainPath: false}
 	_, err := runFrontend(
 		&Args{mainModule: ".", noStdlib: true},
-		loader.StageConfig{NoStdlib: true}, sources, packages, trusted,
+		loader.StageConfig{}, sources, packages, trusted,
 		map[string]map[string]string{"types": {}, ".": {}}, false, false,
 	)
 	if err != nil {
@@ -818,7 +818,7 @@ let run(enabled: bool): i32 = choose(enabled, 7)
 let main() {}
 `
 	_, err := runFrontend(
-		&Args{mainModule: ".", noStdlib: true}, loader.StageConfig{NoStdlib: true},
+		&Args{mainModule: ".", noStdlib: true}, loader.StageConfig{},
 		map[string]string{path: source}, map[string]string{path: "."},
 		map[string]bool{path: false}, map[string]map[string]string{".": {}}, false, false,
 	)

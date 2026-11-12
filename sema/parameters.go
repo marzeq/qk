@@ -985,18 +985,6 @@ func preserveResolvedTypeArguments(parameters []types.TypeParameter, fixed, infe
 	return inferred
 }
 
-func inferParameterizedArgumentsWithResult(
-	parameters []types.TypeParameter,
-	patterns, actuals []types.Type,
-	resultPattern, expectedResult types.Type,
-	typedVariadic, variadicExpansion bool,
-) ([]types.Type, error) {
-	return inferParameterizedArgumentsForCall(
-		parameters, patterns, actuals, resultPattern, expectedResult,
-		typedVariadic, variadicExpansion, false,
-	)
-}
-
 func inferParameterizedArgumentsForCall(
 	parameters []types.TypeParameter,
 	patterns, actuals []types.Type,

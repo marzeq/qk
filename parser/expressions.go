@@ -1195,15 +1195,6 @@ func (p *Parser) ParseInlineAsmExpression() (*InlineAsmNode, error) {
 	return node, nil
 }
 
-func (p *Parser) ParseFunctionCall(name *IdentifierNode) (*FunctionCallNode, error) {
-	call, err := p.ParseCall(name)
-	if err != nil {
-		return nil, err
-	}
-	call.Name = name
-	return call, nil
-}
-
 func (p *Parser) ParseCall(callee ExpressionNode) (*FunctionCallNode, error) {
 	var args []ExpressionNode
 	expanded := false

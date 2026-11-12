@@ -96,9 +96,8 @@ func (a *Analyser) AnalyseModule(root *parser.RootNode, path string, trustedStan
 	a.AnalyseModuleBody(root, path)
 }
 
-// DeclareModule builds the module-level semantic interface without visiting
-// implementation bodies. Keeping this phase explicit is what allows imported
-// interfaces to be inspected independently of source ASTs.
+// DeclareModule installs module-level declarations before body analysis so
+// imports and structural methods are available in dependency order.
 func (a *Analyser) DeclareModule(root *parser.RootNode, path string, trustedStandardLibrary bool) {
 	a.modulePaths[root] = path
 	// Aliases are module-local; method tables remain available so later modules
@@ -142,8 +141,8 @@ func (a *Analyser) DeclareModule(root *parser.RootNode, path string, trustedStan
 	}
 }
 
-// AnalyseModuleBody resolves one implementation against the interfaces
-// declared so far. Dependencies must have been declared first.
+// AnalyseModuleBody resolves one module against declarations installed from
+// its dependencies. Dependencies must have been declared first.
 func (a *Analyser) AnalyseModuleBody(root *parser.RootNode, path string) {
 	mod := a.modules[path]
 	if mod == nil {

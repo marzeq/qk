@@ -27,10 +27,8 @@ const (
 
 type StageConfig struct {
 	TargetTriple string
-	Sysroot      string
 	ReleaseMode  StageReleaseMode
 	Freestanding bool
-	NoStdlib     bool
 }
 
 // StageEnvironment supplies already selected dependency modules to compile-time

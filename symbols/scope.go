@@ -14,9 +14,6 @@ func NewScope(parent *Scope) *Scope {
 	}
 }
 
-func (s *Scope) NewChild() *Scope {
-	return NewScope(s)
-}
 func (s *Scope) Define(sym *Symbol) error {
 	if _, exists := s.Symbols[sym.Name]; exists {
 		return fmt.Errorf("symbol '%v' already defined in this scope", sym.Name)

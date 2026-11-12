@@ -114,7 +114,7 @@ func runSemanticModuleBodies(mods map[string]*ModuleInfo, analyser *sema.Analyse
 		}
 	}
 	if verbose && debug {
-		fmt.Println("completed incremental semantic body pipeline")
+		fmt.Println("completed semantic body pipeline")
 	}
 	return nil, warnings
 }
