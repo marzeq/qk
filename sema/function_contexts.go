@@ -23,6 +23,10 @@ func (a *Analyser) InferFunctionContexts(roots ...*parser.RootNode) {
 			if !ok || function.Symbol == nil || function.Body == nil || function.ParameterizedInstance || function.DeferredStage {
 				continue
 			}
+			if module := a.modules[a.modulePaths[root]]; a.demandLibraryBodies &&
+				module != nil && module.TrustedStandardLibrary && !a.functionVisited(function) {
+				continue
+			}
 			current := entry{function: function}
 			if types.HasMetaType(function.Symbol.Signature.ReturnType) {
 				function.Symbol.CompileTimeOnly = true

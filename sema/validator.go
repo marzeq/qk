@@ -50,6 +50,12 @@ func (v *Validator) ValidateModule(root *parser.RootNode) {
 	v.validateNode(root)
 }
 
+func (v *Validator) ValidateFunction(fn *parser.FunctionDefNode) {
+	v.validatingTemplate = false
+	v.analyser.selectModule(fn.Symbol.DefinitionModule)
+	v.validateNode(fn)
+}
+
 func (v *Validator) ValidateParameterizedTemplates(root *parser.RootNode) {
 	v.validatingTemplate = true
 	v.analyser.selectModule(v.analyser.modulePaths[root])
@@ -85,6 +91,10 @@ func (v *Validator) validateNode(node parser.Node) {
 
 	case *parser.RootNode:
 		for _, stmt := range n.Body {
+			if function, ok := stmt.(*parser.FunctionDefNode); ok && v.analyser.demandLibraryBodies &&
+				v.analyser.currentTrustedStandardLibrary && !v.analyser.functionVisited(function) {
+				continue
+			}
 			v.validateNode(stmt)
 		}
 

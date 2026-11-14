@@ -64,7 +64,9 @@ func (a *Analyser) resolveBodies(root *parser.RootNode) {
 		node := root.Body[i]
 		switch n := node.(type) {
 		case *parser.FunctionDefNode:
-			a.visitFunction(n)
+			if !a.libraryFunctionDeferred(n) {
+				a.visitFunctionOnce(n)
+			}
 		case *parser.DeclarationNode:
 			if len(n.ParameterizedParameters) != 0 || n.Symbol != nil && n.Symbol.TemplateSymbol != nil {
 				continue

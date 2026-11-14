@@ -39,11 +39,15 @@ type Analyser struct {
 	lambdaCounter                 int
 	lambdaOwnedSymbols            []map[*symbols.Symbol]bool
 	staging                       bool
+	demandLibraryBodies           bool
+	visitedFunctions              map[*parser.FunctionDefNode]bool
 	deferredStageSelector         func(*parser.FunctionDefNode, *parser.RootNode, map[string]types.Type) error
 	deferredTypeSelector          func(*parser.TypeAliasNode, *parser.RootNode, map[string]types.Type) (parser.TypeNode, error)
 }
 
 func (a *Analyser) SetStaging(staging bool) { a.staging = staging }
+
+func (a *Analyser) SetDemandLibraryBodies(enabled bool) { a.demandLibraryBodies = enabled }
 
 func (a *Analyser) SetDeferredStageSelector(selector func(*parser.FunctionDefNode, *parser.RootNode, map[string]types.Type) error) {
 	a.deferredStageSelector = selector
@@ -71,6 +75,7 @@ func NewAnalyser() *Analyser {
 		parameterizedAliases:   make(map[*symbols.Symbol]*parameterizedAliasInfo),
 		traitDefaults:          make(map[string][]*symbols.Symbol),
 		definitionTypeBindings: make(map[*symbols.Symbol]map[string]types.Type),
+		visitedFunctions:       make(map[*parser.FunctionDefNode]bool),
 	}
 
 	a.predefineBuiltins()

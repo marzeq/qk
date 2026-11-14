@@ -160,7 +160,9 @@ func runFrontend(
 	}
 	if args.phaseTiming {
 		referenced := 0
+		roots := make([]*parser.RootNode, 0, len(result.modules))
 		for _, info := range result.modules {
+			roots = append(roots, info.Root)
 			if !info.TrustedStandardLibrary {
 				continue
 			}
@@ -172,6 +174,7 @@ func runFrontend(
 			}
 		}
 		phases.count("referenced library funcs", referenced)
+		phases.count("visited library bodies", analyser.VisitedLibraryBodyCount(roots...))
 	}
 	result.irModules = compiled.IRModules
 	result.templates = compiled.Templates

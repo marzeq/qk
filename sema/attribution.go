@@ -54,6 +54,12 @@ func (a *Attributor) AttributeModule(root *parser.RootNode) {
 	a.attributeNode(root)
 }
 
+func (a *Attributor) AttributeFunction(fn *parser.FunctionDefNode) {
+	a.templatesOnly = false
+	a.analyser.selectModule(fn.Symbol.DefinitionModule)
+	a.attributeNode(fn)
+}
+
 func (a *Attributor) AttributeParameterizedTemplates(root *parser.RootNode) {
 	a.templatesOnly = true
 	a.analyser.selectModule(a.analyser.modulePaths[root])
@@ -85,6 +91,10 @@ func (a *Attributor) attributeNode(node parser.Node) {
 					continue
 				}
 			} else if a.templatesOnly {
+				continue
+			}
+			if function, ok := stmt.(*parser.FunctionDefNode); ok && a.analyser.demandLibraryBodies &&
+				a.analyser.currentTrustedStandardLibrary && !a.analyser.functionVisited(function) {
 				continue
 			}
 			a.attributeNode(stmt)
