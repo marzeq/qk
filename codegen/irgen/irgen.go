@@ -4044,6 +4044,16 @@ func (g *Generator) generateUnaryExpr(node *parser.UnaryOpNode) ir.Operand {
 }
 
 func (g *Generator) generateIf(node *parser.IfNode) {
+	if len(node.ElseIfBranches) == 0 {
+		if selected, known := g.specializedVariadicCondition(node.IfBranch.Condition); known {
+			if selected {
+				g.generateBlock(node.IfBranch.Node)
+			} else if node.ElseBranch != nil {
+				g.generateBlock(node.ElseBranch)
+			}
+			return
+		}
+	}
 	mergeBlock := g.currentFunction.NewBlock("if.merge")
 	thenBlock := g.currentFunction.NewBlock("if.then")
 
@@ -4074,6 +4084,45 @@ func (g *Generator) generateIf(node *parser.IfNode) {
 	g.generateElseChain(node, elseTarget, mergeBlock)
 
 	g.currentBlock = mergeBlock
+}
+
+// Fixed-arity wrappers know the length of their variadic slice before LLVM
+// emission. Select branches guarded by that length while generating IR so
+// their unused callees are also removed by executable reachability pruning.
+func (g *Generator) specializedVariadicCondition(expr parser.ExpressionNode) (bool, bool) {
+	comparison, ok := expr.(*parser.BinaryOpNode)
+	if !ok || comparison.Op != parser.BinaryOpEqual && comparison.Op != parser.BinaryOpNotEqual {
+		return false, false
+	}
+	length, literal := comparison.Operand1, comparison.Operand2
+	if _, ok := length.(*parser.IntegerLiteralNode); ok {
+		length, literal = literal, length
+	}
+	unary, ok := length.(*parser.UnaryOpNode)
+	if !ok || unary.Op != parser.UnaryOpSliceLen {
+		return false, false
+	}
+	variable, ok := unary.Operand.(*parser.IdentifierNode)
+	if !ok || variable.Symbol == nil {
+		return false, false
+	}
+	elements, specialized := g.specializedVariadicElements[variable.Symbol]
+	if !specialized {
+		return false, false
+	}
+	integer, ok := literal.(*parser.IntegerLiteralNode)
+	if !ok {
+		return false, false
+	}
+	value, err := strconv.ParseUint(integer.Value, 10, 64)
+	if err != nil {
+		return false, false
+	}
+	equal := uint64(len(elements)) == value
+	if comparison.Op == parser.BinaryOpNotEqual {
+		equal = !equal
+	}
+	return equal, true
 }
 
 func (g *Generator) generateElseChain(node *parser.IfNode, startElse *ir.Block, mergeBlock *ir.Block) {

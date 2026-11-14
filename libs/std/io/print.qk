@@ -190,11 +190,74 @@ let wprint_slice(
   return .Ok(Unit.{})
 }
 
+// A fixed zero-argument call never needs dynamic Any-to-Format dispatch.
+// Keep the same escape and missing-argument behavior as wprint_slice.
+let wprint_no_args(writer: *mut dyn Writer, format: str): Result(Unit, Error) {
+  let mut index: usz = 0
+  for index < len(format) {
+    let character = format[index]
+    if character == '}' && index + 1 < len(format) && format[index + 1] == '}' {
+      let error = write_byte(writer, '}')
+      if error.is_err() { return error }
+      index += 2
+      continue
+    }
+    if character != '{' {
+      let error = write_byte(writer, character)
+      if error.is_err() { return error }
+      index += 1
+      continue
+    }
+    if index + 1 >= len(format) { return write_byte(writer, '{') }
+    if format[index + 1] == '{' {
+      let error = write_byte(writer, '{')
+      if error.is_err() { return error }
+      index += 2
+      continue
+    }
+    if format[index + 1] == '}' { return write_format_error(writer) }
+    if index + 2 < len(format) && format[index + 2] == '}' {
+      let specifier = format[index + 1]
+      if specifier == 'g' || specifier == 'c' || specifier == 'x' || specifier == 'X' {
+        return write_format_error(writer)
+      }
+    }
+    if index + 3 < len(format) && format[index + 1] == ':' && format[index + 3] == '}' {
+      let specifier = format[index + 2]
+      if specifier == 'g' || specifier == 'c' || specifier == 'x' || specifier == 'X' {
+        return write_format_error(writer)
+      }
+    }
+    let mut cursor = index + 1
+    let mut has_digit = false
+    for cursor < len(format) && format[cursor] >= '0' && format[cursor] <= '9' {
+      has_digit = true
+      cursor += 1
+    }
+    if has_digit && cursor < len(format) {
+      if format[cursor] == '}' { return write_format_error(writer) }
+      if cursor + 2 < len(format) && format[cursor] == ':' && format[cursor + 2] == '}' {
+        let specifier = format[cursor + 1]
+        if specifier == 'g' || specifier == 'c' || specifier == 'x' || specifier == 'X' {
+          return write_format_error(writer)
+        }
+      }
+    }
+    let error = write_byte(writer, '{')
+    if error.is_err() { return error }
+    index += 1
+  }
+  return .Ok(Unit.{})
+}
+
 pub let wprint(
   writer: *mut dyn Writer,
   format: str,
   arguments: ...*dyn Any
-): Result(Unit, Error) = wprint_slice(writer, format, arguments)
+): Result(Unit, Error) {
+  if len(arguments) == 0 { return wprint_no_args(writer, format) }
+  return wprint_slice(writer, format, arguments)
+}
 
 pub let wprintln(
   writer: *mut dyn Writer,

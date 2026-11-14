@@ -43,24 +43,18 @@ func packagePathFromDirectory(root, dir string) string {
 func resolvePackageDirectory(root, path string) (string, bool, error) {
 	current := root
 	for _, component := range strings.Split(path, ".") {
-		entries, err := os.ReadDir(current)
+		candidate := filepath.Join(current, component)
+		info, err := os.Lstat(candidate)
 		if err != nil {
 			if os.IsNotExist(err) {
 				return "", false, nil
 			}
 			return "", false, err
 		}
-		found := false
-		for _, entry := range entries {
-			if entry.IsDir() && entry.Name() == component {
-				current = filepath.Join(current, entry.Name())
-				found = true
-				break
-			}
-		}
-		if !found {
+		if !info.IsDir() {
 			return "", false, nil
 		}
+		current = candidate
 	}
 	return current, true, nil
 }
