@@ -39,6 +39,7 @@ func runFrontend(
 	importResolutions map[string]map[string]string,
 	parsedSources ...map[string]*parser.RootNode,
 ) (*frontendResult, error) {
+	phases := newPhaseTimer(args.phaseTiming)
 	sources = cloneStringMap(sources)
 	sourcePackages = cloneStringMap(sourcePackages)
 	trustedSources = cloneBoolMap(trustedSources)
@@ -62,6 +63,7 @@ func runFrontend(
 	if err != nil {
 		return nil, err
 	}
+	phases.mark("frontend graph")
 	order, err := loader.ModuleDependencyOrder(graphModules, args.mainModule)
 	if err != nil {
 		return nil, err
@@ -128,14 +130,48 @@ func runFrontend(
 		result.modules[name] = info
 		sourceOrder = append(sourceOrder, name)
 	}
+	phases.mark("staging and merge")
+	if args.phaseTiming {
+		libraryBodies, otherBodies := 0, 0
+		for _, info := range result.modules {
+			for _, node := range info.Root.Body {
+				fn, ok := node.(*parser.FunctionDefNode)
+				if !ok || fn.Body == nil {
+					continue
+				}
+				if info.TrustedStandardLibrary {
+					libraryBodies++
+				} else {
+					otherBodies++
+				}
+			}
+		}
+		phases.count("library bodies", libraryBodies)
+		phases.count("other bodies", otherBodies)
+	}
 	if needsDeferredSnapshots {
 		for _, name := range sourceOrder {
 			stageModules[name].Root = parser.CloneSyntax(stageModules[name].Root).(*parser.RootNode)
 		}
 	}
-	compiled, errs := loader.CompileSelectedModulesLazyTemplates(result.modules, args.mainModule, sourceOrder, analyser, args.outputType == OutputExecutable)
+	compiled, errs := loader.CompileSelectedModulesLazyTemplates(result.modules, args.mainModule, sourceOrder, analyser, args.outputType == OutputExecutable, phases.mark)
 	if len(errs) != 0 {
 		return nil, errs[0]
+	}
+	if args.phaseTiming {
+		referenced := 0
+		for _, info := range result.modules {
+			if !info.TrustedStandardLibrary {
+				continue
+			}
+			for _, node := range info.Root.Body {
+				fn, ok := node.(*parser.FunctionDefNode)
+				if ok && fn.Symbol != nil && fn.Symbol.Referenced {
+					referenced++
+				}
+			}
+		}
+		phases.count("referenced library funcs", referenced)
 	}
 	result.irModules = compiled.IRModules
 	result.templates = compiled.Templates

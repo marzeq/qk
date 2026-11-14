@@ -31,6 +31,7 @@ func main() {
 	}
 	args, err := parseArgs()
 	check(err)
+	phases := newPhaseTimer(args.phaseTiming)
 	if args.cpuProfile != "" {
 		profile, err := os.Create(args.cpuProfile)
 		check(err)
@@ -70,6 +71,7 @@ func main() {
 		args.mainModule, args.baseDir, args.file, searchPaths, args.sourceMounts, libraryRoot, !args.noStdlib,
 	)
 	check(err)
+	phases.mark("discovery and parsing")
 	parsedSources := make(map[string]*parser.RootNode, len(compileTimeSources))
 	for _, pkg := range discovered {
 		for path, root := range pkg.Roots {
@@ -95,6 +97,7 @@ func main() {
 		args, comptimeConfig, compileTimeSources, sourcePackagePaths, trustedSources, importResolutions, parsedSources,
 	)
 	check(err)
+	phases.mark("frontend total")
 	modules, order := frontend.modules, frontend.order
 	for name, info := range modules {
 		if name == args.mainModule {
@@ -205,6 +208,7 @@ func main() {
 		emissionOrder = append(emissionOrder, args.mainModule)
 		emissionModules[args.mainModule] = irModules[args.mainModule]
 	}
+	phases.mark("specialization and prune")
 
 	llvmOutputs := make(map[string]string, len(irModules))
 	for _, moduleName := range emissionOrder {
@@ -229,6 +233,7 @@ func main() {
 	if hostedRuntime != "" {
 		llvmOutputs["__qk.runtime"] = hostedRuntime
 	}
+	phases.mark("LLVM text")
 
 	if args.dumpIR {
 		for _, moduleName := range order {
@@ -315,6 +320,7 @@ func main() {
 				check(dumpAssemblyFile(buildDir))
 			}
 		}
+		phases.mark("no-emit completion")
 		return
 	}
 
@@ -393,6 +399,7 @@ func main() {
 		check(err)
 	}
 	check(runtimeError)
+	phases.mark("LLVM objects")
 	if runtimeObject != "" {
 		objFiles = append(objFiles, runtimeObject)
 	}
@@ -416,6 +423,7 @@ func main() {
 
 	err = linkObjects(objFiles, moduleLinks, linkRoots, args)
 	check(err)
+	phases.mark("link")
 
 	if args.keepBuildDir {
 		for _, buildDir := range buildDirs {

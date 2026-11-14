@@ -42,7 +42,7 @@ func (a *Analyser) collectTopLevel(root *parser.RootNode) {
 	}
 }
 
-func (a *Analyser) resolveBodies(root *parser.RootNode) {
+func (a *Analyser) resolveModuleAliases() {
 	aliasNames := make([]string, 0, len(a.currentState.aliases))
 	for name := range a.currentState.aliases {
 		aliasNames = append(aliasNames, name)
@@ -54,7 +54,9 @@ func (a *Analyser) resolveBodies(root *parser.RootNode) {
 			a.resolveAlias(info, info.node, false)
 		}
 	}
+}
 
+func (a *Analyser) resolveBodies(root *parser.RootNode) {
 	// Resolving a parameterized trait use can materialize hidden default-method
 	// templates in this root. Keep walking until those appended definitions
 	// have received their scopes and parameter symbols too.

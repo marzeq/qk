@@ -92,6 +92,7 @@ func (a *Analyser) errorf(node parser.Node, format string, args ...any) {
 
 func (a *Analyser) AnalyseModule(root *parser.RootNode, path string, trustedStandardLibrary bool) {
 	a.DeclareModule(root, path, trustedStandardLibrary)
+	a.ResolveModuleAliases(path)
 	a.AnalyseModuleBody(root, path)
 }
 
@@ -140,8 +141,18 @@ func (a *Analyser) DeclareModule(root *parser.RootNode, path string, trustedStan
 	}
 }
 
-// AnalyseModuleBody resolves one module against declarations installed from
-// its dependencies. Dependencies must have been declared first.
+// ResolveModuleAliases completes type definitions after a module has declared
+// its symbols. A later module can then use those types in its signatures.
+func (a *Analyser) ResolveModuleAliases(path string) {
+	if a.modules[path] == nil {
+		return
+	}
+	a.selectModule(path)
+	a.resolveModuleAliases()
+}
+
+// AnalyseModuleBody visits function and global bodies after declarations and
+// aliases have been resolved.
 func (a *Analyser) AnalyseModuleBody(root *parser.RootNode, path string) {
 	mod := a.modules[path]
 	if mod == nil {

@@ -98,6 +98,7 @@ type Args struct {
 	run          bool
 	install      bool
 	cpuProfile   string
+	phaseTiming  bool
 }
 
 func parseOptLevel(level string) (OptimisationLevel, error) {
@@ -311,6 +312,9 @@ func (p *argumentParser) parseCurrent() error {
 			return err
 		}
 		p.args.cpuProfile = value
+	case tok == "-time-phases":
+		p.args.phaseTiming = true
+		p.index++
 
 	case tok == "-dump-ir":
 		p.args.dumpIR = true
@@ -511,6 +515,7 @@ Diagnostics:
   -dump-asm             Print generated assembly
   -keep-build-dir       Preserve temporary build directories
   -cpuprofile <file>    Write a compiler CPU profile
+  -time-phases          Print compiler phase timings
 
 Packages and libraries:
   -nostdlib             Do not load the installed QK library tree

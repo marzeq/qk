@@ -24,12 +24,12 @@ func CompileSelectedModules(mods map[string]*ModuleInfo, mainModule string, orde
 
 // CompileSelectedModulesLazyTemplates leaves parameterized bodies in their
 // validated semantic form until a concrete specialization requests their IR.
-func CompileSelectedModulesLazyTemplates(mods map[string]*ModuleInfo, mainModule string, order []string, analyser *sema.Analyser, executable bool) (*CompiledModules, []error) {
-	return compileSelectedModules(mods, mainModule, order, analyser, true, executable)
+func CompileSelectedModulesLazyTemplates(mods map[string]*ModuleInfo, mainModule string, order []string, analyser *sema.Analyser, executable bool, phaseMark ...func(string)) (*CompiledModules, []error) {
+	return compileSelectedModules(mods, mainModule, order, analyser, true, executable, phaseMark...)
 }
 
-func compileSelectedModules(mods map[string]*ModuleInfo, mainModule string, order []string, analyser *sema.Analyser, lazyTemplates, executable bool) (*CompiledModules, []error) {
-	errors, warnings := RunSemanticPipeline(mods, analyser, order)
+func compileSelectedModules(mods map[string]*ModuleInfo, mainModule string, order []string, analyser *sema.Analyser, lazyTemplates, executable bool, phaseMark ...func(string)) (*CompiledModules, []error) {
+	errors, warnings := RunSemanticPipeline(mods, analyser, order, phaseMark...)
 	if len(errors) != 0 {
 		return nil, errors
 	}
@@ -39,6 +39,9 @@ func compileSelectedModules(mods map[string]*ModuleInfo, mainModule string, orde
 		Templates:     make(map[string][]ir.ParameterizedTemplate, len(order)),
 		MethodTargets: analyser.MethodTargets(),
 		Warnings:      warnings,
+	}
+	if len(phaseMark) != 0 {
+		phaseMark[0]("IR generation")
 	}
 	if !lazyTemplates {
 		for _, name := range order {
@@ -56,20 +59,33 @@ func moduleRoots(mods map[string]*ModuleInfo, order []string) []*parser.RootNode
 	return roots
 }
 
-func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, order []string) (errors []error, warnings []error) {
+func RunSemanticPipeline(mods map[string]*ModuleInfo, analyser *sema.Analyser, order []string, phaseMark ...func(string)) (errors []error, warnings []error) {
 	for _, name := range order {
 		info := mods[name]
 		analyser.DeclareModule(info.Root, name, info.TrustedStandardLibrary)
 		if len(analyser.Errors()) > 0 {
 			return analyser.Errors(), nil
 		}
+		analyser.ResolveModuleAliases(name)
+		if len(analyser.Errors()) > 0 {
+			return analyser.Errors(), nil
+		}
+	}
+	if len(phaseMark) != 0 {
+		phaseMark[0]("declarations and aliases")
+	}
+	for _, name := range order {
+		info := mods[name]
 		analyser.AnalyseModuleBody(info.Root, name)
 		if len(analyser.Errors()) > 0 {
 			return analyser.Errors(), nil
 		}
 	}
+	if len(phaseMark) != 0 {
+		phaseMark[0]("body resolution")
+	}
 
-	return runSemanticModuleBodies(mods, analyser, order)
+	return runSemanticModuleBodies(mods, analyser, order, phaseMark...)
 }
 
 // RunSemanticModule analyses one source-backed module after its dependencies
@@ -81,10 +97,13 @@ func RunSemanticModule(info *ModuleInfo, analyser *sema.Analyser) (errors []erro
 // runSemanticModuleBodies completes attribution and validation for modules
 // whose declarations and analysed bodies have already been installed. This
 // preserves the language's global structural-method declaration phase.
-func runSemanticModuleBodies(mods map[string]*ModuleInfo, analyser *sema.Analyser, order []string) (errors []error, warnings []error) {
+func runSemanticModuleBodies(mods map[string]*ModuleInfo, analyser *sema.Analyser, order []string, phaseMark ...func(string)) (errors []error, warnings []error) {
 	attributor := analyser.NewAttributor()
 	for _, name := range order {
 		attributor.AttributeParameterizedTemplates(mods[name].Root)
+	}
+	if len(phaseMark) != 0 {
+		phaseMark[0]("template attribution")
 	}
 	if len(analyser.Errors()) != 0 || len(attributor.Errors()) != 0 {
 		out := append([]error(nil), analyser.Errors()...)
@@ -95,12 +114,18 @@ func runSemanticModuleBodies(mods map[string]*ModuleInfo, analyser *sema.Analyse
 	for _, name := range order {
 		templateValidator.ValidateParameterizedTemplates(mods[name].Root)
 	}
+	if len(phaseMark) != 0 {
+		phaseMark[0]("template validation")
+	}
 	warnings = append(warnings, templateValidator.Warnings()...)
 	if len(templateValidator.Errors()) != 0 {
 		return templateValidator.Errors(), warnings
 	}
 	for _, name := range order {
 		attributor.AttributeModule(mods[name].Root)
+	}
+	if len(phaseMark) != 0 {
+		phaseMark[0]("body attribution")
 	}
 	if len(analyser.Errors()) != 0 || len(attributor.Errors()) != 0 {
 		out := append([]error(nil), analyser.Errors()...)
@@ -110,6 +135,9 @@ func runSemanticModuleBodies(mods map[string]*ModuleInfo, analyser *sema.Analyse
 	validator := analyser.NewValidator()
 	for _, name := range order {
 		validator.ValidateModule(mods[name].Root)
+	}
+	if len(phaseMark) != 0 {
+		phaseMark[0]("body validation")
 	}
 	warnings = append(warnings, validator.Warnings()...)
 	if len(validator.Errors()) != 0 {
