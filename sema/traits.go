@@ -97,6 +97,9 @@ func (a *Analyser) structuralConformance(from types.Type, target types.TraitPoin
 		}
 		selected[i] = method
 	}
+	for _, method := range selected {
+		method.Referenced = true
+	}
 	return selected, true
 }
 

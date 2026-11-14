@@ -19,19 +19,31 @@ type CompiledModules struct {
 // CompileSelectedModules runs the one semantic-to-IR path after staged
 // selection has produced the final module roots.
 func CompileSelectedModules(mods map[string]*ModuleInfo, mainModule string, order []string, analyser *sema.Analyser) (*CompiledModules, []error) {
+	return compileSelectedModules(mods, mainModule, order, analyser, false, false)
+}
+
+// CompileSelectedModulesLazyTemplates leaves parameterized bodies in their
+// validated semantic form until a concrete specialization requests their IR.
+func CompileSelectedModulesLazyTemplates(mods map[string]*ModuleInfo, mainModule string, order []string, analyser *sema.Analyser, executable bool) (*CompiledModules, []error) {
+	return compileSelectedModules(mods, mainModule, order, analyser, true, executable)
+}
+
+func compileSelectedModules(mods map[string]*ModuleInfo, mainModule string, order []string, analyser *sema.Analyser, lazyTemplates, executable bool) (*CompiledModules, []error) {
 	errors, warnings := RunSemanticPipeline(mods, analyser, order)
 	if len(errors) != 0 {
 		return nil, errors
 	}
 	PropagateSpecializationDemands(mods, order)
 	result := &CompiledModules{
-		IRModules:     GenerateIRModules(mods, mainModule, order),
+		IRModules:     GenerateIRModules(mods, mainModule, order, executable),
 		Templates:     make(map[string][]ir.ParameterizedTemplate, len(order)),
 		MethodTargets: analyser.MethodTargets(),
 		Warnings:      warnings,
 	}
-	for _, name := range order {
-		result.Templates[name] = GenerateModuleParameterizedTemplateIR(mods[name])
+	if !lazyTemplates {
+		for _, name := range order {
+			result.Templates[name] = GenerateModuleParameterizedTemplateIR(mods[name])
+		}
 	}
 	return result, nil
 }
@@ -106,7 +118,7 @@ func runSemanticModuleBodies(mods map[string]*ModuleInfo, analyser *sema.Analyse
 	return nil, warnings
 }
 
-func GenerateIRModules(mods map[string]*ModuleInfo, mainModule string, order []string) map[string]*ir.Module {
+func GenerateIRModules(mods map[string]*ModuleInfo, mainModule string, order []string, skipUnreferenced ...bool) map[string]*ir.Module {
 	out := make(map[string]*ir.Module, len(order))
 
 	for _, name := range order {
@@ -119,7 +131,8 @@ func GenerateIRModules(mods map[string]*ModuleInfo, mainModule string, order []s
 		}
 		gen := &irgen.Generator{
 			ModuleName: name, MainModule: mainModule,
-			DependencyInitializers: dependencyInitializers,
+			DependencyInitializers:    dependencyInitializers,
+			SkipUnreferencedFunctions: len(skipUnreferenced) != 0 && skipUnreferenced[0],
 		}
 		modIR := gen.Generate(info.Root)
 		deduplicateIRDeclarations(modIR)
@@ -147,6 +160,48 @@ func GenerateModuleParameterizedTemplateIR(info *ModuleInfo) []ir.ParameterizedT
 		}
 	}
 	return result
+}
+
+// NewTemplateResolver indexes validated source definitions and lowers only
+// templates requested by concrete calls. It retains no state across builds.
+func NewTemplateResolver(mods map[string]*ModuleInfo) func(string, string) (ir.ParameterizedTemplate, bool) {
+	type sourceTemplate struct {
+		module   string
+		function *parser.FunctionDefNode
+	}
+	sources := make(map[string]sourceTemplate)
+	for module, info := range mods {
+		for _, node := range info.Root.Body {
+			function, ok := node.(*parser.FunctionDefNode)
+			if !ok || !function.IsParameterized() || function.Body == nil || function.DeferredStage {
+				continue
+			}
+			sources[module+"\x00"+function.Symbol.Name] = sourceTemplate{module, function}
+		}
+	}
+	generated := make(map[string]ir.ParameterizedTemplate)
+	return func(module, name string) (ir.ParameterizedTemplate, bool) {
+		key := module + "\x00" + name
+		if template, ok := generated[key]; ok {
+			return template, true
+		}
+		source, ok := sources[key]
+		if !ok {
+			return ir.ParameterizedTemplate{}, false
+		}
+		generator := &irgen.Generator{ModuleName: source.module, Module: &ir.Module{}}
+		functions := generator.GenerateParameterizedTemplate(source.function)
+		if len(functions) == 0 {
+			return ir.ParameterizedTemplate{}, false
+		}
+		template := ir.ParameterizedTemplate{
+			Module: source.module, Name: source.function.Symbol.Name,
+			Parameters: append([]types.TypeParameter(nil), source.function.Symbol.ParameterizedParameters...),
+			Functions:  functions,
+		}
+		generated[key] = template
+		return template, true
+	}
 }
 
 // PropagateSpecializationDemands carries constant-argument and fixed typed-

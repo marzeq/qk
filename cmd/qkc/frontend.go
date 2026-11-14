@@ -133,7 +133,7 @@ func runFrontend(
 			stageModules[name].Root = parser.CloneSyntax(stageModules[name].Root).(*parser.RootNode)
 		}
 	}
-	compiled, errs := loader.CompileSelectedModules(result.modules, args.mainModule, sourceOrder, analyser)
+	compiled, errs := loader.CompileSelectedModulesLazyTemplates(result.modules, args.mainModule, sourceOrder, analyser, args.outputType == OutputExecutable)
 	if len(errs) != 0 {
 		return nil, errs[0]
 	}

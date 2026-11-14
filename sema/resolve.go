@@ -446,6 +446,9 @@ func (a *Analyser) resolveModuleField(n *parser.FieldAccessNode) bool {
 	if _, ok := a.resolveParameterizedIdentifier(resolved, sym); !ok {
 		return true
 	}
+	if resolved.Symbol != nil {
+		resolved.Symbol.Referenced = true
+	}
 	n.ResolvedIdentifier = resolved
 	return true
 }

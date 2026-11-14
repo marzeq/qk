@@ -41,11 +41,12 @@ func (e *Env) Lookup(sym *symbols.Symbol) (ir.SlotID, bool) {
 }
 
 type Generator struct {
-	Module                 *ir.Module
-	ModuleName             string
-	MainModule             string
-	DependencyInitializers []string
-	DemandedTraitSlots     map[string]map[int]bool
+	Module                    *ir.Module
+	ModuleName                string
+	MainModule                string
+	DependencyInitializers    []string
+	DemandedTraitSlots        map[string]map[int]bool
+	SkipUnreferencedFunctions bool
 
 	currentFunction             *ir.Function
 	currentBlock                *ir.Block
@@ -127,6 +128,11 @@ func (g *Generator) GenerateRoots(roots []*parser.RootNode) *ir.Module {
 				continue
 			}
 			if node.IsParameterized() {
+				continue
+			}
+			if g.SkipUnreferencedFunctions && node.Body != nil && !node.Symbol.Referenced &&
+				!g.isProgramEntryFunction(node.Symbol.Name) &&
+				node.Attributes.Get(attributes.AttributeTypeExport) == nil {
 				continue
 			}
 			if node.Body == nil {

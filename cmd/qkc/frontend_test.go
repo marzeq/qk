@@ -816,3 +816,30 @@ let main() {}
 		t.Fatalf("expected retained parameter diagnostic, got %v", err)
 	}
 }
+
+func TestExecutableIRSkipsUnreferencedSourceFunctions(t *testing.T) {
+	sources := map[string]string{
+		"library.qk": `module library
+pub let used(): i32 = 7
+pub let unused(): i32 = 9
+`,
+		"main.qk": `module main
+import library
+let main() { let value = library.used() }
+`,
+	}
+	frontend, err := runFrontend(
+		&Args{mainModule: ".", noStdlib: true, outputType: OutputExecutable},
+		loader.StageConfig{}, sources,
+		map[string]string{"library.qk": "library", "main.qk": "."},
+		map[string]bool{"library.qk": false, "main.qk": false},
+		map[string]map[string]string{"library": {}, ".": {"library": "library"}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := functionNames(frontend.irModules["library"])
+	if len(names) != 1 || !strings.Contains(names[0], "used") {
+		t.Fatalf("library IR functions = %v, want only used", names)
+	}
+}

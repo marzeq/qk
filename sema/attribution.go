@@ -1499,6 +1499,7 @@ func (a *Attributor) attributeMethodValue(n *parser.FieldAccessNode) bool {
 		ret = types.PrimitiveVoid
 	}
 	n.MethodSymbol = method
+	method.Referenced = true
 	n.MethodModule = method.DefinitionModule
 	n.SetType(types.PointerType{Base: types.FunctionType{Parameters: method.Signature.Parameters, ReturnType: ret, TypedVariadic: method.Signature.TypedVariadic, VariadicElement: method.Signature.VariadicElement}})
 	return true
@@ -1676,6 +1677,7 @@ func (a *Attributor) attributeMethodCall(n *parser.FunctionCallNode) bool {
 	}
 	n.Args = append([]parser.ExpressionNode{receiver}, n.Args...)
 	n.Symbol = method
+	method.Referenced = true
 	n.Method = true
 	if method.DefinitionModule != a.analyser.currentMod {
 		n.Name = &parser.IdentifierNode{Name: method.Name, Module: method.DefinitionModule, ResolvedModuleName: method.DefinitionModule, Loc: member.Loc, Symbol: method}

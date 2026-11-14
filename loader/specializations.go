@@ -24,6 +24,13 @@ type specializationRequest struct {
 // with standalone instantiated IR and removes their old copies from base
 // modules. Base module implementations therefore no longer vary by importer.
 func ExtractParameterizedSpecializations(modules map[string]*ir.Module, templates map[string][]ir.ParameterizedTemplate, methods []sema.MethodTarget) (*ir.Module, error) {
+	return ExtractParameterizedSpecializationsWithResolver(modules, templates, methods, nil)
+}
+
+// ExtractParameterizedSpecializationsWithResolver lowers a template only when
+// a concrete reference first requests it. The resolver may return no template
+// for references backed by an already materialized definition.
+func ExtractParameterizedSpecializationsWithResolver(modules map[string]*ir.Module, templates map[string][]ir.ParameterizedTemplate, methods []sema.MethodTarget, resolve func(module, name string) (ir.ParameterizedTemplate, bool)) (*ir.Module, error) {
 	byName := make(map[string]ir.ParameterizedTemplate)
 	methodTargets := make(map[string]string)
 	for _, method := range methods {
@@ -49,7 +56,14 @@ func ExtractParameterizedSpecializations(modules map[string]*ir.Module, template
 				return nil
 			}
 		}
-		template, exists := byName[reference.Module+"\x00"+reference.Name]
+		templateKey := reference.Module + "\x00" + reference.Name
+		template, exists := byName[templateKey]
+		if !exists && resolve != nil {
+			template, exists = resolve(reference.Module, reference.Name)
+			if exists {
+				byName[templateKey] = template
+			}
+		}
 		if !exists {
 			specializedName := irgen.MangleFunctionName(reference.Module, sema.SpecializationName(reference.Module, reference.Name, arguments))
 			if module := modules[reference.Module]; module != nil {

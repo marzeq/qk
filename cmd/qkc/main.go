@@ -145,14 +145,24 @@ func main() {
 			}
 		}
 	}
-	specializations, err := loader.ExtractParameterizedSpecializations(irModules, parameterizedTemplates, frontend.methodTargets)
+	specializations, err := loader.ExtractParameterizedSpecializationsWithResolver(
+		irModules, parameterizedTemplates, frontend.methodTargets, loader.NewTemplateResolver(modules),
+	)
 	check(err)
 	if len(specializations.Functions) != 0 {
 		irModules[loader.SpecializationModule] = specializations
 		order = append(order, loader.SpecializationModule)
 	}
+	initializeStdlibProcessState := false
 	if args.outputType == OutputExecutable {
 		if !args.freestanding && !args.noStdlib {
+			reachable, _ := reachableIRSymbols(irModules, false)
+			initializeStdlibProcessState = reachable["__qk_0_3_std2_os_global_args"] ||
+				reachable["__qk_0_3_std2_os_global_env"]
+		}
+		if initializeStdlibProcessState {
+			// The full hosted entry initializes both globals even when user code
+			// reads only one of them.
 			pruneUnreachableIR(irModules, "__qk_0_3_std2_os_global_args", "__qk_0_3_std2_os_global_env")
 		} else {
 			pruneUnreachableIR(irModules)
@@ -213,7 +223,7 @@ func main() {
 	}
 	hostedRuntime, err := buildHostedRuntime(
 		args.target, args.freestanding, args.outputType == OutputExecutable,
-		!args.noStdlib, mainInitializer, userMain,
+		initializeStdlibProcessState, mainInitializer, userMain,
 	)
 	check(err)
 	if hostedRuntime != "" {
