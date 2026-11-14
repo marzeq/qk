@@ -1,6 +1,0 @@
-plain
-escaped {brace}
-literal {q}
-runtime {brace}
-missing <?>done
-number 42

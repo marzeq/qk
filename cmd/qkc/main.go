@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"runtime/pprof"
 	"sort"
 	"sync"
@@ -19,6 +20,11 @@ import (
 )
 
 func main() {
+	// Builds allocate many short-lived syntax and IR nodes. A less frequent GC
+	// improves one-shot compilation without overriding an explicit GOGC choice.
+	if _, configured := os.LookupEnv("GOGC"); !configured {
+		debug.SetGCPercent(200)
+	}
 	if len(os.Args) == 1 {
 		printUsage()
 		return

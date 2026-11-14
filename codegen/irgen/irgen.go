@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/marzeq/qk/attributes"
 	"github.com/marzeq/qk/ir"
@@ -60,6 +61,12 @@ type Generator struct {
 	queuedLambdas               map[*symbols.Symbol]bool
 	templateMode                bool
 	currentSourceOrigin         *ir.SourceOrigin
+	sourceOffsets               map[string]sourceOffsetIndex
+}
+
+type sourceOffsetIndex struct {
+	byteOffsets []int // nil when every source rune occupies one byte
+	byteLength  int
 }
 
 type dynamicGlobalInitializer struct {
@@ -100,6 +107,7 @@ func (g *Generator) GenerateRoots(roots []*parser.RootNode) *ir.Module {
 	g.dynamicGlobals = nil
 	g.lambdaFunctions = nil
 	g.queuedLambdas = make(map[*symbols.Symbol]bool)
+	g.sourceOffsets = nil
 
 	for _, root := range roots {
 		for _, node := range root.Body {
@@ -3232,7 +3240,7 @@ func (g *Generator) generateAddressOfExpr(expr parser.ExpressionNode) ir.Operand
 	return ir.ValueOperand(addr, types.PointerType{Base: expr.GetType()})
 }
 
-func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.Operand {
+func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode, sourceName string) ir.Operand {
 	if node.TraitCall {
 		return g.generateTraitCall(node)
 	}
@@ -3440,7 +3448,7 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 			Signature:       callSig,
 			Parameterized:   parameterizedReference,
 			Requirement:     requirementReference,
-			SourceName:      sourceCallName(node.Callee),
+			SourceName:      sourceName,
 			SourceLoc:       sourceCallLoc(node),
 		})
 		if node.Symbol != nil && node.Symbol.Name == "panic" {
@@ -3454,25 +3462,53 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode) ir.O
 		Dest: dst, Name: name, Callee: callee, Args: args, Signature: callSig,
 		CompileTimeArgs: compileTimeArgs,
 		Parameterized:   parameterizedReference, Requirement: requirementReference,
-		SourceName: sourceCallName(node.Callee), SourceLoc: sourceCallLoc(node),
+		SourceName: sourceName, SourceLoc: sourceCallLoc(node),
 	})
 	return ir.ValueOperand(dst, node.GetType())
 }
 
 func (g *Generator) generateSourceFunctionCall(node *parser.FunctionCallNode) ir.Operand {
 	previous := g.currentSourceOrigin
-	origin := ir.SourceOrigin{Name: sourceCallName(node.Callee), Loc: sourceCallLoc(node)}
+	sourceName := g.sourceCallName(node.Callee)
+	origin := ir.SourceOrigin{Name: sourceName, Loc: sourceCallLoc(node)}
 	g.currentSourceOrigin = &origin
-	value := g.generateFunctionCallExpr(node)
+	value := g.generateFunctionCallExpr(node, sourceName)
 	g.currentSourceOrigin = previous
 	return value
 }
 
-func sourceCallName(callee parser.ExpressionNode) string {
+func (g *Generator) sourceCallName(callee parser.ExpressionNode) string {
 	loc := callee.GetLoc()
-	source := []rune(loc.SourceText)
-	if len(source) != 0 && loc.Offset >= 0 && loc.EndOffset >= loc.Offset && loc.EndOffset <= len(source) {
-		return string(source[loc.Offset:loc.EndOffset])
+	if loc.SourceText != "" && loc.FilePath != "" && loc.Offset >= 0 && loc.EndOffset >= loc.Offset {
+		index, ok := g.sourceOffsets[loc.FilePath]
+		if !ok {
+			index.byteLength = len(loc.SourceText)
+			runeCount := utf8.RuneCountInString(loc.SourceText)
+			if runeCount != index.byteLength {
+				index.byteOffsets = make([]int, 0, runeCount+1)
+				for byteOffset := range loc.SourceText {
+					index.byteOffsets = append(index.byteOffsets, byteOffset)
+				}
+				index.byteOffsets = append(index.byteOffsets, len(loc.SourceText))
+			}
+			if g.sourceOffsets == nil {
+				g.sourceOffsets = make(map[string]sourceOffsetIndex)
+			}
+			g.sourceOffsets[loc.FilePath] = index
+		}
+		if index.byteOffsets == nil {
+			if loc.EndOffset <= index.byteLength {
+				return loc.SourceText[loc.Offset:loc.EndOffset]
+			}
+		} else if loc.EndOffset < len(index.byteOffsets) {
+			return loc.SourceText[index.byteOffsets[loc.Offset]:index.byteOffsets[loc.EndOffset]]
+		}
+	}
+	if loc.SourceText != "" {
+		source := []rune(loc.SourceText)
+		if loc.Offset >= 0 && loc.EndOffset >= loc.Offset && loc.EndOffset <= len(source) {
+			return string(source[loc.Offset:loc.EndOffset])
+		}
 	}
 	if identifier, ok := callee.(*parser.IdentifierNode); ok {
 		return identifier.Name
@@ -4044,16 +4080,6 @@ func (g *Generator) generateUnaryExpr(node *parser.UnaryOpNode) ir.Operand {
 }
 
 func (g *Generator) generateIf(node *parser.IfNode) {
-	if len(node.ElseIfBranches) == 0 {
-		if selected, known := g.specializedVariadicCondition(node.IfBranch.Condition); known {
-			if selected {
-				g.generateBlock(node.IfBranch.Node)
-			} else if node.ElseBranch != nil {
-				g.generateBlock(node.ElseBranch)
-			}
-			return
-		}
-	}
 	mergeBlock := g.currentFunction.NewBlock("if.merge")
 	thenBlock := g.currentFunction.NewBlock("if.then")
 
@@ -4084,45 +4110,6 @@ func (g *Generator) generateIf(node *parser.IfNode) {
 	g.generateElseChain(node, elseTarget, mergeBlock)
 
 	g.currentBlock = mergeBlock
-}
-
-// Fixed-arity wrappers know the length of their variadic slice before LLVM
-// emission. Select branches guarded by that length while generating IR so
-// their unused callees are also removed by executable reachability pruning.
-func (g *Generator) specializedVariadicCondition(expr parser.ExpressionNode) (bool, bool) {
-	comparison, ok := expr.(*parser.BinaryOpNode)
-	if !ok || comparison.Op != parser.BinaryOpEqual && comparison.Op != parser.BinaryOpNotEqual {
-		return false, false
-	}
-	length, literal := comparison.Operand1, comparison.Operand2
-	if _, ok := length.(*parser.IntegerLiteralNode); ok {
-		length, literal = literal, length
-	}
-	unary, ok := length.(*parser.UnaryOpNode)
-	if !ok || unary.Op != parser.UnaryOpSliceLen {
-		return false, false
-	}
-	variable, ok := unary.Operand.(*parser.IdentifierNode)
-	if !ok || variable.Symbol == nil {
-		return false, false
-	}
-	elements, specialized := g.specializedVariadicElements[variable.Symbol]
-	if !specialized {
-		return false, false
-	}
-	integer, ok := literal.(*parser.IntegerLiteralNode)
-	if !ok {
-		return false, false
-	}
-	value, err := strconv.ParseUint(integer.Value, 10, 64)
-	if err != nil {
-		return false, false
-	}
-	equal := uint64(len(elements)) == value
-	if comparison.Op == parser.BinaryOpNotEqual {
-		equal = !equal
-	}
-	return equal, true
 }
 
 func (g *Generator) generateElseChain(node *parser.IfNode, startElse *ir.Block, mergeBlock *ir.Block) {
