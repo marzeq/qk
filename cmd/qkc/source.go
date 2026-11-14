@@ -32,6 +32,12 @@ type packageLocation struct {
 	Mount        *sourceMount
 }
 
+type parsedSourceFile struct {
+	source string
+	root   *parser.RootNode
+	err    error
+}
+
 func packagePathFromDirectory(root, dir string) string {
 	relative, err := filepath.Rel(root, dir)
 	if err != nil || relative == "." {
@@ -78,20 +84,56 @@ func collectPackageFiles(dir string) ([]string, error) {
 func inspectPackage(path string, files []string, libraryRoot string, sources, sourcePackages map[string]string, trustedSources map[string]bool) (*sourcePackage, error) {
 	pkg := &sourcePackage{Path: path, Roots: make(map[string]*parser.RootNode, len(files))}
 	seenImports := map[string]bool{}
-	for _, file := range files {
+	parsed := make([]parsedSourceFile, len(files))
+	parseFile := func(index int) {
+		file := files[index]
 		data, err := os.ReadFile(file)
 		if err != nil {
-			return nil, err
+			parsed[index].err = err
+			return
 		}
 		source := string(data)
 		tokens, err := tokeniser.NewTokeniser(source, file).Tokenise()
 		if err != nil {
-			return nil, err
+			parsed[index].err = err
+			return
 		}
 		root, err := parser.NewParser(tokens).Parse()
 		if err != nil {
-			return nil, err
+			parsed[index].err = err
+			return
 		}
+		parsed[index] = parsedSourceFile{source: source, root: root}
+	}
+	if len(files) < 3 || runtime.GOMAXPROCS(0) < 2 {
+		for index := range files {
+			parseFile(index)
+		}
+	} else {
+		workers := min(len(files), runtime.GOMAXPROCS(0))
+		jobs := make(chan int)
+		done := make(chan struct{}, workers)
+		for range workers {
+			go func() {
+				for index := range jobs {
+					parseFile(index)
+				}
+				done <- struct{}{}
+			}()
+		}
+		for index := range files {
+			jobs <- index
+		}
+		close(jobs)
+		for range workers {
+			<-done
+		}
+	}
+	for index, file := range files {
+		if parsed[index].err != nil {
+			return nil, parsed[index].err
+		}
+		root := parsed[index].root
 		header := sourceHeader(root)
 		if header.Module == "" {
 			return nil, fmt.Errorf("%s: module declaration is missing or empty", file)
@@ -107,7 +149,7 @@ func inspectPackage(path string, files []string, libraryRoot string, sources, so
 				pkg.Imports = append(pkg.Imports, imported)
 			}
 		}
-		sources[file] = source
+		sources[file] = parsed[index].source
 		sourcePackages[file] = path
 		trustedSources[file] = trustedStandardLibrarySource(file, libraryRoot)
 		pkg.Roots[file] = root
