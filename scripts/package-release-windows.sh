@@ -80,7 +80,9 @@ cp LICENSE "$staging_directory/LICENSE"
 cp "$zstd_dll" "$staging_directory/bin/libzstd.dll"
 cp "$zstd_license" "$staging_directory/ZSTD-LICENSE.txt"
 
-final_linker_flags="${CGO_LDFLAGS:-} -L${llvm_library_directory} ${filtered_llvm_link_flags} -static"
+# llvm-config's system libraries omit zstd for the MSYS2 LLVM 22 archives.
+# Keep it after LLVM's static archives so their compression references resolve.
+final_linker_flags="${CGO_LDFLAGS:-} -L${llvm_library_directory} ${filtered_llvm_link_flags} -lzstd -static"
 GOCACHE=${GOCACHE:-"${staging_parent}/go-build-cache"} \
   CGO_CXXFLAGS="${CGO_CXXFLAGS:-} -I${llvm_prefix}/include" \
   CGO_LDFLAGS= \
