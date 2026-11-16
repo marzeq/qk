@@ -1178,6 +1178,8 @@ These builtins are intentionally unavailable for auto-tagged unions. Mutable poi
 
 `assert(condition, message)` accepts a `bool` and an optional `str` message. It returns normally when the condition is true; otherwise it prints `assertion <condition> failed: <message>` and terminates the process. Without a message, it prints `assertion <condition> failed`. The condition text is taken from the source.
 
+When a function is evaluated at compile time, its ordinary `assert` calls are evaluated there too. A failed assertion stops compilation and points to the `assert` call.
+
 # Compile-time selection
 
 QK has an explicit compile-time stage for target and configuration selection. Compile-time bindings, `$if` branches, and metadata collections can change declarations, values, types, and native link requirements.

@@ -25,6 +25,14 @@ type CompileTimeUnavailableError struct {
 	CallStack  []SourceOrigin
 }
 
+// CompileTimeAssertionError reports an executed assertion at its source call.
+type CompileTimeAssertionError struct {
+	SourceLoc shared.Location
+	Message   string
+}
+
+func (e *CompileTimeAssertionError) Error() string { return e.Message }
+
 func (e *CompileTimeUnavailableError) Error() string {
 	if e.SourceName != "" {
 		return fmt.Sprintf("%s is not available in a compile-time context", e.SourceName)
@@ -576,6 +584,26 @@ func (e *Evaluator) run(name string, arguments []EvalValue, depth int) (EvalValu
 					return EvalValue{}, err
 				}
 				frame.values[instruction.Dest] = EvalBool(!value.Boolean)
+			case LogicalAnd:
+				left, err := e.operand(instruction.Left, frame)
+				if err != nil {
+					return EvalValue{}, err
+				}
+				right, err := e.operand(instruction.Right, frame)
+				if err != nil {
+					return EvalValue{}, err
+				}
+				frame.values[instruction.Dest] = EvalBool(left.Boolean && right.Boolean)
+			case LogicalOr:
+				left, err := e.operand(instruction.Left, frame)
+				if err != nil {
+					return EvalValue{}, err
+				}
+				right, err := e.operand(instruction.Right, frame)
+				if err != nil {
+					return EvalValue{}, err
+				}
+				frame.values[instruction.Dest] = EvalBool(left.Boolean || right.Boolean)
 			case Negate:
 				value, err := e.operand(instruction.Operand, frame)
 				if err != nil {
@@ -685,6 +713,9 @@ func (e *Evaluator) run(name string, arguments []EvalValue, depth int) (EvalValu
 					}
 				}
 				value, handled, err := e.coreTypesCall(instruction, intrinsicArgs, frame.identity)
+				if instruction.Name == "__qk_assert" {
+					value, handled, err = evalAssertion(instruction, args)
+				}
 				if !handled {
 					value, err = e.run(instruction.Name, args, depth+1)
 				}
@@ -1393,24 +1424,42 @@ func (e *Evaluator) unionBuilderCall(call Call, args []EvalValue, invocation str
 	return EvalValue{Type: types.PrimitiveVoid}, true, nil
 }
 
+func evalAssertion(call Call, args []EvalValue) (EvalValue, bool, error) {
+	if len(args) != 4 {
+		return EvalValue{}, true, fmt.Errorf("compile-time assert expects four lowered arguments, got %d", len(args))
+	}
+	if args[0].Boolean {
+		return EvalValue{Type: types.PrimitiveVoid}, true, nil
+	}
+	expression, err := evalString(args[1])
+	if err != nil {
+		return EvalValue{}, true, err
+	}
+	message := "assertion " + expression + " failed"
+	if args[3].Boolean {
+		detail, err := evalString(args[2])
+		if err != nil {
+			return EvalValue{}, true, err
+		}
+		message += ": " + detail
+	}
+	return EvalValue{}, true, &CompileTimeAssertionError{SourceLoc: call.SourceLoc, Message: message}
+}
+
 func evalString(value EvalValue) (string, error) {
-	if len(value.Aggregate) != 2 || value.Aggregate[1].Integer == nil || value.Aggregate[0].pointer == nil {
+	if len(value.Aggregate) != 2 || value.Aggregate[1].Integer == nil {
 		return "", fmt.Errorf("compile-time string value is unavailable")
 	}
-	length := value.Aggregate[1].Integer.Int64()
-	storage, err := value.Aggregate[0].pointer.load()
+	bytes, err := evalSequence(value.Aggregate[0].pointer, value.Aggregate[1].Integer)
 	if err != nil {
 		return "", err
 	}
-	if length < 0 || length > int64(len(storage.Aggregate)) {
-		return "", fmt.Errorf("compile-time string length is invalid")
-	}
-	data := make([]byte, length)
+	data := make([]byte, len(bytes))
 	for i := range data {
-		if storage.Aggregate[i].Integer == nil {
+		if bytes[i].Integer == nil {
 			return "", fmt.Errorf("compile-time string byte is unavailable")
 		}
-		data[i] = byte(storage.Aggregate[i].Integer.Uint64())
+		data[i] = byte(bytes[i].Integer.Uint64())
 	}
 	return string(data), nil
 }
@@ -1419,28 +1468,37 @@ func evalSlice(value EvalValue) ([]EvalValue, error) {
 	if len(value.Aggregate) != 2 || value.Aggregate[1].Integer == nil {
 		return nil, fmt.Errorf("compile-time slice value is unavailable")
 	}
-	length := value.Aggregate[1].Integer.Int64()
-	if length == 0 {
+	return evalSequence(value.Aggregate[0].pointer, value.Aggregate[1].Integer)
+}
+
+func evalSequence(pointer *evalPointer, length *big.Int) ([]EvalValue, error) {
+	if !length.IsInt64() || length.Sign() < 0 {
+		return nil, fmt.Errorf("compile-time sequence length is invalid")
+	}
+	if length.Sign() == 0 && pointer == nil {
 		return nil, nil
 	}
-	if value.Aggregate[0].pointer == nil {
-		return nil, fmt.Errorf("compile-time slice value is unavailable")
+	if pointer == nil {
+		return nil, fmt.Errorf("compile-time sequence data is unavailable")
 	}
-	pointer := value.Aggregate[0].pointer
-	storage, err := pointer.load()
+	container := &evalPointer{root: pointer.root, path: pointer.path}
+	start := 0
+	if len(pointer.path) != 0 {
+		last := pointer.path[len(pointer.path)-1]
+		if last.union {
+			return nil, fmt.Errorf("compile-time sequence data is unavailable")
+		}
+		start = last.index
+		container.path = pointer.path[:len(pointer.path)-1]
+	}
+	storage, err := container.load()
 	if err != nil {
 		return nil, err
 	}
-	if len(pointer.path) != 0 && pointer.path[len(pointer.path)-1].index == 0 {
-		parent := &evalPointer{root: pointer.root, path: pointer.path[:len(pointer.path)-1]}
-		if container, parentErr := parent.load(); parentErr == nil && len(container.Aggregate) >= int(length) {
-			storage = container
-		}
+	if start < 0 || start > len(storage.Aggregate) || length.Int64() > int64(len(storage.Aggregate)-start) {
+		return nil, fmt.Errorf("compile-time sequence length is invalid")
 	}
-	if length < 0 || length > int64(len(storage.Aggregate)) {
-		return nil, fmt.Errorf("compile-time slice length is invalid")
-	}
-	return append([]EvalValue(nil), storage.Aggregate[:length]...), nil
+	return append([]EvalValue(nil), storage.Aggregate[start:start+int(length.Int64())]...), nil
 }
 
 func (value EvalValue) FieldSpecs() ([]shared.Pair[string, types.Type], error) {
@@ -1483,6 +1541,12 @@ func zeroEvalValue(typ types.Type) EvalValue {
 	}
 	if typ != nil {
 		switch aggregate := types.Underlying(typ).(type) {
+		case types.ArrayType:
+			value := EvalValue{Type: typ, Aggregate: make([]EvalValue, aggregate.Length)}
+			for i := range value.Aggregate {
+				value.Aggregate[i] = zeroEvalValue(aggregate.Base)
+			}
+			return value
 		case types.StructType:
 			value := EvalValue{Type: typ, Aggregate: make([]EvalValue, len(aggregate.Fields))}
 			for i, field := range aggregate.Fields {

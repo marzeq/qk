@@ -383,6 +383,30 @@ let main() {}
 	}
 }
 
+func TestCompileTimeArrayAndSlicedStringBuilder(t *testing.T) {
+	const path = "compile_time_array.qk"
+	const source = `module main
+import core.types
+let make(): type {
+  let mut names: [2]str = [---; 2]
+  let text = "xfield"
+  names[0] = text[1:6]
+  assert(names[0][0] == 'f' && (names[0][4] == 'd' || false))
+  let mut builder = core.types.StructBuilder.new()
+  builder.add_field(names[0], i32)
+  return builder.finish()
+}
+let T = $make()
+let main() { let row: T = .{ field=7 }; _ = row }
+`
+	_, err := runFrontend(&Args{mainModule: ".", noStdlib: true}, loader.StageConfig{},
+		map[string]string{path: source}, map[string]string{path: "."},
+		map[string]bool{path: false}, map[string]map[string]string{".": {}})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestLocalCompileTimeTypeValue(t *testing.T) {
 	const path = "local_type_value.qk"
 	const source = `module main
@@ -667,6 +691,7 @@ let require_four($T: type, value: T): T = {
   $assert(sizeof(T) == 4, "four byte type required")
   value
 }
+
 let main() { let selected: i32 = require_four(7) }
 `
 	_, err := runFrontend(
@@ -687,6 +712,39 @@ let main() { let selected: i32 = require_four(7) }
 	)
 	if err == nil || !strings.Contains(err.Error(), "four byte type required") {
 		t.Fatalf("expected selected compiler assertion to fail, got %v", err)
+	}
+}
+
+func TestAssertInsideCompileTimeFunctionCall(t *testing.T) {
+	const path = "main.qk"
+	for _, test := range []struct {
+		name, argument, message, want string
+	}{
+		{"passing assertion", "2.0", ", \"x must not be zero\"", ""},
+		{"failing assertion", "0.0", ", \"x must not be zero\"", "assertion x != 0 failed: x must not be zero"},
+		{"failing assertion without message", "0.0", "", "assertion x != 0 failed"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			source := `module main
+let foo(x: f32): f32 {
+  assert(x != 0` + test.message + `)
+  return 1 / x
+}
+let main() { let result = $foo(` + test.argument + `) }
+`
+			_, err := runFrontend(
+				&Args{mainModule: ".", noStdlib: true}, loader.StageConfig{},
+				map[string]string{path: source}, map[string]string{path: "."},
+				map[string]bool{path: false}, map[string]map[string]string{".": {}},
+			)
+			if test.want == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("expected %q, got %v", test.want, err)
+			}
+		})
 	}
 }
 

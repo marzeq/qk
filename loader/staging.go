@@ -1493,6 +1493,10 @@ func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 	moduleIR := compiled.IRModules[s.module]
 	if moduleIR.Initializer != "" {
 		if _, err := evaluator.Run(moduleIR.Initializer); err != nil {
+			var assertion *ir.CompileTimeAssertionError
+			if errors.As(err, &assertion) {
+				return shared.NewError(assertion.SourceLoc, "%s", assertion.Message)
+			}
 			var unavailable *ir.CompileTimeUnavailableError
 			if errors.As(err, &unavailable) && unavailable.SourceLoc.FilePath != "" {
 				return stageUnavailableDiagnostic(unavailable)

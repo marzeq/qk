@@ -3261,7 +3261,7 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode, sour
 		}
 		signature := ir.FunctionSignature{ParamTypes: []types.Type{types.PrimitiveBool, stringType, stringType, types.PrimitiveBool}, ReturnType: types.PrimitiveVoid}
 		g.addExternForCall("__qk_assert", signature, "", true)
-		g.Emit(ir.Call{Name: "__qk_assert", Args: []ir.Operand{condition, expression, message, ir.BoolConstOperand(hasMessage)}, Signature: signature})
+		g.Emit(ir.Call{Name: "__qk_assert", Args: []ir.Operand{condition, expression, message, ir.BoolConstOperand(hasMessage)}, Signature: signature, SourceName: sourceName, SourceLoc: sourceCallLoc(node)})
 		return ir.NullConstOperand(types.PrimitiveVoid)
 	}
 	runtimeBuiltin := node.Symbol != nil && node.Symbol.DefinitionModule == "" &&
