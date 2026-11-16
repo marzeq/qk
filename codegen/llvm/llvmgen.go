@@ -727,8 +727,17 @@ func (e *Emitter) collectStringDefs(m *ir.Module) []string {
 
 func encodeLLVMString(value string) string {
 	var b strings.Builder
+	b.Grow(len(value) * 3)
+	const hex = "0123456789ABCDEF"
 	for i := 0; i < len(value); i++ {
-		fmt.Fprintf(&b, "\\%02X", value[i])
+		c := value[i]
+		if c >= ' ' && c <= '~' && c != '"' && c != '\\' {
+			b.WriteByte(c)
+			continue
+		}
+		b.WriteByte('\\')
+		b.WriteByte(hex[c>>4])
+		b.WriteByte(hex[c&0xf])
 	}
 	return b.String()
 }
