@@ -34,7 +34,16 @@ func compileSelectedModules(mods map[string]*ModuleInfo, mainModule string, orde
 	if len(errors) != 0 {
 		return nil, errors
 	}
-	PropagateSpecializationDemands(mods, order)
+	for {
+		materialized := analyser.MaterializeSpecializationWrappers()
+		if len(analyser.Errors()) != 0 {
+			return nil, analyser.Errors()
+		}
+		PropagateSpecializationDemands(mods, order)
+		if !materialized {
+			break
+		}
+	}
 	result := &CompiledModules{
 		IRModules:     GenerateIRModules(mods, mainModule, order, executable),
 		Templates:     make(map[string][]ir.ParameterizedTemplate, len(order)),

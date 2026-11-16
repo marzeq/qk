@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"math/big"
+	"sort"
 	"strings"
 
 	"github.com/marzeq/qk/parser"
@@ -513,61 +514,72 @@ func (a *Analyser) specializeParameterizedFunction(template *symbols.Symbol, arg
 
 	instance := &parser.FunctionDefNode{Symbol: instanceSymbol}
 	info.specializations[key] = instance
-	if info.node.DeferredStage {
-		if a.deferredStageSelector == nil {
-			a.errorf(use, "specialization-dependent compile-time selection is unavailable")
-			return nil
-		}
-		cloned := parser.CloneSyntax(info.node).(*parser.FunctionDefNode)
-		cloned.Symbol = instanceSymbol
-		cloned.Name = name
-		cloned.ParameterizedParameters = nil
-		cloned.MethodOwnerParameterizedParameters = nil
-		cloned.MethodOwnerType = nil
-		cloned.DeferredStage = false
-		cloned.MethodOwner = ""
-		bindings := typeArgumentBindings(template.ParameterizedParameters, arguments)
-		stageBindings := make(map[string]types.Type, len(bindings)+len(arguments))
-		for name, binding := range bindings {
-			stageBindings[name] = binding
-		}
-		for i, parameter := range template.ParameterizedParameters {
-			if parameter.ValueType != nil {
-				stageBindings[parameter.Name] = arguments[i]
-			}
-		}
-		var selectionError error
-		a.withDefinitionContext(info.module, bindings, func() {
-			selectionError = a.deferredStageSelector(cloned, info.root, stageBindings)
-			if selectionError != nil {
-				return
-			}
-			a.visitFunction(cloned)
-			attributor := a.NewAttributor()
-			attributor.attributeNode(cloned)
-			a.errors = append(a.errors, attributor.Errors()...)
-			a.InferFunctionContexts(&parser.RootNode{Body: []parser.Node{cloned}})
-			validator := a.NewValidator()
-			validator.validateNode(cloned)
-			a.errors = append(a.errors, validator.Errors()...)
-		})
-		if selectionError != nil {
-			a.errors = append(a.errors, selectionError)
-			delete(info.specializations, key)
-			return nil
-		}
-		cloned.ParameterizedInstance = true
-		*instance = *cloned
-		info.root.Body = append(info.root.Body, instance)
+	// Ordinary templates already have a validated symbolic body. Their concrete
+	// definitions are produced from that body by the IR specialization pass;
+	// cloning the semantic AST here eagerly instantiates every transitive call
+	// while merely attributing a caller.
+	if !info.node.DeferredStage {
 		return instance
 	}
+	if a.deferredStageSelector == nil {
+		a.errorf(use, "specialization-dependent compile-time selection is unavailable")
+		return nil
+	}
+	cloned := parser.CloneSyntax(info.node).(*parser.FunctionDefNode)
+	cloned.Symbol = instanceSymbol
+	cloned.Name = name
+	cloned.ParameterizedParameters = nil
+	cloned.MethodOwnerParameterizedParameters = nil
+	cloned.MethodOwnerType = nil
+	cloned.DeferredStage = false
+	cloned.MethodOwner = ""
+	bindings := typeArgumentBindings(template.ParameterizedParameters, arguments)
+	stageBindings := make(map[string]types.Type, len(bindings)+len(arguments))
+	for name, binding := range bindings {
+		stageBindings[name] = binding
+	}
+	for i, parameter := range template.ParameterizedParameters {
+		if parameter.ValueType != nil {
+			stageBindings[parameter.Name] = arguments[i]
+		}
+	}
+	var selectionError error
+	a.withDefinitionContext(info.module, bindings, func() {
+		selectionError = a.deferredStageSelector(cloned, info.root, stageBindings)
+		if selectionError != nil {
+			return
+		}
+		a.visitFunction(cloned)
+		attributor := a.NewAttributor()
+		attributor.attributeNode(cloned)
+		a.errors = append(a.errors, attributor.Errors()...)
+		a.InferFunctionContexts(&parser.RootNode{Body: []parser.Node{cloned}})
+		validator := a.NewValidator()
+		validator.validateNode(cloned)
+		a.errors = append(a.errors, validator.Errors()...)
+	})
+	if selectionError != nil {
+		a.errors = append(a.errors, selectionError)
+		delete(info.specializations, key)
+		return nil
+	}
+	cloned.ParameterizedInstance = true
+	*instance = *cloned
+	info.root.Body = append(info.root.Body, instance)
+	return instance
+}
 
+func (a *Analyser) materializeParameterizedFunction(instance *parser.FunctionDefNode, template *symbols.Symbol, info *parameterizedFunctionInfo) {
+	instanceSymbol := instance.Symbol
+	arguments := instanceSymbol.TypeArguments
+	substitutions := typeSubstitutionBindings(template.ParameterizedParameters, arguments)
+	name := instanceSymbol.Name
 	symbolsByOriginal := map[*symbols.Symbol]*symbols.Symbol{template: instanceSymbol}
 	mapSymbol := func(original *symbols.Symbol) *symbols.Symbol {
-		return a.instantiateFunctionSymbol(original, substitutions, symbolsByOriginal, use)
+		return a.instantiateFunctionSymbol(original, substitutions, symbolsByOriginal, info.node)
 	}
 	cloned := parser.CloneSemantic(info.node, func(t types.Type) types.Type {
-		return a.instantiateType(t, substitutions, use)
+		return a.instantiateType(t, substitutions, info.node)
 	}, mapSymbol, func(node parser.Node) {
 		a.instantiateSemanticNode(node)
 		if lambda, ok := node.(*parser.LambdaNode); ok && lambda.Function != nil && lambda.Function.Symbol != nil {
@@ -586,7 +598,45 @@ func (a *Analyser) specializeParameterizedFunction(template *symbols.Symbol, arg
 	}
 	*instance = *cloned
 	info.root.Body = append(info.root.Body, instance)
-	return instance
+}
+
+// MaterializeSpecializationWrappers clones only concrete source definitions
+// whose constant or variadic wrappers cannot be produced from symbolic IR.
+// Ordinary instances remain symbolic until the IR specialization pass.
+func (a *Analyser) MaterializeSpecializationWrappers() bool {
+	changed := false
+	templates := make([]*symbols.Symbol, 0, len(a.parameterizedFunctions))
+	for template := range a.parameterizedFunctions {
+		templates = append(templates, template)
+	}
+	sort.Slice(templates, func(i, j int) bool {
+		left, right := templates[i], templates[j]
+		return parameterizedOwner(left.DefinitionModule, left.Name) < parameterizedOwner(right.DefinitionModule, right.Name)
+	})
+	for _, template := range templates {
+		info := a.parameterizedFunctions[template]
+		if info.node.DeferredStage {
+			continue
+		}
+		keys := make([]string, 0, len(info.specializations))
+		for key := range info.specializations {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			instance := info.specializations[key]
+			if instance.Body != nil || instance.Symbol == nil || instance.Symbol.Signature == nil {
+				continue
+			}
+			signature := instance.Symbol.Signature
+			if len(signature.ConstantArguments) == 0 && len(signature.TypedVariadicArities) == 0 {
+				continue
+			}
+			a.materializeParameterizedFunction(instance, template, info)
+			changed = true
+		}
+	}
+	return changed
 }
 
 func (a *Analyser) specializeParameterizedFunctionSymbol(template *symbols.Symbol, arguments []types.Type, use parser.Node) *symbols.Symbol {
