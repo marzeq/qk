@@ -17,6 +17,7 @@ import core.build
 $if core.build.has_libc || core.build.has_filesystem || core.build.has_environment || core.build.has_process_exit {
   compiler_error("hosted capability leaked into freestanding mode")
 }
+
 let retained: i32 = 7
 `
 	tokens, err := tokeniser.NewTokeniser(source, "freestanding.qk").Tokenise()
@@ -29,6 +30,33 @@ let retained: i32 = 7
 	}
 	if err := SelectCompileTime(root, "test", StageConfig{TargetTriple: "x86_64-unknown-linux-gnu", Freestanding: true}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCompileTimeAssertReportsConditionAndOptionalMessage(t *testing.T) {
+	for _, test := range []struct {
+		name, assertion, want string
+	}{
+		{"without message", "$assert(1 == 2)", "assertion 1 == 2 failed"},
+		{"with message", "$assert(1 == 2, \"wrong value\")", "assertion 1 == 2 failed: wrong value"},
+		{"empty message", "$assert(1 == 2, \"\")", "assertion 1 == 2 failed: "},
+		{"in branch", "$if true { $assert(1 == 2) }", "assertion 1 == 2 failed"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			source := "module test\n" + test.assertion + "\n"
+			tokens, err := tokeniser.NewTokeniser(source, "assert.qk").Tokenise()
+			if err != nil {
+				t.Fatal(err)
+			}
+			root, err := parser.NewParser(tokens).Parse()
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = SelectCompileTime(root, "test", StageConfig{})
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("expected %q, got %v", test.want, err)
+			}
+		})
 	}
 }
 
@@ -330,7 +358,7 @@ $if Answer == 42 {
   compiler_error("regular IR evaluation returned the wrong value")
 }
 
-$compiler_assert(twice(2) == 4, "ordinary function call failed")
+$assert(twice(2) == 4, "ordinary function call failed")
 `
 	tokens, err := tokeniser.NewTokeniser(source, "staging.qk").Tokenise()
 	if err != nil {

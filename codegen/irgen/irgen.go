@@ -3250,8 +3250,22 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode, sour
 	if node.TraitCall {
 		return g.generateTraitCall(node)
 	}
+	if node.Symbol != nil && node.Symbol.DefinitionModule == "" && node.Symbol.Name == "assert" {
+		condition := g.GenerateExpr(node.Args[0])
+		stringType := types.StrType()
+		expression := g.generateStringLiteralExpr(&parser.StringLiteralNode{Value: g.sourceCallName(node.Args[0]), Type: stringType})
+		message := g.generateStringLiteralExpr(&parser.StringLiteralNode{Value: "", Type: stringType})
+		hasMessage := len(node.Args) == 2
+		if hasMessage {
+			message = g.GenerateExpr(node.Args[1])
+		}
+		signature := ir.FunctionSignature{ParamTypes: []types.Type{types.PrimitiveBool, stringType, stringType, types.PrimitiveBool}, ReturnType: types.PrimitiveVoid}
+		g.addExternForCall("__qk_assert", signature, "", true)
+		g.Emit(ir.Call{Name: "__qk_assert", Args: []ir.Operand{condition, expression, message, ir.BoolConstOperand(hasMessage)}, Signature: signature})
+		return ir.NullConstOperand(types.PrimitiveVoid)
+	}
 	runtimeBuiltin := node.Symbol != nil && node.Symbol.DefinitionModule == "" &&
-		(node.Symbol.Name == "panic" || node.Symbol.Name == "assert")
+		node.Symbol.Name == "panic"
 	var callee *ir.Operand
 	if node.Symbol == nil {
 		value := g.GenerateExpr(node.Callee)

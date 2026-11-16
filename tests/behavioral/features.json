@@ -170,7 +170,7 @@
     {
       "name": "runtime assertions",
       "positive": ["basic_syntax/values"],
-      "negative": ["runtime/assert_failure"]
+      "negative": ["runtime/assert_failure", "runtime/assert_failure_no_message"]
     }
   ]
 }

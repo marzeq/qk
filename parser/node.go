@@ -54,11 +54,12 @@ func (n *WhenNode) GetType() types.Type    { return n.Type }
 func (n WhenNode) _type()                  {}
 
 type CompilerDirectiveNode struct {
-	Name      string
-	Condition ExpressionNode
-	Message   string
-	NameLoc   shared.Location
-	Loc       shared.Location
+	Name       string
+	Condition  ExpressionNode
+	Message    string
+	HasMessage bool
+	NameLoc    shared.Location
+	Loc        shared.Location
 }
 
 func (n CompilerDirectiveNode) GetLoc() shared.Location { return n.Loc }

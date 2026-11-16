@@ -1,1 +1,1 @@
-assertion failed: intentional behavioral failure
+assertion false failed: intentional behavioral failure

@@ -296,8 +296,8 @@ func (p *Parser) parseCompilerDirective() (*CompilerDirectiveNode, error) {
 		p.Inc()
 	}
 	name := "compiler_error"
-	if p.matchIntrinsic("compiler_assert") {
-		name = "compiler_assert"
+	if p.matchIntrinsic("assert") {
+		name = "assert"
 	}
 	if !p.consumeIntrinsic(name) {
 		return nil, shared.NewError(p.CurrLoc(), "expected compiler directive")
@@ -307,21 +307,28 @@ func (p *Parser) parseCompilerDirective() (*CompilerDirectiveNode, error) {
 		return nil, shared.NewError(p.PrevLoc(), "expected '(' after %s", name)
 	}
 	node := &CompilerDirectiveNode{Name: name, NameLoc: begin.WithEnd(nameEnd)}
-	if name == "compiler_assert" {
+	messageRequired := name == "compiler_error"
+	if name == "assert" {
 		condition, err := p.ParseExpression()
 		if err != nil {
 			return nil, err
 		}
 		node.Condition = condition
-		if !p.Expect(tokeniser.TokenComma) {
-			return nil, shared.NewError(p.PrevLoc(), "expected ',' after compiler_assert condition")
+		if p.Match(tokeniser.TokenComma) {
+			p.Inc()
+			messageRequired = true
+		} else if !p.Match(tokeniser.TokenCloseParen) {
+			return nil, shared.NewError(p.CurrLoc(), "expected ',' or ')' after assert condition")
 		}
 	}
-	message, ok := p.ExpectGet(tokeniser.TokenString)
-	if !ok {
-		return nil, shared.NewError(p.PrevLoc(), "expected string message in %s", name)
+	if messageRequired {
+		message, ok := p.ExpectGet(tokeniser.TokenString)
+		if !ok {
+			return nil, shared.NewError(p.PrevLoc(), "expected string message in %s", name)
+		}
+		node.Message = message.Value
+		node.HasMessage = true
 	}
-	node.Message = message.Value
 	if !p.Expect(tokeniser.TokenCloseParen) {
 		return nil, shared.NewError(p.PrevLoc(), "expected ')' after %s", name)
 	}

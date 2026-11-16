@@ -37,7 +37,7 @@ syn keyword qkOperator as
 syn keyword qkOperator is implements
 " Function and module attributes.
 syn match qkAttribute "@[A-Za-z_][A-Za-z0-9_]*"
-syn match qkBuiltin "\<\%(sizeof\|alignof\|offsetof\|len\|repr\|embed\|compiler_error\|compiler_assert\)\ze\s*("
+syn match qkBuiltin "\<\%(sizeof\|alignof\|offsetof\|len\|repr\|embed\|compiler_error\|assert\)\ze\s*("
 
 hi def link qkTodo Todo
 hi def link qkLineComment Comment

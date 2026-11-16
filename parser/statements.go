@@ -554,7 +554,7 @@ func (p *Parser) parseAttributes(defaultName string) (attributes.Attributes, err
 		for p.Match(tokeniser.TokenNewline) {
 			p.Inc()
 		}
-		if p.MatchBuiltin("compiler_error") || p.MatchBuiltin("compiler_assert") {
+		if p.MatchBuiltin("compiler_error") || p.MatchBuiltin("assert") {
 			p.pos = pos
 			break
 		}

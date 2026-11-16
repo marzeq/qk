@@ -1176,7 +1176,7 @@ These builtins are intentionally unavailable for auto-tagged unions. Mutable poi
 
 `panic(message)` is a built-in terminating function that accepts `str`.
 
-`assert(condition, message)` accepts a `bool` and a `str`. It returns normally when the condition is true; otherwise it prints `assertion failed: ` followed by the message and terminates the process.
+`assert(condition, message)` accepts a `bool` and an optional `str` message. It returns normally when the condition is true; otherwise it prints `assertion <condition> failed: <message>` and terminates the process. Without a message, it prints `assertion <condition> failed`. The condition text is taken from the source.
 
 # Compile-time selection
 
@@ -1335,10 +1335,10 @@ $if core.build.pointer_bits != 32 && core.build.pointer_bits != 64 {
 
 Unselected directives have no effect. This makes the directive useful for rejecting unsupported target configurations.
 
-`$compiler_assert(condition, "message")` evaluates its condition during the same compile-time stage. A false condition stops compilation with `compiler assertion failed: ` followed by the message, while a true assertion contributes no runtime code:
+`$assert(condition, "message")` evaluates its condition during the same compile-time stage. A false condition stops compilation with `assertion <condition> failed: <message>`, while a true assertion contributes no runtime code. The message is optional; without it, the diagnostic ends at `failed`:
 
 ```qk
-$compiler_assert(core.build.pointer_bits == 64, "this package requires a 64-bit target")
+$assert(core.build.pointer_bits == 64, "this package requires a 64-bit target")
 ```
 
 # Attributes and foreign interfaces

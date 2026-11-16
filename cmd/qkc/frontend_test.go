@@ -664,7 +664,7 @@ func TestParameterizedCompilerAssertUsesConcreteType(t *testing.T) {
 	const path = "main.qk"
 	const source = `module main
 let require_four($T: type, value: T): T = {
-  $compiler_assert(sizeof(T) == 4, "four byte type required")
+  $assert(sizeof(T) == 4, "four byte type required")
   value
 }
 let main() { let selected: i32 = require_four(7) }

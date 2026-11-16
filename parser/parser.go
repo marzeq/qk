@@ -152,9 +152,9 @@ func (p *Parser) consumeIntrinsic(name string) bool {
 
 func (p *Parser) matchCompileDirective() bool {
 	if p.Match(tokeniser.TokenDollar) {
-		return p.Next().Type == tokeniser.TokenIdentifier && (p.Next().Value == "compiler_assert" || p.Next().Value == "compiler_error")
+		return p.Next().Type == tokeniser.TokenIdentifier && (p.Next().Value == "assert" || p.Next().Value == "compiler_error")
 	}
-	return p.compileTimeDepth != 0 && (p.matchIntrinsic("compiler_assert") || p.matchIntrinsic("compiler_error"))
+	return p.compileTimeDepth != 0 && p.matchIntrinsic("compiler_error")
 }
 
 func (p *Parser) matchCompileTimeIf() bool {

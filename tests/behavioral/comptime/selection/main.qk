@@ -17,7 +17,7 @@ $if core.build.release_mode == .Release {
   compiler_error("unknown release mode")
 }
 
-$compiler_assert(core.build.pointer_bits == 32 || core.build.pointer_bits == 64, "pointer width")
+$assert(core.build.pointer_bits == 32 || core.build.pointer_bits == 64, "pointer width")
 
 let main() {
   let local: i32 = $(Product + 1)

@@ -1027,7 +1027,17 @@ func (s *stageSelector) evaluateDirective(node *parser.CompilerDirectiveNode) er
 		return nil
 	}
 	if condition.kind != stageBool || !condition.boolean {
-		return shared.NewError(node.Loc, "compiler assertion failed: %s", node.Message)
+		loc := node.Condition.GetLoc()
+		source := []rune(loc.SourceText)
+		expression := "<unknown condition>"
+		if loc.Offset >= 0 && loc.EndOffset >= loc.Offset && loc.EndOffset <= len(source) {
+			expression = string(source[loc.Offset:loc.EndOffset])
+		}
+		message := "assertion " + expression + " failed"
+		if node.HasMessage {
+			message += ": " + node.Message
+		}
+		return shared.NewError(node.Loc, "%s", message)
 	}
 	return nil
 }
