@@ -814,6 +814,12 @@ func (v *Validator) validateExpressionBlock(n *parser.BlockNode, expected types.
 }
 
 func (v *Validator) validateIfExpression(n *parser.IfNode, expected types.Type) {
+	if expected == nil && n.GetType() != nil && !types.HasError(n.GetType()) &&
+		!types.HasUntyped(n.GetType()) && !n.GetType().Equals(types.PrimitiveVoid) {
+		// Attribution can infer a common branch type without an enclosing
+		// expected type. Apply it to each branch before lowering their values.
+		expected = n.GetType()
+	}
 	v.validateExpr(n.IfBranch.Condition)
 	poisoned := types.HasError(n.IfBranch.Condition.GetType())
 	if !poisoned && !n.IfBranch.Condition.GetType().Equals(types.PrimitiveBool) {

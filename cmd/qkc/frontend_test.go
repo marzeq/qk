@@ -81,6 +81,35 @@ let main() {}
 	}
 }
 
+func TestInferredFloatIfBranchLowersAsFloat(t *testing.T) {
+	const path = "float_if.qk"
+	const source = `module main
+let choose(condition: bool, other: f32): f32 {
+  let value = if condition { 0 } else { other }
+  return value
+}
+let main() { _ = choose(true, 1.5) }
+`
+	frontend, err := runFrontend(
+		&Args{mainModule: ".", noStdlib: true},
+		loader.StageConfig{},
+		map[string]string{path: source},
+		map[string]string{path: "."},
+		map[string]bool{path: false},
+		map[string]map[string]string{".": {}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := buildLLVMModule(frontend.irModules["."], ".", true, "")
+	if strings.Contains(output, "store float 0, ") {
+		t.Fatal("integer constant emitted for a float branch")
+	}
+	if !strings.Contains(output, "store float 0x0000000000000000, ") {
+		t.Fatal("float zero branch missing from LLVM output")
+	}
+}
+
 func TestDirectTypeConstructorsAndFactory(t *testing.T) {
 	const path = "type_values.qk"
 	const source = `module main
