@@ -1,0 +1,5 @@
+foo u16
+bar u8
+baz i32
+aaa bool
+bbb str

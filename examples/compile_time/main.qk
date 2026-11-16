@@ -1,0 +1,125 @@
+module main
+
+import core.types
+import std.io
+
+let build_struct(data: []u8): type {
+  let text = data.(str)
+
+  let mut tokens: [1024]str = [---; 1024]
+  let mut token_count: usz = 0
+
+  // 0 = expecting field name
+  // 1 = expecting type
+  // 2 = expecting newline
+  let mut state: u8 = 0
+
+  let mut start: usz = 0
+  let mut in_token = false
+
+  for i in 0..len(text) {
+    let c = text[i]
+
+    let is_alpha =
+      (c >= 'a' && c <= 'z') ||
+      (c >= 'A' && c <= 'Z') ||
+      c == '_'
+
+    let is_digit = c >= '0' && c <= '9'
+    let is_ident = is_alpha || is_digit
+
+    if in_token {
+      if is_ident {
+        continue
+      }
+
+      if c != ' ' && c != '\t' && c != '\r' && c != '\n' {
+        assert(false, "malformed input")
+      }
+
+      assert(token_count < 1024, "malformed input")
+
+      tokens[token_count] = text[start:i]
+      token_count += 1
+
+      in_token = false
+      state += 1
+    }
+
+    if c == '\n' {
+      // Empty lines are allowed.
+      // Nonempty lines must have exactly two tokens.
+      assert(state == 0 || state == 2, "malformed input")
+      state = 0
+      continue
+    }
+
+    if c == ' ' || c == '\t' || c == '\r' {
+      continue
+    }
+
+    assert(state != 2, "malformed input")
+    assert(is_alpha, "malformed input")
+
+    start = i
+    in_token = true
+  }
+
+  // Final token without trailing newline.
+  if in_token {
+    assert(token_count < 1024, "malformed input")
+
+    tokens[token_count] = text[start:len(text)]
+    token_count += 1
+    state += 1
+  }
+
+  // Reject incomplete final line.
+  assert(state == 0 || state == 2, "malformed input")
+
+  let mut builder = core.types.StructBuilder.new()
+
+  for i in 0..token_count / 2 {
+    let name = tokens[i * 2]
+    let type_name = tokens[i * 2 + 1]
+
+    let typ: type =
+      if type_name.eq("i8") { i8 }
+      else if type_name.eq("i16") { i16 }
+      else if type_name.eq("i32") { i32 }
+      else if type_name.eq("i64") { i64 }
+      else if type_name.eq("u8") { u8 }
+      else if type_name.eq("u16") { u16 }
+      else if type_name.eq("u32") { u32 }
+      else if type_name.eq("u64") { u64 }
+      else if type_name.eq("f32") { f32 }
+      else if type_name.eq("f64") { f64 }
+      else if type_name.eq("bool") { bool }
+      else if type_name.eq("str") { str }
+      else { assert(false, "unknown type"); i8 }
+
+    builder.add_field(name, typ)
+  }
+
+  return builder.finish()
+}
+
+let schema = $embed("schema")
+
+let SomeType = $build_struct(schema)
+
+let main() {
+  let foo: SomeType = .{
+    foo=42,
+    bar=16,
+    baz=32,
+    aaa=true,
+    bbb=schema.(str)
+  }
+
+  std.io.println("foo: {}", foo.foo)
+  std.io.println("bar: {}", foo.bar)
+  std.io.println("baz: {}", foo.baz)
+  std.io.println("aaa: {}", foo.aaa)
+  std.io.println("bbb: ```\n{}\n```", foo.bbb)
+}
