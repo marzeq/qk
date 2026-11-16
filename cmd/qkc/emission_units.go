@@ -11,12 +11,19 @@ import (
 // the original semantic IR remains intact for diagnostics and IR dumps.
 func splitEmissionModule(module *ir.Module) []*ir.Module {
 	var runtimeFunctions []*ir.Function
+	totalWeight := 0
 	for _, fn := range module.Functions {
 		if !fn.CompileTimeOnly && len(fn.Blocks) != 0 {
 			runtimeFunctions = append(runtimeFunctions, fn)
+			for _, block := range fn.Blocks {
+				totalWeight += len(block.Instr)
+			}
 		}
 	}
-	if len(runtimeFunctions) < 48 {
+	// Function count alone misses modules with a few large bodies. Splitting
+	// small modules adds objects and repeated LLVM setup without useful work
+	// to run in parallel.
+	if len(runtimeFunctions) < 3 || totalWeight < 1200 {
 		return []*ir.Module{module}
 	}
 
