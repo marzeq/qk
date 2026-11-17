@@ -8,7 +8,6 @@ import std.alloc
 import std.ctypes
 import std.io
 import std.libc
-import std.os
 import std.strings
 import std.sys
 
@@ -23,17 +22,17 @@ let path_is_directory(path: str): Result(bool, Error) {
   $if core.build.os == .Windows {
     let attributes = std.sys.get_file_attributes(c_path)
     if attributes == std.sys.InvalidFileAttributes {
-      failure = Option(Error).Some(Error.Native(std.sys.get_last_error().(i32)))
+      failure = Option(Error).Some(Error.Native(std.libc.strerror(std.sys.get_last_error().(i32)).to_str()))
     } else {
       result = (attributes & std.sys.FileAttributeDirectory) != 0
     }
   } else {
     let directory = std.libc.opendir(c_path)
     if directory == nil {
-      failure = Option(Error).Some(std.os.last_error())
+      failure = Option(Error).Some(Error.Native(std.libc.strerror(std.libc.errno_location().*).to_str()))
     } else {
       result = true
-      if std.libc.closedir(directory) != 0 { failure = Option(Error).Some(std.os.last_error()) }
+      if std.libc.closedir(directory) != 0 { failure = Option(Error).Some(Error.Native(std.libc.strerror(std.libc.errno_location().*).to_str())) }
     }
   }
   allocator.free_bytes(c_path, len(path) + 1, $alignof(u8))
@@ -84,13 +83,13 @@ pub let file_size(path: str): Result(usz, Error) {
   let handle = file.handle.(*std.libc.FILE)
 
   if std.libc.fseek(handle, 0, .End) != 0 {
-    let error = std.os.last_error()
+    let error = Error.Native(std.libc.strerror(std.libc.errno_location().*).to_str())
     file.close()
     return .Err(error)
   }
   let size = std.libc.ftell(handle)
   if size < 0 {
-    let error = std.os.last_error()
+    let error = Error.Native(std.libc.strerror(std.libc.errno_location().*).to_str())
     file.close()
     return .Err(error)
   }
@@ -155,7 +154,7 @@ pub let remove(path: str): Result(Unit, Error) {
   let c_path = path.to_cstr(allocator)
   if c_path == nil { return .Err(Error.OutOfMemory) }
   let status = std.libc.remove(c_path)
-  let error = if status == 0 { Option(Error).None } else { Option(Error).Some(std.os.last_error()) }
+  let error = if status == 0 { Option(Error).None } else { Option(Error).Some(Error.Native(std.libc.strerror(std.libc.errno_location().*).to_str())) }
   allocator.free_bytes(c_path, len(path) + 1, $alignof(u8))
   if error.is_some() { return .Err(error.unwrap()) }
   return .Ok(Unit.{})
@@ -171,7 +170,7 @@ let create_directory_once(path: str, ok_if_exists: bool): Result(Unit, Error) {
   let mut status: i32 = 0
   $if core.build.os == .Windows { status = std.libc.mkdir(c_path) }
   else { status = std.libc.mkdir(c_path, 493) }
-  let error = if status == 0 { Option(Error).None } else { Option(Error).Some(std.os.last_error()) }
+  let error = if status == 0 { Option(Error).None } else { Option(Error).Some(Error.Native(std.libc.strerror(std.libc.errno_location().*).to_str())) }
   allocator.free_bytes(c_path, len(path) + 1, $alignof(u8))
   if error.is_some() && ok_if_exists {
     let directory = is_directory(path)
@@ -203,7 +202,7 @@ pub let remove_directory(path: str): Result(Unit, Error) {
   let c_path = path.to_cstr(allocator)
   if c_path == nil { return .Err(Error.OutOfMemory) }
   let status = std.libc.rmdir(c_path)
-  let error = if status == 0 { Option(Error).None } else { Option(Error).Some(std.os.last_error()) }
+  let error = if status == 0 { Option(Error).None } else { Option(Error).Some(Error.Native(std.libc.strerror(std.libc.errno_location().*).to_str())) }
   allocator.free_bytes(c_path, len(path) + 1, $alignof(u8))
   if error.is_some() { return .Err(error.unwrap()) }
   return .Ok(Unit.{})
@@ -221,7 +220,7 @@ pub let rename(from: str, to: str): Result(Unit, Error) {
     return .Err(Error.OutOfMemory)
   }
   let status = std.libc.rename(c_from, c_to)
-  let error = if status == 0 { Option(Error).None } else { Option(Error).Some(std.os.last_error()) }
+  let error = if status == 0 { Option(Error).None } else { Option(Error).Some(Error.Native(std.libc.strerror(std.libc.errno_location().*).to_str())) }
   allocator.free_bytes(c_to, len(to) + 1, $alignof(u8))
   allocator.free_bytes(c_from, len(from) + 1, $alignof(u8))
   if error.is_some() { return .Err(error.unwrap()) }
@@ -235,7 +234,7 @@ pub let change_directory(path: str): Result(Unit, Error) {
   let c_path = path.to_cstr(allocator)
   if c_path == nil { return .Err(Error.OutOfMemory) }
   let status = std.libc.chdir(c_path)
-  let error = if status == 0 { Option(Error).None } else { Option(Error).Some(std.os.last_error()) }
+  let error = if status == 0 { Option(Error).None } else { Option(Error).Some(Error.Native(std.libc.strerror(std.libc.errno_location().*).to_str())) }
   allocator.free_bytes(c_path, len(path) + 1, $alignof(u8))
   if error.is_some() { return .Err(error.unwrap()) }
   return .Ok(Unit.{})
@@ -261,7 +260,7 @@ pub let current_directory(
       result.bytes.count = length
       return .Ok(result)
     }
-    let error = std.os.last_error()
+    let error = Error.Native(std.libc.strerror(std.libc.errno_location().*).to_str())
     result.deinit()
     if capacity >= 1048576 || capacity > (~0.(usz)) / 2 {
       return .Err(error)

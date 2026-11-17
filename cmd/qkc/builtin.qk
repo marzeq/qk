@@ -10,7 +10,7 @@ pub let Error = union(@auto) {
   OutOfRange,
   IoFailed,
   NotFound,
-  Native(i32),
+  Native(str),
   Message(str),
 
 
@@ -22,13 +22,8 @@ pub let Error = union(@auto) {
     .OutOfRange => "value out of range",
     .IoFailed => "input/output operation failed",
     .NotFound => "not found",
-    .Native(_) => "native error",
+    .Native(message) => message,
     .Message(message) => message,
-  }
-
-  pub let native_code(self): Option(i32) = match self {
-    .Native(code) => .Some(code),
-    _ => .None,
   }
 }
 

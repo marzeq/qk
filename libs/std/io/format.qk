@@ -176,3 +176,6 @@ pub let (std.strings.StringBuilder).format(
   self,
   writer: *mut dyn Writer,
 ): Result(Unit, Error) = write_bytes(writer, self.as_str().([]u8))
+
+pub let (Error).format(self, writer: *mut dyn Writer): Result(Unit, Error) =
+  write_bytes(writer, self.message().([]u8))
