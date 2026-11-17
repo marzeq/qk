@@ -1,0 +1,71 @@
+module main
+
+import std.alloc
+import std.collections
+
+pub let Collision = struct {
+  id: i32,
+  pub let hash(self): u64 = 1
+  pub let eq(self, other: Collision): bool = self.id == other.id
+}
+let ByteSlice: type = []u8
+
+let main() {
+  let mut arena = std.alloc.Arena.init()
+  let allocator = arena.as_allocator()
+  let mut map = std.collections.HashMap(str, i32).init(allocator)
+  for let mut i: usz = 0; i < 64; i += 1 {
+    let replaced, ok = map.insert("same", i.(i32))
+    assert(ok && replaced == (i != 0))
+  }
+  assert(map.length() == 1)
+  let value, found = map.get("same")
+  assert(found && value == 63)
+  let removed, had = map.remove("same")
+  assert(had && removed == 63 && map.is_empty())
+  map.deinit()
+
+  let mut collisions = std.collections.HashMap(Collision, i32).init(allocator)
+  for let mut i: i32 = 0; i < 40; i += 1 {
+    let replaced, ok = collisions.insert(Collision.{id=i}, i * 2)
+    assert(ok && !replaced)
+  }
+  for let mut i: i32 = 0; i < 40; i += 1 {
+    let found_value, present = collisions.get(Collision.{id=i})
+    assert(present && found_value == i * 2)
+  }
+  let mutable_value = collisions.get_ptr(Collision.{id=10})
+  assert(mutable_value != nil)
+  mutable_value.* = 99
+  let updated, updated_found = collisions.get(Collision.{id=10})
+  assert(updated_found && updated == 99)
+  let removed_value, removed_ok = collisions.remove(Collision.{id=20})
+  assert(removed_ok && removed_value == 40)
+  assert(!collisions.contains(Collision.{id=20}))
+  assert(collisions.contains(Collision.{id=21}))
+  collisions.clear()
+  assert(collisions.is_empty())
+  collisions.deinit()
+
+  let mut cstrings = std.collections.HashMap(cstr, u64).init(allocator)
+  let _, c_ok = cstrings.insert(c"hello", 9)
+  let c_value, c_found = cstrings.get(c"hello")
+  assert(c_ok && c_found && c_value == 9)
+  cstrings.deinit()
+
+  let mut numbers = std.collections.HashMap(f64, bool).init(allocator)
+  let _, n_ok = numbers.insert(-0.0, true)
+  assert(n_ok && numbers.contains(0.0))
+  numbers.deinit()
+
+  let bytes: []u8 = [1, 2, 3]
+  let other: []u8 = [1, 2, 3]
+  assert(bytes.hash() == other.hash() && bytes.eq(other))
+  let mut slices = std.collections.HashMap(ByteSlice, i32).init(allocator)
+  let _, inserted = slices.insert(bytes, 7)
+  assert(inserted)
+  let slice_value, slice_found = slices.get(other)
+  assert(slice_found && slice_value == 7)
+  slices.deinit()
+  arena.deinit()
+}

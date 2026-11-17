@@ -1,0 +1,269 @@
+module std.json
+
+import std.alloc
+import std.collections
+import std.strings
+
+// Values borrow unescaped strings from the input. Escaped strings and
+// collection storage belong to the supplied allocator (ideally an arena).
+pub let Value = union(@auto) {
+  Null,
+  Boolean(bool),
+  Number(f64),
+  String(str),
+  Array(std.collections.DynamicArray(Value)),
+  Object(std.collections.HashMap(str, Value)),
+}
+
+pub let ParseError = struct { offset: usz, message: str }
+
+let Parser = struct {
+  input: str,
+  pos: usz,
+  allocator: *mut dyn std.alloc.Allocator,
+  error: ParseError,
+
+  let starts(*self, word: str): bool {
+    if len(word) > len(self.input) - self.pos { return false }
+    for let mut i: usz = 0; i < len(word); i += 1 {
+      if self.input[self.pos + i] != word[i] { return false }
+    }
+    return true
+  }
+
+  let fail(*mut self, message: str): void {
+    self.error = .{offset=self.pos, message=message}
+  }
+
+  let skip(*mut self): bool {
+    for self.pos < len(self.input) {
+      let c = self.input[self.pos]
+      if c == ' ' || c == '\t' || c == '\r' || c == '\n' {
+        self.pos += 1
+        continue
+      }
+      if c == '/' && self.pos + 1 < len(self.input) {
+        let next = self.input[self.pos + 1]
+        if next == '/' {
+          self.pos += 2
+          for self.pos < len(self.input) && self.input[self.pos] != '\n' { self.pos += 1 }
+          continue
+        }
+        if next == '*' {
+          self.pos += 2
+          let mut closed = false
+          for self.pos + 1 < len(self.input) {
+            if self.input[self.pos] == '*' && self.input[self.pos + 1] == '/' {
+              self.pos += 2
+              closed = true
+              break
+            }
+            self.pos += 1
+          }
+          if !closed { self.fail("unterminated comment"); return false }
+          continue
+        }
+      }
+      break
+    }
+    return true
+  }
+
+  let hex(c: u8): (u32, bool) {
+    if c >= '0' && c <= '9' { return (c - '0').(u32), true }
+    if c >= 'a' && c <= 'f' { return (c - 'a' + 10).(u32), true }
+    if c >= 'A' && c <= 'F' { return (c - 'A' + 10).(u32), true }
+    return 0, false
+  }
+
+  let unicode(*mut self): (u32, bool) {
+    if self.pos + 4 > len(self.input) { self.fail("incomplete unicode escape"); return 0, false }
+    let mut value: u32 = 0
+    for let mut i: usz = 0; i < 4; i += 1 {
+      let digit, valid = Parser.hex(self.input[self.pos + i])
+      if !valid { self.pos += i; self.fail("invalid unicode escape"); return 0, false }
+      value = value * 16 + digit
+    }
+    self.pos += 4
+    return value, true
+  }
+
+  let append_codepoint(builder: *mut std.strings.StringBuilder, point: u32): bool {
+    if point <= 0x7f { return builder.append([point.(u8)]) }
+    if point <= 0x7ff {
+      return builder.append([(0xc0 | (point >> 6)).(u8), (0x80 | (point & 0x3f)).(u8)])
+    }
+    if point <= 0xffff {
+      return builder.append([(0xe0 | (point >> 12)).(u8), (0x80 | ((point >> 6) & 0x3f)).(u8), (0x80 | (point & 0x3f)).(u8)])
+    }
+    return builder.append([(0xf0 | (point >> 18)).(u8), (0x80 | ((point >> 12) & 0x3f)).(u8), (0x80 | ((point >> 6) & 0x3f)).(u8), (0x80 | (point & 0x3f)).(u8)])
+  }
+
+  let string(*mut self): (str, bool) {
+    self.pos += 1
+    let start = self.pos
+    let mut segment = start
+    let mut builder = std.strings.StringBuilder.init(self.allocator)
+    let mut escaped = false
+    for self.pos < len(self.input) {
+      let c = self.input[self.pos]
+      if c == '"' {
+        let result = if escaped {
+          if !builder.append(self.input[segment:self.pos].([]u8)) { self.fail("out of memory"); return "", false }
+          builder.as_str()
+        } else { self.input[start:self.pos] }
+        self.pos += 1
+        return result, true
+      }
+      if c < 0x20 { self.fail("control character in string"); return "", false }
+      if c != '\\' { self.pos += 1; continue }
+      escaped = true
+      if !builder.append(self.input[segment:self.pos].([]u8)) { self.fail("out of memory"); return "", false }
+      self.pos += 1
+      if self.pos >= len(self.input) { self.fail("unterminated escape"); return "", false }
+      let e = self.input[self.pos]
+      let mut decoded: u8 = 0
+      if e == '"' { decoded = '"' }
+      else if e == '\\' { decoded = '\\' }
+      else if e == '/' { decoded = '/' }
+      else if e == 'b' { decoded = 8 }
+      else if e == 'f' { decoded = 12 }
+      else if e == 'n' { decoded = '\n' }
+      else if e == 'r' { decoded = '\r' }
+      else if e == 't' { decoded = '\t' }
+      else if e == 'u' {
+        self.pos += 1
+        let mut point, valid = self.unicode()
+        if !valid { return "", false }
+        if point >= 0xd800 && point <= 0xdbff {
+          if self.pos + 6 > len(self.input) || self.input[self.pos] != '\\' || self.input[self.pos + 1] != 'u' {
+            self.fail("missing low surrogate"); return "", false
+          }
+          self.pos += 2
+          let low, low_valid = self.unicode()
+          if !low_valid { return "", false }
+          if low < 0xdc00 || low > 0xdfff { self.fail("invalid low surrogate"); return "", false }
+          point = 0x10000 + ((point - 0xd800) << 10) + (low - 0xdc00)
+        } else if point >= 0xdc00 && point <= 0xdfff { self.fail("unexpected low surrogate"); return "", false }
+        if !Parser.append_codepoint(builder.&mut, point) { self.fail("out of memory"); return "", false }
+        segment = self.pos
+        continue
+      } else { self.fail("invalid escape"); return "", false }
+      if !builder.append([decoded]) { self.fail("out of memory"); return "", false }
+      self.pos += 1
+      segment = self.pos
+    }
+    self.fail("unterminated string")
+    return "", false
+  }
+
+  let number(*mut self): (Value, bool) {
+    let start = self.pos
+    let mut negative = false
+    if self.input[self.pos] == '-' { negative = true; self.pos += 1 }
+    if self.pos >= len(self.input) { self.fail("invalid number"); return Value.Null, false }
+    let mut number: f64 = 0.0
+    if self.input[self.pos] == '0' { self.pos += 1 }
+    else {
+      if self.input[self.pos] < '1' || self.input[self.pos] > '9' { self.fail("invalid number"); return Value.Null, false }
+      for self.pos < len(self.input) && self.input[self.pos] >= '0' && self.input[self.pos] <= '9' {
+        number = number * 10.0 + (self.input[self.pos] - '0').(f64)
+        self.pos += 1
+      }
+    }
+    if self.pos < len(self.input) && self.input[self.pos] == '.' {
+      self.pos += 1
+      if self.pos >= len(self.input) || self.input[self.pos] < '0' || self.input[self.pos] > '9' { self.fail("invalid fraction"); return Value.Null, false }
+      let mut scale: f64 = 0.1
+      for self.pos < len(self.input) && self.input[self.pos] >= '0' && self.input[self.pos] <= '9' {
+        number += (self.input[self.pos] - '0').(f64) * scale
+        scale /= 10.0
+        self.pos += 1
+      }
+    }
+    if self.pos < len(self.input) && (self.input[self.pos] == 'e' || self.input[self.pos] == 'E') {
+      self.pos += 1
+      let mut exponent_negative = false
+      if self.pos < len(self.input) && (self.input[self.pos] == '+' || self.input[self.pos] == '-') {
+        exponent_negative = self.input[self.pos] == '-'; self.pos += 1
+      }
+      if self.pos >= len(self.input) || self.input[self.pos] < '0' || self.input[self.pos] > '9' { self.fail("invalid exponent"); return Value.Null, false }
+      let mut exponent: usz = 0
+      for self.pos < len(self.input) && self.input[self.pos] >= '0' && self.input[self.pos] <= '9' {
+        if exponent < 10000 { exponent = exponent * 10 + (self.input[self.pos] - '0').(usz) }
+        self.pos += 1
+      }
+      for let mut i: usz = 0; i < exponent; i += 1 {
+        if exponent_negative { number /= 10.0 } else { number *= 10.0 }
+      }
+    }
+    if negative { number = -number }
+    if self.pos == start { self.fail("invalid number"); return Value.Null, false }
+    return Value.Number(number), true
+  }
+
+  let value(*mut self, depth: usz): (Value, bool) {
+    if depth > 128 { self.fail("nesting limit exceeded"); return Value.Null, false }
+    if !self.skip() { return Value.Null, false }
+    if self.pos >= len(self.input) { self.fail("expected value"); return Value.Null, false }
+    let c = self.input[self.pos]
+    if c == '"' {
+      let value, valid = self.string()
+      return Value.String(value), valid
+    }
+    if c == '[' || c == '{' {
+      let array = c == '['
+      self.pos += 1
+      let mut values = std.collections.DynamicArray(Value).init(self.allocator)
+      let mut members = std.collections.HashMap(str, Value).init(self.allocator)
+      if !self.skip() { return Value.Null, false }
+      let end = if array { ']' } else { '}' }
+      if self.pos < len(self.input) && self.input[self.pos] == end {
+        self.pos += 1
+        return if array { Value.Array(values) } else { Value.Object(members) }, true
+      }
+      for true {
+        if array {
+          let item, valid = self.value(depth + 1)
+          if !valid { return Value.Null, false }
+          if !values.append(item) { self.fail("out of memory"); return Value.Null, false }
+        } else {
+          if self.pos >= len(self.input) || self.input[self.pos] != '"' { self.fail("expected object key"); return Value.Null, false }
+          let key, valid = self.string()
+          if !valid || !self.skip() { return Value.Null, false }
+          if self.pos >= len(self.input) || self.input[self.pos] != ':' { self.fail("expected colon"); return Value.Null, false }
+          self.pos += 1
+          let item, item_valid = self.value(depth + 1)
+          if !item_valid { return Value.Null, false }
+          let _, inserted = members.insert(key, item)
+          if !inserted { self.fail("out of memory"); return Value.Null, false }
+        }
+        if !self.skip() { return Value.Null, false }
+        if self.pos >= len(self.input) { self.fail("unterminated collection"); return Value.Null, false }
+        if self.input[self.pos] == end { self.pos += 1; break }
+        if self.input[self.pos] != ',' { self.fail("expected comma"); return Value.Null, false }
+        self.pos += 1
+        if !self.skip() { return Value.Null, false }
+        if self.pos < len(self.input) && self.input[self.pos] == end { self.pos += 1; break }
+      }
+      return if array { Value.Array(values) } else { Value.Object(members) }, true
+    }
+    if self.starts("true") {
+      self.pos += 4; return Value.Boolean(true), true
+    }
+    if self.starts("false") { self.pos += 5; return Value.Boolean(false), true }
+    if self.starts("null") { self.pos += 4; return Value.Null, true }
+    if c == '-' || (c >= '0' && c <= '9') { return self.number() }
+    self.fail("expected value")
+    return Value.Null, false
+  }
+}
+
+pub let parse(input: str, allocator: *mut dyn std.alloc.Allocator): Result(Value, ParseError) {
+  let mut parser = Parser.{input=input, pos=0, allocator=allocator, error=.{offset=0, message="invalid JSONC"}}
+  let value, valid = parser.value(0)
+  if !valid { return .Err(parser.error) }
+  if !parser.skip() { return .Err(parser.error) }
+  if parser.pos != len(input) { return .Err(.{offset=parser.pos, message="unexpected trailing input"}) }
+  return .Ok(value)
+}

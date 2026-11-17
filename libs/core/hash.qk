@@ -1,0 +1,66 @@
+module core
+
+// SplitMix64 finalizer gives small integer keys well-distributed buckets.
+pub let mix_hash(value: u64): u64 {
+  let mut x = value
+  x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9
+  x = (x ^ (x >> 27)) * 0x94d049bb133111eb
+  return x ^ (x >> 31)
+}
+
+pub let hash_byte(state: u64, byte: u8): u64 =
+  (state ^ byte.(u64)) * 0x100000001b3
+
+pub let (i8).hash(self): u64 = mix_hash(self.(i64).(u64))
+pub let (i16).hash(self): u64 = mix_hash(self.(i64).(u64))
+pub let (i32).hash(self): u64 = mix_hash(self.(i64).(u64))
+pub let (i64).hash(self): u64 = mix_hash(self.(u64))
+pub let (isz).hash(self): u64 = mix_hash(self.(i64).(u64))
+pub let (u8).hash(self): u64 = mix_hash(self.(u64))
+pub let (u16).hash(self): u64 = mix_hash(self.(u64))
+pub let (u32).hash(self): u64 = mix_hash(self.(u64))
+pub let (u64).hash(self): u64 = mix_hash(self)
+pub let (usz).hash(self): u64 = mix_hash(self.(u64))
+pub let (bool).hash(self): u64 = mix_hash(if self { 1 } else { 0 })
+
+let FloatBits = union { value: f64, bits: u64 }
+pub let (f64).hash(self): u64 {
+  if self == 0.0 { return mix_hash(0) }
+  let bits = FloatBits.{value=self}
+  return mix_hash(bits.bits)
+}
+pub let (f32).hash(self): u64 = self.(f64).hash()
+
+pub let (str).hash(self): u64 {
+  let mut state: u64 = 0xcbf29ce484222325
+  for let mut i: usz = 0; i < len(self); i += 1 {
+    state = hash_byte(state, self[i])
+  }
+  return state
+}
+
+pub let (cstr).hash(self): u64 {
+  let mut state: u64 = 0xcbf29ce484222325
+  let mut i: usz = 0
+  for self[i] != '\0' {
+    state = hash_byte(state, self[i])
+    i += 1
+  }
+  return state
+}
+
+pub let ([]$T: Hash).hash(self): u64 {
+  let mut state: u64 = 0xcbf29ce484222325
+  for let mut i: usz = 0; i < len(self); i += 1 {
+    state = (state ^ self[i].hash()) * 0x100000001b3
+  }
+  return mix_hash(state ^ len(self).(u64))
+}
+
+pub let ([]$T: Hash).eq(self, other: []T): bool {
+  if len(self) != len(other) { return false }
+  for let mut i: usz = 0; i < len(self); i += 1 {
+    if !self[i].eq(other[i]) { return false }
+  }
+  return true
+}

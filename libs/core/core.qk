@@ -256,6 +256,11 @@ pub let PartialEq = trait {
   let eq(self, other: Self): bool
 }
 
+pub let Hash = trait {
+  let hash(self): u64
+  let eq(self, other: Self): bool
+}
+
 pub let PartialOrd = trait {
   let lt(self, other: Self): bool
   let le(self, other: Self): bool

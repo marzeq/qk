@@ -123,6 +123,16 @@ func ExtractParameterizedSpecializationsWithResolver(modules map[string]*ir.Modu
 					continue
 				}
 				if call.Requirement != nil && !types.HasTypeParameter(call.Requirement.ReceiverType) {
+					if method, arguments, ok := structuralSliceMethod(methods, call.Requirement.ReceiverType, call.Requirement.Name); ok {
+						call.Name = irgen.MangleFunctionName(method.Module, method.Name)
+						if call.Callee != nil && call.Callee.Kind == ir.OperandFunctionConst {
+							call.Callee.FunctionName = call.Name
+						}
+						call.Parameterized = &ir.ParameterizedReference{Module: method.Module, Name: method.Name, TypeArguments: arguments}
+						call.Requirement = nil
+					}
+				}
+				if call.Requirement != nil && !types.HasTypeParameter(call.Requirement.ReceiverType) {
 					module, owner, ok := concreteTypeIdentity(call.Requirement.ReceiverType)
 					if !ok {
 						return fmt.Errorf("trait requirement %s has non-concrete receiver %v", call.Requirement.Name, call.Requirement.ReceiverType)
@@ -235,6 +245,12 @@ func ExtractParameterizedSpecializationsWithResolver(modules map[string]*ir.Modu
 }
 
 func concreteTypeIdentity(value types.Type) (string, string, bool) {
+	if defined, ok := value.(types.DefinedType); ok && defined.Module == "" && defined.Name == "str" {
+		return "core", "str", true
+	}
+	if pointer, ok := types.Underlying(value).(types.PointerType); ok && !pointer.Mutable && pointer.Base.Equals(types.PrimitiveU8) {
+		return "core", "cstr", true
+	}
 	if pointer, ok := value.(types.PointerType); ok {
 		value = pointer.Base
 	}
@@ -252,6 +268,23 @@ func concreteTypeIdentity(value types.Type) (string, string, bool) {
 	default:
 		return "", "", false
 	}
+}
+
+func structuralSliceMethod(methods []sema.MethodTarget, receiver types.Type, name string) (sema.MethodTarget, []types.Type, bool) {
+	actual, ok := receiver.(types.SliceType)
+	if !ok {
+		return sema.MethodTarget{}, nil, false
+	}
+	for _, method := range methods {
+		pattern, ok := method.OwnerPattern.(types.SliceType)
+		if !ok || pattern.Mutable != actual.Mutable || method.LookupName != name {
+			continue
+		}
+		if _, ok := pattern.Base.(types.TypeParameter); ok {
+			return method, []types.Type{actual.Base}, true
+		}
+	}
+	return sema.MethodTarget{}, nil, false
 }
 
 func addSpecializationImports(modules map[string]*ir.Module, specializations *ir.Module) {

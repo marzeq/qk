@@ -1,0 +1,85 @@
+module main
+
+import std.alloc
+import std.json
+import std.toml
+
+let main() {
+  let mut arena = std.alloc.Arena.init()
+  let allocator = arena.as_allocator()
+
+  let json = std.json.parse("/* config */ {\"title\": \"a\\n\\uD83D\\uDE00\", \"items\": [true, null, -1.25e2,], // end\n}", allocator)
+  assert(json.is_ok(), "JSONC comments, escapes and trailing commas")
+  match json.unwrap() {
+    .Object(members) => {
+      assert(members.length() == 2)
+      let item, found = members.get("items")
+      assert(found)
+      match item {
+        .Array(items) => {
+          assert(items.count == 3)
+          match items.ptr[2] {
+            .Number(value) => assert(value == -125.0),
+            _ => assert(false),
+          }
+        },
+        _ => assert(false),
+      }
+    },
+    _ => assert(false),
+  }
+  assert(std.json.parse("[1,,2]", allocator).is_err(), "invalid JSONC")
+  assert(std.json.parse("\"\\uD800\"", allocator).is_err(), "unpaired surrogate")
+  let repeated = std.json.parse("{\"name\": 1, \"\\u006eame\": 2}", allocator)
+  assert(repeated.is_ok())
+  match repeated.unwrap() {
+    .Object(object) => {
+      assert(object.length() == 1)
+      let name, found = object.get("name")
+      assert(found)
+      match name {
+        .Number(number) => assert(number == 2.0),
+        _ => assert(false),
+      }
+    },
+    _ => assert(false),
+  }
+
+  let toml = std.toml.parse("title = \"hello\"\nhex = 0x2a\nsettings.enabled = true\n[owner]\nname = 'Ada'\nvalues = [1, 2, 3]\n[[servers]]\nname = \"first\"\n[[servers]]\nname = \"second\"\n", allocator)
+  assert(toml.is_ok(), "TOML document")
+  let root = toml.unwrap()
+  assert(root.entries.length() == 5)
+  let hex, found_hex = root.entries.get("hex")
+  assert(found_hex)
+  match hex {
+    .Integer(value) => assert(value == 42),
+    _ => assert(false),
+  }
+  let owner_value, found_owner = root.entries.get("owner")
+  assert(found_owner)
+  match owner_value {
+    .Table(owner) => {
+      assert(owner.entries.length() == 2)
+      let values_value, found_values = owner.entries.get("values")
+      assert(found_values)
+      match values_value {
+        .Array(values) => assert(values.items.count == 3),
+        _ => assert(false),
+      }
+    },
+    _ => assert(false),
+  }
+  let servers_value, found_servers = root.entries.get("servers")
+  assert(found_servers)
+  match servers_value {
+    .Array(servers) => assert(servers.items.count == 2),
+    _ => assert(false),
+  }
+  assert(std.toml.parse("a = 1\na = 2", allocator).is_err(), "duplicate TOML key")
+  assert(std.toml.parse("a = 01", allocator).is_err(), "invalid leading zero")
+  assert(std.toml.parse("a = { x = 1, }", allocator).is_err(), "inline table trailing comma")
+  assert(std.toml.parse("a = \"\\uD800\"", allocator).is_err(), "invalid TOML unicode")
+  assert(std.toml.parse("a = \"\\u20AC\"\nb = 1979-05-27T07:32:00Z\nc = +inf\nd = 0xDEAD", allocator).is_ok(), "TOML Unicode, date, hexadecimal and special float")
+  assert(std.toml.parse("a = 2023-02-29", allocator).is_err(), "invalid TOML date")
+  arena.deinit()
+}

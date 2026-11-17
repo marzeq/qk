@@ -64,13 +64,55 @@ func (a *Analyser) structuralConformance(from types.Type, target types.TraitPoin
 		return nil, true
 	}
 	module, owner, _, ok := methodOwnerIdentity(pointer.Base)
-	if !ok {
-		return nil, false
+	var methodSet map[string]*symbols.Symbol
+	if ok {
+		methodSet = a.methods[module+":"+owner]
 	}
-	methodSet := a.methods[module+":"+owner]
+	concreteOwner := types.Underlying(pointer.Base)
 	selected := make([]*symbols.Symbol, len(target.Trait.Methods))
 	for i, requirement := range target.Trait.Methods {
 		method := methodSet[requirement.Name]
+		var ownerBindings map[string]types.Type
+		if method == nil {
+			for _, candidate := range a.structuralMethods[requirement.Name] {
+				if candidate.MethodOwnerType == nil || !typePatternMatches(candidate.MethodOwnerType, concreteOwner, false) {
+					continue
+				}
+				bindings := make(map[string]types.Type)
+				inferMissingParameterizedType(candidate.MethodOwnerType, concreteOwner, bindings)
+				arguments := make([]types.Type, len(candidate.ParameterizedParameters))
+				complete := true
+				for j, parameter := range candidate.ParameterizedParameters {
+					arguments[j] = bindings[parameter.Key()]
+					if arguments[j] == nil {
+						complete = false
+					}
+				}
+				if !complete {
+					continue
+				}
+				for j, parameter := range candidate.ParameterizedParameters {
+					if parameter.Constraint == nil {
+						continue
+					}
+					trait, valid := types.Underlying(parameter.Constraint).(types.TraitType)
+					if !valid {
+						complete = false
+						break
+					}
+					_, conforms := a.structuralConformance(types.PointerType{Base: arguments[j]}, types.TraitPointerType{Trait: trait}, at)
+					if !conforms {
+						complete = false
+						break
+					}
+				}
+				if !complete {
+					continue
+				}
+				method, ownerBindings = candidate, bindings
+				break
+			}
+		}
 		if method == nil {
 			if requirement.HasDefault {
 				method = a.defaultTraitMethod(target.Trait, i, pointer.Base, at)
@@ -88,6 +130,14 @@ func (a *Analyser) structuralConformance(from types.Type, target types.TraitPoin
 		available := types.TraitMethod{
 			Name: requirement.Name, ParameterizedParameters: method.ParameterizedParameters,
 			Receiver: method.MethodReceiver, Parameters: sig.Parameters[1:], ReturnType: sig.ReturnType,
+		}
+		if ownerBindings != nil {
+			available.ParameterizedParameters = nil
+			available.Parameters = make([]types.Type, len(sig.Parameters)-1)
+			for j, parameter := range sig.Parameters[1:] {
+				available.Parameters[j] = types.Substitute(parameter, ownerBindings)
+			}
+			available.ReturnType = types.Substitute(sig.ReturnType, ownerBindings)
 		}
 		if !traitMethodShapeMatches(requirement, available, pointer.Base) {
 			return nil, false

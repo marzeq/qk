@@ -3,16 +3,19 @@ package sema
 import (
 	"sort"
 	"strings"
+
+	"github.com/marzeq/qk/types"
 )
 
 // MethodTarget identifies an implementation of a nominal method requirement.
 // Specialization uses these targets directly from the current analysis.
 type MethodTarget struct {
-	Module      string
-	Name        string
-	OwnerModule string
-	OwnerName   string
-	LookupName  string
+	Module       string
+	Name         string
+	OwnerModule  string
+	OwnerName    string
+	LookupName   string
+	OwnerPattern types.Type
 }
 
 func (a *Analyser) MethodTargets() []MethodTarget {
@@ -42,13 +45,11 @@ func (a *Analyser) MethodTargets() []MethodTarget {
 			if method.MethodOwnerType == nil {
 				continue
 			}
-			ownerModule, ownerName, _, nominal := methodOwnerIdentity(method.MethodOwnerType)
-			if !nominal {
-				continue
-			}
+			ownerModule, ownerName, _, _ := methodOwnerIdentity(method.MethodOwnerType)
 			targets = append(targets, MethodTarget{
 				Module: method.DefinitionModule, Name: method.Name,
 				OwnerModule: ownerModule, OwnerName: ownerName, LookupName: lookupName,
+				OwnerPattern: method.MethodOwnerType,
 			})
 		}
 	}

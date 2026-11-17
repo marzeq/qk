@@ -1,0 +1,158 @@
+module std.collections
+
+import std.alloc
+
+// Open-addressed lookup over insertion-ordered key and value arrays. Buckets
+// store an entry index plus one; zero denotes an empty bucket. Keys must not
+// be mutated while in the map, and equal keys must have equal hashes.
+pub let HashMap($K: type(Hash), $V: type) = struct {
+  allocator: *mut dyn std.alloc.Allocator,
+  keys: DynamicArray(K),
+  values: DynamicArray(V),
+  buckets: DynamicArray(usz),
+
+  pub let init(allocator: *mut dyn std.alloc.Allocator): HashMap(K, V) = .{
+    allocator=allocator,
+    keys=.{allocator=allocator, ptr=nil, count=0, capacity=0},
+    values=.{allocator=allocator, ptr=nil, count=0, capacity=0},
+    buckets=.{allocator=allocator, ptr=nil, count=0, capacity=0},
+  }
+
+  pub let length(self): usz = self.keys.count
+  pub let is_empty(self): bool = self.keys.count == 0
+
+  let bucket(self, key: K): (usz, bool) {
+    if self.buckets.count == 0 { return 0, false }
+    let mask = self.buckets.count - 1
+    let mut slot = key.hash().(usz) & mask
+    for true {
+      let stored = self.buckets.ptr[slot]
+      if stored == 0 { return slot, false }
+      if self.keys.ptr[stored - 1].eq(key) { return slot, true }
+      slot = (slot + 1) & mask
+    }
+    return 0, false
+  }
+
+  let grow(*mut self): bool {
+    let capacity = if self.buckets.count == 0 { 8 } else { self.buckets.count * 2 }
+    if capacity < self.buckets.count { return false }
+    let memory, allocated = std.alloc.allocate(usz, self.allocator, capacity)
+    if !allocated { return false }
+    let mut next: DynamicArray(usz) = .{allocator=self.allocator, ptr=memory[:], count=capacity, capacity=capacity}
+    for let mut i: usz = 0; i < capacity; i += 1 { next.ptr[i] = 0 }
+    let mask = capacity - 1
+    for let mut i: usz = 0; i < self.keys.count; i += 1 {
+      let mut slot = self.keys.ptr[i].hash().(usz) & mask
+      for next.ptr[slot] != 0 { slot = (slot + 1) & mask }
+      next.ptr[slot] = i + 1
+    }
+    std.alloc.free(usz, self.allocator, self.buckets.ptr[0:self.buckets.capacity])
+    self.buckets = next
+    return true
+  }
+
+  pub let contains(self, key: K): bool {
+    let _, found = self.bucket(key)
+    return found
+  }
+
+  pub let get(self, key: K): (V, bool) {
+    let slot, found = self.bucket(key)
+    if found { return self.values.ptr[self.buckets.ptr[slot] - 1], true }
+    let missing: V = ---
+    return missing, false
+  }
+
+  pub let get_ptr(*mut self, key: K): *mut V {
+    let slot, found = self.bucket(key)
+    if !found { return nil }
+    return self.values.ptr[self.buckets.ptr[slot] - 1].&mut
+  }
+
+  // Returns (replaced_existing_key, success).
+  pub let insert(*mut self, key: K, value: V): (bool, bool) {
+    let slot, found = self.bucket(key)
+    if found {
+      self.values.ptr[self.buckets.ptr[slot] - 1] = value
+      return true, true
+    }
+    if self.keys.count == ~0.(usz) { return false, false }
+    if self.buckets.count == 0 || self.keys.count + 1 > self.buckets.count - self.buckets.count / 4 {
+      if !self.grow() { return false, false }
+    }
+    if self.keys.count == self.keys.capacity {
+      let capacity = if self.keys.capacity == 0 { 8 } else { self.keys.capacity * 2 }
+      if capacity < self.keys.capacity { return false, false }
+      let key_memory, keys_ok = std.alloc.resize(self.allocator, self.keys.ptr[0:self.keys.capacity], capacity)
+      if !keys_ok { return false, false }
+      self.keys.ptr = key_memory[:]
+      self.keys.capacity = capacity
+    }
+    if self.values.count == self.values.capacity {
+      let capacity = if self.values.capacity == 0 { 8 } else { self.values.capacity * 2 }
+      if capacity < self.values.capacity { return false, false }
+      let value_memory, values_ok = std.alloc.resize(self.allocator, self.values.ptr[0:self.values.capacity], capacity)
+      if !values_ok { return false, false }
+      self.values.ptr = value_memory[:]
+      self.values.capacity = capacity
+    }
+    self.keys.ptr[self.keys.count] = key
+    self.values.ptr[self.values.count] = value
+    self.keys.count += 1
+    self.values.count += 1
+    let new_slot, _ = self.bucket(key)
+    self.buckets.ptr[new_slot] = self.keys.count
+    return false, true
+  }
+
+  // Removes an entry while preserving insertion order.
+  pub let remove(*mut self, key: K): (V, bool) {
+    let slot, found = self.bucket(key)
+    if !found {
+      let missing: V = ---
+      return missing, false
+    }
+    let index = self.buckets.ptr[slot] - 1
+    let removed = self.values.ptr[index]
+    for let mut i = index; i + 1 < self.keys.count; i += 1 {
+      self.keys.ptr[i] = self.keys.ptr[i + 1]
+      self.values.ptr[i] = self.values.ptr[i + 1]
+    }
+    self.keys.count -= 1
+    self.values.count -= 1
+    self.rebuild()
+    return removed, true
+  }
+
+  let rebuild(*mut self): void {
+    for let mut i: usz = 0; i < self.buckets.count; i += 1 { self.buckets.ptr[i] = 0 }
+    let mask = self.buckets.count - 1
+    for let mut i: usz = 0; i < self.keys.count; i += 1 {
+      let mut slot = self.keys.ptr[i].hash().(usz) & mask
+      for self.buckets.ptr[slot] != 0 { slot = (slot + 1) & mask }
+      self.buckets.ptr[slot] = i + 1
+    }
+  }
+
+  pub let clear(*mut self): void {
+    self.keys.count = 0
+    self.values.count = 0
+    for let mut i: usz = 0; i < self.buckets.count; i += 1 { self.buckets.ptr[i] = 0 }
+  }
+
+  pub let deinit(*mut self): void {
+    std.alloc.free(self.allocator, self.keys.ptr[0:self.keys.capacity])
+    std.alloc.free(self.allocator, self.values.ptr[0:self.values.capacity])
+    std.alloc.free(usz, self.allocator, self.buckets.ptr[0:self.buckets.capacity])
+    self.keys.ptr = nil
+    self.keys.count = 0
+    self.keys.capacity = 0
+    self.values.ptr = nil
+    self.values.count = 0
+    self.values.capacity = 0
+    self.buckets.ptr = nil
+    self.buckets.count = 0
+    self.buckets.capacity = 0
+  }
+}
