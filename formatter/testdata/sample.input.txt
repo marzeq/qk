@@ -1,0 +1,22 @@
+module main
+import std.io
+// A compact input for the fixed style.
+let Record = struct { alpha: i32, beta: i32,
+let total(self): i32 { return self.alpha + self.beta }
+}
+let Choice = enum { First, Second }
+$if true { let selected: i32 = 1 } else { let selected: i32 = 2 }
+let pick(a:i32,b:i32,c:i32,d:i32):i32 {
+if a == 0 { return 1 }
+if a > 100 { return a + b }
+let record=.{alpha=a,beta=b}
+let many=.{a=a,b=b,c=c,d=d,e=5}
+let values:[3]i32=[1,2,3]
+let value=if c > 0 { asdkjhaskjdhnaskjdhnaskjdnbhskajdhnkashdkjasdka } else { b }
+let value2=if c > 0 { a } else { b }
+let choice=match value { 0 => Choice.First, _ => Choice.Second, }
+
+for let mut i:i32=0; i<3; i+=1 { let _ = i }
+
+return pick(a,b,c,d)
+}

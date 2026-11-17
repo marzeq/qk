@@ -29,6 +29,10 @@ func main() {
 		printUsage()
 		return
 	}
+	if os.Args[1] == "format" {
+		check(runFormat(os.Args[2:]))
+		return
+	}
 	args, err := parseArgs()
 	check(err)
 	phases := newPhaseTimer(args.phaseTiming)

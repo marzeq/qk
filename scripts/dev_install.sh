@@ -11,6 +11,9 @@ install_root=${QK_DEV_INSTALL_ROOT:-"$HOME/.local/share/qk"}
 command_bin_directory=${QK_DEV_BIN_DIR:-"$HOME/.local/bin"}
 bin_directory="$install_root/bin"
 
+rm -rf -- "$install_root"
+echo "removed old installation at $install_root"
+
 mkdir -p "$bin_directory" "$install_root/libs" "$command_bin_directory"
 GOBIN="$bin_directory" go install -trimpath ./cmd/qkc
 cp -a libs/. "$install_root/libs/"

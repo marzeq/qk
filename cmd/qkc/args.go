@@ -485,6 +485,7 @@ Usage:
   %s build [options] [package]
   %s run [options] [package] [arguments...]
   %s install [options] <package> <directory>
+  %s format [file.qk | directory | ./... ...]
   %s --help
   %s --version
 
@@ -492,6 +493,7 @@ Commands:
   build      Compile a package (the current directory by default)
   run        Compile and run an executable package
   install    Compile an executable in release mode and place it in directory
+  format     Format QK files with the fixed source style
 
 A package may be a directory or one explicit .qk source file. Options for run
 must appear before the package; all following values are passed to the program.
@@ -534,7 +536,7 @@ Target options:
   -relocation-model <model>
                         Set default, static, pic, or dynamic-no-pic
   -code-model <model>   Set default, tiny, small, kernel, medium, or large
-`, name, name, name, name, name)
+`, name, name, name, name, name, name)
 }
 
 func printVersion() {
