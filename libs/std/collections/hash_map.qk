@@ -7,19 +7,27 @@ import std.alloc
 // be mutated while in the map, and equal keys must have equal hashes.
 pub let HashMap($K: type(Hash), $V: type) = struct {
   allocator: *mut dyn std.alloc.Allocator,
-  keys: DynamicArray(K),
+  key_storage: DynamicArray(K),
   values: DynamicArray(V),
   buckets: DynamicArray(usz),
 
   pub let init(allocator: *mut dyn std.alloc.Allocator): HashMap(K, V) = .{
     allocator=allocator,
-    keys=.{allocator=allocator, ptr=nil, count=0, capacity=0},
+    key_storage=.{allocator=allocator, ptr=nil, count=0, capacity=0},
     values=.{allocator=allocator, ptr=nil, count=0, capacity=0},
     buckets=.{allocator=allocator, ptr=nil, count=0, capacity=0},
   }
 
-  pub let length(self): usz = self.keys.count
-  pub let is_empty(self): bool = self.keys.count == 0
+  pub let length(self): usz = self.key_storage.count
+  pub let is_empty(self): bool = self.key_storage.count == 0
+
+  pub let keys(self): []K = self.key_storage.ptr[0:self.key_storage.count]
+
+  pub let iterator(self): HashMapIterator(K, V) = .{
+    keys=self.key_storage.ptr[0:self.key_storage.count],
+    values=self.values.ptr[0:self.values.count],
+    index=0,
+  }
 
   let bucket(self, key: K): (usz, bool) {
     if self.buckets.count == 0 { return 0, false }
@@ -28,7 +36,7 @@ pub let HashMap($K: type(Hash), $V: type) = struct {
     for true {
       let stored = self.buckets.ptr[slot]
       if stored == 0 { return slot, false }
-      if self.keys.ptr[stored - 1].eq(key) { return slot, true }
+      if self.key_storage.ptr[stored - 1].eq(key) { return slot, true }
       slot = (slot + 1) & mask
     }
     return 0, false
@@ -42,8 +50,8 @@ pub let HashMap($K: type(Hash), $V: type) = struct {
     let mut next: DynamicArray(usz) = .{allocator=self.allocator, ptr=memory[:], count=capacity, capacity=capacity}
     for let mut i: usz = 0; i < capacity; i += 1 { next.ptr[i] = 0 }
     let mask = capacity - 1
-    for let mut i: usz = 0; i < self.keys.count; i += 1 {
-      let mut slot = self.keys.ptr[i].hash().(usz) & mask
+    for let mut i: usz = 0; i < self.key_storage.count; i += 1 {
+      let mut slot = self.key_storage.ptr[i].hash().(usz) & mask
       for next.ptr[slot] != 0 { slot = (slot + 1) & mask }
       next.ptr[slot] = i + 1
     }
@@ -77,17 +85,17 @@ pub let HashMap($K: type(Hash), $V: type) = struct {
       self.values.ptr[self.buckets.ptr[slot] - 1] = value
       return true, true
     }
-    if self.keys.count == ~0.(usz) { return false, false }
-    if self.buckets.count == 0 || self.keys.count + 1 > self.buckets.count - self.buckets.count / 4 {
+    if self.key_storage.count == ~0.(usz) { return false, false }
+    if self.buckets.count == 0 || self.key_storage.count + 1 > self.buckets.count - self.buckets.count / 4 {
       if !self.grow() { return false, false }
     }
-    if self.keys.count == self.keys.capacity {
-      let capacity = if self.keys.capacity == 0 { 8 } else { self.keys.capacity * 2 }
-      if capacity < self.keys.capacity { return false, false }
-      let key_memory, keys_ok = std.alloc.resize(self.allocator, self.keys.ptr[0:self.keys.capacity], capacity)
+    if self.key_storage.count == self.key_storage.capacity {
+      let capacity = if self.key_storage.capacity == 0 { 8 } else { self.key_storage.capacity * 2 }
+      if capacity < self.key_storage.capacity { return false, false }
+      let key_memory, keys_ok = std.alloc.resize(self.allocator, self.key_storage.ptr[0:self.key_storage.capacity], capacity)
       if !keys_ok { return false, false }
-      self.keys.ptr = key_memory[:]
-      self.keys.capacity = capacity
+      self.key_storage.ptr = key_memory[:]
+      self.key_storage.capacity = capacity
     }
     if self.values.count == self.values.capacity {
       let capacity = if self.values.capacity == 0 { 8 } else { self.values.capacity * 2 }
@@ -97,12 +105,12 @@ pub let HashMap($K: type(Hash), $V: type) = struct {
       self.values.ptr = value_memory[:]
       self.values.capacity = capacity
     }
-    self.keys.ptr[self.keys.count] = key
+    self.key_storage.ptr[self.key_storage.count] = key
     self.values.ptr[self.values.count] = value
-    self.keys.count += 1
+    self.key_storage.count += 1
     self.values.count += 1
     let new_slot, _ = self.bucket(key)
-    self.buckets.ptr[new_slot] = self.keys.count
+    self.buckets.ptr[new_slot] = self.key_storage.count
     return false, true
   }
 
@@ -115,11 +123,11 @@ pub let HashMap($K: type(Hash), $V: type) = struct {
     }
     let index = self.buckets.ptr[slot] - 1
     let removed = self.values.ptr[index]
-    for let mut i = index; i + 1 < self.keys.count; i += 1 {
-      self.keys.ptr[i] = self.keys.ptr[i + 1]
+    for let mut i = index; i + 1 < self.key_storage.count; i += 1 {
+      self.key_storage.ptr[i] = self.key_storage.ptr[i + 1]
       self.values.ptr[i] = self.values.ptr[i + 1]
     }
-    self.keys.count -= 1
+    self.key_storage.count -= 1
     self.values.count -= 1
     self.rebuild()
     return removed, true
@@ -128,31 +136,54 @@ pub let HashMap($K: type(Hash), $V: type) = struct {
   let rebuild(*mut self): void {
     for let mut i: usz = 0; i < self.buckets.count; i += 1 { self.buckets.ptr[i] = 0 }
     let mask = self.buckets.count - 1
-    for let mut i: usz = 0; i < self.keys.count; i += 1 {
-      let mut slot = self.keys.ptr[i].hash().(usz) & mask
+    for let mut i: usz = 0; i < self.key_storage.count; i += 1 {
+      let mut slot = self.key_storage.ptr[i].hash().(usz) & mask
       for self.buckets.ptr[slot] != 0 { slot = (slot + 1) & mask }
       self.buckets.ptr[slot] = i + 1
     }
   }
 
   pub let clear(*mut self): void {
-    self.keys.count = 0
+    self.key_storage.count = 0
     self.values.count = 0
     for let mut i: usz = 0; i < self.buckets.count; i += 1 { self.buckets.ptr[i] = 0 }
   }
 
   pub let deinit(*mut self): void {
-    std.alloc.free(self.allocator, self.keys.ptr[0:self.keys.capacity])
+    std.alloc.free(self.allocator, self.key_storage.ptr[0:self.key_storage.capacity])
     std.alloc.free(self.allocator, self.values.ptr[0:self.values.capacity])
     std.alloc.free(usz, self.allocator, self.buckets.ptr[0:self.buckets.capacity])
-    self.keys.ptr = nil
-    self.keys.count = 0
-    self.keys.capacity = 0
+    self.key_storage.ptr = nil
+    self.key_storage.count = 0
+    self.key_storage.capacity = 0
     self.values.ptr = nil
     self.values.count = 0
     self.values.capacity = 0
     self.buckets.ptr = nil
     self.buckets.count = 0
     self.buckets.capacity = 0
+  }
+}
+
+pub let HashMapEntry($K: type, $V: type) = struct {
+  key: K,
+  value: V,
+}
+
+pub let HashMapIterator($K: type, $V: type) = struct {
+  keys: []K,
+  values: []V,
+  index: usz,
+
+  pub let iterator(self): HashMapIterator(K, V) = self
+
+  pub let next(*mut self): (HashMapEntry(K, V), bool) {
+    if self.index >= len(self.keys) {
+      let missing: HashMapEntry(K, V) = ---
+      return missing, false
+    }
+    let entry: HashMapEntry(K, V) = .{key=self.keys[self.index], value=self.values[self.index]}
+    self.index += 1
+    return entry, true
   }
 }

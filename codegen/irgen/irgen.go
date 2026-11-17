@@ -1452,7 +1452,8 @@ func (g *Generator) generateForEach(node *parser.ForEachNode) {
 	switch iterableType.(type) {
 	case types.SliceType, types.ArrayType:
 	default:
-		panic("for-each iterable is not an array or slice")
+		g.generateIteratorForEach(node)
+		return
 	}
 
 	prevEnv := g.currentEnv
@@ -1567,6 +1568,70 @@ func (g *Generator) generateForEach(node *parser.ForEachNode) {
 	}
 	g.Emit(ir.Store{Slot: indexSlot, Value: ir.ValueOperand(nextIndex, types.PrimitiveUsz)})
 	g.Emit(ir.Jump{Target: conditionBlock.ID})
+	g.currentBlock = endBlock
+}
+
+func (g *Generator) generateIteratorForEach(node *parser.ForEachNode) {
+	prevEnv := g.currentEnv
+	g.currentEnv = NewEnv(prevEnv)
+	defer func() { g.currentEnv = prevEnv }()
+
+	iteratorType := node.IteratorSymbol.Type
+	iteratorSlot := g.currentFunction.NewSlot(iteratorType, "for.each.iterator")
+	g.currentEnv.Variables[node.IteratorSymbol] = iteratorSlot
+	g.Emit(ir.Alloca{Slot: iteratorSlot})
+	g.Emit(ir.Store{Slot: iteratorSlot, Value: g.GenerateExpr(node.IteratorCall)})
+
+	result := types.Underlying(node.NextCall.GetType()).(types.MultipleReturnType)
+	itemType := result.Types[0]
+	itemSlot := g.currentFunction.NewSlot(itemType, "for.each.item")
+	g.Emit(ir.Alloca{Slot: itemSlot})
+	bindingSlots := make([]ir.SlotID, len(node.Destructure))
+	for i := range node.Destructure {
+		binding := &node.Destructure[i]
+		if binding.Symbol == nil {
+			continue
+		}
+		slot := g.currentFunction.NewSlot(binding.Symbol.Type, binding.Name)
+		bindingSlots[i] = slot
+		g.currentEnv.Variables[binding.Symbol] = slot
+		g.Emit(ir.Alloca{Slot: slot})
+	}
+	var elementSlot ir.SlotID
+	if node.Symbol != nil {
+		elementSlot = g.currentFunction.NewSlot(node.Symbol.Type, node.Name)
+		g.currentEnv.Variables[node.Symbol] = elementSlot
+		g.Emit(ir.Alloca{Slot: elementSlot})
+	}
+
+	conditionBlock := g.currentFunction.NewBlock("for.each.condition")
+	bodyBlock := g.currentFunction.NewBlock("for.each.body")
+	endBlock := g.currentFunction.NewBlock("for.each.end")
+	g.Emit(ir.Jump{Target: conditionBlock.ID})
+	g.currentBlock = conditionBlock
+	bundle := g.GenerateExpr(node.NextCall)
+	item := g.currentFunction.NewValueOfType(itemType)
+	found := g.currentFunction.NewValueOfType(types.PrimitiveBool)
+	g.Emit(ir.ExtractValue{Dest: item, Aggregate: bundle, Index: 0})
+	g.Emit(ir.ExtractValue{Dest: found, Aggregate: bundle, Index: 1})
+	g.Emit(ir.Branch{Cond: ir.ValueOperand(found, types.PrimitiveBool), Then: bodyBlock.ID, Else: endBlock.ID})
+
+	g.currentBlock = bodyBlock
+	g.Emit(ir.Store{Slot: itemSlot, Value: ir.ValueOperand(item, itemType)})
+	if len(node.Destructure) != 0 {
+		ptrType := types.PointerType{Base: itemType}
+		ptr := g.currentFunction.NewValueOfType(ptrType)
+		g.Emit(ir.AddressOf{Dest: ptr, Slot: itemSlot})
+		g.storeForEachDestructure(ir.ValueOperand(ptr, ptrType), node.Destructure, bindingSlots)
+	} else if node.Symbol != nil {
+		g.Emit(ir.Store{Slot: elementSlot, Value: ir.ValueOperand(item, itemType)})
+	}
+	popLoop := g.pushLoopTargets(endBlock.ID, conditionBlock.ID)
+	g.generateBlock(node.Body)
+	popLoop()
+	if !g.currentBlockHasTerminator() {
+		g.Emit(ir.Jump{Target: conditionBlock.ID})
+	}
 	g.currentBlock = endBlock
 }
 

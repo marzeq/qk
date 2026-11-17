@@ -261,6 +261,36 @@ pub let Hash = trait {
   let eq(self, other: Self): bool
 }
 
+// A cursor yields one item and a completion flag per step.
+pub let Iterator($T: type) = trait {
+  let next(*mut self): (T, bool)
+}
+
+pub let Indexed($T: type) = struct {
+  value: T,
+  index: usz,
+}
+
+pub let SliceEnumerateIterator($T: type) = struct {
+  values: []T,
+  index: usz,
+
+  pub let iterator(self): SliceEnumerateIterator(T) = self
+
+  pub let next(*mut self): (Indexed(T), bool) {
+    if self.index >= len(self.values) {
+      let missing: Indexed(T) = ---
+      return missing, false
+    }
+    let result: Indexed(T) = .{value=self.values[self.index], index=self.index}
+    self.index += 1
+    return result, true
+  }
+}
+
+pub let ([]$T).enumerate(self): SliceEnumerateIterator(T) = .{values=self, index=0}
+pub let ([]mut $T).enumerate(self): SliceEnumerateIterator(T) = .{values=self.as_const(), index=0}
+
 pub let PartialOrd = trait {
   let lt(self, other: Self): bool
   let le(self, other: Self): bool

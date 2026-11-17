@@ -93,6 +93,9 @@ pub let Utf8Iterator = struct {
   offset: usz,
 
 
+  pub let iterator(self): Utf8Iterator = self
+
+
   pub let next(*mut self): (u32, bool) {
     if self.offset >= len(self.value.bytes) { return 0, false }
     let value, width, _ = decode_at(self.value.bytes, self.offset)

@@ -124,6 +124,8 @@ pub let SplitIterator = struct {
   finished: bool,
 
 
+  pub let iterator(self): SplitIterator = self
+
   pub let next(*mut self): (str, bool) {
     if self.finished { return "", false }
     if len(self.separator) == 0 {

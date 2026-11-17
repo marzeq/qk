@@ -1074,6 +1074,10 @@ type ForEachNode struct {
 	Loc          shared.Location
 	Symbol       *symbols.Symbol
 	IndexSymbol  *symbols.Symbol
+	// Synthetic calls for the custom iterator protocol, populated during attribution.
+	IteratorCall   *FunctionCallNode
+	NextCall       *FunctionCallNode
+	IteratorSymbol *symbols.Symbol
 }
 
 type ForEachBinding struct {

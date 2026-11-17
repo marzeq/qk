@@ -296,6 +296,27 @@ pub let DynamicArray($T: type) = struct {
   pub let as_mut_slice(self): []mut T {
     return self.ptr[0:self.count]
   }
+
+  pub let iterator(self): DynamicArrayIterator(T) = .{values=self.as_slice(), index=0}
+
+  pub let enumerate(self): SliceEnumerateIterator(T) = self.as_slice().enumerate()
+}
+
+pub let DynamicArrayIterator($T: type) = struct {
+  values: []T,
+  index: usz,
+
+  pub let iterator(self): DynamicArrayIterator(T) = self
+
+  pub let next(*mut self): (T, bool) {
+    if self.index >= len(self.values) {
+      let missing: T = ---
+      return missing, false
+    }
+    let result = self.values[self.index]
+    self.index += 1
+    return result, true
+  }
 }
 
 

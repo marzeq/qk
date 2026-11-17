@@ -1302,8 +1302,26 @@ func (v *Validator) validateForEach(n *parser.ForEachNode) {
 	case types.ArrayType:
 		element = iterable.Base
 	default:
-		v.errorf(n, "for loop iterable must be an array or slice")
-		return
+		if n.IteratorCall == nil || n.NextCall == nil {
+			v.errorf(n, "for loop iterable must be an array, slice, or provide iterator() and next()")
+			return
+		}
+		v.validateExpr(n.IteratorCall)
+		v.validateExpr(n.NextCall)
+		result, ok := types.Underlying(n.NextCall.GetType()).(types.MultipleReturnType)
+		if !ok || len(result.Types) != 2 || !result.Types[1].Equals(types.PrimitiveBool) {
+			v.errorf(n.NextCall, "iterator next() must return (item, bool)")
+			return
+		}
+		if n.Reversed {
+			v.errorf(n, "@reversed requires an array or slice")
+			return
+		}
+		if n.ElementKind != parser.ForEachElementValue {
+			v.errorf(n, "element pointer iteration requires a slice or string")
+			return
+		}
+		element = result.Types[0]
 	}
 	if n.ElementKind != parser.ForEachElementValue {
 		slice, ok := iterableType.(types.SliceType)

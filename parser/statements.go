@@ -1956,6 +1956,13 @@ func (p *Parser) parseRangeOrForEach(beginLoc shared.Location) (Node, error) {
 	if kw, ok := p.ExpectGet(tokeniser.TokenKeyword); !ok || kw.Value != string(tokeniser.KeywordIn) {
 		return nil, shared.NewError(p.PrevLoc(), "expected 'in' in for loop")
 	}
+	if indexName != nil && elementKind != ForEachElementValue {
+		return nil, shared.NewError(indexName.Loc, "pointer element iteration accepts one binding; use enumerate() for indexed values")
+	}
+	if indexName != nil && elementKind == ForEachElementValue {
+		destructure = []ForEachBinding{{Name: name.Value, Loc: name.Loc}, {Name: indexName.Value, Loc: indexName.Loc}}
+		name, indexName = nil, nil
+	}
 
 	iterable, err := p.ParseExpression()
 	if err != nil {

@@ -1,0 +1,53 @@
+module main
+
+import std.alloc
+import std.collections
+
+let Counter = struct {
+  current: i32,
+  end: i32,
+
+  let iterator(self): Counter = self
+
+  let next(*mut self): (i32, bool) {
+    if self.current >= self.end { return 0, false }
+    let result = self.current
+    self.current += 1
+    return result, true
+  }
+}
+
+let main() {
+  let mut sum: i32 = 0
+  for value in Counter.{current=1, end=4} { sum += value }
+  assert(sum == 6)
+
+  let mut arena = std.alloc.Arena.init()
+  let allocator = arena.as_allocator()
+  let mut array = std.collections.DynamicArray(i32).init(allocator)
+  assert(array.append(4) && array.append(5))
+  for value in array { sum += value }
+  assert(sum == 15)
+  for value, index in array.enumerate() { sum += value * (index + 1).(i32) }
+  assert(sum == 29)
+  let values: []i32 = [7, 8]
+  for value, index in values.enumerate() { sum += value + index.(i32) }
+  assert(sum == 45)
+  let mutable_values = array.as_mut_slice()
+  for value, index in mutable_values.enumerate() { assert(value == 4 + index.(i32)) }
+
+  let mut map = std.collections.HashMap(str, i32).init(allocator)
+  let _, first = map.insert("a", 2)
+  let _, second = map.insert("b", 3)
+  assert(first && second)
+  for key, value in map {
+    if key.eq("a") { assert(value == 2) }
+    if key.eq("b") { assert(value == 3) }
+    sum += value
+  }
+  assert(sum == 50)
+  for key in map.keys() { assert(key.eq("a") || key.eq("b")) }
+  map.deinit()
+  array.deinit()
+  arena.deinit()
+}

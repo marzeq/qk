@@ -16,7 +16,7 @@
     },
     {
       "name": "control flow",
-      "positive": ["control_flow/loops_and_defer"],
+      "positive": ["control_flow/loops_and_defer", "control_flow/custom_iteration"],
       "negativeNotApplicable": true
     },
     {

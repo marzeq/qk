@@ -263,6 +263,25 @@ func (a *Attributor) attributeNode(node parser.Node) {
 			elementType = iterable.Base
 		case types.ArrayType:
 			elementType = iterable.Base
+		default:
+			if !types.HasError(n.Iterable.GetType()) {
+				loc := n.Iterable.GetLoc()
+				call := func(subject parser.ExpressionNode, method string) *parser.FunctionCallNode {
+					field := &parser.FieldAccessNode{Subject: subject, Field: &parser.IdentifierNode{Name: method, Loc: loc}, Loc: loc}
+					return &parser.FunctionCallNode{Callee: field, Loc: loc}
+				}
+				n.IteratorCall = call(n.Iterable, "iterator")
+				a.attributeExpr(n.IteratorCall)
+				if n.IteratorCall.GetType() != nil && !types.HasError(n.IteratorCall.GetType()) {
+					n.IteratorSymbol = &symbols.Symbol{Name: "$for.iterator", Kind: symbols.SymbolKindVariable, Type: n.IteratorCall.GetType(), Mutable: true}
+					receiver := &parser.IdentifierNode{Name: n.IteratorSymbol.Name, Symbol: n.IteratorSymbol, Type: n.IteratorSymbol.Type, Loc: loc}
+					n.NextCall = call(receiver, "next")
+					a.attributeExpr(n.NextCall)
+					if result, ok := types.Underlying(n.NextCall.GetType()).(types.MultipleReturnType); ok && len(result.Types) == 2 {
+						elementType = result.Types[0]
+					}
+				}
+			}
 		}
 		if n.Symbol != nil && elementType != nil {
 			n.Symbol.Type = forEachElementType(n, elementType)

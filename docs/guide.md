@@ -238,20 +238,8 @@ for ch in s {
   // loop over each character in string s
 }
 
-for elem, index in sl {
-  // index has type usz and is the position of elem in sl
-}
-
-for _, index in s {
-  // discard each byte and use only its index
-}
-
-for elem, _ in sl {
-  // explicitly discard the index
-}
-
-for elem.&, index in sl {
-  // elem is *T and points to the element at index
+for elem, index in sl.enumerate() {
+  // enumerate() yields an item with value and index fields
 }
 
 for elem.&mut in mutable_sl {
@@ -273,13 +261,46 @@ for x in 0..=10 @reversed {
 
 The postfix `@reversed` iteration attribute is supported on ranges, arrays,
 slices and strings. The iterable expression and range bounds are still
-evaluated exactly once. Array, slice and string iteration may bind an optional
-second `usz` index after the element binding. Either binding may be `_`; under
-`@reversed`, the index remains the element's position in the original sequence.
+evaluated exactly once. A slice's `.enumerate()` method yields records with
+`value` and `index` fields. Two loop bindings destructure one yielded record;
+the number of bindings never changes how an iterable is advanced. Either
+binding may be `_`.
 Slice and string element bindings may append `.&` to bind an immutable pointer
 to each element. Mutable slices additionally support `.&mut`, which binds a
 `*mut T`; pointer element bindings are not supported for array iteration because
 arrays are copied into the loop's iterable storage.
+
+Custom types can participate in `for ... in ...` by providing an `iterator()`
+method that returns a cursor. The cursor's `next(*mut self)` method returns
+`(Item, bool)`: the boolean is `false` after the final item. The compiler calls
+`iterator()` once and `next()` once per step. `core.Iterator(Item)` describes
+the cursor contract, but the loop uses structural method lookup, so a type
+does not need to declare that it implements the trait. A cursor can return
+itself from `iterator()`.
+
+```qk
+let Counter = struct {
+  current: i32,
+  end: i32,
+
+  let iterator(self): Counter = self
+  let next(*mut self): (i32, bool) {
+    if self.current >= self.end { return 0, false }
+    let value = self.current
+    self.current += 1
+    return value, true
+  }
+}
+
+for value in Counter.{current=0, end=3} {
+  // value is 0, then 1, then 2
+}
+```
+
+Custom iteration yields values. Pointer element bindings apply only to built-in
+slice iteration; `@reversed` applies to built-in arrays and slices. An item with two fields
+can be destructured as `for first, second in iterable` or
+`for (first, second) in iterable`.
 
 ### `break` and `continue`
 
@@ -1584,6 +1605,13 @@ Hosted builds provide `std.alloc.LibcAllocator`. `std.alloc.Arena` is also hoste
 ## Collections and strings
 
 `std.collections.DynamicArray(T)` is an allocator-backed growable array. It supports reserving, appending, inserting, removing, clearing, slice views, and explicit `deinit`.
+
+`for value in dynamic_array` yields values in storage order. Both dynamic
+arrays and slices have `.enumerate()` methods yielding `(value, index)` records.
+`std.collections.HashMap(K, V)` yields `(key, value)` records in insertion
+order, so `for key, value in map` destructures each entry. `map.keys()` returns
+a key slice for keys-only iteration. Do not change a collection's storage while
+iterating over its borrowed view.
 
 `std.strings.StringBuilder` is an allocator-backed builder that also implements reader, writer, and formatter traits. `std.strings` provides split iteration, replacement, and integer parsing in addition to the root string methods. Mutable `str` and `cstr` bindings are consuming `std.io.Reader` implementations.
 
