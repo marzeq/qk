@@ -194,7 +194,7 @@ func discoverSourcePackages(primaryPath, rootDir, selectedFile string, searchRoo
 	for _, imported := range root.Imports {
 		queue = append(queue, packageRequest{ImportPath: imported, Importer: primaryPath})
 	}
-	if implicitStd && root.Name != "std" && !strings.HasPrefix(root.Name, "std.") {
+	if implicitStd && root.Name != "std" && !strings.HasPrefix(root.Name, "std.") && root.Name != "core" && !strings.HasPrefix(root.Name, "core.") {
 		queue = append(queue, packageRequest{ImportPath: "std", SemanticPath: "std", Importer: primaryPath})
 	}
 	for len(queue) != 0 {
@@ -441,6 +441,31 @@ func trustedStandardLibrarySource(source, libraryRoot string) bool {
 		return false
 	}
 	return pathWithin(resolvedSource, resolvedRoot)
+}
+
+func rejectNonCoreLibrarySources(sources map[string]string, libraryRoot string) error {
+	root, err := filepath.EvalSymlinks(libraryRoot)
+	if err != nil {
+		return err
+	}
+	core, err := filepath.EvalSymlinks(filepath.Join(libraryRoot, "core"))
+	if err != nil {
+		return err
+	}
+	for origin := range sources {
+		absolute, err := filepath.Abs(origin)
+		if err != nil {
+			return err
+		}
+		path, err := filepath.EvalSymlinks(absolute)
+		if err != nil {
+			return err
+		}
+		if pathWithin(path, root) && !pathWithin(path, core) {
+			return fmt.Errorf("-nostdlib cannot load %s outside the core library", origin)
+		}
+	}
+	return nil
 }
 
 func pathKey(path string) string {

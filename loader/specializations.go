@@ -248,7 +248,7 @@ func concreteTypeIdentity(value types.Type) (string, string, bool) {
 	case *types.AliasRef:
 		return value.Module, value.Name, true
 	case types.PrimitiveType:
-		return "builtin", value.String(), true
+		return "core", value.String(), true
 	default:
 		return "", "", false
 	}

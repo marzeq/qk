@@ -1,4 +1,117 @@
-module std
+module core
+
+let strlen(s: cstr): usz {
+  if s == nil {
+    return 0
+  }
+
+  let mut length: usz = 0
+  for s[length] != '\0' {
+    length += 1
+  }
+  return length
+}
+
+// important: this method does not copy self, it just creates a str view of the cstr
+// therefore, the c string must live as long as the returned str is used, otherwise it will be a dangling pointer
+// passing a null pointer is undefined behaviour
+pub let (cstr).to_str(self): str =
+  self[:strlen(self)].(str)
+
+pub let (str).is_empty(self): bool = len(self) == 0
+
+pub let (str).starts_with(self, prefix: str): bool {
+  if len(prefix) > len(self) { return false }
+  let mut index: usz = 0
+  for index < len(prefix) {
+    if self[index] != prefix[index] { return false }
+    index += 1
+  }
+  return true
+}
+
+pub let (str).ends_with(self, suffix: str): bool {
+  if len(suffix) > len(self) { return false }
+  let offset = len(self) - len(suffix)
+  let mut index: usz = 0
+  for index < len(suffix) {
+    if self[offset + index] != suffix[index] { return false }
+    index += 1
+  }
+  return true
+}
+
+pub let (str).find(self, needle: str): (usz, bool) {
+  if len(needle) == 0 { return 0, true }
+  if len(needle) > len(self) { return 0, false }
+
+  let mut start: usz = 0
+  for start <= len(self) - len(needle) {
+    if self[start:].starts_with(needle) { return start, true }
+    start += 1
+  }
+  return 0, false
+}
+
+pub let (str).rfind(self, needle: str): (usz, bool) {
+  if len(needle) == 0 { return len(self), true }
+  if len(needle) > len(self) { return 0, false }
+
+  let mut start = len(self) - len(needle)
+  for true {
+    if self[start:].starts_with(needle) { return start, true }
+    if start == 0 { break }
+    start -= 1
+  }
+  return 0, false
+}
+
+pub let (str).contains(self, needle: str): bool {
+  let _, found = self.find(needle)
+  return found
+}
+
+let is_ascii_whitespace(value: u8): bool = value == ' ' || value == '\t' || value == '\n' || value == '\r' || value == '\v' || value == '\f'
+
+pub let (str).trim_start(self): str {
+  let mut start: usz = 0
+  for start < len(self) && is_ascii_whitespace(self[start]) { start += 1 }
+  return self[start:]
+}
+
+pub let (str).trim_end(self): str {
+  let mut end = len(self)
+  for end > 0 && is_ascii_whitespace(self[end - 1]) { end -= 1 }
+  return self[0:end]
+}
+
+pub let (str).trim(self): str = self.trim_start().trim_end()
+
+pub let (str).read(*mut self, buffer: []mut u8): Result(usz, Error) {
+  let count = if len(buffer) < len(self.*) { len(buffer) } else { len(self.*) }
+
+  let mut index: usz = 0
+  for index < count {
+    buffer[index] = self.*[index]
+    index += 1
+  }
+  self.* = self.*[count:]
+  return .Ok(count)
+}
+
+pub let (cstr).read(*mut self, buffer: []mut u8): Result(usz, Error) {
+  if self.* == nil {
+    return .Ok(0)
+  }
+
+  let mut count: usz = 0
+  for count < len(buffer) && self.*[count] != '\0' {
+    buffer[count] = self.*[count]
+    count += 1
+  }
+  self.* = self.* + count.(isz)
+  return .Ok(count)
+}
 
 // Parse the entire string. Bases from 2 through 36 are accepted; overflow is an error.
 let integer_digit(value: u8): (u8, bool) {

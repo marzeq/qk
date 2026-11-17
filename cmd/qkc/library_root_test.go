@@ -31,6 +31,27 @@ func TestResolveLibraryRootForGoRun(t *testing.T) {
 	}
 }
 
+func TestNoStdlibKeepsOnlyInstalledCore(t *testing.T) {
+	root := t.TempDir()
+	core := filepath.Join(root, "core", "core.qk")
+	std := filepath.Join(root, "std", "prelude.qk")
+	project := filepath.Join(t.TempDir(), "main.qk")
+	for _, file := range []string{core, std, project} {
+		if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(file, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := rejectNonCoreLibrarySources(map[string]string{core: "", project: ""}, root); err != nil {
+		t.Fatal(err)
+	}
+	if err := rejectNonCoreLibrarySources(map[string]string{std: ""}, root); err == nil {
+		t.Fatal("-nostdlib accepted an installed std source")
+	}
+}
+
 func TestResolveLibraryRootForInstalledBinary(t *testing.T) {
 	prefix := t.TempDir()
 	libs := filepath.Join(prefix, "libs")

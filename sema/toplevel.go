@@ -222,7 +222,7 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 			a.errorf(n, "builtin method owner %q does not accept type parameters", n.MethodOwner)
 			return
 		}
-		if !a.currentTrustedStandardLibrary {
+		if !a.currentTrustedStandardLibrary && a.currentMod != "core" {
 			a.errorf(n, "methods on builtin type %q may only be defined by the trusted standard library", n.MethodOwner)
 			return
 		}
@@ -239,7 +239,7 @@ func (a *Analyser) collectMethodSignature(n *parser.FunctionDefNode) {
 			a.errorf(n, "cannot attach method to builtin type %q", n.MethodOwner)
 			return
 		}
-		ownerModule = "builtin"
+		ownerModule = "core"
 	} else {
 		a.errorf(n, "cannot attach method to unknown or imported type %q", n.MethodOwner)
 		return
@@ -426,11 +426,11 @@ func (a *Analyser) classifyPatternMethodOwner(n *parser.FunctionDefNode, ownerTy
 			name = owner.ParameterizedName
 		}
 		if owner.Module == "" {
-			if !a.currentTrustedStandardLibrary {
+			if !a.currentTrustedStandardLibrary && a.currentMod != "core" {
 				a.errorf(n, "methods on builtin type %v may only be defined by the trusted standard library", ownerType)
 				return "", "", false, false
 			}
-			return "builtin", name, false, true
+			return "core", name, false, true
 		}
 		if owner.Module != a.currentMod {
 			if !a.currentTrustedStandardLibrary {
@@ -468,17 +468,17 @@ func (a *Analyser) classifyPatternMethodOwner(n *parser.FunctionDefNode, ownerTy
 			a.errorf(n, "cannot attach method to void")
 			return "", "", false, false
 		}
-		if !a.currentTrustedStandardLibrary {
+		if !a.currentTrustedStandardLibrary && a.currentMod != "core" {
 			a.errorf(n, "methods on builtin type %v may only be defined by the trusted standard library", ownerType)
 			return "", "", false, false
 		}
-		return "builtin", owner.String(), false, true
+		return "core", owner.String(), false, true
 	default:
-		if !a.currentTrustedStandardLibrary {
+		if !a.currentTrustedStandardLibrary && a.currentMod != "core" {
 			a.errorf(n, "methods on structural builtin type %v may only be defined by the trusted standard library", ownerType)
 			return "", "", true, false
 		}
-		return "builtin", structuralOwnerShape(ownerType), true, true
+		return "core", structuralOwnerShape(ownerType), true, true
 	}
 }
 

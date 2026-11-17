@@ -1,0 +1,696 @@
+module core
+
+pub let Unit = struct {}
+
+pub let Error = union(@auto) {
+  OutOfMemory,
+  InvalidHandle,
+  NoProgress,
+  InvalidData,
+  OutOfRange,
+  IoFailed,
+  NotFound,
+  Native(str),
+  Message(str),
+
+
+  pub let message(self): str = match self {
+    .OutOfMemory => "out of memory",
+    .InvalidHandle => "invalid handle",
+    .NoProgress => "operation made no progress",
+    .InvalidData => "invalid data",
+    .OutOfRange => "value out of range",
+    .IoFailed => "input/output operation failed",
+    .NotFound => "not found",
+    .Native(message) => message,
+    .Message(message) => message,
+  }
+}
+
+
+pub let Option($T: type) = union(@auto) {
+  Some(T),
+  None,
+
+
+  pub let is_some(self): bool = match self {
+    .Some(_) => true,
+    .None => false,
+  }
+
+  pub let is_none(self): bool = !self.is_some()
+
+  pub let as_ref(*self): Option(*T) = match self.* {
+    .Some(value) => .Some(value.&),
+    .None => .None,
+  }
+
+  pub let expect(self, message: str): T = match self {
+    .Some(value) => value,
+    .None => { panic(message) },
+  }
+
+  pub let unwrap(self): T = self.expect("called Option.unwrap on None")
+
+  pub let unwrap_or(self, fallback: T): T = match self {
+    .Some(value) => value,
+    .None => fallback,
+  }
+
+  pub let unwrap_or_else(self, fallback: *(): T): T = match self {
+    .Some(value) => value,
+    .None => fallback(),
+  }
+
+  pub let map(self, $U: type, transform: *(T): U): Option(U) = match self {
+    .Some(value) => Option(U).Some(transform(value)),
+    .None => Option(U).None,
+  }
+
+  pub let map_or(self, $U: type, fallback: U, transform: *(T): U): U = match self {
+    .Some(value) => transform(value),
+    .None => fallback,
+  }
+
+  pub let map_or_else(
+    self,
+    $U: type,
+    fallback: *(): U,
+    transform: *(T): U,
+  ): U = match self {
+    .Some(value) => transform(value),
+    .None => fallback(),
+  }
+
+  pub let and_then(self, $U: type, transform: *(T): Option(U)): Option(U) = match self {
+    .Some(value) => transform(value),
+    .None => Option(U).None,
+  }
+
+  pub let filter(self, predicate: *(T): bool): Option(T) = match self {
+    .Some(value) => if predicate(value) { self } else { Option(T).None },
+    .None => self,
+  }
+
+  pub let inspect(self, inspect: *(T): void): Option(T) = match self {
+    .Some(value) => { inspect(value); self },
+    .None => self,
+  }
+
+  pub let or(self, fallback: Option(T)): Option(T) = match self {
+    .Some(_) => self,
+    .None => fallback,
+  }
+
+  pub let or_else(self, fallback: *(): Option(T)): Option(T) = match self {
+    .Some(_) => self,
+    .None => fallback(),
+  }
+
+  pub let xor(self, other: Option(T)): Option(T) = match self, other {
+    .Some(_), .None => self,
+    .None, .Some(_) => other,
+    _ => Option(T).None,
+  }
+
+  pub let ok_or(self, $E: type, error: E): Result(T, E) = match self {
+    .Some(value) => Result(T, E).Ok(value),
+    .None => Result(T, E).Err(error),
+  }
+
+  pub let ok_or_else(self, $E: type, error: *(): E): Result(T, E) = match self {
+    .Some(value) => Result(T, E).Ok(value),
+    .None => Result(T, E).Err(error()),
+  }
+}
+
+pub let Result($T: type, $E: type) = union(@auto) {
+  Ok(T),
+  Err(E),
+
+
+  pub let is_ok(self): bool = match self {
+    .Ok(_) => true,
+    .Err(_) => false,
+  }
+
+  pub let is_err(self): bool = !self.is_ok()
+
+  pub let as_ref(*self): Result(*T, *E) = match self.* {
+    .Ok(value) => .Ok(value.&),
+    .Err(error) => .Err(error.&),
+  }
+
+  pub let ok(self): Option(T) = match self {
+    .Ok(value) => Option(T).Some(value),
+    .Err(_) => Option(T).None,
+  }
+
+  pub let err(self): Option(E) = match self {
+    .Ok(_) => Option(E).None,
+    .Err(error) => Option(E).Some(error),
+  }
+
+  pub let expect(self, message: str): T = match self {
+    .Ok(value) => value,
+    .Err(_) => { panic(message) },
+  }
+
+  pub let unwrap(self): T = self.expect("called Result.unwrap on Err")
+
+  pub let expect_err(self, message: str): E = match self {
+    .Ok(_) => { panic(message) },
+    .Err(error) => error,
+  }
+
+  pub let unwrap_err(self): E = self.expect_err("called Result.unwrap_err on Ok")
+
+  pub let unwrap_or(self, fallback: T): T = match self {
+    .Ok(value) => value,
+    .Err(_) => fallback,
+  }
+
+  pub let unwrap_or_else(self, fallback: *(E): T): T = match self {
+    .Ok(value) => value,
+    .Err(error) => fallback(error),
+  }
+
+  pub let map(self, $U: type, transform: *(T): U): Result(U, E) = match self {
+    .Ok(value) => Result(U, E).Ok(transform(value)),
+    .Err(error) => Result(U, E).Err(error),
+  }
+
+  pub let map_or(self, $U: type, fallback: U, transform: *(T): U): U = match self {
+    .Ok(value) => transform(value),
+    .Err(_) => fallback,
+  }
+
+  pub let map_or_else(
+    self,
+    $U: type,
+    fallback: *(E): U,
+    transform: *(T): U,
+  ): U = match self {
+    .Ok(value) => transform(value),
+    .Err(error) => fallback(error),
+  }
+
+  pub let map_err(self, $F: type, transform: *(E): F): Result(T, F) = match self {
+    .Ok(value) => Result(T, F).Ok(value),
+    .Err(error) => Result(T, F).Err(transform(error)),
+  }
+
+  pub let inspect(self, inspect: *(T): void): Result(T, E) = match self {
+    .Ok(value) => { inspect(value); self },
+    .Err(_) => self,
+  }
+
+  pub let inspect_err(self, inspect: *(E): void): Result(T, E) = match self {
+    .Ok(_) => self,
+    .Err(error) => { inspect(error); self },
+  }
+
+  pub let and_then(self, $U: type, transform: *(T): Result(U, E)): Result(U, E) = match self {
+    .Ok(value) => transform(value),
+    .Err(error) => Result(U, E).Err(error),
+  }
+
+  pub let or(self, $F: type, fallback: Result(T, F)): Result(T, F) = match self {
+    .Ok(value) => Result(T, F).Ok(value),
+    .Err(_) => fallback,
+  }
+
+  pub let or_else(self, $F: type, fallback: *(E): Result(T, F)): Result(T, F) = match self {
+    .Ok(value) => Result(T, F).Ok(value),
+    .Err(error) => fallback(error),
+  }
+}
+
+pub let Any = trait {}
+
+pub let Add = trait {
+  let add(self, other: Self): Self
+}
+
+pub let Sub = trait {
+  let sub(self, other: Self): Self
+}
+
+pub let Mul = trait {
+  let mul(self, other: Self): Self
+}
+
+pub let Div = trait {
+  let div(self, other: Self): Self
+}
+
+pub let Rem = trait {
+  let rem(self, other: Self): Self
+}
+
+pub let Neg = trait {
+  let neg(self): Self
+}
+
+pub let PartialEq = trait {
+  let eq(self, other: Self): bool
+}
+
+pub let PartialOrd = trait {
+  let lt(self, other: Self): bool
+  let le(self, other: Self): bool
+  let gt(self, other: Self): bool
+  let ge(self, other: Self): bool
+}
+
+pub let BitAnd = trait {
+  let bit_and(self, other: Self): Self
+}
+
+pub let BitOr = trait {
+  let bit_or(self, other: Self): Self
+}
+
+pub let BitXor = trait {
+  let bit_xor(self, other: Self): Self
+}
+
+pub let Shl = trait {
+  let shl(self, other: Self): Self
+}
+
+pub let Shr = trait {
+  let shr(self, other: Self): Self
+}
+
+pub let BitNot = trait {
+  let bit_not(self): Self
+}
+
+pub let (i8).add(self, other: i8): i8 = self + other
+pub let (i16).add(self, other: i16): i16 = self + other
+pub let (i32).add(self, other: i32): i32 = self + other
+pub let (i64).add(self, other: i64): i64 = self + other
+pub let (isz).add(self, other: isz): isz = self + other
+pub let (u8).add(self, other: u8): u8 = self + other
+pub let (u16).add(self, other: u16): u16 = self + other
+pub let (u32).add(self, other: u32): u32 = self + other
+pub let (u64).add(self, other: u64): u64 = self + other
+pub let (usz).add(self, other: usz): usz = self + other
+pub let (f32).add(self, other: f32): f32 = self + other
+pub let (f64).add(self, other: f64): f64 = self + other
+
+pub let (i8).sub(self, other: i8): i8 = self - other
+pub let (i16).sub(self, other: i16): i16 = self - other
+pub let (i32).sub(self, other: i32): i32 = self - other
+pub let (i64).sub(self, other: i64): i64 = self - other
+pub let (isz).sub(self, other: isz): isz = self - other
+pub let (u8).sub(self, other: u8): u8 = self - other
+pub let (u16).sub(self, other: u16): u16 = self - other
+pub let (u32).sub(self, other: u32): u32 = self - other
+pub let (u64).sub(self, other: u64): u64 = self - other
+pub let (usz).sub(self, other: usz): usz = self - other
+pub let (f32).sub(self, other: f32): f32 = self - other
+pub let (f64).sub(self, other: f64): f64 = self - other
+
+pub let (i8).mul(self, other: i8): i8 = self * other
+pub let (i16).mul(self, other: i16): i16 = self * other
+pub let (i32).mul(self, other: i32): i32 = self * other
+pub let (i64).mul(self, other: i64): i64 = self * other
+pub let (isz).mul(self, other: isz): isz = self * other
+pub let (u8).mul(self, other: u8): u8 = self * other
+pub let (u16).mul(self, other: u16): u16 = self * other
+pub let (u32).mul(self, other: u32): u32 = self * other
+pub let (u64).mul(self, other: u64): u64 = self * other
+pub let (usz).mul(self, other: usz): usz = self * other
+pub let (f32).mul(self, other: f32): f32 = self * other
+pub let (f64).mul(self, other: f64): f64 = self * other
+
+pub let (i8).div(self, other: i8): i8 = self / other
+pub let (i16).div(self, other: i16): i16 = self / other
+pub let (i32).div(self, other: i32): i32 = self / other
+pub let (i64).div(self, other: i64): i64 = self / other
+pub let (isz).div(self, other: isz): isz = self / other
+pub let (u8).div(self, other: u8): u8 = self / other
+pub let (u16).div(self, other: u16): u16 = self / other
+pub let (u32).div(self, other: u32): u32 = self / other
+pub let (u64).div(self, other: u64): u64 = self / other
+pub let (usz).div(self, other: usz): usz = self / other
+pub let (f32).div(self, other: f32): f32 = self / other
+pub let (f64).div(self, other: f64): f64 = self / other
+
+pub let (i8).rem(self, other: i8): i8 = self % other
+pub let (i16).rem(self, other: i16): i16 = self % other
+pub let (i32).rem(self, other: i32): i32 = self % other
+pub let (i64).rem(self, other: i64): i64 = self % other
+pub let (isz).rem(self, other: isz): isz = self % other
+pub let (u8).rem(self, other: u8): u8 = self % other
+pub let (u16).rem(self, other: u16): u16 = self % other
+pub let (u32).rem(self, other: u32): u32 = self % other
+pub let (u64).rem(self, other: u64): u64 = self % other
+pub let (usz).rem(self, other: usz): usz = self % other
+pub let (f32).rem(self, other: f32): f32 = self % other
+pub let (f64).rem(self, other: f64): f64 = self % other
+
+pub let (i8).neg(self): i8 = -self
+pub let (i16).neg(self): i16 = -self
+pub let (i32).neg(self): i32 = -self
+pub let (i64).neg(self): i64 = -self
+pub let (isz).neg(self): isz = -self
+pub let (f32).neg(self): f32 = -self
+pub let (f64).neg(self): f64 = -self
+
+pub let (i8).eq(self, other: i8): bool = self == other
+pub let (i16).eq(self, other: i16): bool = self == other
+pub let (i32).eq(self, other: i32): bool = self == other
+pub let (i64).eq(self, other: i64): bool = self == other
+pub let (isz).eq(self, other: isz): bool = self == other
+pub let (u8).eq(self, other: u8): bool = self == other
+pub let (u16).eq(self, other: u16): bool = self == other
+pub let (u32).eq(self, other: u32): bool = self == other
+pub let (u64).eq(self, other: u64): bool = self == other
+pub let (usz).eq(self, other: usz): bool = self == other
+pub let (f32).eq(self, other: f32): bool = self == other
+pub let (f64).eq(self, other: f64): bool = self == other
+pub let (bool).eq(self, other: bool): bool = self == other
+
+pub let (cstr).eq(self, other: cstr): bool {
+  let mut index: usz = 0
+  for self[index] != '\0' && other[index] != '\0' {
+    if self[index] != other[index] {
+      return false
+    }
+    index += 1
+  }
+  return self[index] == other[index]
+}
+
+pub let (str).eq(self, other: str): bool {
+  if len(self) != len(other) {
+    return false
+  }
+  let mut index: usz = 0
+  for index < len(self) {
+    if self[index] != other[index] {
+      return false
+    }
+    index += 1
+  }
+  return true
+}
+
+pub let (i8).lt(self, other: i8): bool = self < other
+pub let (i16).lt(self, other: i16): bool = self < other
+pub let (i32).lt(self, other: i32): bool = self < other
+pub let (i64).lt(self, other: i64): bool = self < other
+pub let (isz).lt(self, other: isz): bool = self < other
+pub let (u8).lt(self, other: u8): bool = self < other
+pub let (u16).lt(self, other: u16): bool = self < other
+pub let (u32).lt(self, other: u32): bool = self < other
+pub let (u64).lt(self, other: u64): bool = self < other
+pub let (usz).lt(self, other: usz): bool = self < other
+pub let (f32).lt(self, other: f32): bool = self < other
+pub let (f64).lt(self, other: f64): bool = self < other
+
+pub let (i8).le(self, other: i8): bool = self <= other
+pub let (i16).le(self, other: i16): bool = self <= other
+pub let (i32).le(self, other: i32): bool = self <= other
+pub let (i64).le(self, other: i64): bool = self <= other
+pub let (isz).le(self, other: isz): bool = self <= other
+pub let (u8).le(self, other: u8): bool = self <= other
+pub let (u16).le(self, other: u16): bool = self <= other
+pub let (u32).le(self, other: u32): bool = self <= other
+pub let (u64).le(self, other: u64): bool = self <= other
+pub let (usz).le(self, other: usz): bool = self <= other
+pub let (f32).le(self, other: f32): bool = self <= other
+pub let (f64).le(self, other: f64): bool = self <= other
+
+pub let (i8).gt(self, other: i8): bool = self > other
+pub let (i16).gt(self, other: i16): bool = self > other
+pub let (i32).gt(self, other: i32): bool = self > other
+pub let (i64).gt(self, other: i64): bool = self > other
+pub let (isz).gt(self, other: isz): bool = self > other
+pub let (u8).gt(self, other: u8): bool = self > other
+pub let (u16).gt(self, other: u16): bool = self > other
+pub let (u32).gt(self, other: u32): bool = self > other
+pub let (u64).gt(self, other: u64): bool = self > other
+pub let (usz).gt(self, other: usz): bool = self > other
+pub let (f32).gt(self, other: f32): bool = self > other
+pub let (f64).gt(self, other: f64): bool = self > other
+
+pub let (i8).ge(self, other: i8): bool = self >= other
+pub let (i16).ge(self, other: i16): bool = self >= other
+pub let (i32).ge(self, other: i32): bool = self >= other
+pub let (i64).ge(self, other: i64): bool = self >= other
+pub let (isz).ge(self, other: isz): bool = self >= other
+pub let (u8).ge(self, other: u8): bool = self >= other
+pub let (u16).ge(self, other: u16): bool = self >= other
+pub let (u32).ge(self, other: u32): bool = self >= other
+pub let (u64).ge(self, other: u64): bool = self >= other
+pub let (usz).ge(self, other: usz): bool = self >= other
+pub let (f32).ge(self, other: f32): bool = self >= other
+pub let (f64).ge(self, other: f64): bool = self >= other
+
+pub let (i8).bit_and(self, other: i8): i8 = self & other
+pub let (i16).bit_and(self, other: i16): i16 = self & other
+pub let (i32).bit_and(self, other: i32): i32 = self & other
+pub let (i64).bit_and(self, other: i64): i64 = self & other
+pub let (isz).bit_and(self, other: isz): isz = self & other
+pub let (u8).bit_and(self, other: u8): u8 = self & other
+pub let (u16).bit_and(self, other: u16): u16 = self & other
+pub let (u32).bit_and(self, other: u32): u32 = self & other
+pub let (u64).bit_and(self, other: u64): u64 = self & other
+pub let (usz).bit_and(self, other: usz): usz = self & other
+
+pub let (i8).bit_or(self, other: i8): i8 = self | other
+pub let (i16).bit_or(self, other: i16): i16 = self | other
+pub let (i32).bit_or(self, other: i32): i32 = self | other
+pub let (i64).bit_or(self, other: i64): i64 = self | other
+pub let (isz).bit_or(self, other: isz): isz = self | other
+pub let (u8).bit_or(self, other: u8): u8 = self | other
+pub let (u16).bit_or(self, other: u16): u16 = self | other
+pub let (u32).bit_or(self, other: u32): u32 = self | other
+pub let (u64).bit_or(self, other: u64): u64 = self | other
+pub let (usz).bit_or(self, other: usz): usz = self | other
+
+pub let (i8).bit_xor(self, other: i8): i8 = self ^ other
+pub let (i16).bit_xor(self, other: i16): i16 = self ^ other
+pub let (i32).bit_xor(self, other: i32): i32 = self ^ other
+pub let (i64).bit_xor(self, other: i64): i64 = self ^ other
+pub let (isz).bit_xor(self, other: isz): isz = self ^ other
+pub let (u8).bit_xor(self, other: u8): u8 = self ^ other
+pub let (u16).bit_xor(self, other: u16): u16 = self ^ other
+pub let (u32).bit_xor(self, other: u32): u32 = self ^ other
+pub let (u64).bit_xor(self, other: u64): u64 = self ^ other
+pub let (usz).bit_xor(self, other: usz): usz = self ^ other
+
+pub let (i8).shl(self, other: i8): i8 = self << other
+pub let (i16).shl(self, other: i16): i16 = self << other
+pub let (i32).shl(self, other: i32): i32 = self << other
+pub let (i64).shl(self, other: i64): i64 = self << other
+pub let (isz).shl(self, other: isz): isz = self << other
+pub let (u8).shl(self, other: u8): u8 = self << other
+pub let (u16).shl(self, other: u16): u16 = self << other
+pub let (u32).shl(self, other: u32): u32 = self << other
+pub let (u64).shl(self, other: u64): u64 = self << other
+pub let (usz).shl(self, other: usz): usz = self << other
+
+pub let (i8).shr(self, other: i8): i8 = self >> other
+pub let (i16).shr(self, other: i16): i16 = self >> other
+pub let (i32).shr(self, other: i32): i32 = self >> other
+pub let (i64).shr(self, other: i64): i64 = self >> other
+pub let (isz).shr(self, other: isz): isz = self >> other
+pub let (u8).shr(self, other: u8): u8 = self >> other
+pub let (u16).shr(self, other: u16): u16 = self >> other
+pub let (u32).shr(self, other: u32): u32 = self >> other
+pub let (u64).shr(self, other: u64): u64 = self >> other
+pub let (usz).shr(self, other: usz): usz = self >> other
+
+pub let (i8).bit_not(self): i8 = ~self
+pub let (i16).bit_not(self): i16 = ~self
+pub let (i32).bit_not(self): i32 = ~self
+pub let (i64).bit_not(self): i64 = ~self
+pub let (isz).bit_not(self): isz = ~self
+pub let (u8).bit_not(self): u8 = ~self
+pub let (u16).bit_not(self): u16 = ~self
+pub let (u32).bit_not(self): u32 = ~self
+pub let (u64).bit_not(self): u64 = ~self
+pub let (usz).bit_not(self): usz = ~self
+
+pub let (*$T).is_nil(self): bool = self == nil
+
+pub let (*mut $T).as_const(self): *T = self
+
+pub let (*$T).as_slice(self, length: usz): []T {
+  if self == nil { return self[:0] }
+  return self[:length]
+}
+
+pub let (*mut $T).as_slice(self, length: usz): []mut T {
+  if self == nil { return self[:0] }
+  return self[:length]
+}
+
+pub let ([]$T).is_empty(self): bool = len(self) == 0
+
+pub let ([]$T: PartialEq).contains(self, value: T): bool {
+  let mut index: usz = 0
+  for index < len(self) {
+    if self[index] == value { return true }
+    index += 1
+  }
+  return false
+}
+
+pub let ([]$T: PartialEq).find(self, value: T): (usz, bool) {
+  let mut index: usz = 0
+  for index < len(self) {
+    if self[index] == value { return index, true }
+    index += 1
+  }
+  return 0, false
+}
+
+pub let ([]$T: PartialEq).starts_with(self, prefix: []T): bool {
+  if len(prefix) > len(self) { return false }
+  let mut index: usz = 0
+  for index < len(prefix) {
+    if self[index] != prefix[index] { return false }
+    index += 1
+  }
+  return true
+}
+
+pub let ([]$T: PartialEq).ends_with(self, suffix: []T): bool {
+  if len(suffix) > len(self) { return false }
+  let offset = len(self) - len(suffix)
+  let mut index: usz = 0
+  for index < len(suffix) {
+    if self[offset + index] != suffix[index] { return false }
+    index += 1
+  }
+  return true
+}
+
+pub let ([]mut $T).as_const(self): []T = self
+
+pub let ([]mut $T).fill(self, value: T): void {
+  let mut index: usz = 0
+  for index < len(self) {
+    self[index] = value
+    index += 1
+  }
+}
+
+pub let ([]mut $T).swap(self, left: usz, right: usz): void {
+  if left >= len(self) || right >= len(self) {
+    panic("slice swap index out of bounds")
+  }
+  let temporary = self[left]
+  self[left] = self[right]
+  self[right] = temporary
+}
+
+pub let ([]mut $T).reverse(self): void {
+  let mut left: usz = 0
+  let mut right = len(self)
+  for left < right {
+    right -= 1
+    if left >= right { break }
+    let temporary = self[left]
+    self[left] = self[right]
+    self[right] = temporary
+    left += 1
+  }
+}
+
+
+pub let ([]mut $T: PartialOrd).sort(self): void {
+  if len(self) < 2 {
+    return
+  }
+
+  let mut stack_left: [64]usz = [---; 64]
+  let mut stack_right: [64]usz = [---; 64]
+  let mut stack_size: usz = 0
+
+  stack_left[stack_size] = 0
+  stack_right[stack_size] = len(self) - 1
+  stack_size += 1
+
+  for stack_size > 0 {
+    stack_size -= 1
+
+    let mut left = stack_left[stack_size]
+    let mut right = stack_right[stack_size]
+
+    for left < right {
+      let mut i = left
+      let mut j = right
+
+      let pivot = self[left + (right - left) / 2]
+
+      for {
+        for self[i].lt(pivot) {
+          i += 1
+        }
+
+        for pivot.lt(self[j]) {
+          if j == 0 { break }
+          j -= 1
+        }
+
+        if i > j { break }
+
+        if i != j {
+          let temporary = self[i]
+          self[i] = self[j]
+          self[j] = temporary
+        }
+
+        i += 1
+
+        if j == 0 { break }
+        j -= 1
+
+        if i > j { break }
+      }
+
+      // Process the smaller partition immediately and push the larger
+      // one. This keeps explicit stack usage O(log n).
+      let left_size =
+        if j >= left { j - left + 1 }
+        else { 0 }
+
+      let right_size =
+        if i <= right { right - i + 1 }
+        else { 0 }
+
+      if left_size < right_size {
+        if i < right {
+          stack_left[stack_size] = i
+          stack_right[stack_size] = right
+          stack_size += 1
+        }
+
+        if left < j {
+          right = j
+        } else {
+          break
+        }
+      } else {
+        if left < j {
+          stack_left[stack_size] = left
+          stack_right[stack_size] = j
+          stack_size += 1
+        }
+
+        if i < right {
+          left = i
+        } else {
+          break
+        }
+      }
+    }
+  }
+}

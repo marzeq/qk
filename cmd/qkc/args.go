@@ -518,7 +518,7 @@ Diagnostics:
   -time-phases          Print compiler phase timings
 
 Packages and libraries:
-  -nostdlib             Do not load the installed QK library tree
+  -nostdlib             Load installed core only; exclude other QK libraries
   -stdlib <dir>         Use an external QK library root
   -I <dir>              Add a package search root (repeatable)
   -L <dir>              Add a library search path (repeatable)
@@ -627,9 +627,6 @@ func finaliseArgs(args *Args) error {
 		args.sysroot = abs
 	}
 	if args.libraryPath != "" {
-		if args.noStdlib {
-			return fmt.Errorf("-nostdlib and -stdlib cannot be used together")
-		}
 		info, err := os.Stat(args.libraryPath)
 		if err != nil || !info.IsDir() {
 			return fmt.Errorf("QK library path is not a directory: %s", args.libraryPath)

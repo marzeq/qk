@@ -25,6 +25,40 @@ func TestParenthesizedNominalMethodOwnerRequiresLexicalDeclaration(t *testing.T)
 	}
 }
 
+func TestCompilerImplDeclarationsAreReservedForCoreNamespace(t *testing.T) {
+	for _, module := range []string{"core", "core.extra", "main"} {
+		t.Run(module, func(t *testing.T) {
+			source := "module " + module + "\nlet supplied(value: i32): i32 @compiler_impl\n"
+			tokens, err := tokeniser.NewTokeniser(source, "compiler_impl.qk").Tokenise()
+			if err != nil {
+				t.Fatal(err)
+			}
+			root, err := parser.NewParser(tokens).Parse()
+			if err != nil {
+				t.Fatal(err)
+			}
+			analyser := NewAnalyser()
+			analyser.AnalyseModule(root, module, false)
+			if errs := analyser.Errors(); len(errs) != 0 {
+				t.Fatal(errs)
+			}
+			attributor := analyser.NewAttributor()
+			attributor.AttributeModule(root)
+			if errs := attributor.Errors(); len(errs) != 0 {
+				t.Fatal(errs)
+			}
+			validator := analyser.NewValidator()
+			validator.ValidateModule(root)
+			if got := len(validator.Errors()); (got == 0) != (module != "main") {
+				t.Fatalf("validation errors for %s: %v", module, validator.Errors())
+			}
+			if warnings := validator.Warnings(); len(warnings) != 0 {
+				t.Fatalf("compiler supplied declaration warned about parameters: %v", warnings)
+			}
+		})
+	}
+}
+
 func TestRecursiveExpressionBodyInfersReturnFromIfBranch(t *testing.T) {
 	const source = `module main
 let fib(n: usz) =

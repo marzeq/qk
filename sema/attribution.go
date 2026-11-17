@@ -1941,17 +1941,17 @@ func (a *Attributor) attributeStaticTraitMethodCall(
 
 func methodOwnerIdentity(t types.Type) (module, name string, pointer bool, ok bool) {
 	if defined, isDefined := t.(types.DefinedType); isDefined && defined.Module == "" && defined.Name == "str" {
-		return "builtin", "str", false, true
+		return "core", "str", false, true
 	}
 	if ptr, isPointer := types.Underlying(t).(types.PointerType); isPointer && !ptr.Mutable && ptr.Base.Equals(types.PrimitiveU8) {
-		return "builtin", "cstr", false, true
+		return "core", "cstr", false, true
 	}
 	if ptr, isPointer := types.Underlying(t).(types.PointerType); isPointer {
 		t = ptr.Base
 		pointer = true
 	}
 	if defined, isDefined := t.(types.DefinedType); isDefined && defined.Module == "" && defined.Name == "str" {
-		return "builtin", "str", pointer, true
+		return "core", "str", pointer, true
 	}
 	switch t := t.(type) {
 	case types.DefinedType:
@@ -1962,7 +1962,7 @@ func methodOwnerIdentity(t types.Type) (module, name string, pointer bool, ok bo
 	case *types.AliasRef:
 		return t.Module, t.Name, pointer, true
 	case types.PrimitiveType:
-		return "builtin", t.String(), pointer, true
+		return "core", t.String(), pointer, true
 	default:
 		return "", "", pointer, false
 	}

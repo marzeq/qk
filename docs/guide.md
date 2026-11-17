@@ -1478,7 +1478,7 @@ Because the Go tool installs executables but not repository data, use
 `scripts/dev_install.sh` rather than plain `go install` for a complete
 development installation under `~/.local/share/qk`.
 
-The standard library is an implicit dependency of ordinary modules unless `-nostdlib` is used.
+The standard library is an implicit dependency of ordinary modules unless `-nostdlib` is used. The shipped `libs/core` sources remain available with `-nostdlib` and define the globally visible core types, traits, and pure pointer, slice, and string methods. Only allocation-dependent string conversion remains in `std`. Compiler-supplied functions in the `core` namespace use `@compiler_impl` declarations without QK bodies.
 
 ## Explicit-file builds
 
@@ -1551,7 +1551,7 @@ let start(): void @export("_start") {
 }
 ```
 
-Freestanding links omit the C runtime and default libraries. The program supplies its own startup, termination, and panic support as needed. Hosted standard-library functions for console I/O, files, environment access, process exit, time, and libc allocation are excluded during freestanding staging. Pure standard-library code remains available, including `std.math`. `-nostdlib` omits the installed QK library tree entirely.
+Freestanding links omit the C runtime and default libraries. The program supplies its own startup, termination, and panic support as needed. Hosted standard-library functions for console I/O, files, environment access, process exit, time, and libc allocation are excluded during freestanding staging. Pure standard-library code remains available, including `std.math`. `-nostdlib` loads the installed `libs/core` tree and rejects other installed library sources.
 
 Cross-linking requires suitable CRT objects, libraries, and usually a sysroot for the selected target.
 

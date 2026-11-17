@@ -53,16 +53,14 @@ func main() {
 		ReleaseMode:  releaseMode,
 	}
 	libraryRoot := ""
-	if args.noStdlib {
-		// A genuinely library-free build must also work when no libs directory is
-		// installed beside qkc.
-	} else if args.libraryPath != "" {
+	if args.libraryPath != "" {
 		libraryRoot = args.libraryPath
 	} else {
 		var err error
 		libraryRoot, err = resolveLibraryRoot()
 		check(err)
 	}
+	args.libraryPath = libraryRoot
 	searchPaths := buildSearchPaths(args.packageRoot, args.packagePaths)
 	if libraryRoot != "" {
 		searchPaths = append([]string{libraryRoot}, searchPaths...)
@@ -71,6 +69,9 @@ func main() {
 		args.mainModule, args.baseDir, args.file, searchPaths, args.sourceMounts, libraryRoot, !args.noStdlib,
 	)
 	check(err)
+	if args.noStdlib {
+		check(rejectNonCoreLibrarySources(compileTimeSources, libraryRoot))
+	}
 	phases.mark("discovery and parsing")
 	parsedSources := make(map[string]*parser.RootNode, len(compileTimeSources))
 	for _, pkg := range discovered {

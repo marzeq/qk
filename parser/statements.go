@@ -469,6 +469,9 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 	if attrs.Get(attributes.AttributeTypeForeign) != nil {
 		expectsBody = false
 	}
+	if attrs.Get(attributes.AttributeTypeCompilerImpl) != nil {
+		expectsBody = false
+	}
 
 	var body Node
 	expressionBody := false
@@ -596,6 +599,11 @@ func (p *Parser) parseAttribute(defaultName string) (attributes.Attribute, error
 		return p.parseExportAttribute(defaultName)
 	case attributes.AttributeTypePacked:
 		return p.parsePackedAttribute()
+	case attributes.AttributeTypeCompilerImpl:
+		if p.Match(tokeniser.TokenOpenParen) {
+			return nil, shared.NewError(p.CurrLoc(), "@compiler_impl takes no arguments")
+		}
+		return attributes.AttributeCompilerImpl{}, nil
 	case attributes.AttributeTypeFreestanding:
 		if p.Match(tokeniser.TokenOpenParen) {
 			return nil, shared.NewError(p.CurrLoc(), "@freestanding takes no arguments")

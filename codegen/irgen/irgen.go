@@ -130,6 +130,9 @@ func (g *Generator) GenerateRoots(roots []*parser.RootNode) *ir.Module {
 			if node.IsParameterized() {
 				continue
 			}
+			if node.Attributes.Get(attributes.AttributeTypeCompilerImpl) != nil {
+				continue
+			}
 			if g.SkipUnreferencedFunctions && node.Body != nil && !node.Symbol.Referenced &&
 				!g.isProgramEntryFunction(node.Symbol.Name) &&
 				node.Attributes.Get(attributes.AttributeTypeExport) == nil {

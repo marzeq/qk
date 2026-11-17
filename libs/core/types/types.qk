@@ -1,0 +1,85 @@
+module core.types
+
+// A source-visible description of one field in a completed or pending type.
+pub let FieldSpec = struct {
+  name: str,
+  field_type: type,
+}
+
+pub let VariantSpec = struct {
+  name: str,
+  fields: []FieldSpec,
+}
+
+pub let MemberSpec = struct {
+  name: str,
+  value: str,
+}
+
+// A compile-time view of a completed type. Fields and variants retain source order.
+pub let TypeShape = struct {
+  kind: str,
+  fields: []FieldSpec,
+  variants: []VariantSpec,
+  element: type,
+  has_element: bool,
+  length: usz,
+  mutable: bool,
+  packed: bool,
+  members: []MemberSpec,
+}
+
+pub let inspect(T: type): TypeShape @compiler_impl
+
+// Uses the same structural conformance check as a type parameter constraint.
+pub let satisfies(T: type, Requirement: type): bool @compiler_impl
+
+pub let StructBuilder = struct {
+  handle: u64,
+  marker: type,
+
+  pub let new(): StructBuilder @compiler_impl
+  pub let add_field(*mut self, name: str, T: type): void @compiler_impl
+  pub let add_fields(*mut self, fields: []FieldSpec): void @compiler_impl
+  pub let set_packed(*mut self, packed: bool): void @compiler_impl
+  pub let reflect_public(*mut self): void @compiler_impl
+  pub let fields(self): []FieldSpec @compiler_impl
+  pub let self_type(self): type @compiler_impl
+  pub let finish(self): type @compiler_impl
+}
+
+pub let EnumBuilder = struct {
+  handle: u64,
+  marker: type,
+
+  pub let new(): EnumBuilder @compiler_impl
+  pub let add(*mut self, name: str): void @compiler_impl
+  pub let add_value(*mut self, name: str, value: i64): void @compiler_impl
+  pub let reflect_public(*mut self): void @compiler_impl
+  pub let finish(self): type @compiler_impl
+}
+
+pub let FlagsBuilder = struct {
+  handle: u64,
+  marker: type,
+
+  pub let new(backing: type): FlagsBuilder @compiler_impl
+  pub let add(*mut self, name: str): void @compiler_impl
+  pub let add_value(*mut self, name: str, value: u64): void @compiler_impl
+  pub let reflect_public(*mut self): void @compiler_impl
+  pub let finish(self): type @compiler_impl
+}
+
+pub let UnionBuilder = struct {
+  handle: u64,
+  marker: type,
+
+  pub let untagged(): UnionBuilder @compiler_impl
+  pub let auto_tagged(): UnionBuilder @compiler_impl
+  pub let tagged(tag: type): UnionBuilder @compiler_impl
+  pub let add_field(*mut self, name: str, T: type): void @compiler_impl
+  pub let add_variant(*mut self, variant: VariantSpec): void @compiler_impl
+  pub let reflect_public(*mut self): void @compiler_impl
+  pub let self_type(self): type @compiler_impl
+  pub let finish(self): type @compiler_impl
+}

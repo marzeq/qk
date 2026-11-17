@@ -113,7 +113,19 @@ func (v *Validator) validateNode(node parser.Node) {
 			attributes.AttributeTypeNoReturn,
 			attributes.AttributeTypeForeign,
 			attributes.AttributeTypeExport,
+			attributes.AttributeTypeCompilerImpl,
 		)
+		if n.Attributes.Get(attributes.AttributeTypeCompilerImpl) != nil {
+			if v.analyser.currentMod != "core" && !strings.HasPrefix(v.analyser.currentMod, "core.") {
+				v.errorf(n, "@compiler_impl is reserved for core declarations")
+			}
+			if n.Attributes.Get(attributes.AttributeTypeForeign) != nil || n.Attributes.Get(attributes.AttributeTypeExport) != nil {
+				v.errorf(n, "@compiler_impl cannot be combined with @foreign or @export")
+			}
+			if n.RetTypeNode == nil {
+				v.errorf(n, "@compiler_impl requires an explicit return type")
+			}
+		}
 		if n.Attributes.Get(attributes.AttributeTypeForeign) != nil &&
 			n.Attributes.Get(attributes.AttributeTypeExport) != nil {
 			v.errorf(n, "function cannot be both foreign and exported")

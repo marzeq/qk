@@ -12,6 +12,7 @@ const (
 	AttributeTypePacked       AttributeType = "packed"
 	AttributeTypeEntry        AttributeType = "entry"
 	AttributeTypeFreestanding AttributeType = "freestanding"
+	AttributeTypeCompilerImpl AttributeType = "compiler_impl"
 )
 
 type Attribute interface {
@@ -33,6 +34,10 @@ func (a AttributeNoInline) GetType() AttributeType { return AttributeTypeNoInlin
 type AttributePacked struct{}
 
 func (a AttributePacked) GetType() AttributeType { return AttributeTypePacked }
+
+type AttributeCompilerImpl struct{}
+
+func (a AttributeCompilerImpl) GetType() AttributeType { return AttributeTypeCompilerImpl }
 
 type FunctionAttributeForeign struct {
 	From string

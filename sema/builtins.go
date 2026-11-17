@@ -7,8 +7,6 @@ import (
 )
 
 func (a *Analyser) predefineBuiltins() {
-	any := types.TraitType{Name: "Any", Any: true}
-	a.universe.Define(symbols.NewType("Any", any))
 	a.universe.Define(symbols.NewType(string(types.PrimitiveI8), types.PrimitiveI8))
 	a.universe.Define(symbols.NewType(string(types.PrimitiveI16), types.PrimitiveI16))
 	a.universe.Define(symbols.NewType(string(types.PrimitiveI32), types.PrimitiveI32))

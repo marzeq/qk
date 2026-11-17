@@ -47,6 +47,9 @@ func resolveLibraryRootFor(executable, cwd, temporaryRoot string) (string, error
 			}
 		}
 	}
+	if root := findQKCheckout(cwd); root != "" {
+		return filepath.Join(root, "libs"), nil
+	}
 	return "", fmt.Errorf("QK libraries not found beside %s; expected ../libs relative to the installed bin directory or set QK_LIB_DIR", executable)
 }
 

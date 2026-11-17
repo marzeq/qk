@@ -81,7 +81,7 @@ func NewAnalyser() *Analyser {
 	a.predefineBuiltins()
 	for _, name := range []string{"i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64", "isz", "usz", "bool", "str", "cstr"} {
 		if symbol, ok := a.universe.Resolve(name); ok {
-			a.concreteTypes["builtin:"+name] = symbol.TypeInfo
+			a.concreteTypes["core:"+name] = symbol.TypeInfo
 		}
 	}
 	return a
@@ -137,9 +137,9 @@ func (a *Analyser) DeclareModule(root *parser.RootNode, path string, trustedStan
 	a.selectModule(path)
 
 	a.collectTopLevel(root)
-	if path == "builtin" {
-		for _, name := range []string{"Unit", "Error", "Option", "Result"} {
-			if symbol, ok := mod.Scope.Symbols[name]; ok {
+	if path == "core" {
+		for _, symbol := range mod.Scope.Symbols {
+			if symbol.Kind == symbols.SymbolKindType && symbol.Public {
 				_ = a.universe.Define(symbol)
 			}
 		}

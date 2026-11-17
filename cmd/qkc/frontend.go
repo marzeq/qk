@@ -1,8 +1,9 @@
 package main
 
 import (
-	_ "embed"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -13,13 +14,7 @@ import (
 	"github.com/marzeq/qk/tokeniser"
 )
 
-const builtinModule = "builtin"
-
-//go:embed builtin.qk
-var builtinSource string
-
-//go:embed core_types.qk
-var coreTypesSource string
+const builtinModule = "core"
 
 type frontendResult struct {
 	modules       map[string]*loader.ModuleInfo
@@ -43,18 +38,66 @@ func runFrontend(
 	sources = cloneStringMap(sources)
 	sourcePackages = cloneStringMap(sourcePackages)
 	trustedSources = cloneBoolMap(trustedSources)
-	const builtinOrigin = "<builtin>"
-	sources[builtinOrigin] = builtinSource
-	sourcePackages[builtinOrigin] = builtinModule
-	trustedSources[builtinOrigin] = false
+	libraryRoot := args.libraryPath
+	if libraryRoot == "" {
+		var err error
+		libraryRoot, err = resolveLibraryRoot()
+		if err != nil {
+			return nil, err
+		}
+	}
+	coreRoot, err := filepath.EvalSymlinks(filepath.Join(libraryRoot, "core"))
+	if err != nil {
+		return nil, fmt.Errorf("loading compiler core library: %w", err)
+	}
+	for origin, module := range sourcePackages {
+		if module != "core" && !strings.HasPrefix(module, "core.") {
+			continue
+		}
+		absolute, err := filepath.Abs(origin)
+		if err != nil {
+			return nil, err
+		}
+		resolved, err := filepath.EvalSymlinks(absolute)
+		if err != nil || !pathWithin(resolved, coreRoot) {
+			return nil, fmt.Errorf("module %q is reserved for compiler core source", module)
+		}
+	}
+	for _, module := range []struct{ name, dir string }{
+		{builtinModule, filepath.Join(libraryRoot, "core")},
+		{"core.types", filepath.Join(libraryRoot, "core", "types")},
+	} {
+		present := false
+		for _, path := range sourcePackages {
+			if path == module.name {
+				present = true
+				break
+			}
+		}
+		if present {
+			continue
+		}
+		files, err := collectPackageFiles(module.dir)
+		if err != nil {
+			return nil, fmt.Errorf("loading compiler core package %s: %w", module.dir, err)
+		}
+		if len(files) == 0 {
+			return nil, fmt.Errorf("compiler core package %s contains no QK source", module.dir)
+		}
+		for _, file := range files {
+			contents, err := os.ReadFile(file)
+			if err != nil {
+				return nil, fmt.Errorf("loading compiler core source %s: %w", file, err)
+			}
+			sources[file] = string(contents)
+			sourcePackages[file] = module.name
+			trustedSources[file] = false
+		}
+	}
 	const coreBuildOrigin = "<core.build>"
 	sources[coreBuildOrigin] = coreBuildSource(config)
 	sourcePackages[coreBuildOrigin] = "core.build"
 	trustedSources[coreBuildOrigin] = false
-	const coreTypesOrigin = "<core.types>"
-	sources[coreTypesOrigin] = coreTypesSource
-	sourcePackages[coreTypesOrigin] = "core.types"
-	trustedSources[coreTypesOrigin] = false
 	var preParsed map[string]*parser.RootNode
 	if len(parsedSources) != 0 {
 		preParsed = parsedSources[0]
@@ -116,7 +159,7 @@ func runFrontend(
 		if info == nil {
 			return nil, fmt.Errorf("module %q has no source", name)
 		}
-		if !args.noStdlib && name != builtinModule && name != "core.build" && name != "core.types" && name != "std" && !strings.HasPrefix(name, "std.") && !containsString(info.Imports, "std") {
+		if !args.noStdlib && name != builtinModule && !strings.HasPrefix(name, "core.") && name != "std" && !strings.HasPrefix(name, "std.") && !containsString(info.Imports, "std") {
 			info.Imports = append(info.Imports, "std")
 		}
 		if moduleNeedsDeferredSnapshots(info.Root) {
@@ -268,7 +311,7 @@ func sourceModuleGraph(sources, sourcePackages map[string]string, trustedSources
 		if name != builtinModule && !containsString(module.Imports, builtinModule) {
 			module.Imports = append(module.Imports, builtinModule)
 		}
-		if !noStdlib && name != builtinModule && name != "core.build" && name != "core.types" && name != "std" && !strings.HasPrefix(name, "std.") && !containsString(module.Imports, "std") {
+		if !noStdlib && name != builtinModule && !strings.HasPrefix(name, "core.") && name != "std" && !strings.HasPrefix(name, "std.") && !containsString(module.Imports, "std") {
 			module.Imports = append(module.Imports, "std")
 		}
 	}
