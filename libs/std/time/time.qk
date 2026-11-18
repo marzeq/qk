@@ -2,12 +2,6 @@ module std.time
 
 import core.build
 
-pub let HasTime = $core.build.has_libc
-
-$if HasTime {
-import std.ctypes
-import std.libc
-
 pub let NanosecondsPerMicrosecond: u64 = 1000
 pub let NanosecondsPerMillisecond: u64 = 1000000
 pub let NanosecondsPerSecond: u64 = 1000000000
@@ -65,6 +59,11 @@ pub let Duration = struct {
     return .{ nanoseconds=self.nanoseconds - other.nanoseconds }, true
   }
 }
+
+$if core.build.has_libc {
+
+import std.ctypes
+import std.libc
 
 pub let Timestamp = struct {
   seconds: i64,
