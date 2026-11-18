@@ -1460,7 +1460,7 @@ func isCompileTimeExpression(value ExpressionNode) bool {
 
 // parseTypeParameter recognizes a compile-time type parameter in an ordinary
 // binding argument list. Constraints use type(Trait), for example
-// $T: type(PartialEq).
+// $T: type(Eq).
 func (p *Parser) parseTypeParameter() (ParameterizedParameterNode, bool, error) {
 	p.PushPos()
 	begin := p.CurrLoc()

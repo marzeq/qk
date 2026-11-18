@@ -1034,7 +1034,7 @@ Parameterized tagged-union owners may be inferred from typed payloads when every
 A type parameter may require a trait:
 
 ```qk
-let maximum($T: type(std.PartialOrd), left: T, right: T): T {
+let maximum($T: type(Compare), left: T, right: T): T {
   if left.gt(right) {
     return left
   }
@@ -1074,10 +1074,12 @@ A type may omit `double_measure` and inherit the default, or declare a matching 
 `Self` refers to the concrete implementing type within a trait:
 
 ```qk
-let PartialEq = trait {
+let Eq = trait {
   let eq(self, other: Self): bool
 }
 ```
+
+`Eq` requires an `eq` method; it does not require reflexive equality, so floating-point types satisfy it. `Compare` requires `lt`, `le`, `gt`, and `ge` methods and also accepts floating-point types. These are structural method contracts, not promises of total ordering.
 
 Trait requirements may themselves have compile-time type parameters and may constrain them. Traits that use `Self` outside the receiver or declare parameterized methods can be used as static constraints and views, but not as dynamic trait objects.
 

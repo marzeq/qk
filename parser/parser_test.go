@@ -29,7 +29,7 @@ let Box($T: type) = struct {
 let Size($T: type) = sizeof(T)
 let identity($T: type, value: T): T = value
 let make_box($T: type, value: T): Box(T) = Box(T).{ value=value }
-let ([]$T: PartialEq).contains(self, value: T): bool = self[0] == value
+let ([]$T: Eq).contains(self, value: T): bool = self[0] == value
 `)
 	if len(root.Body) != 5 {
 		t.Fatalf("got %d declarations", len(root.Body))

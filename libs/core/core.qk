@@ -256,7 +256,7 @@ pub let Neg = trait {
   let neg(self): Self
 }
 
-pub let PartialEq = trait {
+pub let Eq = trait {
   let eq(self, other: Self): bool
 }
 
@@ -295,7 +295,7 @@ pub let SliceEnumerateIterator($T: type) = struct {
 pub let ([]$T).enumerate(self): SliceEnumerateIterator(T) = .{values=self, index=0}
 pub let ([]mut $T).enumerate(self): SliceEnumerateIterator(T) = .{values=self.as_const(), index=0}
 
-pub let PartialOrd = trait {
+pub let Compare = trait {
   let lt(self, other: Self): bool
   let le(self, other: Self): bool
   let gt(self, other: Self): bool
@@ -572,7 +572,7 @@ pub let (*mut $T).as_slice(self, length: usz): []mut T {
 
 pub let ([]$T).is_empty(self): bool = len(self) == 0
 
-pub let ([]$T: PartialEq).contains(self, value: T): bool {
+pub let ([]$T: Eq).contains(self, value: T): bool {
   let mut index: usz = 0
   for index < len(self) {
     if self[index] == value { return true }
@@ -581,7 +581,7 @@ pub let ([]$T: PartialEq).contains(self, value: T): bool {
   return false
 }
 
-pub let ([]$T: PartialEq).find(self, value: T): (usz, bool) {
+pub let ([]$T: Eq).find(self, value: T): (usz, bool) {
   let mut index: usz = 0
   for index < len(self) {
     if self[index] == value { return index, true }
@@ -590,7 +590,7 @@ pub let ([]$T: PartialEq).find(self, value: T): (usz, bool) {
   return 0, false
 }
 
-pub let ([]$T: PartialEq).starts_with(self, prefix: []T): bool {
+pub let ([]$T: Eq).starts_with(self, prefix: []T): bool {
   if len(prefix) > len(self) { return false }
   let mut index: usz = 0
   for index < len(prefix) {
@@ -600,7 +600,7 @@ pub let ([]$T: PartialEq).starts_with(self, prefix: []T): bool {
   return true
 }
 
-pub let ([]$T: PartialEq).ends_with(self, suffix: []T): bool {
+pub let ([]$T: Eq).ends_with(self, suffix: []T): bool {
   if len(suffix) > len(self) { return false }
   let offset = len(self) - len(suffix)
   let mut index: usz = 0
@@ -644,7 +644,7 @@ pub let ([]mut $T).reverse(self): void {
 }
 
 
-pub let ([]mut $T: PartialOrd).sort(self): void {
+pub let ([]mut $T: Compare).sort(self): void {
   if len(self) < 2 {
     return
   }
