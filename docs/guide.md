@@ -1654,7 +1654,7 @@ if parsed.is_err() {
 
 `std.io.wprint` and `wprintln` work with any writer. Hosted `print`, `println`, `eprint`, and `eprintln` write through libc file descriptors. File readers, file writers, and file printing are available when `std.io.HasFiles` is true. Freestanding builds can use the stream traits with program-supplied readers and writers.
 
-Formatting uses `{}` for the next argument and `{N}` for an indexed argument. Floats use trimmed fixed-point output with six fractional digits by default, so values sufficiently close to zero print as `0`; `g` retains general/scientific notation. The other specifiers are `c`, `x`, and `X`. `{{` and `}}` emit literal braces.
+Formatting uses `{}` for the next argument and `{N}` for an indexed argument. Floats use trimmed fixed-point output with six fractional digits by default, so values sufficiently close to zero print as `0`; `g` retains general/scientific notation. The other specifiers are `c`, `u`, `x`, and `X`. `{u}` encodes a `u32` Unicode scalar value as UTF-8; invalid scalars and non-`u32` arguments return `Error.InvalidData`. `{:u}` and indexed forms such as `{0:u}` also work. `{{` and `}}` emit literal braces.
 
 ```qk
 std.io.println("name: {}, value: {1:x}", name, value)
