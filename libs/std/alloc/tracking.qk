@@ -1,0 +1,90 @@
+module std.alloc
+
+let TrackedAllocation = struct {
+  ptr: *mut void,
+  size: usz,
+  align: usz,
+  next: *mut TrackedAllocation,
+}
+
+// Records live on the backing allocator, so deinit can release every live
+// allocation even when its owner has not reached a final value tree.
+pub let TrackingAllocator = struct {
+  backing: *mut dyn Allocator,
+  head: *mut TrackedAllocation,
+
+  pub let init(backing: *mut dyn Allocator): TrackingAllocator = .{
+    backing=backing,
+    head=nil,
+  }
+
+  pub let as_allocator(*mut self): *mut dyn Allocator = self
+
+  pub let allocate_bytes(*mut self, size: usz, align: usz): (*mut void, bool) {
+    let ptr, allocated = self.backing.allocate_bytes(size, align)
+    if !allocated || ptr == nil { return ptr, allocated }
+    let record, recorded = create(TrackedAllocation, self.backing)
+    if !recorded {
+      self.backing.free_bytes(ptr, size, align)
+      return nil, false
+    }
+    record.* = .{ptr=ptr, size=size, align=align, next=self.head}
+    self.head = record
+    return ptr, true
+  }
+
+  pub let free_bytes(*mut self, ptr: *mut void, size: usz, align: usz): void {
+    if ptr == nil {
+      return
+    }
+    let mut previous: *mut TrackedAllocation = nil
+    let mut current = self.head
+    for current != nil {
+      if current.ptr == ptr {
+        if previous == nil { self.head = current.next }
+        else { previous.next = current.next }
+        self.backing.free_bytes(current.ptr, current.size, current.align)
+        destroy(TrackedAllocation, self.backing, current)
+        return
+      }
+      previous = current
+      current = current.next
+    }
+  }
+
+  pub let resize_bytes(
+    *mut self,
+    ptr: *mut void,
+    old_size: usz,
+    new_size: usz,
+    align: usz,
+  ): (*mut void, bool) {
+    if ptr == nil { return self.allocate_bytes(new_size, align) }
+    if new_size == 0 {
+      self.free_bytes(ptr, old_size, align)
+      return nil, true
+    }
+    let mut current = self.head
+    for current != nil {
+      if current.ptr == ptr {
+        let replacement, resized = self.backing.resize_bytes(ptr, current.size, new_size, current.align)
+        if resized {
+          current.ptr = replacement
+          current.size = new_size
+        }
+        return replacement, resized
+      }
+      current = current.next
+    }
+    return nil, false
+  }
+
+  pub let deinit(*mut self): void {
+    for self.head != nil {
+      let record = self.head
+      self.head = record.next
+      self.backing.free_bytes(record.ptr, record.size, record.align)
+      destroy(TrackedAllocation, self.backing, record)
+    }
+  }
+}

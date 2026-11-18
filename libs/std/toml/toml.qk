@@ -10,8 +10,8 @@ let special_float(bits: u64): f64 {
   return value.value
 }
 
-// Parsed strings borrow from input when no escapes are present. Collection
-// and decoded-string memory belongs to allocator; an arena is convenient.
+// Parsed strings borrow from input when no escapes are present. parse()
+// tracks every allocation so its Document can release them without an arena.
 pub let Value = union(@auto) {
   String(str),
   Integer(i64),
@@ -26,10 +26,15 @@ pub let Array = struct { items: std.collections.DynamicArray(Value) }
 pub let Table = struct { entries: std.collections.HashMap(str, Value), sealed: bool }
 pub let ParseError = struct { offset: usz, message: str }
 
-let equal(a: str, b: str): bool {
-  if len(a) != len(b) { return false }
-  for let mut i: usz = 0; i < len(a); i += 1 { if a[i] != b[i] { return false } }
-  return true
+pub let Document = struct {
+  root: *mut Table,
+  allocator: *mut dyn std.alloc.Allocator,
+  storage: std.alloc.TrackingAllocator,
+
+  pub let deinit(*mut self): void {
+    self.storage.deinit()
+    std.alloc.destroy(Document, self.allocator, self)
+  }
 }
 
 let digit(c: u8, base: u8): (u8, bool) {
@@ -325,12 +330,12 @@ let Parser = struct {
       }
     }
     let token = self.input[start:self.pos]
-    if equal(token, "true") { return Value.Boolean(true), true }
-    if equal(token, "false") { return Value.Boolean(false), true }
-    if equal(token, "inf") || equal(token, "+inf") { return Value.Float(special_float(0x7ff0000000000000)), true }
-    if equal(token, "-inf") { return Value.Float(special_float(0xfff0000000000000)), true }
-    if equal(token, "nan") || equal(token, "+nan") { return Value.Float(special_float(0x7ff8000000000000)), true }
-    if equal(token, "-nan") { return Value.Float(special_float(0xfff8000000000000)), true }
+    if token.eq("true") { return Value.Boolean(true), true }
+    if token.eq("false") { return Value.Boolean(false), true }
+    if token.eq("inf") || token.eq("+inf") { return Value.Float(special_float(0x7ff0000000000000)), true }
+    if token.eq("-inf") { return Value.Float(special_float(0xfff0000000000000)), true }
+    if token.eq("nan") || token.eq("+nan") { return Value.Float(special_float(0x7ff8000000000000)), true }
+    if token.eq("-nan") { return Value.Float(special_float(0xfff8000000000000)), true }
     if (len(token) >= 10 && token[4] == '-' && token[7] == '-') || (len(token) >= 8 && token[2] == ':' && token[5] == ':') {
       if valid_datetime(token) { return Value.DateTime(token), true }
       self.pos = start; self.fail("invalid date or time"); return Value.Boolean(false), false
@@ -484,7 +489,7 @@ let Parser = struct {
   }
 }
 
-pub let parse(input: str, allocator: *mut dyn std.alloc.Allocator): Result(*mut Table, ParseError) {
+let parse_value(input: str, allocator: *mut dyn std.alloc.Allocator): Result(*mut Table, ParseError) {
   let mut parser = Parser.{input=input, pos=0, allocator=allocator, error=.{offset=0, message="invalid TOML"}}
   let root, allocated = parser.table(false)
   if !allocated { return .Err(parser.error) }
@@ -506,4 +511,16 @@ pub let parse(input: str, allocator: *mut dyn std.alloc.Allocator): Result(*mut 
     parser.whitespace()
   }
   return .Ok(root)
+}
+
+// The input remains borrowed until the returned document is deinitialized.
+pub let parse(input: str, allocator: *mut dyn std.alloc.Allocator): Result(*mut Document, ParseError) {
+  let document, allocated = std.alloc.create(Document, allocator)
+  if !allocated { return .Err(.{offset=0, message="out of memory"}) }
+  document.* = .{root=nil, allocator=allocator, storage=std.alloc.TrackingAllocator.init(allocator)}
+  let parsed = parse_value(input, document.storage.as_allocator())
+  return match parsed {
+    .Ok(value) => { document.root = value; .Ok(document) },
+    .Err(error) => { document.deinit(); .Err(error) },
+  }
 }

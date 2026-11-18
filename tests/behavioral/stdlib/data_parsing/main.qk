@@ -4,13 +4,41 @@ import std.alloc
 import std.json
 import std.toml
 
+let CountingAllocator = struct {
+  backing: *mut dyn std.alloc.Allocator,
+  live: usz,
+
+  let as_allocator(*mut self): *mut dyn std.alloc.Allocator = self
+
+  let allocate_bytes(*mut self, size: usz, align: usz): (*mut void, bool) {
+    let ptr, ok = self.backing.allocate_bytes(size, align)
+    if ok && ptr != nil { self.live += 1 }
+    return ptr, ok
+  }
+
+  let free_bytes(*mut self, ptr: *mut void, size: usz, align: usz): void {
+    if ptr != nil { self.live -= 1 }
+    self.backing.free_bytes(ptr, size, align)
+  }
+
+  let resize_bytes(*mut self, ptr: *mut void, old_size: usz, new_size: usz, align: usz): (*mut void, bool) {
+    let replacement, ok = self.backing.resize_bytes(ptr, old_size, new_size, align)
+    if ok {
+      if ptr == nil && replacement != nil { self.live += 1 }
+      if ptr != nil && replacement == nil { self.live -= 1 }
+    }
+    return replacement, ok
+  }
+}
+
 let main() {
   let mut arena = std.alloc.Arena.init()
   let allocator = arena.as_allocator()
 
   let json = std.json.parse("/* config */ {\"title\": \"a\\n\\uD83D\\uDE00\", \"items\": [true, null, -1.25e2,], // end\n}", allocator)
   assert(json.is_ok(), "JSONC comments, escapes and trailing commas")
-  match json.unwrap() {
+  let json_document = json.unwrap()
+  match json_document.root {
     .Object(members) => {
       assert(members.length() == 2)
       let item, found = members.get("items")
@@ -28,11 +56,13 @@ let main() {
     },
     _ => assert(false),
   }
+  json_document.deinit()
   assert(std.json.parse("[1,,2]", allocator).is_err(), "invalid JSONC")
   assert(std.json.parse("\"\\uD800\"", allocator).is_err(), "unpaired surrogate")
   let repeated = std.json.parse("{\"name\": 1, \"\\u006eame\": 2}", allocator)
   assert(repeated.is_ok())
-  match repeated.unwrap() {
+  let repeated_document = repeated.unwrap()
+  match repeated_document.root {
     .Object(object) => {
       assert(object.length() == 1)
       let name, found = object.get("name")
@@ -44,10 +74,12 @@ let main() {
     },
     _ => assert(false),
   }
+  repeated_document.deinit()
 
   let toml = std.toml.parse("title = \"hello\"\nhex = 0x2a\nsettings.enabled = true\n[owner]\nname = 'Ada'\nvalues = [1, 2, 3]\n[[servers]]\nname = \"first\"\n[[servers]]\nname = \"second\"\n", allocator)
   assert(toml.is_ok(), "TOML document")
-  let root = toml.unwrap()
+  let toml_document = toml.unwrap()
+  let root = toml_document.root
   assert(root.entries.length() == 5)
   let hex, found_hex = root.entries.get("hex")
   assert(found_hex)
@@ -75,11 +107,39 @@ let main() {
     .Array(servers) => assert(servers.items.count == 2),
     _ => assert(false),
   }
+  toml_document.deinit()
   assert(std.toml.parse("a = 1\na = 2", allocator).is_err(), "duplicate TOML key")
   assert(std.toml.parse("a = 01", allocator).is_err(), "invalid leading zero")
   assert(std.toml.parse("a = { x = 1, }", allocator).is_err(), "inline table trailing comma")
   assert(std.toml.parse("a = \"\\uD800\"", allocator).is_err(), "invalid TOML unicode")
-  assert(std.toml.parse("a = \"\\u20AC\"\nb = 1979-05-27T07:32:00Z\nc = +inf\nd = 0xDEAD", allocator).is_ok(), "TOML Unicode, date, hexadecimal and special float")
+  let extra = std.toml.parse("a = \"\\u20AC\"\nb = 1979-05-27T07:32:00Z\nc = +inf\nd = 0xDEAD", allocator)
+  assert(extra.is_ok(), "TOML Unicode, date, hexadecimal and special float")
+  extra.unwrap().deinit()
   assert(std.toml.parse("a = 2023-02-29", allocator).is_err(), "invalid TOML date")
   arena.deinit()
+
+  let mut libc = std.alloc.LibcAllocator.init()
+  let mut counting = CountingAllocator.{backing=libc.as_allocator(), live=0}
+  let owned_allocator = counting.as_allocator()
+
+  let owned_json = std.json.parse("{\"x\": [\"a\\nb\", {\"y\": true}]}", owned_allocator)
+  assert(owned_json.is_ok())
+  let json_document = owned_json.unwrap()
+  match json_document.root {
+    .Object(object) => assert(object.length() == 1),
+    _ => assert(false),
+  }
+  json_document.deinit()
+  assert(counting.live == 0, "JSON document deinit frees all allocations")
+  assert(std.json.parse("{\"x\": [1,", owned_allocator).is_err())
+  assert(counting.live == 0, "failed JSON parse frees partial allocations")
+
+  let owned_toml = std.toml.parse("title = \"a\\nb\"\nitems = [1, { x = 2 }]\n[child]\nvalue = true\n", owned_allocator)
+  assert(owned_toml.is_ok())
+  let toml_document = owned_toml.unwrap()
+  assert(toml_document.root.entries.length() == 3)
+  toml_document.deinit()
+  assert(counting.live == 0, "TOML document deinit frees all allocations")
+  assert(std.toml.parse("items = [1, 2", owned_allocator).is_err())
+  assert(counting.live == 0, "failed TOML parse frees partial allocations")
 }

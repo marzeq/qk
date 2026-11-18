@@ -1613,7 +1613,28 @@ order, so `for key, value in map` destructures each entry. `map.keys()` returns
 a key slice for keys-only iteration. Do not change a collection's storage while
 iterating over its borrowed view.
 
+
 `std.strings.StringBuilder` is an allocator-backed builder that also implements reader, writer, and formatter traits. `std.strings` provides split iteration, replacement, and integer parsing in addition to the root string methods. Mutable `str` and `cstr` bindings are consuming `std.io.Reader` implementations.
+
+## JSON and TOML
+
+`std.json.parse(input, allocator)` and
+`std.toml.parse(input, allocator)` return documents whose `root` field
+contains the parsed value or table. Call `document.deinit()` once when finished;
+it frees all parser allocations through the supplied allocator, including
+decoded strings, collections, and temporary buffers. Failed parses release
+their partial allocations before returning an error.
+
+```qk
+let parsed = std.json.parse("{\"count\": 3}", allocator)
+if parsed.is_ok() {
+  let document = parsed.unwrap()
+  // Use document.root here.
+  document.deinit()
+}
+```
+
+The input is borrowed, so keep it alive until `deinit()` completes.
 
 ## Input, output, and formatting
 

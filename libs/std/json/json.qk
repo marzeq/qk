@@ -4,8 +4,8 @@ import std.alloc
 import std.collections
 import std.strings
 
-// Values borrow unescaped strings from the input. Escaped strings and
-// collection storage belong to the supplied allocator (ideally an arena).
+// Values borrow unescaped strings from the input. parse() tracks every
+// allocation so its Document can release them without an arena.
 pub let Value = union(@auto) {
   Null,
   Boolean(bool),
@@ -16,6 +16,17 @@ pub let Value = union(@auto) {
 }
 
 pub let ParseError = struct { offset: usz, message: str }
+
+pub let Document = struct {
+  root: Value,
+  allocator: *mut dyn std.alloc.Allocator,
+  storage: std.alloc.TrackingAllocator,
+
+  pub let deinit(*mut self): void {
+    self.storage.deinit()
+    std.alloc.destroy(Document, self.allocator, self)
+  }
+}
 
 let Parser = struct {
   input: str,
@@ -259,11 +270,23 @@ let Parser = struct {
   }
 }
 
-pub let parse(input: str, allocator: *mut dyn std.alloc.Allocator): Result(Value, ParseError) {
+let parse_value(input: str, allocator: *mut dyn std.alloc.Allocator): Result(Value, ParseError) {
   let mut parser = Parser.{input=input, pos=0, allocator=allocator, error=.{offset=0, message="invalid JSONC"}}
   let value, valid = parser.value(0)
   if !valid { return .Err(parser.error) }
   if !parser.skip() { return .Err(parser.error) }
   if parser.pos != len(input) { return .Err(.{offset=parser.pos, message="unexpected trailing input"}) }
   return .Ok(value)
+}
+
+// The input remains borrowed until the returned document is deinitialized.
+pub let parse(input: str, allocator: *mut dyn std.alloc.Allocator): Result(*mut Document, ParseError) {
+  let document, allocated = std.alloc.create(Document, allocator)
+  if !allocated { return .Err(.{offset=0, message="out of memory"}) }
+  document.* = .{root=Value.Null, allocator=allocator, storage=std.alloc.TrackingAllocator.init(allocator)}
+  let parsed = parse_value(input, document.storage.as_allocator())
+  return match parsed {
+    .Ok(value) => { document.root = value; .Ok(document) },
+    .Err(error) => { document.deinit(); .Err(error) },
+  }
 }
