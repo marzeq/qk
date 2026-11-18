@@ -23,3 +23,27 @@ pub let ([]mut $T).reversed(self, alloc: *mut dyn std.alloc.Allocator): ([]mut T
   }
   return result, true
 }
+
+pub let ([]$T: Compare).sorted(self, alloc: *mut dyn std.alloc.Allocator): ([]T, bool) {
+  let mut result, allocated = std.alloc.allocate(T, alloc, len(self))
+  if !allocated { return [], false }
+  let mut index: usz = 0
+  for index < len(self) {
+    result[index] = self[index]
+    index += 1
+  }
+  result.sort()
+  return result, true
+}
+
+pub let ([]mut $T: Compare).sorted(self, alloc: *mut dyn std.alloc.Allocator): ([]mut T, bool) {
+  let mut result, allocated = std.alloc.allocate(T, alloc, len(self))
+  if !allocated { return [], false }
+  let mut index: usz = 0
+  for index < len(self) {
+    result[index] = self[index]
+    index += 1
+  }
+  result.sort()
+  return result, true
+}
