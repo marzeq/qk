@@ -1,8 +1,12 @@
 module main
 
 import std.alloc
+import std.io
 import std.json
+import std.strings
 import std.toml
+
+let error_message($E: type(ErrorLike), error: E): str = error.message()
 
 let CountingAllocator = struct {
   backing: *mut dyn std.alloc.Allocator,
@@ -34,6 +38,7 @@ let CountingAllocator = struct {
 let main() {
   let mut arena = std.alloc.Arena.init()
   let allocator = arena.as_allocator()
+  assert(error_message(Error.InvalidData).eq("invalid data"), "core error contract")
 
   let json = std.json.parse("/* config */ {\"title\": \"a\\n\\uD83D\\uDE00\", \"items\": [true, null, -1.25e2,], // end\n}", allocator)
   assert(json.is_ok(), "JSONC comments, escapes and trailing commas")
@@ -57,7 +62,14 @@ let main() {
     _ => assert(false),
   }
   json_document.deinit()
-  assert(std.json.parse("[1,,2]", allocator).is_err(), "invalid JSONC")
+  let invalid_json = std.json.parse("[1,,2]", allocator)
+  assert(invalid_json.is_err(), "invalid JSONC")
+  let json_error = invalid_json.unwrap_err()
+  assert(json_error.offset == 3 && error_message(json_error).eq("expected value"), "JSON parse error")
+  let mut rendered = std.strings.StringBuilder.init(allocator)
+  assert(std.io.wprint(rendered.&mut.(*mut dyn std.io.Writer), "{}", json_error).is_ok())
+  assert(rendered.as_str().eq(json_error.message()), "JSON error format")
+  rendered.clear()
   assert(std.json.parse("\"\\uD800\"", allocator).is_err(), "unpaired surrogate")
   let repeated = std.json.parse("{\"name\": 1, \"\\u006eame\": 2}", allocator)
   assert(repeated.is_ok())
@@ -108,7 +120,13 @@ let main() {
     _ => assert(false),
   }
   toml_document.deinit()
-  assert(std.toml.parse("a = 1\na = 2", allocator).is_err(), "duplicate TOML key")
+  let duplicate_toml = std.toml.parse("a = 1\na = 2", allocator)
+  assert(duplicate_toml.is_err(), "duplicate TOML key")
+  let toml_error = duplicate_toml.unwrap_err()
+  assert(error_message(toml_error).eq("duplicate key"), "TOML parse error")
+  assert(std.io.wprint(rendered.&mut.(*mut dyn std.io.Writer), "{}", toml_error).is_ok())
+  assert(rendered.as_str().eq(toml_error.message()), "TOML error format")
+  rendered.deinit()
   assert(std.toml.parse("a = 01", allocator).is_err(), "invalid leading zero")
   assert(std.toml.parse("a = { x = 1, }", allocator).is_err(), "inline table trailing comma")
   assert(std.toml.parse("a = \"\\uD800\"", allocator).is_err(), "invalid TOML unicode")

@@ -2,6 +2,7 @@ module std.json
 
 import std.alloc
 import std.collections
+import std.io
 import std.strings
 
 // Values borrow unescaped strings from the input. parse() tracks every
@@ -15,7 +16,18 @@ pub let Value = union(@auto) {
   Object(std.collections.HashMap(str, Value)),
 }
 
-pub let ParseError = struct { offset: usz, message: str }
+pub let ParseError = struct {
+  offset: usz,
+  detail: str,
+
+  pub let message(self): str = self.detail
+
+  pub let format(self, writer: *mut dyn std.io.Writer): Result(Unit, Error) =
+    match std.io.write_all(writer, self.detail.([]u8)) {
+      .Ok(_) => .Ok(Unit.{}),
+      .Err(error) => .Err(error),
+    }
+}
 
 pub let Document = struct {
   root: Value,
@@ -43,7 +55,7 @@ let Parser = struct {
   }
 
   let fail(*mut self, message: str): void {
-    self.error = .{offset=self.pos, message=message}
+    self.error = .{offset=self.pos, detail=message}
   }
 
   let skip(*mut self): bool {
@@ -271,18 +283,18 @@ let Parser = struct {
 }
 
 let parse_value(input: str, allocator: *mut dyn std.alloc.Allocator): Result(Value, ParseError) {
-  let mut parser = Parser.{input=input, pos=0, allocator=allocator, error=.{offset=0, message="invalid JSONC"}}
+  let mut parser = Parser.{input=input, pos=0, allocator=allocator, error=.{offset=0, detail="invalid JSONC"}}
   let value, valid = parser.value(0)
   if !valid { return .Err(parser.error) }
   if !parser.skip() { return .Err(parser.error) }
-  if parser.pos != len(input) { return .Err(.{offset=parser.pos, message="unexpected trailing input"}) }
+  if parser.pos != len(input) { return .Err(.{offset=parser.pos, detail="unexpected trailing input"}) }
   return .Ok(value)
 }
 
 // The input remains borrowed until the returned document is deinitialized.
 pub let parse(input: str, allocator: *mut dyn std.alloc.Allocator): Result(*mut Document, ParseError) {
   let document, allocated = std.alloc.create(Document, allocator)
-  if !allocated { return .Err(.{offset=0, message="out of memory"}) }
+  if !allocated { return .Err(.{offset=0, detail="out of memory"}) }
   document.* = .{root=Value.Null, allocator=allocator, storage=std.alloc.TrackingAllocator.init(allocator)}
   let parsed = parse_value(input, document.storage.as_allocator())
   return match parsed {

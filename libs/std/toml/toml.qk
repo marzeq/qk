@@ -2,6 +2,7 @@ module std.toml
 
 import std.alloc
 import std.collections
+import std.io
 import std.strings
 
 let FloatBits = union { value: f64, bits: u64 }
@@ -24,7 +25,18 @@ pub let Value = union(@auto) {
 
 pub let Array = struct { items: std.collections.DynamicArray(Value) }
 pub let Table = struct { entries: std.collections.HashMap(str, Value), sealed: bool }
-pub let ParseError = struct { offset: usz, message: str }
+pub let ParseError = struct {
+  offset: usz,
+  detail: str,
+
+  pub let message(self): str = self.detail
+
+  pub let format(self, writer: *mut dyn std.io.Writer): Result(Unit, Error) =
+    match std.io.write_all(writer, self.detail.([]u8)) {
+      .Ok(_) => .Ok(Unit.{}),
+      .Err(error) => .Err(error),
+    }
+}
 
 pub let Document = struct {
   root: *mut Table,
@@ -154,7 +166,7 @@ let Parser = struct {
   allocator: *mut dyn std.alloc.Allocator,
   error: ParseError,
 
-  let fail(*mut self, message: str): void { self.error = .{offset=self.pos, message=message} }
+  let fail(*mut self, message: str): void { self.error = .{offset=self.pos, detail=message} }
   let space(*mut self): void {
     for self.pos < len(self.input) && (self.input[self.pos] == ' ' || self.input[self.pos] == '\t') { self.pos += 1 }
   }
@@ -490,7 +502,7 @@ let Parser = struct {
 }
 
 let parse_value(input: str, allocator: *mut dyn std.alloc.Allocator): Result(*mut Table, ParseError) {
-  let mut parser = Parser.{input=input, pos=0, allocator=allocator, error=.{offset=0, message="invalid TOML"}}
+  let mut parser = Parser.{input=input, pos=0, allocator=allocator, error=.{offset=0, detail="invalid TOML"}}
   let root, allocated = parser.table(false)
   if !allocated { return .Err(parser.error) }
   let mut current = root
@@ -506,7 +518,7 @@ let parse_value(input: str, allocator: *mut dyn std.alloc.Allocator): Result(*mu
       for parser.pos < len(input) && input[parser.pos] != '\n' { parser.pos += 1 }
     }
     if parser.pos < len(input) && input[parser.pos] != '\n' && input[parser.pos] != '\r' {
-      return .Err(.{offset=parser.pos, message="expected end of line"})
+      return .Err(.{offset=parser.pos, detail="expected end of line"})
     }
     parser.whitespace()
   }
@@ -516,7 +528,7 @@ let parse_value(input: str, allocator: *mut dyn std.alloc.Allocator): Result(*mu
 // The input remains borrowed until the returned document is deinitialized.
 pub let parse(input: str, allocator: *mut dyn std.alloc.Allocator): Result(*mut Document, ParseError) {
   let document, allocated = std.alloc.create(Document, allocator)
-  if !allocated { return .Err(.{offset=0, message="out of memory"}) }
+  if !allocated { return .Err(.{offset=0, detail="out of memory"}) }
   document.* = .{root=nil, allocator=allocator, storage=std.alloc.TrackingAllocator.init(allocator)}
   let parsed = parse_value(input, document.storage.as_allocator())
   return match parsed {

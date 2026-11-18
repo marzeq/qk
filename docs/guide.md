@@ -1636,6 +1636,18 @@ if parsed.is_ok() {
 
 The input is borrowed, so keep it alive until `deinit()` completes.
 
+Each parser returns its own `ParseError` with an `offset` and `message()`.
+Errors implement `core.ErrorLike` and `std.io.Format`, so they can be used
+with generic error handlers or passed directly to `std.io` formatting:
+
+```qk
+let parsed = std.json.parse(input, allocator)
+if parsed.is_err() {
+  let error = parsed.unwrap_err()
+  std.io.eprintln("JSON error at {}: {}", error.offset, error)
+}
+```
+
 ## Input, output, and formatting
 
 `std.io.Reader` and `std.io.Writer` are structural stream traits. Their default `read_to_builder` and `write_builder` methods transfer bytes to or from a `std.strings.StringBuilder`, so implementations only need to supply the core `read` or `write` method. `std.io.Format` lets a value format itself into a writer.

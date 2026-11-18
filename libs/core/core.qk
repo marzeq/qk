@@ -2,6 +2,10 @@ module core
 
 pub let Unit = struct {}
 
+pub let ErrorLike = trait {
+  let message(self): str
+}
+
 pub let Error = union(@auto) {
   OutOfMemory,
   InvalidHandle,
