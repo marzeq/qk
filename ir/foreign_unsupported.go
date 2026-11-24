@@ -1,4 +1,4 @@
-//go:build !linux || !cgo || qk_static_llvm
+//go:build !(linux || darwin || windows) || !cgo || qk_static_llvm
 
 package ir
 

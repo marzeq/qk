@@ -78,7 +78,7 @@ dependencies; they fail instead of falling back to a dynamic release.
 
 #### Linux
 
-Install Go, Clang/Clang++, LLVM 22 development packages and an archiver. Package names vary.
+Install Go, Clang/Clang++, LLVM 22 and libffi development packages, pkg-config, and an archiver. Package names vary.
 
 ```bash
 # ... install llvm 22 with your package manager
@@ -91,18 +91,18 @@ Keep the same environment variables set for `go test`.
 
 #### macOS
 
-Install the Xcode Command Line Tools, Go, and LLVM 22. With Homebrew:
+Install the Xcode Command Line Tools, Go, LLVM 22, and libffi. With Homebrew:
 
 ```bash
 xcode-select --install
-brew install go llvm@22
+brew install go llvm@22 libffi pkgconf
 source ./scripts/llvm-brew-setup.sh
 go build ./cmd/qkc
 go test ./...
 ```
 
-The initialization script locates the Homebrew LLVM prefix and exports the cgo
-include and library paths.
+The initialization script locates the Homebrew LLVM and libffi prefixes and
+exports their cgo and pkg-config paths.
 
 #### Windows (MSYS2 UCRT64)
 
@@ -113,7 +113,9 @@ UCRT64 ABI environment:
 pacman -S --needed \
   mingw-w64-ucrt-x86_64-go \
   mingw-w64-ucrt-x86_64-clang \
-  mingw-w64-ucrt-x86_64-llvm
+  mingw-w64-ucrt-x86_64-llvm \
+  mingw-w64-ucrt-x86_64-libffi \
+  mingw-w64-ucrt-x86_64-pkgconf
 
 export CC=clang
 export CXX=clang++

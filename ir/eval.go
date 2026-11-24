@@ -475,14 +475,23 @@ func (e *Evaluator) run(name string, arguments []EvalValue, depth int) (EvalValu
 				frame.values[instruction.Dest] = EvalValue{Type: frame.function.ValueType(instruction.Dest), pointer: pointer}
 			case ElementAddress:
 				base, err := e.operand(instruction.Base, frame)
-				if err != nil || base.pointer == nil && base.nativePointer == nil {
-					return EvalValue{}, fmt.Errorf("compile-time index requires an addressable sequence")
+				if err != nil {
+					return EvalValue{}, err
 				}
 				indexValue, err := e.operand(instruction.Index, frame)
 				if err != nil || indexValue.Integer == nil || !indexValue.Integer.IsInt64() {
 					return EvalValue{}, fmt.Errorf("compile-time index requires an integer")
 				}
 				index := indexValue.Integer.Int64()
+				if base.pointer == nil && base.nativePointer == nil {
+					// Index zero of a null pointer remains null. The standard
+					// library forms an empty slice this way before allocation.
+					if index == 0 && (base.Integer == nil || base.Integer.Sign() == 0) {
+						frame.values[instruction.Dest] = EvalValue{Type: frame.function.ValueType(instruction.Dest)}
+						break
+					}
+					return EvalValue{}, fmt.Errorf("compile-time index requires an addressable sequence")
+				}
 				if base.nativePointer != nil {
 					size, _, err := qktarget.LayoutOf(instruction.Element, e.TargetTriple)
 					if err != nil {
@@ -770,6 +779,27 @@ func (e *Evaluator) run(name string, arguments []EvalValue, depth int) (EvalValu
 				if err != nil {
 					return EvalValue{}, err
 				}
+				if _, fromPointer := types.Underlying(instruction.From.Type).(types.PointerType); fromPointer && types.IsInteger(instruction.To) {
+					if value.pointer != nil {
+						return EvalValue{}, fmt.Errorf("compile-time evaluator storage has no native integer address")
+					}
+					address := uint64(uintptr(value.nativePointer))
+					frame.values[instruction.Dest] = e.integer(new(big.Int).SetUint64(address), instruction.To)
+					break
+				}
+				if types.IsInteger(instruction.From.Type) {
+					if _, toPointer := types.Underlying(instruction.To).(types.PointerType); toPointer {
+						if value.Integer == nil {
+							return EvalValue{}, fmt.Errorf("compile-time integer-to-pointer cast requires an integer")
+						}
+						result := EvalValue{Type: instruction.To}
+						if value.Integer.Sign() != 0 {
+							result.nativePointer = unsafe.Pointer(uintptr(value.Integer.Uint64()))
+						}
+						frame.values[instruction.Dest] = result
+						break
+					}
+				}
 				if _, sourceSlice := types.Underlying(instruction.From.Type).(types.SliceType); sourceSlice {
 					if _, destinationPointer := types.Underlying(instruction.To).(types.PointerType); destinationPointer && len(value.Aggregate) == 2 {
 						value = value.Aggregate[0]
@@ -898,7 +928,17 @@ func (e *Evaluator) run(name string, arguments []EvalValue, depth int) (EvalValu
 					if errors.As(err, &unavailable) {
 						return EvalValue{}, annotateUnavailable(unavailable, instruction)
 					}
-					return EvalValue{}, fmt.Errorf("in compile-time call to %s: %w", instruction.Name, err)
+					callName := instruction.SourceName
+					if callName == "" && instruction.Parameterized != nil {
+						callName = instruction.Parameterized.Name
+					}
+					if callName == "" {
+						callName = instruction.Name
+					}
+					if callName == "" {
+						callName = "indirect function"
+					}
+					return EvalValue{}, fmt.Errorf("in compile-time call to %s: %w", callName, err)
 				}
 				if instruction.Dest != 0 {
 					frame.values[instruction.Dest] = value

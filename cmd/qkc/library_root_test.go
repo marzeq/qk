@@ -222,6 +222,7 @@ let mutate(): i32 {
   let returned = std.libc.memset(value.&mut.(*mut void), 0x7f, 4)
   return returned.(*mut i32).*
 }
+
 let Mutated = $mutate()
 let main() {}
 `
@@ -272,6 +273,83 @@ let main() {}
 	}
 	if !errnoReadable || !errorText || !nonNil {
 		t.Fatalf("foreign pointer results were not readable: errno=%t, error text=%t, non-nil=%t", errnoReadable, errorText, nonNil)
+	}
+}
+
+func TestCompileTimeArenaDynamicArray(t *testing.T) {
+	if !ir.HostForeignCallsAvailable {
+		t.Skip("host foreign calls are unavailable in this build")
+	}
+	libraryRoot := filepath.Join("..", "..", "libs")
+	projectRoot := t.TempDir()
+	source := `module main
+import std.collections coll
+import std.alloc alloc
+let foo() {
+  let mut arena = alloc.Arena.init()
+  defer arena.deinit()
+  let allocator = arena.as_allocator()
+  let mut xs = coll.DynamicArray(i32).init(allocator)
+  for _ in 0..100 { xs.append(42) }
+  let last, _ = xs.last()
+  return last
+}
+let Answer = $foo()
+let main() {}
+`
+	if err := os.WriteFile(filepath.Join(projectRoot, "main.qk"), []byte(source), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, sources, packages, trusted, resolutions, err := discoverSourcePackages(
+		".", projectRoot, "", []string{libraryRoot, projectRoot}, nil, libraryRoot, true,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frontend, err := runFrontend(&Args{mainModule: "."}, loader.StageConfig{}, sources, packages, trusted, resolutions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, node := range frontend.modules["."].Root.Body {
+		declaration, ok := node.(*parser.DeclarationNode)
+		if !ok || declaration.Name != "Answer" {
+			continue
+		}
+		literal, ok := declaration.Value.(*parser.IntegerLiteralNode)
+		if !ok || literal.Value != "42" {
+			t.Fatalf("compile-time dynamic array result: %#v, want 42", declaration.Value)
+		}
+		return
+	}
+	t.Fatal("compile-time dynamic array result was not produced")
+}
+
+func TestParameterizedMethodArityDiagnosticUsesSourceName(t *testing.T) {
+	libraryRoot := filepath.Join("..", "..", "libs")
+	projectRoot := t.TempDir()
+	source := `module main
+import std.collections coll
+let main() {
+  let xs = coll.DynamicArray(i32).init()
+  _ = xs
+}
+`
+	if err := os.WriteFile(filepath.Join(projectRoot, "main.qk"), []byte(source), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, sources, packages, trusted, resolutions, err := discoverSourcePackages(
+		".", projectRoot, "", []string{libraryRoot, projectRoot}, nil, libraryRoot, true,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = runFrontend(&Args{mainModule: "."}, loader.StageConfig{}, sources, packages, trusted, resolutions)
+	if err == nil {
+		t.Fatal("missing allocator argument was accepted")
+	}
+	if !strings.Contains(err.Error(), `function "std.collections.DynamicArray(T).init" expects 1 argument, but 0 were provided`) ||
+		strings.Contains(err.Error(), "init$") {
+		t.Fatalf("parameterized method diagnostic exposes generated name: %v", err)
 	}
 }
 

@@ -1449,7 +1449,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 			return
 		}
 		if n.Symbol != nil && n.Symbol.CompileTimeOnly && !v.inCompileTimeContext() {
-			v.errorf(n, "function %q can only be called in a compile-time context; prefix the call with '$'", n.Symbol.Name)
+			v.errorf(n, "function %q can only be called in a compile-time context; prefix the call with '$'", diagnosticFunctionName(n.Symbol))
 			return
 		}
 		if n.TaggedUnionType != nil {
@@ -1524,7 +1524,7 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 				if n.Method {
 					kind = "method"
 				}
-				callable = fmt.Sprintf("%s %q", kind, n.Symbol.Name)
+				callable = fmt.Sprintf("%s %q", kind, diagnosticFunctionName(n.Symbol))
 			} else if n.Callee != nil {
 				callable = fmt.Sprintf("callable of type %v", n.Callee.GetType())
 			}
@@ -2660,6 +2660,13 @@ func (v *Validator) validatePointerArithmeticBase(node parser.Node, base types.T
 	} else if _, function := underlying.(types.FunctionType); function {
 		v.errorf(node, "cannot perform arithmetic on function pointer")
 	}
+}
+
+func diagnosticFunctionName(symbol *symbols.Symbol) string {
+	for symbol.TemplateSymbol != nil {
+		symbol = symbol.TemplateSymbol
+	}
+	return symbol.Name
 }
 
 func argumentWord(count int) string {

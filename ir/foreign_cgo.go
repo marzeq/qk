@@ -1,11 +1,9 @@
-//go:build linux && cgo && !qk_static_llvm
+//go:build (linux || darwin || windows) && cgo && !qk_static_llvm
 
 package ir
 
 /*
 #cgo pkg-config: libffi
-#cgo LDFLAGS: -ldl
-#include <dlfcn.h>
 #include <ffi.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -21,10 +19,6 @@ static int qk_struct_offsets(ffi_type *type, size_t *offsets) {
     return (int)ffi_get_struct_offsets(FFI_DEFAULT_ABI, type, offsets);
 }
 
-static void *qk_open_library(const char *path) { return dlopen(path, RTLD_NOW | RTLD_LOCAL); }
-static void *qk_find_symbol(void *handle, const char *name) { return dlsym(handle, name); }
-static void *qk_find_process_symbol(const char *name) { return dlsym(RTLD_DEFAULT, name); }
-static const char *qk_loader_error(void) { return dlerror(); }
 static int qk_call_foreign(void *symbol, ffi_type *result_type, ffi_type **argument_types,
                            void **argument_values, unsigned argument_count, unsigned fixed_count,
                            void *result) {
@@ -45,20 +39,12 @@ import (
 	"fmt"
 	"math"
 	"math/big"
-	"path/filepath"
-	"strings"
-	"sync"
 	"unsafe"
 
 	"github.com/marzeq/qk/attributes"
 	qktarget "github.com/marzeq/qk/target"
 	"github.com/marzeq/qk/types"
 )
-
-var foreignLibraries = struct {
-	sync.Mutex
-	handles map[string]unsafe.Pointer
-}{handles: make(map[string]unsafe.Pointer)}
 
 const HostForeignCallsAvailable = true
 
@@ -499,67 +485,4 @@ func storeNativePointer(pointerType types.Type, address unsafe.Pointer, value Ev
 		}
 	}()
 	return writeNativeValue(pointer.Base, value, address, &allocations)
-}
-
-func foreignSymbol(name string, links []attributes.Link) (unsafe.Pointer, error) {
-	foreignLibraries.Lock()
-	defer foreignLibraries.Unlock()
-	cName := C.CString(name)
-	defer C.free(unsafe.Pointer(cName))
-	if len(links) == 0 {
-		if address := C.qk_find_process_symbol(cName); address != nil {
-			return address, nil
-		}
-		return nil, fmt.Errorf("foreign symbol %q is not present in the compiler process", name)
-	}
-	var searchPaths []string
-	var failures []string
-	for _, link := range links {
-		if link.Kind == attributes.LinkSearchPath {
-			searchPaths = append(searchPaths, link.Value)
-		}
-	}
-	for _, link := range links {
-		var candidates []string
-		switch link.Kind {
-		case attributes.LinkSystem:
-			for _, directory := range searchPaths {
-				candidates = append(candidates, filepath.Join(directory, "lib"+link.Value+".so"))
-			}
-			candidates = append(candidates, "lib"+link.Value+".so")
-			if link.Value == "c" {
-				candidates = append(candidates, "libc.so.6")
-			}
-			candidates = append(candidates, link.Value)
-		case attributes.LinkPath:
-			if strings.HasSuffix(link.Value, ".a") {
-				return nil, fmt.Errorf("compile-time @link path %q is a static archive; use a loadable shared library", link.Value)
-			}
-			candidates = []string{link.Value}
-		case attributes.LinkFramework:
-			return nil, fmt.Errorf("compile-time @link framework %q cannot be loaded on Linux", link.Value)
-		default:
-			continue
-		}
-		for _, path := range candidates {
-			handle := foreignLibraries.handles[path]
-			if handle == nil {
-				cPath := C.CString(path)
-				handle = C.qk_open_library(cPath)
-				C.free(unsafe.Pointer(cPath))
-				if handle == nil {
-					if detail := C.qk_loader_error(); detail != nil {
-						failures = append(failures, path+": "+C.GoString(detail))
-					}
-					continue
-				}
-				foreignLibraries.handles[path] = handle
-			}
-			if address := C.qk_find_symbol(handle, cName); address != nil {
-				return address, nil
-			}
-			failures = append(failures, path+": symbol is not exported")
-		}
-	}
-	return nil, fmt.Errorf("could not load foreign symbol %q from compile-time @link libraries: %s", name, strings.Join(failures, "; "))
 }
