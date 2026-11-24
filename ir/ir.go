@@ -121,10 +121,11 @@ type SourceOrigin struct {
 }
 
 type Parameter struct {
-	Index int
-	Name  string
-	Type  types.Type
-	Slot  SlotID
+	Index    int
+	Name     string
+	Type     types.Type
+	Slot     SlotID
+	Incoming ValueID
 }
 
 type FunctionSignature struct {

@@ -77,7 +77,8 @@ type Link struct {
 }
 
 type ModuleAttributeLink struct {
-	Links []Link
+	Links            []Link
+	CompileTimeLinks []Link
 }
 
 func (a ModuleAttributeLink) GetType() AttributeType { return AttributeTypeLink }

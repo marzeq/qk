@@ -2419,6 +2419,7 @@ func (g *Generator) generateValueReceiverTraitThunk(vtableName string, slot int,
 	for i, param := range params {
 		fn.AddParameter(fmt.Sprintf("arg%d", i), param, 0)
 		id := fn.NewValueOfType(param)
+		fn.Parameters[i].Incoming = id
 		incoming[i] = ir.ValueOperand(id, param)
 	}
 	concretePointer := types.PointerType{Base: concrete}
@@ -3376,14 +3377,16 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode, sour
 			}
 		}
 	}
-	if typedVariadicWrapper && !flattenedTypedVariadic {
-		for i, arg := range node.Args {
-			if i < node.TypedVariadicStart {
-				if _, specialized := constants[i]; specialized {
-					continue
+	if typedVariadicWrapper {
+		if !flattenedTypedVariadic {
+			for i, arg := range node.Args {
+				if i < node.TypedVariadicStart {
+					if _, specialized := constants[i]; specialized {
+						continue
+					}
 				}
+				args = append(args, g.GenerateExpr(arg))
 			}
-			args = append(args, g.GenerateExpr(arg))
 		}
 	} else if !typedVariadicWrapper && node.TypedVariadic {
 		for _, arg := range node.Args[:node.TypedVariadicStart] {

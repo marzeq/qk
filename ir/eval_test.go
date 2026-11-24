@@ -35,6 +35,41 @@ func TestEvaluatorRunsRegularIRCallsAndBranches(t *testing.T) {
 	}
 }
 
+func TestEvaluatorAddressesGlobalsAndCallsFunctionPointers(t *testing.T) {
+	valueType := types.PrimitiveI32
+	pointerType := types.PointerType{Base: valueType, Mutable: true}
+	answer := NewFunction("answer", LinkageInternal, nil)
+	answer.Signature = FunctionSignature{ReturnType: valueType}
+	answerBlock := answer.NewBlock("entry")
+	answer.Entry = answerBlock.ID
+	answerBlock.Instr = []Instr{Return{HasValue: true, Value: IntConstOperand("41", valueType)}}
+
+	caller := NewFunction("caller", LinkageInternal, nil)
+	caller.Signature = FunctionSignature{ReturnType: valueType}
+	entry := caller.NewBlock("entry")
+	caller.Entry = entry.ID
+	globalPointer := caller.NewValueOfType(pointerType)
+	current := caller.NewValueOfType(valueType)
+	result := caller.NewValueOfType(valueType)
+	functionType := types.PointerType{Base: types.FunctionType{ReturnType: valueType}}
+	callee := FunctionConstOperand("answer", functionType)
+	entry.Instr = []Instr{
+		AddressOfGlobal{Dest: globalPointer, Name: "counter", Type: valueType},
+		LoadPtr{Dest: current, Ptr: ValueOperand(globalPointer, pointerType)},
+		Call{Dest: result, Callee: &callee, Signature: answer.Signature},
+		StorePtr{Ptr: ValueOperand(globalPointer, pointerType), Value: ValueOperand(result, valueType)},
+		Return{HasValue: true, Value: ValueOperand(current, valueType)},
+	}
+	evaluator := NewEvaluator(&Module{Functions: []*Function{answer, caller}, Globals: []Global{{Name: "counter", Type: valueType, Mutable: true, Value: IntConstOperand("1", valueType)}}})
+	previous, err := evaluator.Run("caller")
+	if err != nil || previous.Integer == nil || previous.Integer.Int64() != 1 {
+		t.Fatalf("caller returned %#v, %v", previous, err)
+	}
+	if got := evaluator.Globals["counter"].Integer; got == nil || got.Int64() != 41 {
+		t.Fatalf("counter = %v, want 41", got)
+	}
+}
+
 func TestCompilerImplementationDispatchUsesDeclarationIdentity(t *testing.T) {
 	evaluator := NewEvaluator()
 	call := Call{

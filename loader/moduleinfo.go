@@ -15,6 +15,7 @@ type PartialModuleInfo struct {
 	Imports                []string
 	Root                   *parser.RootNode
 	Links                  []attributes.Link
+	CompileTimeLinks       []attributes.Link
 	TrustedStandardLibrary bool
 }
 
@@ -23,6 +24,7 @@ func CollectModuleInfo(root *parser.RootNode, trustedStandardLibrary bool) (*Par
 	imports := []string{}
 	seenModule := false
 	links := []attributes.Link{}
+	compileTimeLinks := []attributes.Link{}
 
 	for i, node := range root.Body {
 		switch n := node.(type) {
@@ -41,15 +43,21 @@ func CollectModuleInfo(root *parser.RootNode, trustedStandardLibrary bool) (*Par
 				if !ok {
 					continue
 				}
-				for _, link := range linkAttr.Links {
-					if (link.Kind == attributes.LinkPath || link.Kind == attributes.LinkSearchPath) && !filepath.IsAbs(link.Value) {
-						link.Value = filepath.Join(filepath.Dir(n.Loc.FilePath), link.Value)
+				normalizeLinks := func(input []attributes.Link) []attributes.Link {
+					output := make([]attributes.Link, 0, len(input))
+					for _, link := range input {
+						if (link.Kind == attributes.LinkPath || link.Kind == attributes.LinkSearchPath) && !filepath.IsAbs(link.Value) {
+							link.Value = filepath.Join(filepath.Dir(n.Loc.FilePath), link.Value)
+						}
+						if link.Kind == attributes.LinkPath || link.Kind == attributes.LinkSearchPath {
+							link.Value = filepath.Clean(link.Value)
+						}
+						output = append(output, link)
 					}
-					if link.Kind == attributes.LinkPath || link.Kind == attributes.LinkSearchPath {
-						link.Value = filepath.Clean(link.Value)
-					}
-					links = append(links, link)
+					return output
 				}
+				links = append(links, normalizeLinks(linkAttr.Links)...)
+				compileTimeLinks = append(compileTimeLinks, normalizeLinks(linkAttr.CompileTimeLinks)...)
 			}
 
 		case *parser.ImportNode:
@@ -77,16 +85,18 @@ func CollectModuleInfo(root *parser.RootNode, trustedStandardLibrary bool) (*Par
 		Imports:                imports,
 		Root:                   root,
 		Links:                  links,
+		CompileTimeLinks:       compileTimeLinks,
 		TrustedStandardLibrary: trustedStandardLibrary,
 	}, nil
 }
 
 type ModuleInfo struct {
-	Path                   string
-	Name                   string
-	Imports                []string
-	Root                   *parser.RootNode
-	TrustedStandardLibrary bool
+	Path                    string
+	Name                    string
+	Imports                 []string
+	Root                    *parser.RootNode
+	CompileTimeForeignLinks map[string][]attributes.Link
+	TrustedStandardLibrary  bool
 }
 
 func BuildModules(partials []*PartialModuleInfo) (map[string]*ModuleInfo, error) {
@@ -106,18 +116,52 @@ func BuildModules(partials []*PartialModuleInfo) (map[string]*ModuleInfo, error)
 			}
 			mergeModuleRoot(existing.Root, p.Root)
 			existing.Imports = mergeImports(existing.Imports, p.Imports)
+			collectCompileTimeForeignLinks(existing.CompileTimeForeignLinks, p)
 		} else {
-			modules[path] = &ModuleInfo{
-				Path:                   path,
-				Name:                   p.Name,
-				Imports:                unique(p.Imports),
-				Root:                   cloneModuleRoot(p.Root),
-				TrustedStandardLibrary: p.TrustedStandardLibrary,
+			module := &ModuleInfo{
+				Path:                    path,
+				Name:                    p.Name,
+				Imports:                 unique(p.Imports),
+				Root:                    cloneModuleRoot(p.Root),
+				CompileTimeForeignLinks: make(map[string][]attributes.Link),
+				TrustedStandardLibrary:  p.TrustedStandardLibrary,
 			}
+			collectCompileTimeForeignLinks(module.CompileTimeForeignLinks, p)
+			modules[path] = module
 		}
 	}
 
 	return modules, nil
+}
+
+func collectCompileTimeForeignLinks(destination map[string][]attributes.Link, partial *PartialModuleInfo) {
+	for _, node := range partial.Root.Body {
+		var attrs attributes.Attributes
+		switch node := node.(type) {
+		case *parser.FunctionDefNode:
+			attrs = node.Attributes
+		case *parser.DeclarationNode:
+			attrs = node.Attributes
+		default:
+			continue
+		}
+		foreign, ok := attrs.Get(attributes.AttributeTypeForeign).(attributes.FunctionAttributeForeign)
+		if !ok || foreign.From == "" {
+			continue
+		}
+		for _, link := range partial.CompileTimeLinks {
+			found := false
+			for _, existing := range destination[foreign.From] {
+				if existing == link {
+					found = true
+					break
+				}
+			}
+			if !found {
+				destination[foreign.From] = append(destination[foreign.From], link)
+			}
+		}
+	}
 }
 
 func cloneModuleRoot(root *parser.RootNode) *parser.RootNode {

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/marzeq/qk/ir"
 	"github.com/marzeq/qk/loader"
 	"github.com/marzeq/qk/parser"
 )
@@ -199,12 +200,31 @@ func TestCompileTimeEvaluationUsesImportedPureLibraryCode(t *testing.T) {
 	t.Fatal("compile-time answer declaration was not produced")
 }
 
-func TestCompileTimeEvaluationRejectsExecutedForeignCall(t *testing.T) {
+func TestCompileTimeEvaluationExecutesForeignCall(t *testing.T) {
+	if !ir.HostForeignCallsAvailable {
+		t.Skip("host foreign calls are unavailable in this build")
+	}
 	repositoryRoot := filepath.Clean(filepath.Join("..", ".."))
 	libraryRoot := filepath.Join(repositoryRoot, "libs")
 	projectRoot := t.TempDir()
 	mainPath := filepath.Join(projectRoot, "main.qk")
-	source := "module main\nimport std.libc\nlet Answer = $std.libc.putchar(65)\nlet main() {}\n"
+	source := `module main
+import std.libc
+let Answer = $std.libc.toupper(97)
+let Length = $std.libc.strlen(c"hello")
+let Found = $std.libc.strchr(c"hello", 108).*
+let Formatted = $std.libc.printf(c"%d", 42.(i32))
+let Errno = $std.libc.errno_location().*
+let NonNil = $(std.libc.errno_location() != nil)
+let HasErrorText = $(std.libc.strlen(std.libc.strerror(0)) > 0.(usz))
+let mutate(): i32 {
+  let mut value: i32 = 0
+  let returned = std.libc.memset(value.&mut.(*mut void), 0x7f, 4)
+  return returned.(*mut i32).*
+}
+let Mutated = $mutate()
+let main() {}
+`
 	if err := os.WriteFile(mainPath, []byte(source), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -214,16 +234,51 @@ func TestCompileTimeEvaluationRejectsExecutedForeignCall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = runFrontend(&Args{mainModule: "."}, loader.StageConfig{}, sources, sourcePackages, trustedSources, importResolutions)
-	if err == nil || !strings.Contains(err.Error(), "std.libc.putchar is not available in a compile-time context") {
-		t.Fatalf("expected executed foreign call to be rejected, got %v", err)
+	frontend, err := runFrontend(&Args{mainModule: "."}, loader.StageConfig{}, sources, sourcePackages, trustedSources, importResolutions)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(err.Error(), mainPath+":3:") {
-		t.Fatalf("compile-time rejection did not point at the staged expression: %v", err)
+	want := map[string]string{"Answer": "65", "Length": "5", "Found": "108", "Formatted": "2", "Mutated": "2139062143"}
+	for _, node := range frontend.modules["."].Root.Body {
+		declaration, ok := node.(*parser.DeclarationNode)
+		if !ok || want[declaration.Name] == "" {
+			continue
+		}
+		value, ok := declaration.Value.(*parser.IntegerLiteralNode)
+		if !ok || value.Value != want[declaration.Name] {
+			t.Fatalf("%s = %#v, want %s", declaration.Name, declaration.Value, want[declaration.Name])
+		}
+		delete(want, declaration.Name)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing compile-time foreign results: %v", want)
+	}
+	var errnoReadable, errorText, nonNil bool
+	for _, node := range frontend.modules["."].Root.Body {
+		declaration, ok := node.(*parser.DeclarationNode)
+		if !ok {
+			continue
+		}
+		switch declaration.Name {
+		case "Errno":
+			_, errnoReadable = declaration.Value.(*parser.IntegerLiteralNode)
+		case "HasErrorText":
+			literal, ok := declaration.Value.(*parser.BoolLiteralNode)
+			errorText = ok && literal.Value == "true"
+		case "NonNil":
+			literal, ok := declaration.Value.(*parser.BoolLiteralNode)
+			nonNil = ok && literal.Value == "true"
+		}
+	}
+	if !errnoReadable || !errorText || !nonNil {
+		t.Fatalf("foreign pointer results were not readable: errno=%t, error text=%t, non-nil=%t", errnoReadable, errorText, nonNil)
 	}
 }
 
-func TestCompileTimeEvaluationPointsAtNestedUnavailableCall(t *testing.T) {
+func TestCompileTimeEvaluationExecutesNestedPrintCall(t *testing.T) {
+	if !ir.HostForeignCallsAvailable {
+		t.Skip("host foreign calls are unavailable in this build")
+	}
 	repositoryRoot := filepath.Clean(filepath.Join("..", ".."))
 	libraryRoot := filepath.Join(repositoryRoot, "libs")
 	projectRoot := t.TempDir()
@@ -249,13 +304,45 @@ let main() {}
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = runFrontend(&Args{mainModule: "."}, loader.StageConfig{}, sources, sourcePackages, trustedSources, importResolutions)
-	if err == nil || !strings.Contains(err.Error(), "sum cannot be evaluated at compile time") ||
-		!strings.Contains(err.Error(), "evaluation reaches std.io.print, which is not available in a compile-time context") {
-		t.Fatalf("expected nested print call to be rejected, got %v", err)
+	frontend, err := runFrontend(&Args{mainModule: "."}, loader.StageConfig{}, sources, sourcePackages, trustedSources, importResolutions)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(err.Error(), mainPath+":9:15") || !strings.Contains(err.Error(), "Note: "+mainPath+":6:3") {
-		t.Fatalf("compile-time rejection did not show the call origin and unavailable operation: %v", err)
+	for _, node := range frontend.modules["."].Root.Body {
+		declaration, ok := node.(*parser.DeclarationNode)
+		if !ok || declaration.Name != "Answer" {
+			continue
+		}
+		value, ok := declaration.Value.(*parser.IntegerLiteralNode)
+		if !ok || value.Value != "3" {
+			t.Fatalf("Answer = %#v, want 3", declaration.Value)
+		}
+		return
+	}
+	t.Fatal("compile-time print result was not produced")
+}
+
+func TestCompileTimePointerResultDoesNotBecomeRuntimeData(t *testing.T) {
+	if !ir.HostForeignCallsAvailable {
+		t.Skip("host foreign calls are unavailable in this build")
+	}
+	libraryRoot := filepath.Clean(filepath.Join("..", "..", "libs"))
+	projectRoot := t.TempDir()
+	mainPath := filepath.Join(projectRoot, "main.qk")
+	source := "module main\nimport std.libc\nlet NativePointer = $std.libc.errno_location()\nlet main() {}\n"
+	if err := os.WriteFile(mainPath, []byte(source), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, sources, packages, trusted, resolutions, err := discoverSourcePackages(
+		".", projectRoot, "", []string{libraryRoot, projectRoot}, nil, libraryRoot, true,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = runFrontend(&Args{mainModule: "."}, loader.StageConfig{}, sources, packages, trusted, resolutions)
+	if err == nil || !strings.Contains(err.Error(), "contains pointer indirection and cannot be copied into runtime data") ||
+		!strings.Contains(err.Error(), mainPath+":3:") {
+		t.Fatalf("expected pointer transfer rejection at source, got %v", err)
 	}
 }
 

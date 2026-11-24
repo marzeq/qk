@@ -536,3 +536,31 @@ let main() {
 		t.Fatalf("expected evaluated local binding to retain i32, got %#v", binding.TypeNode)
 	}
 }
+
+func TestLinkSelectionKeepsBothExecutionContexts(t *testing.T) {
+	source := `module test @link(
+  $if core.build.context == .CompileTime { system "raylib", }
+  else { path "./native/libraylib.a", }
+)
+import core.build
+`
+	tokens, err := tokeniser.NewTokeniser(source, "raylib.qk").Tokenise()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := parser.NewParser(tokens).Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := SelectCompileTime(root, "test", StageConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	partial, err := CollectModuleInfo(root, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(partial.Links) != 1 || partial.Links[0].Kind != attributes.LinkPath ||
+		len(partial.CompileTimeLinks) != 1 || partial.CompileTimeLinks[0] != (attributes.Link{Kind: attributes.LinkSystem, Value: "raylib"}) {
+		t.Fatalf("runtime links = %#v, compile-time links = %#v", partial.Links, partial.CompileTimeLinks)
+	}
+}

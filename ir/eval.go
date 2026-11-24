@@ -7,9 +7,12 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"runtime"
 	"strconv"
 	"strings"
+	"unsafe"
 
+	"github.com/marzeq/qk/attributes"
 	"github.com/marzeq/qk/shared"
 	qktarget "github.com/marzeq/qk/target"
 	"github.com/marzeq/qk/types"
@@ -35,7 +38,11 @@ func (e *CompileTimeAssertionError) Error() string { return e.Message }
 
 func (e *CompileTimeUnavailableError) Error() string {
 	if e.SourceName != "" {
-		return fmt.Sprintf("%s is not available in a compile-time context", e.SourceName)
+		message := fmt.Sprintf("%s is not available in a compile-time context", e.SourceName)
+		if e.Detail != "" {
+			return message + ": " + e.Detail
+		}
+		return message
 	}
 	return e.Detail
 }
@@ -44,16 +51,18 @@ func (e *CompileTimeUnavailableError) Error() string {
 // QK IR. The interpreter deliberately starts with the scalar and aggregate
 // values needed by staging; unsupported executed instructions report an error.
 type EvalValue struct {
-	Type         types.Type
-	TypeValue    types.Type
-	Integer      *big.Int
-	Float        *float64
-	Boolean      bool
-	Aggregate    []EvalValue
-	builder      *evalStructBuilder
-	enumBuilder  *evalEnumBuilder
-	unionBuilder *evalUnionBuilder
-	pointer      *evalPointer
+	Type          types.Type
+	TypeValue     types.Type
+	Integer       *big.Int
+	Float         *float64
+	Boolean       bool
+	Aggregate     []EvalValue
+	builder       *evalStructBuilder
+	enumBuilder   *evalEnumBuilder
+	unionBuilder  *evalUnionBuilder
+	pointer       *evalPointer
+	nativePointer unsafe.Pointer
+	functionName  string
 }
 
 type evalStructBuilder struct {
@@ -87,8 +96,17 @@ type evalUnionBuilder struct {
 
 func evalIdentityKey(value EvalValue) string {
 	key := types.Identity(value.Type)
+	if value.pointer != nil {
+		return key + "=pointer:" + evalPointerIdentity(value.pointer)
+	}
+	if value.nativePointer != nil {
+		return key + "=native-pointer:" + fmt.Sprintf("%p", value.nativePointer)
+	}
 	if value.TypeValue != nil {
 		return key + "=type:" + types.Identity(value.TypeValue)
+	}
+	if value.functionName != "" {
+		return key + "=function:" + value.functionName
 	}
 	if value.Integer != nil {
 		return key + "=int:" + value.Integer.String()
@@ -112,6 +130,17 @@ func evalIdentityKey(value EvalValue) string {
 		return key + "={" + strings.Join(parts, ",") + "}"
 	}
 	return key
+}
+
+func evalPointerIdentity(pointer *evalPointer) string {
+	root := fmt.Sprintf("%p", pointer.root)
+	if pointer.globalName != "" {
+		root = "global:" + pointer.globalName
+	}
+	for _, step := range pointer.path {
+		root += fmt.Sprintf(":%d:%t", step.index, step.union)
+	}
+	return root
 }
 
 func cloneEvalValue(value EvalValue) EvalValue {
@@ -218,8 +247,10 @@ func remapBuilderSelf(value types.Type, previous, replacement *types.AliasRef) t
 }
 
 type evalPointer struct {
-	root *EvalValue
-	path []evalPath
+	root       *EvalValue
+	globalName string
+	evaluator  *Evaluator
+	path       []evalPath
 }
 
 type evalPath struct {
@@ -271,6 +302,8 @@ func EvalBool(value bool) EvalValue { return EvalValue{Type: types.PrimitiveBool
 
 type Evaluator struct {
 	Functions     map[string]*Function
+	Foreign       map[string]ExternDecl
+	ForeignLinks  map[string][]attributes.Link
 	Globals       map[string]EvalValue
 	MaxDepth      int
 	TargetTriple  string
@@ -282,14 +315,27 @@ func NewEvaluator(modules ...*Module) *Evaluator {
 }
 
 func NewEvaluatorForTarget(triple string, modules ...*Module) *Evaluator {
-	evaluator := &Evaluator{Functions: make(map[string]*Function), Globals: make(map[string]EvalValue), MaxDepth: 1024, TargetTriple: triple}
+	evaluator := &Evaluator{
+		Functions: make(map[string]*Function), Foreign: make(map[string]ExternDecl),
+		ForeignLinks: make(map[string][]attributes.Link), Globals: make(map[string]EvalValue),
+		MaxDepth: 1024, TargetTriple: triple,
+	}
 	for _, module := range modules {
+		for _, external := range module.Externs {
+			if external.From != "" {
+				evaluator.Foreign[external.Name] = external
+			}
+		}
 		for _, function := range module.Functions {
 			if len(function.Blocks) != 0 {
 				evaluator.Functions[function.Name] = function
 			}
 		}
 		for _, global := range module.Globals {
+			if global.SourceModule == "core.build" && global.SourceName == "context" {
+				evaluator.Globals[global.Name] = EvalInteger(big.NewInt(1), global.Type)
+				continue
+			}
 			value, err := evaluator.operand(global.Value, nil)
 			if err == nil {
 				evaluator.Globals[global.Name] = value
@@ -301,6 +347,25 @@ func NewEvaluatorForTarget(triple string, modules ...*Module) *Evaluator {
 
 func (e *Evaluator) Run(name string, arguments ...EvalValue) (EvalValue, error) {
 	return e.run(name, arguments, 0)
+}
+
+func (e *Evaluator) callForeign(extern ExternDecl, arguments []EvalValue) (EvalValue, error) {
+	if !attributes.UsesCABI(extern.Signature.Attributes) {
+		return EvalValue{}, &CompileTimeUnavailableError{Detail: "compile-time foreign calls currently require the C ABI"}
+	}
+	selected := qktarget.Facts(e.TargetTriple, false)
+	host := qktarget.Facts("", false)
+	if selected.OS != host.OS || selected.Architecture != host.Architecture {
+		return EvalValue{}, &CompileTimeUnavailableError{Detail: fmt.Sprintf("compile-time foreign calls require host ABI %s/%s; selected target is %s/%s", host.OS, runtime.GOARCH, selected.OS, selected.Architecture)}
+	}
+	if len(arguments) != len(extern.Signature.ParamTypes) && !extern.Signature.Variadic {
+		return EvalValue{}, fmt.Errorf("foreign call %q expects %d arguments, got %d", extern.From, len(extern.Signature.ParamTypes), len(arguments))
+	}
+	value, err := callNative(extern.From, extern.Signature, arguments, e.ForeignLinks[extern.From])
+	if err != nil {
+		return EvalValue{}, &CompileTimeUnavailableError{Detail: err.Error()}
+	}
+	return value, nil
 }
 
 func (e *Evaluator) run(name string, arguments []EvalValue, depth int) (EvalValue, error) {
@@ -323,7 +388,12 @@ func (e *Evaluator) run(name string, arguments []EvalValue, depth int) (EvalValu
 	frame := &evalFrame{function: function, values: make(map[ValueID]EvalValue), slots: make(map[SlotID]*EvalValue), identity: identity}
 	for index, parameter := range function.Parameters {
 		value := cloneEvalValue(arguments[index])
-		frame.slots[parameter.Slot] = &value
+		if parameter.Incoming != 0 {
+			frame.values[parameter.Incoming] = value
+		}
+		if parameter.Slot != 0 {
+			frame.slots[parameter.Slot] = &value
+		}
 		for _, block := range function.Blocks {
 			if block.ID != function.Entry {
 				continue
@@ -372,20 +442,40 @@ func (e *Evaluator) run(name string, arguments []EvalValue, depth int) (EvalValu
 					return EvalValue{}, fmt.Errorf("compile-time address of unavailable slot %d in %q", instruction.Slot, name)
 				}
 				frame.values[instruction.Dest] = EvalValue{Type: frame.function.ValueType(instruction.Dest), pointer: &evalPointer{root: slot}}
+			case AddressOfGlobal:
+				if _, ok := e.Globals[instruction.Name]; !ok {
+					return EvalValue{}, fmt.Errorf("compile-time address of unavailable global %q", instruction.Name)
+				}
+				frame.values[instruction.Dest] = EvalValue{Type: frame.function.ValueType(instruction.Dest), pointer: &evalPointer{
+					globalName: instruction.Name, evaluator: e,
+				}}
 			case FieldAddress:
 				base, err := e.operand(instruction.Base, frame)
-				if err != nil || base.pointer == nil {
+				if err != nil || base.pointer == nil && base.nativePointer == nil {
 					return EvalValue{}, fmt.Errorf("compile-time field address requires an addressable aggregate")
+				}
+				if base.nativePointer != nil {
+					baseType, ok := types.Underlying(instruction.Base.Type).(types.PointerType)
+					if !ok {
+						return EvalValue{}, fmt.Errorf("compile-time field address requires a pointer")
+					}
+					offset, err := qktarget.OffsetOf(baseType.Base, instruction.Field, e.TargetTriple)
+					if err != nil {
+						return EvalValue{}, err
+					}
+					frame.values[instruction.Dest] = EvalValue{Type: frame.function.ValueType(instruction.Dest), nativePointer: unsafe.Add(base.nativePointer, offset)}
+					break
 				}
 				path, err := evalFieldPath(instruction.Base.Type, instruction.Field)
 				if err != nil {
 					return EvalValue{}, err
 				}
-				pointer := &evalPointer{root: base.pointer.root, path: append(append([]evalPath(nil), base.pointer.path...), path)}
+				pointer := &evalPointer{root: base.pointer.root, globalName: base.pointer.globalName, evaluator: base.pointer.evaluator,
+					path: append(append([]evalPath(nil), base.pointer.path...), path)}
 				frame.values[instruction.Dest] = EvalValue{Type: frame.function.ValueType(instruction.Dest), pointer: pointer}
 			case ElementAddress:
 				base, err := e.operand(instruction.Base, frame)
-				if err != nil || base.pointer == nil {
+				if err != nil || base.pointer == nil && base.nativePointer == nil {
 					return EvalValue{}, fmt.Errorf("compile-time index requires an addressable sequence")
 				}
 				indexValue, err := e.operand(instruction.Index, frame)
@@ -393,6 +483,14 @@ func (e *Evaluator) run(name string, arguments []EvalValue, depth int) (EvalValu
 					return EvalValue{}, fmt.Errorf("compile-time index requires an integer")
 				}
 				index := indexValue.Integer.Int64()
+				if base.nativePointer != nil {
+					size, _, err := qktarget.LayoutOf(instruction.Element, e.TargetTriple)
+					if err != nil {
+						return EvalValue{}, err
+					}
+					frame.values[instruction.Dest] = EvalValue{Type: frame.function.ValueType(instruction.Dest), nativePointer: unsafe.Add(base.nativePointer, int(index)*size)}
+					break
+				}
 				if index < 0 {
 					return EvalValue{}, fmt.Errorf("compile-time index is out of range")
 				}
@@ -403,15 +501,23 @@ func (e *Evaluator) run(name string, arguments []EvalValue, depth int) (EvalValu
 					path[len(path)-1].index += int(index)
 					path[len(path)-1].typ = instruction.Element
 				}
-				pointer := &evalPointer{root: base.pointer.root, path: path}
+				pointer := &evalPointer{root: base.pointer.root, globalName: base.pointer.globalName, evaluator: base.pointer.evaluator, path: path}
 				if _, err := pointer.load(); err != nil {
 					return EvalValue{}, fmt.Errorf("compile-time index is out of range")
 				}
 				frame.values[instruction.Dest] = EvalValue{Type: frame.function.ValueType(instruction.Dest), pointer: pointer}
 			case LoadPtr:
 				pointer, err := e.operand(instruction.Ptr, frame)
-				if err != nil || pointer.pointer == nil {
+				if err != nil || pointer.pointer == nil && pointer.nativePointer == nil {
 					return EvalValue{}, fmt.Errorf("compile-time load requires a valid pointer")
+				}
+				if pointer.nativePointer != nil {
+					loaded, err := loadNativePointer(instruction.Ptr.Type, pointer.nativePointer)
+					if err != nil {
+						return EvalValue{}, err
+					}
+					frame.values[instruction.Dest] = loaded
+					break
 				}
 				value, err := pointer.pointer.load()
 				if err != nil {
@@ -420,12 +526,18 @@ func (e *Evaluator) run(name string, arguments []EvalValue, depth int) (EvalValu
 				frame.values[instruction.Dest] = value
 			case StorePtr:
 				pointer, err := e.operand(instruction.Ptr, frame)
-				if err != nil || pointer.pointer == nil {
+				if err != nil || pointer.pointer == nil && pointer.nativePointer == nil {
 					return EvalValue{}, fmt.Errorf("compile-time store requires a valid pointer")
 				}
 				value, err := e.operand(instruction.Value, frame)
 				if err != nil {
 					return EvalValue{}, err
+				}
+				if pointer.nativePointer != nil {
+					if err := storeNativePointer(instruction.Ptr.Type, pointer.nativePointer, value); err != nil {
+						return EvalValue{}, err
+					}
+					break
 				}
 				if err := pointer.pointer.store(value); err != nil {
 					return EvalValue{}, err
@@ -519,14 +631,50 @@ func (e *Evaluator) run(name string, arguments []EvalValue, depth int) (EvalValu
 				}
 				frame.values[instruction.Dest] = e.integer(new(big.Int).Rem(left, right), frame.function.ValueType(instruction.Dest))
 			case BitwiseAnd:
+				if frame.function.ValueType(instruction.Dest).Equals(types.PrimitiveBool) {
+					left, leftErr := e.operand(instruction.Left, frame)
+					right, rightErr := e.operand(instruction.Right, frame)
+					if leftErr != nil {
+						return EvalValue{}, leftErr
+					}
+					if rightErr != nil {
+						return EvalValue{}, rightErr
+					}
+					frame.values[instruction.Dest] = EvalBool(left.Boolean && right.Boolean)
+					break
+				}
 				if err := e.binaryInteger(frame, instruction.Dest, instruction.Left, instruction.Right, new(big.Int).And); err != nil {
 					return EvalValue{}, err
 				}
 			case BitwiseOr:
+				if frame.function.ValueType(instruction.Dest).Equals(types.PrimitiveBool) {
+					left, leftErr := e.operand(instruction.Left, frame)
+					right, rightErr := e.operand(instruction.Right, frame)
+					if leftErr != nil {
+						return EvalValue{}, leftErr
+					}
+					if rightErr != nil {
+						return EvalValue{}, rightErr
+					}
+					frame.values[instruction.Dest] = EvalBool(left.Boolean || right.Boolean)
+					break
+				}
 				if err := e.binaryInteger(frame, instruction.Dest, instruction.Left, instruction.Right, new(big.Int).Or); err != nil {
 					return EvalValue{}, err
 				}
 			case BitwiseXor:
+				if frame.function.ValueType(instruction.Dest).Equals(types.PrimitiveBool) {
+					left, leftErr := e.operand(instruction.Left, frame)
+					right, rightErr := e.operand(instruction.Right, frame)
+					if leftErr != nil {
+						return EvalValue{}, leftErr
+					}
+					if rightErr != nil {
+						return EvalValue{}, rightErr
+					}
+					frame.values[instruction.Dest] = EvalBool(left.Boolean != right.Boolean)
+					break
+				}
 				if err := e.binaryInteger(frame, instruction.Dest, instruction.Left, instruction.Right, new(big.Int).Xor); err != nil {
 					return EvalValue{}, err
 				}
@@ -622,6 +770,11 @@ func (e *Evaluator) run(name string, arguments []EvalValue, depth int) (EvalValu
 				if err != nil {
 					return EvalValue{}, err
 				}
+				if _, sourceSlice := types.Underlying(instruction.From.Type).(types.SliceType); sourceSlice {
+					if _, destinationPointer := types.Underlying(instruction.To).(types.PointerType); destinationPointer && len(value.Aggregate) == 2 {
+						value = value.Aggregate[0]
+					}
+				}
 				value.Type = instruction.To
 				if value.Integer != nil {
 					value = e.integer(value.Integer, instruction.To)
@@ -681,11 +834,28 @@ func (e *Evaluator) run(name string, arguments []EvalValue, depth int) (EvalValu
 				}
 				frame.values[instruction.Dest] = e.integer(big.NewInt(int64(offset)), types.PrimitiveUsz)
 			case Call:
-				if instruction.Callee != nil || instruction.Requirement != nil {
+				if instruction.Requirement != nil {
 					return EvalValue{}, annotateUnavailable(
-						&CompileTimeUnavailableError{Detail: "indirect or unresolved calls are not available in a compile-time context"},
+						&CompileTimeUnavailableError{Detail: "unresolved trait calls are not available in a compile-time context"},
 						instruction,
 					)
+				}
+				callName := instruction.Name
+				if instruction.Callee != nil {
+					callee, err := e.operand(*instruction.Callee, frame)
+					if err != nil {
+						return EvalValue{}, err
+					}
+					if callee.pointer != nil {
+						callee, err = callee.pointer.load()
+						if err != nil {
+							return EvalValue{}, err
+						}
+					}
+					if callee.functionName == "" {
+						return EvalValue{}, annotateUnavailable(&CompileTimeUnavailableError{Detail: "indirect call target is not a QK function"}, instruction)
+					}
+					callName = callee.functionName
 				}
 				args := make([]EvalValue, len(instruction.Args))
 				for index, argument := range instruction.Args {
@@ -717,7 +887,11 @@ func (e *Evaluator) run(name string, arguments []EvalValue, depth int) (EvalValu
 					value, handled, err = evalAssertion(instruction, args)
 				}
 				if !handled {
-					value, err = e.run(instruction.Name, args, depth+1)
+					if foreign, ok := e.Foreign[callName]; ok && e.Functions[callName] == nil {
+						value, err = e.callForeign(foreign, args)
+					} else {
+						value, err = e.run(callName, args, depth+1)
+					}
 				}
 				if err != nil {
 					var unavailable *CompileTimeUnavailableError
@@ -821,6 +995,8 @@ func (e *Evaluator) operand(operand Operand, frame *evalFrame) (EvalValue, error
 		return EvalBool(operand.BoolValue), nil
 	case OperandTypeConst:
 		return EvalValue{Type: types.MetaType{}, TypeValue: operand.SubjectType}, nil
+	case OperandFunctionConst:
+		return EvalValue{Type: operand.Type, functionName: operand.FunctionName}, nil
 	case OperandZeroConst, OperandNullConst:
 		return zeroEvalValue(operand.Type), nil
 	case OperandSizeofConst:
@@ -1465,7 +1641,7 @@ func evalSequence(pointer *evalPointer, length *big.Int) ([]EvalValue, error) {
 	if pointer == nil {
 		return nil, fmt.Errorf("compile-time sequence data is unavailable")
 	}
-	container := &evalPointer{root: pointer.root, path: pointer.path}
+	container := &evalPointer{root: pointer.root, globalName: pointer.globalName, evaluator: pointer.evaluator, path: pointer.path}
 	start := 0
 	if len(pointer.path) != 0 {
 		last := pointer.path[len(pointer.path)-1]
@@ -1539,6 +1715,11 @@ func zeroEvalValue(typ types.Type) EvalValue {
 			return value
 		case types.SliceType:
 			return EvalValue{Type: typ, Aggregate: []EvalValue{{Type: types.PointerType{Base: aggregate.Base}}, EvalInteger(big.NewInt(0), types.PrimitiveUsz)}}
+		case types.TraitPointerType:
+			return EvalValue{Type: typ, Aggregate: []EvalValue{
+				{Type: types.PointerType{Base: types.PrimitiveVoid, Mutable: aggregate.Mutable}},
+				{Type: types.PointerType{Base: types.PrimitiveVoid}},
+			}}
 		case types.UnionType:
 			return EvalValue{Type: typ, Aggregate: []EvalValue{EvalInteger(big.NewInt(0), types.PrimitiveU64)}}
 		case types.MultipleReturnType:
@@ -1582,7 +1763,16 @@ func evalFieldPath(pointerType types.Type, field string) (evalPath, error) {
 }
 
 func (p *evalPointer) load() (EvalValue, error) {
-	value := *p.root
+	var value EvalValue
+	if p.globalName != "" {
+		var ok bool
+		value, ok = p.evaluator.Globals[p.globalName]
+		if !ok {
+			return EvalValue{}, fmt.Errorf("compile-time load reached unavailable global %q", p.globalName)
+		}
+	} else {
+		value = *p.root
+	}
 	for _, step := range p.path {
 		if step.union {
 			if len(value.Aggregate) == 0 {
@@ -1599,6 +1789,17 @@ func (p *evalPointer) load() (EvalValue, error) {
 }
 
 func (p *evalPointer) store(value EvalValue) error {
+	if p.globalName != "" {
+		root, ok := p.evaluator.Globals[p.globalName]
+		if !ok {
+			return fmt.Errorf("compile-time store reached unavailable global %q", p.globalName)
+		}
+		if err := storeEvalPath(&root, p.path, value); err != nil {
+			return err
+		}
+		p.evaluator.Globals[p.globalName] = root
+		return nil
+	}
 	return storeEvalPath(p.root, p.path, value)
 }
 
@@ -1699,7 +1900,12 @@ func (e *Evaluator) compare(frame *evalFrame, dest ValueID, left, right Operand,
 		return err
 	}
 	comparison := 0
-	if l.Integer != nil && r.Integer != nil {
+	_, leftPointer := types.Underlying(left.Type).(types.PointerType)
+	_, rightPointer := types.Underlying(right.Type).(types.PointerType)
+	if leftPointer || rightPointer {
+		leftIdentity, rightIdentity := pointerComparisonIdentity(l), pointerComparisonIdentity(r)
+		comparison = strings.Compare(leftIdentity, rightIdentity)
+	} else if l.Integer != nil && r.Integer != nil {
 		comparison = l.Integer.Cmp(r.Integer)
 	} else if l.TypeValue != nil && r.TypeValue != nil {
 		if !l.TypeValue.Equals(r.TypeValue) {
@@ -1724,4 +1930,17 @@ func (e *Evaluator) compare(frame *evalFrame, dest ValueID, left, right Operand,
 	}
 	frame.values[dest] = EvalBool(predicate(comparison))
 	return nil
+}
+
+func pointerComparisonIdentity(value EvalValue) string {
+	if value.pointer != nil {
+		return "qk:" + evalPointerIdentity(value.pointer)
+	}
+	if value.nativePointer != nil {
+		return fmt.Sprintf("native:%p", value.nativePointer)
+	}
+	if value.Integer != nil && value.Integer.Sign() != 0 {
+		return "integer:" + value.Integer.String()
+	}
+	return ""
 }

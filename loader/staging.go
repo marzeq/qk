@@ -29,7 +29,15 @@ type StageConfig struct {
 	TargetTriple string
 	ReleaseMode  StageReleaseMode
 	Freestanding bool
+	Context      StageContext
 }
+
+type StageContext uint8
+
+const (
+	StageRuntime StageContext = iota
+	StageCompileTime
+)
 
 // StageEnvironment supplies already selected dependency modules to compile-time
 // evaluation. Staging clones these modules before running the ordinary semantic
@@ -278,16 +286,36 @@ func (s *stageSelector) selectNode(node parser.Node) ([]parser.Node, error) {
 		return nil, nil
 	case *parser.ModuleNode:
 		for index, attribute := range node.Attributes {
+			if link, ok := attribute.(attributes.ModuleAttributeLink); ok {
+				if link.CompileTimeLinks == nil {
+					link.CompileTimeLinks = append(make([]attributes.Link, 0, len(link.Links)), link.Links...)
+					node.Attributes[index] = link
+				}
+				continue
+			}
 			parsed, ok := attribute.(parser.ParsedLinkAttribute)
 			if !ok {
 				continue
 			}
+			previousContext := s.config.Context
+			s.config.Context = StageRuntime
 			links, resolved, err := s.selectLinkItems(parsed.Items)
+			s.config.Context = previousContext
 			if err != nil {
 				return nil, err
 			}
-			if resolved {
-				node.Attributes[index] = attributes.ModuleAttributeLink{Links: links}
+			if !resolved {
+				continue
+			}
+			s.config.Context = StageCompileTime
+			compileTimeLinks, compileTimeResolved, compileTimeErr := s.selectLinkItems(parsed.Items)
+			s.config.Context = previousContext
+			if compileTimeErr != nil {
+				return nil, compileTimeErr
+			}
+			if compileTimeResolved {
+				node.Attributes[index] = attributes.ModuleAttributeLink{Links: links,
+					CompileTimeLinks: append(make([]attributes.Link, 0, len(compileTimeLinks)), compileTimeLinks...)}
 			}
 		}
 	case *parser.DeclarationNode:
@@ -1070,6 +1098,8 @@ func stageTypeNode(value stageValue, loc shared.Location) parser.TypeNode {
 		names := map[string]string{
 			"OS": "OperatingSystem", "Arch": "Architecture",
 			"Environment": "TargetEnvironment", "ReleaseMode": "BuildMode",
+			"HostOS": "OperatingSystem", "HostArch": "Architecture",
+			"HostEnvironment": "TargetEnvironment", "Context": "ExecutionContext",
 		}
 		if name := names[value.domain]; name != "" {
 			return &parser.NamedTypeNode{ModName: "core.build", Name: name, Loc: loc}
@@ -1259,6 +1289,8 @@ func coreBuildField(node *parser.FieldAccessNode) (string, bool) {
 	}
 	fields := map[string]string{
 		"os": "OS", "arch": "Arch", "environment": "Environment",
+		"host_os": "HostOS", "host_arch": "HostArch", "host_environment": "HostEnvironment",
+		"context":      "Context",
 		"release_mode": "ReleaseMode", "pointer_bits": "PointerBits",
 		"c_char_signed": "CCharSigned", "has_libc": "TargetHasLibc",
 		"has_filesystem": "TargetHasFilesystem", "has_environment": "TargetHasEnvironment",
@@ -1361,7 +1393,20 @@ func stageEqual(left, right stageValue) bool {
 
 func (s *stageSelector) targetValue(name string) (stageValue, bool) {
 	facts := qktarget.Facts(s.config.TargetTriple, s.config.Freestanding)
+	host := qktarget.Facts("", false)
 	switch name {
+	case "Context":
+		value := "Runtime"
+		if s.config.Context == StageCompileTime {
+			value = "CompileTime"
+		}
+		return stageValue{kind: stageEnum, domain: "Context", name: value}, true
+	case "HostOS":
+		return stageValue{kind: stageEnum, domain: "HostOS", name: host.OS}, true
+	case "HostArch":
+		return stageValue{kind: stageEnum, domain: "HostArch", name: host.Architecture}, true
+	case "HostEnvironment":
+		return stageValue{kind: stageEnum, domain: "HostEnvironment", name: host.Environment}, true
 	case "PointerBits":
 		return stageValue{kind: stageInteger, integer: big.NewInt(int64(facts.PointerBits))}, true
 	case "CCharSigned":
@@ -1443,7 +1488,17 @@ func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 	}
 
 	names := make(map[parser.ExpressionNode]string, len(s.unresolved))
+	existingValues := make(map[parser.ExpressionNode]string)
+	for _, raw := range staged.Body {
+		if declaration, ok := raw.(*parser.DeclarationNode); ok {
+			existingValues[declaration.Value] = declaration.Name
+		}
+	}
 	for expression := range s.unresolved {
+		if name := existingValues[expression]; name != "" {
+			names[expression] = name
+			continue
+		}
 		name := fmt.Sprintf("__qk_stage_%d", s.syntheticID)
 		s.syntheticID++
 		names[expression] = name
@@ -1464,7 +1519,7 @@ func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 		}
 	}
 
-	modules, order, err := s.stageModules(staged)
+	modules, order, err := s.stageModules(staged, root)
 	if err != nil {
 		return err
 	}
@@ -1490,6 +1545,11 @@ func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 	}
 	evaluator := ir.NewEvaluatorForTarget(s.config.TargetTriple, allIR...)
 	evaluator.TypeSatisfies = analyser.TypeSatisfies
+	for _, module := range modules {
+		for symbol, links := range module.CompileTimeForeignLinks {
+			evaluator.ForeignLinks[symbol] = append(evaluator.ForeignLinks[symbol], links...)
+		}
+	}
 	moduleIR := compiled.IRModules[s.module]
 	if moduleIR.Initializer != "" {
 		if _, err := evaluator.Run(moduleIR.Initializer); err != nil {
@@ -1514,7 +1574,11 @@ func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 		if !ok {
 			return shared.NewError(expression.GetLoc(), "compile-time expression did not produce a value")
 		}
-		s.evaluated[expression] = stageValueFromIR(value)
+		stagedValue, err := stageValueFromIR(value)
+		if err != nil {
+			return shared.NewError(expression.GetLoc(), "%s", err)
+		}
+		s.evaluated[expression] = stagedValue
 	}
 	for _, raw := range root.Body {
 		declaration, ok := raw.(*parser.DeclarationNode)
@@ -1522,7 +1586,10 @@ func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 			continue
 		}
 		if value, ok := findEvaluatedGlobal(evaluator.Globals, declaration.Name); ok {
-			stagedValue := stageValueFromIR(value)
+			stagedValue, err := stageValueFromIR(value)
+			if err != nil {
+				return shared.NewError(declaration.Value.GetLoc(), "%s", err)
+			}
 			s.bindings[declaration.Name] = stagedValue
 			s.evaluated[declaration.Value] = stagedValue
 		}
@@ -1577,17 +1644,17 @@ func stageUnavailableDiagnostic(unavailable *ir.CompileTimeUnavailableError) err
 		}
 	}
 	if sameStageLocation(root.Loc, cause.Loc) {
-		return shared.NewError(cause.Loc, "%s is not available in a compile-time context", cause.Name)
+		return shared.NewError(cause.Loc, "%s", unavailable.Error())
 	}
 	return shared.NewError(root.Loc, "%s cannot be evaluated at compile time", root.Name).
-		WithNote(cause.Loc, "evaluation reaches %s, which is not available in a compile-time context", cause.Name)
+		WithNote(cause.Loc, "evaluation reaches %s", unavailable.Error())
 }
 
 func sameStageLocation(left, right shared.Location) bool {
 	return left.FilePath == right.FilePath && left.Offset == right.Offset && left.EndOffset == right.EndOffset
 }
 
-func (s *stageSelector) stageModules(staged *parser.RootNode) (map[string]*ModuleInfo, []string, error) {
+func (s *stageSelector) stageModules(staged, source *parser.RootNode) (map[string]*ModuleInfo, []string, error) {
 	modules := make(map[string]*ModuleInfo)
 	var order []string
 	if s.environment != nil {
@@ -1601,9 +1668,10 @@ func (s *stageSelector) stageModules(staged *parser.RootNode) (map[string]*Modul
 			}
 			modules[name] = &ModuleInfo{
 				Path: name, Name: dependency.Name,
-				Imports:                append([]string(nil), dependency.Imports...),
-				Root:                   parser.CloneSyntax(dependency.Root).(*parser.RootNode),
-				TrustedStandardLibrary: dependency.TrustedStandardLibrary,
+				Imports:                 append([]string(nil), dependency.Imports...),
+				Root:                    parser.CloneSyntax(dependency.Root).(*parser.RootNode),
+				CompileTimeForeignLinks: dependency.CompileTimeForeignLinks,
+				TrustedStandardLibrary:  dependency.TrustedStandardLibrary,
 			}
 			order = append(order, name)
 		}
@@ -1616,8 +1684,14 @@ func (s *stageSelector) stageModules(staged *parser.RootNode) (map[string]*Modul
 	}
 	modules[s.module] = &ModuleInfo{
 		Path: s.module, Name: partial.Name, Imports: partial.Imports, Root: currentRoot,
-		TrustedStandardLibrary: trusted,
+		CompileTimeForeignLinks: make(map[string][]attributes.Link),
+		TrustedStandardLibrary:  trusted,
 	}
+	linkSource, err := CollectModuleInfo(source, trusted)
+	if err != nil {
+		return nil, nil, err
+	}
+	collectCompileTimeForeignLinks(modules[s.module].CompileTimeForeignLinks, linkSource)
 	order = append(order, s.module)
 	return modules, order, nil
 }
@@ -1761,20 +1835,54 @@ func findEvaluatedGlobal(globals map[string]ir.EvalValue, sourceName string) (ir
 	return ir.EvalValue{}, false
 }
 
-func stageValueFromIR(value ir.EvalValue) stageValue {
+func stageValueFromIR(value ir.EvalValue) (stageValue, error) {
 	if slice, ok := types.Underlying(value.Type).(types.SliceType); ok {
 		if element, ok := slice.Base.(types.DefinedType); ok && element.Module == "core.types" && element.Name == "FieldSpec" {
-			return stageValue{kind: stageFields, irValue: value, typ: value.Type}
+			return stageValue{kind: stageFields, irValue: value, typ: value.Type}, nil
 		}
 	}
+	if stageTypeContainsPointer(value.Type) {
+		return stageValue{}, fmt.Errorf("compile-time result of type %s contains pointer indirection and cannot be copied into runtime data", value.Type)
+	}
 	if value.TypeValue != nil {
-		return stageValue{kind: stageType, typeValue: value.TypeValue, typ: types.MetaType{}}
+		return stageValue{kind: stageType, typeValue: value.TypeValue, typ: types.MetaType{}}, nil
 	}
 	if value.Float != nil {
-		return stageValue{kind: stageFloat, floating: strconv.FormatFloat(*value.Float, 'g', -1, 64), typ: value.Type}
+		return stageValue{kind: stageFloat, floating: strconv.FormatFloat(*value.Float, 'g', -1, 64), typ: value.Type}, nil
 	}
-	if value.Integer == nil {
-		return stageValue{kind: stageBool, boolean: value.Boolean, typ: value.Type}
+	if value.Integer != nil {
+		return stageValue{kind: stageInteger, integer: new(big.Int).Set(value.Integer), typ: value.Type}, nil
 	}
-	return stageValue{kind: stageInteger, integer: new(big.Int).Set(value.Integer), typ: value.Type}
+	if value.Type != nil && types.Underlying(value.Type).Equals(types.PrimitiveBool) {
+		return stageValue{kind: stageBool, boolean: value.Boolean, typ: value.Type}, nil
+	}
+	return stageValue{}, fmt.Errorf("compile-time result of type %s cannot yet be copied into runtime data", value.Type)
+}
+
+func stageTypeContainsPointer(typ types.Type) bool {
+	switch value := types.Underlying(typ).(type) {
+	case types.PointerType, types.SliceType, types.TraitPointerType:
+		return true
+	case types.ArrayType:
+		return stageTypeContainsPointer(value.Base)
+	case types.StructType:
+		for _, field := range value.Fields {
+			if stageTypeContainsPointer(field.R) {
+				return true
+			}
+		}
+	case types.UnionType:
+		for _, field := range value.Fields {
+			if stageTypeContainsPointer(field.R) {
+				return true
+			}
+		}
+	case types.MultipleReturnType:
+		for _, item := range value.Types {
+			if stageTypeContainsPointer(item) {
+				return true
+			}
+		}
+	}
+	return false
 }

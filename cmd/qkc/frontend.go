@@ -167,8 +167,9 @@ func runFrontend(
 		}
 		stageModules[name] = &loader.ModuleInfo{
 			Path: name, Name: info.Name, Imports: append([]string(nil), info.Imports...),
-			Root:                   info.Root,
-			TrustedStandardLibrary: info.TrustedStandardLibrary,
+			Root:                    info.Root,
+			CompileTimeForeignLinks: info.CompileTimeForeignLinks,
+			TrustedStandardLibrary:  info.TrustedStandardLibrary,
 		}
 		result.modules[name] = info
 		sourceOrder = append(sourceOrder, name)
