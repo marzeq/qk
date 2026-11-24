@@ -864,15 +864,8 @@ func sameEvalLocation(left, right shared.Location) bool {
 	return left.FilePath == right.FilePath && left.Offset == right.Offset && left.EndOffset == right.EndOffset
 }
 
-const coreTypesStructBuilder = "__qk_0_4_core5_types_StructBuilder_"
-const coreTypesEnumBuilder = "__qk_0_4_core5_types_EnumBuilder_"
-const coreTypesFlagsBuilder = "__qk_0_4_core5_types_FlagsBuilder_"
-const coreTypesUnionBuilder = "__qk_0_4_core5_types_UnionBuilder_"
-const coreTypesInspect = "__qk_0_4_core5_types_inspect"
-const coreTypesSatisfies = "__qk_0_4_core5_types_satisfies"
-
 func (e *Evaluator) coreTypesCall(call Call, args []EvalValue, invocation string) (EvalValue, bool, error) {
-	if call.Name == coreTypesSatisfies || strings.HasPrefix(call.Name, coreTypesSatisfies+"_") {
+	if call.CompilerImpl == "core.types.satisfies" {
 		if len(args) != 2 || args[0].TypeValue == nil || args[1].TypeValue == nil {
 			return EvalValue{}, true, fmt.Errorf("core.types.satisfies requires two completed type values")
 		}
@@ -882,7 +875,7 @@ func (e *Evaluator) coreTypesCall(call Call, args []EvalValue, invocation string
 		result, err := e.TypeSatisfies(args[0].TypeValue, args[1].TypeValue)
 		return EvalBool(result), true, err
 	}
-	if call.Name == coreTypesInspect || strings.HasPrefix(call.Name, coreTypesInspect+"_") {
+	if call.CompilerImpl == "core.types.inspect" {
 		var input types.Type
 		if len(args) == 1 {
 			input = args[0].TypeValue
@@ -896,22 +889,19 @@ func (e *Evaluator) coreTypesCall(call Call, args []EvalValue, invocation string
 		value, err := inspectType(input, call.Signature.ReturnType)
 		return value, true, err
 	}
-	if strings.HasPrefix(call.Name, coreTypesEnumBuilder) {
+	if strings.HasPrefix(call.CompilerImpl, "core.types.EnumBuilder.") {
 		return e.enumBuilderCall(call, args, false, invocation)
 	}
-	if strings.HasPrefix(call.Name, coreTypesFlagsBuilder) {
+	if strings.HasPrefix(call.CompilerImpl, "core.types.FlagsBuilder.") {
 		return e.enumBuilderCall(call, args, true, invocation)
 	}
-	if strings.HasPrefix(call.Name, coreTypesUnionBuilder) {
+	if strings.HasPrefix(call.CompilerImpl, "core.types.UnionBuilder.") {
 		return e.unionBuilderCall(call, args, invocation)
 	}
-	if len(call.Name) < len(coreTypesStructBuilder) || call.Name[:len(coreTypesStructBuilder)] != coreTypesStructBuilder {
+	if !strings.HasPrefix(call.CompilerImpl, "core.types.StructBuilder.") {
 		return EvalValue{}, false, nil
 	}
-	method := call.Name[len(coreTypesStructBuilder):]
-	if index := strings.Index(method, "__const_"); index >= 0 {
-		method = method[:index]
-	}
+	method := strings.TrimPrefix(call.CompilerImpl, "core.types.StructBuilder.")
 	if method == "new" {
 		if len(args) != 0 {
 			return EvalValue{}, true, fmt.Errorf("StructBuilder.new expects no arguments")
@@ -1138,15 +1128,12 @@ func inspectType(input, resultType types.Type) (EvalValue, error) {
 }
 
 func (e *Evaluator) enumBuilderCall(call Call, args []EvalValue, flags bool, invocation string) (EvalValue, bool, error) {
-	prefix := coreTypesEnumBuilder
+	prefix := "core.types.EnumBuilder."
 	kind := "EnumBuilder"
 	if flags {
-		prefix, kind = coreTypesFlagsBuilder, "FlagsBuilder"
+		prefix, kind = "core.types.FlagsBuilder.", "FlagsBuilder"
 	}
-	method := strings.TrimPrefix(call.Name, prefix)
-	if index := strings.Index(method, "__const_"); index >= 0 {
-		method = method[:index]
-	}
+	method := strings.TrimPrefix(call.CompilerImpl, prefix)
 	if method == "new" {
 		state := &evalEnumBuilder{flags: flags}
 		loc := call.SourceLoc
@@ -1256,10 +1243,7 @@ func (e *Evaluator) enumBuilderCall(call Call, args []EvalValue, flags bool, inv
 }
 
 func (e *Evaluator) unionBuilderCall(call Call, args []EvalValue, invocation string) (EvalValue, bool, error) {
-	method := strings.TrimPrefix(call.Name, coreTypesUnionBuilder)
-	if index := strings.Index(method, "__const_"); index >= 0 {
-		method = method[:index]
-	}
+	method := strings.TrimPrefix(call.CompilerImpl, "core.types.UnionBuilder.")
 	switch method {
 	case "untagged", "auto_tagged", "tagged":
 		loc := call.SourceLoc

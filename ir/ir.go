@@ -246,12 +246,14 @@ func (m *Module) AddExtern(e ExternDecl) {
 }
 
 type Global struct {
-	Name       string
-	Type       types.Type
-	Mutable    bool
-	Linkage    Linkage
-	Visibility Visibility
-	Value      Operand
+	Name         string
+	SourceModule string
+	SourceName   string
+	Type         types.Type
+	Mutable      bool
+	Linkage      Linkage
+	Visibility   Visibility
+	Value        Operand
 }
 
 func (m *Module) AddGlobal(global Global) {
@@ -535,8 +537,11 @@ type ElementAddress struct {
 func (ElementAddress) isInstr() {}
 
 type Call struct {
-	Dest            ValueID
-	Name            string
+	Dest ValueID
+	Name string
+	// CompilerImpl identifies a source declaration implemented by the evaluator.
+	// It is independent of the native symbol name and wrapper suffixes.
+	CompilerImpl    string
 	Callee          *Operand
 	Args            []Operand
 	CompileTimeArgs map[int]Operand

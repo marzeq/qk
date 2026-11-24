@@ -35,6 +35,24 @@ func TestEvaluatorRunsRegularIRCallsAndBranches(t *testing.T) {
 	}
 }
 
+func TestCompilerImplementationDispatchUsesDeclarationIdentity(t *testing.T) {
+	evaluator := NewEvaluator()
+	call := Call{
+		Name:         "arbitrary_native_symbol__const_4",
+		CompilerImpl: "core.types.StructBuilder.new",
+		Signature:    FunctionSignature{ReturnType: types.PrimitiveU64},
+	}
+	value, handled, err := evaluator.coreTypesCall(call, nil, "test")
+	if err != nil || !handled || value.builder == nil {
+		t.Fatalf("declaration dispatch: value=%#v handled=%v err=%v", value, handled, err)
+	}
+	call.CompilerImpl = ""
+	_, handled, err = evaluator.coreTypesCall(call, nil, "test")
+	if err != nil || handled {
+		t.Fatalf("native name dispatched without identity: handled=%v err=%v", handled, err)
+	}
+}
+
 func TestEvaluatorWrapsTypedIntegerArithmetic(t *testing.T) {
 	for _, test := range []struct {
 		name, triple, left, right, want string

@@ -210,12 +210,14 @@ func (g *Generator) generateGlobalDeclaration(node *parser.DeclarationNode) {
 		})
 	}
 	g.Module.AddGlobal(ir.Global{
-		Name:       name,
-		Type:       node.Symbol.Type,
-		Mutable:    node.Mutable || !constant,
-		Linkage:    linkage,
-		Visibility: visibility,
-		Value:      value,
+		Name:         name,
+		SourceModule: g.ModuleName,
+		SourceName:   node.Name,
+		Type:         node.Symbol.Type,
+		Mutable:      node.Mutable || !constant,
+		Linkage:      linkage,
+		Visibility:   visibility,
+		Value:        value,
 	})
 	g.globals[node.Symbol] = g.Module.Globals[len(g.Module.Globals)-1].Name
 }
@@ -3526,10 +3528,15 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode, sour
 			Name: parameterizedSymbol.Name, ReceiverType: parameterizedSymbol.Signature.Parameters[0],
 		}
 	}
+	compilerImpl := ""
+	if parameterizedSymbol != nil && parameterizedSymbol.Attributes.Get(attributes.AttributeTypeCompilerImpl) != nil {
+		compilerImpl = parameterizedSymbol.DefinitionModule + "." + parameterizedSymbol.Name
+	}
 
 	if node.GetType().Equals(types.PrimitiveVoid) {
 		g.Emit(ir.Call{
 			Name:            name,
+			CompilerImpl:    compilerImpl,
 			Callee:          callee,
 			Args:            args,
 			CompileTimeArgs: compileTimeArgs,
@@ -3547,7 +3554,7 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode, sour
 
 	dst := g.currentFunction.NewValueOfType(node.GetType())
 	g.Emit(ir.Call{
-		Dest: dst, Name: name, Callee: callee, Args: args, Signature: callSig,
+		Dest: dst, Name: name, CompilerImpl: compilerImpl, Callee: callee, Args: args, Signature: callSig,
 		CompileTimeArgs: compileTimeArgs,
 		Parameterized:   parameterizedReference, Requirement: requirementReference,
 		SourceName: sourceName, SourceLoc: sourceCallLoc(node),

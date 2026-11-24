@@ -8,7 +8,7 @@ import (
 
 // Hosted builds use the platform C runtime for startup and process services.
 // Freestanding builds supply their own exported entry and runtime services.
-func buildHostedRuntime(targetTriple string, freestanding, executable, initializeStdlibProcessState bool, mainInitializer, userMain string) (string, error) {
+func buildHostedRuntime(targetTriple string, freestanding, executable bool, processArgsName, processEnvName, mainInitializer, userMain string) (string, error) {
 	if freestanding {
 		return "", nil
 	}
@@ -19,7 +19,7 @@ func buildHostedRuntime(targetTriple string, freestanding, executable, initializ
 	usz := fmt.Sprintf("i%d", pointerBits)
 	var out strings.Builder
 	out.WriteString("; qk hosted startup\n\n")
-	if executable && userMain != "" && initializeStdlibProcessState {
+	if executable && userMain != "" && processArgsName != "" && processEnvName != "" {
 		fmt.Fprintf(&out, "declare hidden void @%s()\n", userMain)
 		initializerCall := ""
 		if mainInitializer != "" {
@@ -27,12 +27,12 @@ func buildHostedRuntime(targetTriple string, freestanding, executable, initializ
 			initializerCall = fmt.Sprintf("  call void @%s()\n", mainInitializer)
 		}
 		fmt.Fprintf(&out, `
-@__qk_0_3_std2_os_global_args = external hidden global { ptr, %s }
-@__qk_0_3_std2_os_global_env = external hidden global { ptr, %s }
+@%[3]s = external hidden global { ptr, %[1]s }
+@%[4]s = external hidden global { ptr, %[2]s }
 
 define i32 @main(i32 %%argc, ptr %%argv, ptr %%envp) {
 entry:
-`, usz, usz)
+`, usz, usz, processArgsName, processEnvName)
 		argc := "%argc"
 		if pointerBits != 32 {
 			fmt.Fprintf(&out, "  %%argc.usz = zext i32 %%argc to %s\n", usz)
@@ -56,7 +56,7 @@ env.ready:
   %%env.data = alloca [2 x { ptr, %[1]s }], %[1]s %%env.count.value
   %%env.with-data = insertvalue { ptr, %[1]s } zeroinitializer, ptr %%env.data, 0
   %%env.value = insertvalue { ptr, %[1]s } %%env.with-data, %[1]s %%env.count.value, 1
-  store { ptr, %[1]s } %%env.value, ptr @__qk_0_3_std2_os_global_env
+  store { ptr, %[1]s } %%env.value, ptr @%[6]s
   %%env.empty = icmp eq %[1]s %%env.count.value, 0
   br i1 %%env.empty, label %%args.setup, label %%env.loop
 
@@ -115,7 +115,7 @@ args.setup:
   %%args.data = alloca { ptr, %[1]s }, %[1]s %[2]s
   %%args.with-data = insertvalue { ptr, %[1]s } zeroinitializer, ptr %%args.data, 0
   %%args = insertvalue { ptr, %[1]s } %%args.with-data, %[1]s %[2]s, 1
-  store { ptr, %[1]s } %%args, ptr @__qk_0_3_std2_os_global_args
+  store { ptr, %[1]s } %%args, ptr @%[5]s
   %%args.empty = icmp eq i32 %%argc, 0
   br i1 %%args.empty, label %%run, label %%args.loop
 
@@ -148,9 +148,9 @@ run:
   ret i32 0
 }
 
-`, usz, argc, userMain, initializerCall)
+`, usz, argc, userMain, initializerCall, processArgsName, processEnvName)
 	}
-	if executable && userMain != "" && !initializeStdlibProcessState {
+	if executable && userMain != "" && (processArgsName == "" || processEnvName == "") {
 		fmt.Fprintf(&out, "declare hidden void @%s()\n", userMain)
 		if mainInitializer != "" {
 			fmt.Fprintf(&out, "declare hidden void @%s()\n", mainInitializer)

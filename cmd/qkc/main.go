@@ -161,17 +161,35 @@ func main() {
 		irModules[loader.SpecializationModule] = specializations
 		order = append(order, loader.SpecializationModule)
 	}
-	initializeStdlibProcessState := false
+	processArgsName, processEnvName := "", ""
 	if args.outputType == OutputExecutable {
 		if !args.freestanding && !args.noStdlib {
 			reachable, _ := reachableIRSymbols(irModules, false)
-			initializeStdlibProcessState = reachable["__qk_0_3_std2_os_global_args"] ||
-				reachable["__qk_0_3_std2_os_global_env"]
+			if osModule := irModules["std.os"]; osModule != nil {
+				for _, global := range osModule.Globals {
+					if global.SourceModule != "std.os" {
+						continue
+					}
+					switch global.SourceName {
+					case "args":
+						processArgsName = global.Name
+					case "env":
+						processEnvName = global.Name
+					}
+				}
+			}
+			needsProcessState := reachable[processArgsName] || reachable[processEnvName]
+			if needsProcessState && (processArgsName == "" || processEnvName == "") {
+				fatal("hosted process state requires both std.os.args and std.os.env")
+			}
+			if !needsProcessState {
+				processArgsName, processEnvName = "", ""
+			}
 		}
-		if initializeStdlibProcessState {
+		if processArgsName != "" && processEnvName != "" {
 			// The full hosted entry initializes both globals even when user code
 			// reads only one of them.
-			pruneUnreachableIR(irModules, "__qk_0_3_std2_os_global_args", "__qk_0_3_std2_os_global_env")
+			pruneUnreachableIR(irModules, processArgsName, processEnvName)
 		} else {
 			pruneUnreachableIR(irModules)
 		}
@@ -232,7 +250,7 @@ func main() {
 	}
 	hostedRuntime, err := buildHostedRuntime(
 		args.target, args.freestanding, args.outputType == OutputExecutable,
-		initializeStdlibProcessState, mainInitializer, userMain,
+		processArgsName, processEnvName, mainInitializer, userMain,
 	)
 	check(err)
 	if hostedRuntime != "" {
