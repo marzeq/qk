@@ -474,3 +474,22 @@ func libraryPackages(root string) ([]string, error) {
 	sort.Strings(packages)
 	return packages, nil
 }
+
+func TestBareReturnFromValueFunctionReportsSourceError(t *testing.T) {
+	libraryRoot := filepath.Join("..", "..", "libs")
+	projectRoot := t.TempDir()
+	source := "module main\nlet bad(): bool {\n  return\n}\nlet main() { bad() }\n"
+	if err := os.WriteFile(filepath.Join(projectRoot, "main.qk"), []byte(source), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, sources, packages, trusted, resolutions, err := discoverSourcePackages(
+		".", projectRoot, "", []string{libraryRoot, projectRoot}, nil, libraryRoot, true,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = runFrontend(&Args{mainModule: "."}, loader.StageConfig{}, sources, packages, trusted, resolutions)
+	if err == nil || !strings.Contains(err.Error(), "return requires a value of type bool") {
+		t.Fatalf("bare return diagnostic = %v", err)
+	}
+}

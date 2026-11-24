@@ -564,3 +564,37 @@ import core.build
 		t.Fatalf("runtime links = %#v, compile-time links = %#v", partial.Links, partial.CompileTimeLinks)
 	}
 }
+
+func TestCompileTimeCallStatementsExecuteWithoutRuntimeValues(t *testing.T) {
+	source := `module test
+let touch(): void {}
+let answer(): i32 = 7
+let run() {
+  $touch()
+  $answer()
+}
+`
+	tokens, err := tokeniser.NewTokeniser(source, "void_statement.qk").Tokenise()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := parser.NewParser(tokens).Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := SelectCompileTime(root, "test", StageConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, node := range root.Body {
+		function, ok := node.(*parser.FunctionDefNode)
+		if !ok || function.Name != "run" {
+			continue
+		}
+		body, ok := function.Body.(*parser.BlockNode)
+		if !ok || len(body.Body) != 0 {
+			t.Fatalf("compile-time call statements remained in runtime body: %#v", function.Body)
+		}
+		return
+	}
+	t.Fatal("run function was not retained")
+}

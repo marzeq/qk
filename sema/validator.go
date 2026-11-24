@@ -323,7 +323,7 @@ func (v *Validator) validateNode(node parser.Node) {
 			if v.loopDepth == 0 {
 				v.errorf(n, "%s is only valid inside a loop", n.Keyword)
 			}
-		} else if n.ReturnValue != nil {
+		} else if n.Keyword == tokeniser.KeywordReturn {
 			v.validateReturn(n)
 		}
 
@@ -1386,6 +1386,12 @@ func (v *Validator) validateReturn(n *parser.ControlKeywordNode) {
 		return
 	}
 	expected := v.currentFunction.Signature.ReturnType
+	if n.ReturnValue == nil && len(n.ReturnValues) == 0 {
+		if expected != nil && !types.Underlying(expected).Equals(types.PrimitiveVoid) && !types.HasError(expected) {
+			v.errorf(n, "return requires a value of type %s", expected)
+		}
+		return
+	}
 	if multi, ok := expected.(types.MultipleReturnType); ok {
 		if len(n.ReturnValues) == 1 {
 			switch n.ReturnValue.(type) {
