@@ -497,6 +497,17 @@ func (e *Emitter) OperandEmit(op ir.Operand) string {
 		}
 		fields.WriteString(" }")
 		return fields.String()
+	case ir.OperandArrayConst:
+		var elements strings.Builder
+		elements.WriteString("[ ")
+		for i, element := range op.Fields {
+			if i > 0 {
+				elements.WriteString(", ")
+			}
+			fmt.Fprintf(&elements, "%s %s", e.TypeEmit(element.Type), e.OperandEmit(element))
+		}
+		elements.WriteString(" ]")
+		return elements.String()
 	case ir.OperandCStringConst:
 		key := stringLiteralKey{value: op.StringValue, nullTerminated: true}
 		global, ok := e.stringMap[key]

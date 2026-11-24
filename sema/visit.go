@@ -211,6 +211,8 @@ func (a *Analyser) visitMultiDeclaration(n *parser.MultiDeclarationNode) {
 
 func (a *Analyser) visitExpression(expr parser.ExpressionNode) {
 	switch e := expr.(type) {
+	case *parser.StaticSliceNode:
+		return
 	case *parser.LambdaNode:
 		a.visitLambda(e)
 

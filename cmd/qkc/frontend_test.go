@@ -81,6 +81,57 @@ let main() {}
 	}
 }
 
+func TestCompileTimeSlicesUseMutableAndConstantBacking(t *testing.T) {
+	const path = "compile_time_slices.qk"
+	const source = `module main
+let immutable(): []i32 {
+  let values: []i32 = [10, 20]
+  return values
+}
+let mutable(): []mut i32 {
+  let values: []mut i32 = [1, 2]
+  return values
+}
+let main() {
+  let xs = $immutable()
+  let mut ys = $mutable()
+  let text: str = $"hello"
+  ys[1] = xs[0]
+  _ = text[1]
+}
+`
+	frontend, err := runFrontend(
+		&Args{mainModule: ".", noStdlib: true}, loader.StageConfig{},
+		map[string]string{path: source}, map[string]string{path: "."},
+		map[string]bool{path: false}, map[string]map[string]string{".": {}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	module := frontend.irModules["."]
+	var writable, readonly int
+	for _, global := range module.Globals {
+		if !strings.HasPrefix(global.Name, "__qk_ct_slice_") {
+			continue
+		}
+		if global.Value.Kind != ir.OperandArrayConst {
+			t.Fatalf("backing %s is not an array constant", global.Name)
+		}
+		if global.Mutable {
+			writable++
+		} else {
+			readonly++
+		}
+	}
+	if writable != 1 || readonly != 2 {
+		t.Fatalf("got %d writable and %d read-only backing arrays", writable, readonly)
+	}
+	output := buildLLVMModule(module, ".", true, "")
+	if !strings.Contains(output, "global [2 x i32]") || !strings.Contains(output, "constant [2 x i32]") || !strings.Contains(output, "constant [5 x i8]") {
+		t.Fatalf("LLVM backing mutability or contents missing:\n%s", output)
+	}
+}
+
 func TestInferredFloatIfBranchLowersAsFloat(t *testing.T) {
 	const path = "float_if.qk"
 	const source = `module main

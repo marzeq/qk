@@ -21,6 +21,7 @@ const (
 	OperandBoolConst
 	OperandNullConst
 	OperandStructConst
+	OperandArrayConst
 	OperandCStringConst
 	OperandFunctionConst
 	OperandZeroConst
@@ -74,6 +75,10 @@ func NullConstOperand(ty types.Type) Operand {
 
 func StructConstOperand(ty types.Type, fields []Operand) Operand {
 	return Operand{Kind: OperandStructConst, Type: ty, Fields: fields}
+}
+
+func ArrayConstOperand(ty types.Type, elements []Operand) Operand {
+	return Operand{Kind: OperandArrayConst, Type: ty, Fields: elements}
 }
 
 func CStringConstOperand(value string) Operand {

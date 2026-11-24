@@ -1417,6 +1417,9 @@ func (v *Validator) validateReturn(n *parser.ControlKeywordNode) {
 }
 
 func (v *Validator) validateExpr(node parser.ExpressionNode) {
+	if _, ok := node.(*parser.StaticSliceNode); ok {
+		return
+	}
 	if lambda, ok := node.(*parser.LambdaNode); ok {
 		v.prepareLambda(lambda, nil)
 		if types.HasError(lambda.GetType()) {

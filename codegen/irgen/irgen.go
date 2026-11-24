@@ -52,6 +52,7 @@ type Generator struct {
 	currentBlock                *ir.Block
 	currentEnv                  *Env
 	globals                     map[*symbols.Symbol]string
+	staticBackings              map[string]string
 	loopTargets                 []loopTargets
 	deferScopes                 [][]parser.Node
 	dynamicGlobals              []dynamicGlobalInitializer
@@ -105,6 +106,7 @@ func (g *Generator) Generate(root *parser.RootNode) *ir.Module {
 func (g *Generator) GenerateRoots(roots []*parser.RootNode) *ir.Module {
 	g.Module = &ir.Module{}
 	g.globals = make(map[*symbols.Symbol]string)
+	g.staticBackings = make(map[string]string)
 	g.dynamicGlobals = nil
 	g.lambdaFunctions = nil
 	g.queuedLambdas = make(map[*symbols.Symbol]bool)
@@ -1794,6 +1796,8 @@ func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
 		return g.generateStructLiteralExpr(n)
 	case *parser.SliceLiteralNode:
 		return g.generateSliceLiteralExpr(n)
+	case *parser.StaticSliceNode:
+		return g.generateStaticSliceExpr(n)
 	case *parser.IndexExprNode:
 		return g.generateIndexExpr(n)
 	case *parser.SliceExprNode:
@@ -2072,7 +2076,7 @@ func (g *Generator) generateStringLiteralExpr(node *parser.StringLiteralNode) ir
 		panic("string literal must have slice type")
 	}
 
-	tmpSlot := g.currentFunction.NewSlot(sliceType, "")
+	tmpSlot := g.currentFunction.NewSlot(node.GetType(), "")
 	g.Emit(ir.Alloca{Slot: tmpSlot})
 
 	stringPtrID := g.currentFunction.NewValueOfType(types.PointerType{Base: types.PrimitiveU8})
@@ -2947,6 +2951,60 @@ func (g *Generator) generateSliceLiteralExpr(node *parser.SliceLiteralNode) ir.O
 	default:
 		panic("sequence literal must have array or slice type")
 	}
+}
+
+func staticValueOperand(value parser.StaticValue) ir.Operand {
+	typ := value.ResolvedType.Value
+	if value.Integer != "" {
+		return ir.IntConstOperand(value.Integer, typ)
+	}
+	if value.Float != "" {
+		return ir.FloatConstOperand(value.Float, typ)
+	}
+	if types.Underlying(typ).Equals(types.PrimitiveBool) {
+		return ir.BoolConstOperand(value.Boolean)
+	}
+	fields := make([]ir.Operand, len(value.Fields))
+	for i, field := range value.Fields {
+		fields[i] = staticValueOperand(field)
+	}
+	if _, ok := types.Underlying(typ).(types.ArrayType); ok {
+		return ir.ArrayConstOperand(typ, fields)
+	}
+	return ir.StructConstOperand(typ, fields)
+}
+
+func (g *Generator) generateStaticSliceExpr(node *parser.StaticSliceNode) ir.Operand {
+	slice := types.Underlying(node.GetType()).(types.SliceType)
+	pointerType := types.PointerType{Base: slice.Base, Mutable: slice.Mutable}
+	data := ir.NullConstOperand(pointerType)
+	if len(node.Elements) != 0 {
+		if g.staticBackings == nil {
+			g.staticBackings = make(map[string]string)
+		}
+		name, ok := g.staticBackings[node.BackingKey]
+		arrayType := types.ArrayType{Base: slice.Base, Length: len(node.Elements)}
+		if !ok {
+			name = fmt.Sprintf("__qk_ct_slice_%d", len(g.staticBackings))
+			g.staticBackings[node.BackingKey] = name
+			elements := make([]ir.Operand, len(node.Elements))
+			for i, element := range node.Elements {
+				elements[i] = staticValueOperand(element)
+			}
+			g.Module.AddGlobal(ir.Global{Name: name, Type: arrayType, Mutable: slice.Mutable, Linkage: ir.LinkageInternal, Value: ir.ArrayConstOperand(arrayType, elements)})
+		}
+		arrayPointer := types.PointerType{Base: arrayType, Mutable: slice.Mutable}
+		arrayID := g.currentFunction.NewValueOfType(arrayPointer)
+		g.Emit(ir.AddressOfGlobal{Dest: arrayID, Name: name, Type: arrayType})
+		dataID := g.currentFunction.NewValueOfType(pointerType)
+		g.Emit(ir.ElementAddress{Dest: dataID, Base: ir.ValueOperand(arrayID, arrayPointer), Index: ir.IntConstOperand("0", types.PrimitiveUsz), Element: slice.Base, ArrayObject: true})
+		data = ir.ValueOperand(dataID, pointerType)
+	}
+	first := g.currentFunction.NewValueOfType(node.GetType())
+	g.Emit(ir.InsertValue{Dest: first, Aggregate: ir.ZeroConstOperand(node.GetType()), Value: data, Index: 0})
+	second := g.currentFunction.NewValueOfType(node.GetType())
+	g.Emit(ir.InsertValue{Dest: second, Aggregate: ir.ValueOperand(first, node.GetType()), Value: ir.IntConstOperand(strconv.Itoa(len(node.Elements)), types.PrimitiveUsz), Index: 1})
+	return ir.ValueOperand(second, node.GetType())
 }
 
 func (g *Generator) generateViewLiteral(node *parser.SliceLiteralNode, sliceType types.SliceType) ir.Operand {

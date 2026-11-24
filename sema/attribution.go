@@ -319,6 +319,8 @@ func (a *Attributor) attributeNode(node parser.Node) {
 
 func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 	switch n := node.(type) {
+	case *parser.StaticSliceNode:
+		n.SetType(n.ResolvedType.Value)
 	case *parser.StaticTypeNode:
 		a.attributeExpr(n.Operand)
 		n.ValueType = n.Operand.GetType()

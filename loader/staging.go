@@ -60,18 +60,21 @@ const (
 	stageType
 	stageFields
 	stageVoid
+	stageSlice
 )
 
 type stageValue struct {
-	kind      stageKind
-	boolean   bool
-	integer   *big.Int
-	floating  string
-	typ       types.Type
-	domain    string
-	name      string
-	typeValue types.Type
-	irValue   ir.EvalValue
+	kind       stageKind
+	boolean    bool
+	integer    *big.Int
+	floating   string
+	typ        types.Type
+	domain     string
+	name       string
+	typeValue  types.Type
+	irValue    ir.EvalValue
+	elements   []parser.StaticValue
+	backingKey string
 }
 
 type stageSelector struct {
@@ -1089,6 +1092,9 @@ func (s *stageSelector) evaluateDirective(node *parser.CompilerDirectiveNode) er
 }
 
 func stageLiteral(value stageValue, loc shared.Location) parser.ExpressionNode {
+	if value.kind == stageSlice {
+		return &parser.StaticSliceNode{Elements: value.elements, BackingKey: value.backingKey, ResolvedType: &parser.ResolvedTypeNode{Value: value.typ, Loc: loc}, Loc: loc, Type: value.typ}
+	}
 	if value.kind == stageType {
 		return &parser.TypeValueExprNode{Value: &parser.ResolvedTypeNode{Value: value.typeValue, Loc: loc}, ValueType: value.typeValue, Loc: loc}
 	}
@@ -1109,6 +1115,9 @@ func stageLiteral(value stageValue, loc shared.Location) parser.ExpressionNode {
 }
 
 func stageTypeNode(value stageValue, loc shared.Location) parser.TypeNode {
+	if value.kind == stageSlice {
+		return &parser.ResolvedTypeNode{Value: value.typ, Loc: loc}
+	}
 	if value.kind == stageType {
 		return &parser.ResolvedTypeNode{Value: value.typeValue, Loc: loc}
 	}
@@ -1604,6 +1613,7 @@ func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 		if err != nil {
 			return shared.NewError(expression.GetLoc(), "%s", err)
 		}
+		stagedValue.backingKey = fmt.Sprintf("%s:%d", expression.GetLoc().FilePath, expression.GetLoc().Offset)
 		s.evaluated[expression] = stagedValue
 	}
 	for _, raw := range root.Body {
@@ -1616,6 +1626,7 @@ func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 			if err != nil {
 				return shared.NewError(declaration.Value.GetLoc(), "%s", err)
 			}
+			stagedValue.backingKey = fmt.Sprintf("%s:%d", declaration.Value.GetLoc().FilePath, declaration.Value.GetLoc().Offset)
 			s.bindings[declaration.Name] = stagedValue
 			s.evaluated[declaration.Value] = stagedValue
 		}
@@ -1869,6 +1880,21 @@ func stageValueFromIR(value ir.EvalValue) (stageValue, error) {
 		if element, ok := slice.Base.(types.DefinedType); ok && element.Module == "core.types" && element.Name == "FieldSpec" {
 			return stageValue{kind: stageFields, irValue: value, typ: value.Type}, nil
 		}
+		if stageTypeContainsPointer(slice.Base) {
+			return stageValue{}, fmt.Errorf("compile-time result of type %s contains pointer indirection and cannot be copied into runtime data", value.Type)
+		}
+		elements, err := value.SliceElements()
+		if err != nil {
+			return stageValue{}, err
+		}
+		staticElements := make([]parser.StaticValue, len(elements))
+		for i, element := range elements {
+			staticElements[i], err = staticValueFromIR(element, slice.Base)
+			if err != nil {
+				return stageValue{}, err
+			}
+		}
+		return stageValue{kind: stageSlice, typ: value.Type, elements: staticElements}, nil
 	}
 	if stageTypeContainsPointer(value.Type) {
 		return stageValue{}, fmt.Errorf("compile-time result of type %s contains pointer indirection and cannot be copied into runtime data", value.Type)
@@ -1886,6 +1912,38 @@ func stageValueFromIR(value ir.EvalValue) (stageValue, error) {
 		return stageValue{kind: stageBool, boolean: value.Boolean, typ: value.Type}, nil
 	}
 	return stageValue{}, fmt.Errorf("compile-time result of type %s cannot yet be copied into runtime data", value.Type)
+}
+
+func staticValueFromIR(value ir.EvalValue, typ types.Type) (parser.StaticValue, error) {
+	result := parser.StaticValue{ResolvedType: &parser.ResolvedTypeNode{Value: typ}}
+	if value.Integer != nil {
+		result.Integer = value.Integer.String()
+		return result, nil
+	}
+	if value.Float != nil {
+		result.Float = strconv.FormatFloat(*value.Float, 'g', -1, 64)
+		return result, nil
+	}
+	if types.Underlying(typ).Equals(types.PrimitiveBool) {
+		result.Boolean = value.Boolean
+		return result, nil
+	}
+	switch types.Underlying(typ).(type) {
+	case types.ArrayType, types.StructType:
+		result.Fields = make([]parser.StaticValue, len(value.Aggregate))
+		for i, field := range value.Aggregate {
+			if field.Type == nil {
+				return parser.StaticValue{}, fmt.Errorf("compile-time aggregate field is unavailable")
+			}
+			var err error
+			result.Fields[i], err = staticValueFromIR(field, field.Type)
+			if err != nil {
+				return parser.StaticValue{}, err
+			}
+		}
+		return result, nil
+	}
+	return parser.StaticValue{}, fmt.Errorf("compile-time value of type %s cannot yet be copied into runtime data", typ)
 }
 
 func stageTypeContainsPointer(typ types.Type) bool {

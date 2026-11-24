@@ -508,6 +508,34 @@ type SliceLiteralNode struct {
 	Type         types.Type
 }
 
+// StaticValue is a pointer-free value copied out of compile-time execution.
+// ResolvedType survives syntax cloning during staged selection.
+type StaticValue struct {
+	ResolvedType *ResolvedTypeNode
+	Integer      string
+	Float        string
+	Boolean      bool
+	Fields       []StaticValue
+}
+
+// StaticSliceNode materializes a compile-time slice in a runtime global.
+type StaticSliceNode struct {
+	Elements     []StaticValue
+	BackingKey   string
+	ResolvedType *ResolvedTypeNode
+	Loc          shared.Location
+	Type         types.Type
+}
+
+func (n StaticSliceNode) GetLoc() shared.Location { return n.Loc }
+func (n *StaticSliceNode) SetType(t types.Type)   { n.Type = t }
+func (n *StaticSliceNode) GetType() types.Type {
+	if n.Type != nil {
+		return n.Type
+	}
+	return n.ResolvedType.Value
+}
+
 func (n SliceLiteralNode) GetLoc() shared.Location { return n.Loc }
 func (n *SliceLiteralNode) SetType(t types.Type)   { n.Type = t }
 func (n *SliceLiteralNode) GetType() types.Type    { return n.Type }

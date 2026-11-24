@@ -1216,7 +1216,11 @@ let BufferSize: usz = $(4 * 1024)
 let Enabled = $true
 ```
 
-Compile-time expressions may appear wherever a value is expected. A binding initialized with a compile-time expression has no persistent addressable runtime storage and is materialised as a constant at each runtime use; a temporary is created only when a consuming operation requires an address. Untyped integer bindings remain untyped until their use supplies a concrete numeric type.
+Compile-time expressions may appear wherever a value is expected. A binding initialized with a compile-time expression has no persistent addressable storage for the binding itself and is materialised at each runtime use; a temporary is created only when a consuming operation requires an address. Untyped integer bindings remain untyped until their use supplies a concrete numeric type.
+
+A compile-time result may also be a slice or `str`. The compiler copies its elements into the executable and creates a runtime slice pointing at that copy. `[]mut T` uses writable data; `[]T` and `str` use read-only data. Elements containing pointers or nested slices cannot be copied this way.
+
+The source data pointer must remain valid until the compile-time result is copied. The compiler does not prove pointer lifetime; an invalid pointer at that point can produce invalid data or crash the compiler process. The compile-time heap itself is not retained in the executable.
 
 Module-level compile-time bindings may be public and referenced through imported module names. Local bindings are visible in lexical source order.
 

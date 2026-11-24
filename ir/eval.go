@@ -1051,7 +1051,7 @@ func (e *Evaluator) operand(operand Operand, frame *evalFrame) (EvalValue, error
 			return EvalValue{}, err
 		}
 		return EvalInteger(big.NewInt(int64(size)), types.PrimitiveUsz), nil
-	case OperandStructConst:
+	case OperandStructConst, OperandArrayConst:
 		value := EvalValue{Type: operand.Type, Aggregate: make([]EvalValue, len(operand.Fields))}
 		for index, field := range operand.Fields {
 			evaluated, err := e.operand(field, frame)
@@ -1675,6 +1675,36 @@ func evalSlice(value EvalValue) ([]EvalValue, error) {
 		return nil, fmt.Errorf("compile-time slice value is unavailable")
 	}
 	return evalSequence(value.Aggregate[0].pointer, value.Aggregate[1].Integer)
+}
+
+// SliceElements snapshots a compile-time slice, including foreign-backed data.
+func (value EvalValue) SliceElements() ([]EvalValue, error) {
+	if len(value.Aggregate) != 2 || value.Aggregate[1].Integer == nil {
+		return nil, fmt.Errorf("compile-time slice value is unavailable")
+	}
+	if value.Aggregate[0].nativePointer == nil {
+		return evalSlice(value)
+	}
+	length := value.Aggregate[1].Integer
+	if !length.IsInt64() || length.Sign() < 0 {
+		return nil, fmt.Errorf("compile-time sequence length is invalid")
+	}
+	slice, ok := types.Underlying(value.Type).(types.SliceType)
+	if !ok {
+		return nil, fmt.Errorf("compile-time value is not a slice")
+	}
+	stride, _, err := qktarget.LayoutOf(slice.Base, "")
+	if err != nil {
+		return nil, err
+	}
+	result := make([]EvalValue, int(length.Int64()))
+	for i := range result {
+		result[i], err = loadNativePointer(types.PointerType{Base: slice.Base}, unsafe.Add(value.Aggregate[0].nativePointer, i*stride))
+		if err != nil {
+			return nil, err
+		}
+	}
+	return result, nil
 }
 
 func evalSequence(pointer *evalPointer, length *big.Int) ([]EvalValue, error) {
