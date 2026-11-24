@@ -119,7 +119,7 @@ func specializationKey(arguments []types.Type) string {
 }
 
 func SpecializationName(module, name string, arguments []types.Type) string {
-	identity := parameterizedOwner(module, name) + "<" + specializationKey(arguments) + ">"
+	identity := parameterizedOwner(module, name) + "(" + specializationKey(arguments) + ")"
 	return name + "$" + fmt.Sprintf("%x", sha256.Sum256([]byte(identity)))
 }
 
@@ -128,7 +128,7 @@ func specializationDisplayName(name string, arguments []types.Type) string {
 	for i, argument := range arguments {
 		parts[i] = argument.String()
 	}
-	return name + "<" + strings.Join(parts, ", ") + ">"
+	return name + "(" + strings.Join(parts, ", ") + ")"
 }
 
 func (a *Analyser) makeParameterizedParameters(name string, nodes []parser.ParameterizedParameterNode) []types.TypeParameter {

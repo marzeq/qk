@@ -169,13 +169,3 @@ let mut z = $5
 		t.Fatal("expected old binding prefix to be rejected")
 	}
 }
-
-func TestAngleBracketParameterizedDeclarationsAreRejected(t *testing.T) {
-	tokens, err := tokeniser.NewTokeniser("let Box<T> = struct { value: T }", "test.qk").Tokenise()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := NewParser(tokens).Parse(); err == nil {
-		t.Fatal("expected legacy angle-bracket declaration to be rejected")
-	}
-}

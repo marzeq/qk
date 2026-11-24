@@ -586,7 +586,7 @@ func Identity(t Type) string {
 			for i, argument := range t.TypeArguments {
 				arguments[i] = Identity(argument)
 			}
-			return "defined(" + t.Module + ":" + t.ParameterizedName + "<" + strings.Join(arguments, ",") + ">)"
+			return "defined(" + t.Module + ":" + t.ParameterizedName + "(" + strings.Join(arguments, ",") + "))"
 		}
 		return "defined(" + t.Module + ":" + t.Name + ")"
 	case *AliasRef:
