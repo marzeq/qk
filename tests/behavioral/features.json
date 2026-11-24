@@ -78,7 +78,7 @@
     },
     {
       "name": "compile-time selection",
-      "positive": ["comptime/selection", "compile_time/integer_overflow"],
+      "positive": ["comptime/selection", "comptime/float_print", "compile_time/integer_overflow"],
       "negative": ["diagnostics/comptime_error"]
     },
     {

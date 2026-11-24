@@ -1,0 +1,13 @@
+module main
+
+import std.io
+
+let foo() {
+  let val: f32 = 5.0
+  std.io.println("{}", val)
+}
+
+let main() {
+  $foo()
+  foo()
+}

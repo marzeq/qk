@@ -785,6 +785,38 @@ func (e *Evaluator) run(name string, arguments []EvalValue, depth int) (EvalValu
 				if err != nil {
 					return EvalValue{}, err
 				}
+				from := types.Underlying(instruction.From.Type)
+				to := types.Underlying(instruction.To)
+				if types.IsFloat(from) && types.IsInteger(to) {
+					if value.Float == nil || math.IsNaN(*value.Float) || math.IsInf(*value.Float, 0) {
+						return EvalValue{}, fmt.Errorf("compile-time float-to-integer cast requires a finite float")
+					}
+					integer, _ := new(big.Float).SetFloat64(*value.Float).Int(nil)
+					frame.values[instruction.Dest] = e.integer(integer, instruction.To)
+					break
+				}
+				if types.IsInteger(from) && types.IsFloat(to) {
+					if value.Integer == nil {
+						return EvalValue{}, fmt.Errorf("compile-time integer-to-float cast requires an integer")
+					}
+					floating, _ := new(big.Float).SetInt(value.Integer).Float64()
+					if to.Equals(types.PrimitiveF32) {
+						floating = float64(float32(floating))
+					}
+					frame.values[instruction.Dest] = EvalFloat(floating, instruction.To)
+					break
+				}
+				if types.IsFloat(from) && types.IsFloat(to) {
+					if value.Float == nil {
+						return EvalValue{}, fmt.Errorf("compile-time float cast requires a float")
+					}
+					floating := *value.Float
+					if to.Equals(types.PrimitiveF32) {
+						floating = float64(float32(floating))
+					}
+					frame.values[instruction.Dest] = EvalFloat(floating, instruction.To)
+					break
+				}
 				if _, fromPointer := types.Underlying(instruction.From.Type).(types.PointerType); fromPointer && types.IsInteger(instruction.To) {
 					if value.pointer != nil {
 						return EvalValue{}, fmt.Errorf("compile-time evaluator storage has no native integer address")
