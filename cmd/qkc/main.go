@@ -19,6 +19,13 @@ import (
 	"github.com/marzeq/qk/types"
 )
 
+func init() {
+	// Keep separate compile-time expressions on the same OS thread when they
+	// share foreign state. Cocoa also requires window work on the process main
+	// thread, so pin this goroutine before frontend execution can begin.
+	runtime.LockOSThread()
+}
+
 func main() {
 	// Builds allocate many short-lived syntax and IR nodes. A less frequent GC
 	// improves one-shot compilation without overriding an explicit GOGC choice.

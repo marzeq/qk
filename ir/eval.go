@@ -346,6 +346,12 @@ func NewEvaluatorForTarget(triple string, modules ...*Module) *Evaluator {
 }
 
 func (e *Evaluator) Run(name string, arguments ...EvalValue) (EvalValue, error) {
+	// Foreign libraries may keep thread-local state or a graphics context.
+	// Preserve the calling OS thread across the entire interpreted call tree.
+	if HostForeignCallsAvailable {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+	}
 	return e.run(name, arguments, 0)
 }
 
