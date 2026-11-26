@@ -338,15 +338,21 @@ func writeNativeValue(typ types.Type, value EvalValue, destination unsafe.Pointe
 		if value.Integer == nil {
 			return fmt.Errorf("expected integer value")
 		}
+		bits := value.Integer.Uint64()
+		if value.Integer.Sign() < 0 {
+			// Uint64 returns the magnitude. Unsigned negation restores the
+			// two's-complement bits before narrowing to the native width.
+			bits = -bits
+		}
 		switch size {
 		case 1:
-			bytes[0] = byte(value.Integer.Uint64())
+			bytes[0] = byte(bits)
 		case 2:
-			binary.NativeEndian.PutUint16(bytes, uint16(value.Integer.Uint64()))
+			binary.NativeEndian.PutUint16(bytes, uint16(bits))
 		case 4:
-			binary.NativeEndian.PutUint32(bytes, uint32(value.Integer.Uint64()))
+			binary.NativeEndian.PutUint32(bytes, uint32(bits))
 		case 8:
-			binary.NativeEndian.PutUint64(bytes, value.Integer.Uint64())
+			binary.NativeEndian.PutUint64(bytes, bits)
 		}
 	}
 	return nil

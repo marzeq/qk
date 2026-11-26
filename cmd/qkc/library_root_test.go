@@ -219,7 +219,7 @@ let NonNil = $(std.libc.errno_location() != nil)
 let HasErrorText = $(std.libc.strlen(std.libc.strerror(0)) > 0.(usz))
 let mutate(): i32 {
   let mut value: i32 = 0
-  let returned = std.libc.memset(value.&mut.(*mut void), 0x7f, 4)
+  let returned = std.libc.memset(value.&mut.(*mut void), -129, 4)
   return returned.(*mut i32).*
 }
 
