@@ -545,7 +545,11 @@ func printVersion() {
 
 func finaliseArgs(args *Args) error {
 	if args.target == "" {
-		args.target = defaultTargetForHost(runtime.GOOS)
+		var err error
+		args.target, err = hostDefaultTarget()
+		if err != nil {
+			return err
+		}
 	}
 	if args.packageArg == "" {
 		args.packageArg = "."
