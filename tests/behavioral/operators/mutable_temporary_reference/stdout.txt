@@ -1,0 +1,9 @@
+Error: <CASE>/main.qk:4:14
+   2 | 
+   3 | let main() {
+   4 |   let text = "hello".&mut
+     |              ^^^^^^^
+   5 | }
+   6 | 
+
+cannot take reference of this expression

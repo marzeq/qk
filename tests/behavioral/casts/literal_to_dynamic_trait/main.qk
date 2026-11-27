@@ -1,0 +1,11 @@
+module main
+
+import std.alloc
+import std.collections
+
+let main() {
+  let mut arena = std.alloc.Arena.init()
+  defer arena.deinit()
+  let mut values = std.collections.DynamicArray(*mut dyn Any).init(arena.as_allocator())
+  values.append(1.(*mut dyn Any))
+}

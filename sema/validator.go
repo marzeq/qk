@@ -1681,7 +1681,8 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 				break
 			}
 		}
-		if types.IsUntyped(n.Operand.GetType()) {
+		// Retyping a literal cannot construct a dynamic trait pointer.
+		if types.IsUntyped(n.Operand.GetType()) && !isTraitPointerType(targetType) {
 			n.Operand = v.createCast(n.Operand, targetType)
 		}
 
@@ -2727,8 +2728,7 @@ func (v *Validator) validateReferenceTarget(node *parser.UnaryOpNode, target par
 
 	case *parser.UnaryOpNode:
 		if target.Op != parser.UnaryOpDereference {
-			v.errorf(node, "cannot take reference of this expression")
-			return false
+			break
 		}
 		pointer, ok := types.Underlying(target.Operand.GetType()).(types.PointerType)
 		if !ok || pointer.Base.Equals(types.PrimitiveVoid) {
@@ -2739,8 +2739,7 @@ func (v *Validator) validateReferenceTarget(node *parser.UnaryOpNode, target par
 
 	case *parser.FieldAccessNode:
 		if target.TaggedUnionType != nil {
-			v.errorf(node, "cannot take reference of this expression")
-			return false
+			break
 		}
 		if target.ResolvedIdentifier != nil {
 			return v.validateReferenceTarget(node, target.ResolvedIdentifier, mutable)
@@ -2764,10 +2763,18 @@ func (v *Validator) validateReferenceTarget(node *parser.UnaryOpNode, target par
 			return false
 		}
 
-	default:
-		v.errorf(node, "cannot take reference of this expression")
-		return false
 	}
+
+	// Explicit immutable references can use temporary storage for values.
+	if node.Op == parser.UnaryOpReference {
+		t := target.GetType()
+		if _, meta := types.Underlying(t).(types.MetaType); !meta &&
+			!types.IsUntyped(t) && !hasVoidValue(t) && types.IsComplete(t) {
+			return true
+		}
+	}
+	v.errorf(node, "cannot take reference of this expression")
+	return false
 }
 
 func (v *Validator) createCast(node parser.ExpressionNode, target types.Type) parser.ExpressionNode {

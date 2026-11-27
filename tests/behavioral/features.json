@@ -64,7 +64,12 @@
     {
       "name": "traits and dispatch",
       "positive": ["traits/dispatch"],
-      "negative": ["diagnostics/missing_trait_method"]
+      "negative": ["diagnostics/missing_trait_method", "casts/literal_to_dynamic_trait"]
+    },
+    {
+      "name": "references to temporaries",
+      "positive": ["operators/immutable_temporary_reference"],
+      "negative": ["operators/mutable_temporary_reference"]
     },
     {
       "name": "numeric and checked casts",

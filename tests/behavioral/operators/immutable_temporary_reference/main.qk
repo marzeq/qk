@@ -1,0 +1,17 @@
+module main
+
+let next(count: *mut i32): i32 {
+  count.* = count.* + 1
+  return count.*
+}
+
+let main() {
+  let text: *str = "hello".&
+  let number: *i32 = 1.(i32).&
+  assert(text.*[0] == 'h')
+  assert(number.* == 1)
+
+  let mut count: i32 = 0
+  let result: *i32 = next(count.&mut).&
+  assert(result.* == 1 && count == 1)
+}
