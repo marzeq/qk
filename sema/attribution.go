@@ -651,20 +651,14 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 
 		if n.Symbol != nil && n.Symbol.Template {
 			template := n.Symbol
-			arguments := []types.Type(nil)
-			var err error
-			if n.Name != nil && len(n.Name.ResolvedTypeArgs) != 0 {
-				arguments, err = inferParameterizedArgumentsPartial(
-					template.ParameterizedParameters, template.Signature.Parameters, expressionTypes(n.Args),
-					template.Signature.TypedVariadic, n.VariadicExpansion,
-				)
-				arguments = preserveResolvedTypeArguments(template.ParameterizedParameters, n.Name.ResolvedTypeArgs, arguments)
-			} else {
-				arguments, err = inferParameterizedArgumentsPartial(
-					template.ParameterizedParameters, template.Signature.Parameters, expressionTypes(n.Args),
-					template.Signature.TypedVariadic, n.VariadicExpansion,
-				)
+			var fixedArguments []types.Type
+			if n.Name != nil {
+				fixedArguments = n.Name.ResolvedTypeArgs
 			}
+			arguments, err := inferParameterizedArgumentsForCall(
+				template.ParameterizedParameters, template.Signature.Parameters, expressionTypes(n.Args),
+				fixedArguments, nil, nil, template.Signature.TypedVariadic, n.VariadicExpansion, true, n.Method,
+			)
 			if err != nil {
 				a.errorf(n, "%v", err)
 				n.SetType(types.ErrorType{})

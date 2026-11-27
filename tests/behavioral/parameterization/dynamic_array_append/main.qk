@@ -5,7 +5,7 @@ import (
   std.collections
 )
 
-let DynAny = *mut dyn Any
+let DynAny = *mut dyn trait{}
 
 let main() {
   let mut arena = std.alloc.Arena.init()
@@ -18,7 +18,7 @@ let main() {
 
   let allocator = arena.as_allocator()
   _ = std.collections.DynamicArray(*i32).init(allocator)
-  _ = std.collections.DynamicArray(*mut dyn Any).init(allocator)
+  _ = std.collections.DynamicArray(*mut dyn trait{}).init(allocator)
   _ = std.collections.DynamicArray(DynAny).init(allocator)
   _ = std.collections.DynamicArray([]mut i32).init(allocator)
   _ = std.collections.DynamicArray([2]*i32).init(allocator)

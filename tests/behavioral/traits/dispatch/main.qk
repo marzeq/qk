@@ -1,6 +1,8 @@
 module main
 
 import std.io
+import std.alloc
+import std.collections
 
 let Measured = trait {
   let measure(self): usz
@@ -22,7 +24,24 @@ let OtherValue = struct {
 
 let dynamic_measure(value: *dyn Measured): usz = value.double_measure()
 
+let test_erased_array() {
+  let mut arena = std.alloc.Arena.init()
+  defer arena.deinit()
+  let mut values = std.collections.DynamicArray(any).init(arena.as_allocator())
+  assert(values.append(1.(i32)))
+  assert(values.append("a"))
+  assert(values.append(3.14.(f64)))
+
+  let integer, integer_ok = values.get(0).(i32)
+  let text, text_ok = values.get(1).(str)
+  let decimal, decimal_ok = values.get(2).(f64)
+  assert(integer_ok && integer == 1)
+  assert(text_ok && text[0] == 'a')
+  assert(decimal_ok && decimal == 3.14)
+}
+
 let main() {
+  test_erased_array()
   let mut value = Value.{ amount=21 }
   let static = value.(Measured)
   let dynamic = value.&.(*dyn Measured)
@@ -33,12 +52,12 @@ let main() {
   } else {
     other.&mut
   }
-  let erased: *dyn Any = value.&.(*dyn Any)
+  let erased: any = value.&.(any)
   let recovered, ok = erased.(Value)
   assert(static.measure() == 21, "static trait view")
   assert(dynamic_measure(dynamic) == 42, "dynamic dispatch and default")
   assert(mutable_dynamic.as_measured().measure() == 21, "recursive dynamic return")
   assert(selected.measure() == 7, "contextual conditional trait conversion")
-  assert(ok && recovered.amount == 21, "Any checked cast")
+  assert(ok && recovered.amount == 21, "any checked cast")
   std.io.println("traits ok")
 }

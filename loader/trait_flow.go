@@ -11,7 +11,6 @@ import (
 type traitFlowKey struct {
 	module  string
 	name    string
-	any     bool
 	mutable bool
 }
 
@@ -127,7 +126,6 @@ func flowKey(pointer types.TraitPointerType) traitFlowKey {
 	return traitFlowKey{
 		module:  pointer.Trait.Module,
 		name:    pointer.Trait.Name,
-		any:     pointer.Trait.Any,
 		mutable: pointer.Mutable,
 	}
 }

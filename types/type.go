@@ -943,7 +943,6 @@ type TraitType struct {
 	Module  string
 	Name    string
 	Methods []TraitMethod
-	Any     bool
 }
 
 func (t TraitType) DynamicIncompatibility() (method string, reason string, incompatible bool) {
@@ -960,13 +959,13 @@ func (t TraitType) DynamicIncompatibility() (method string, reason string, incom
 
 func (t TraitType) Equals(other Type) bool {
 	o, ok := Underlying(other).(TraitType)
-	return ok && t.Module == o.Module && t.Name == o.Name && t.Any == o.Any
+	return ok && t.Module == o.Module && t.Name == o.Name
 }
 func (t TraitType) CanCoerceTo(other Type) bool { return t.Equals(other) }
 func (t TraitType) CanCastTo(other Type) bool   { return t.Equals(other) }
 func (t TraitType) String() string {
-	if t.Any {
-		return "Any"
+	if t.Name == "" && len(t.Methods) == 0 {
+		return "trait{}"
 	}
 	if t.Module == "" {
 		return t.Name

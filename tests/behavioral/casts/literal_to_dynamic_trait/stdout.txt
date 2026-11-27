@@ -1,9 +1,9 @@
 Error: <CASE>/main.qk:10:17
    8 |   defer arena.deinit()
-   9 |   let mut values = std.collections.DynamicArray(*mut dyn Any).init(arena.as_allocator())
-  10 |   values.append(1.(*mut dyn Any))
-     |                 ^^^^^^^^^^^^^^^^
+   9 |   let mut values = std.collections.DynamicArray(*mut dyn trait{}).init(arena.as_allocator())
+  10 |   values.append(1.(*mut dyn trait{}))
+     |                 ^^^^^^^^^^^^^^^^^^^^
   11 | }
   12 | 
 
-cannot cast <untyped int> to *mut dyn Any
+cannot cast <untyped int> to *mut dyn trait{}

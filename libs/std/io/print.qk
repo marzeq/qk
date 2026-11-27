@@ -12,7 +12,7 @@ let write_format_error(writer: *mut dyn Writer): Result(Unit, Error) {
 let format_print_argument(
   writer: *mut dyn Writer,
   index: usz,
-  arguments: []*dyn Any,
+  arguments: []any,
 ): Result(Unit, Error) {
   if index >= len(arguments) { return write_format_error(writer) }
   let formatted, ok = arguments[index].(*dyn Format)
@@ -23,7 +23,7 @@ let format_print_argument(
 let format_character_argument(
   writer: *mut dyn Writer,
   index: usz,
-  arguments: []*dyn Any,
+  arguments: []any,
 ): Result(Unit, Error) {
   if index >= len(arguments) { return write_format_error(writer) }
   let character, ok = arguments[index].(u8)
@@ -34,7 +34,7 @@ let format_character_argument(
 let format_unicode_argument(
   writer: *mut dyn Writer,
   index: usz,
-  arguments: []*dyn Any,
+  arguments: []any,
 ): Result(Unit, Error) {
   if index >= len(arguments) { return write_format_error(writer) }
   let codepoint, ok = arguments[index].(u32)
@@ -88,7 +88,7 @@ let format_hex_value(
 let format_hex_argument(
   writer: *mut dyn Writer,
   index: usz,
-  arguments: []*dyn Any,
+  arguments: []any,
   uppercase: bool,
 ): Result(Unit, Error) {
   if index >= len(arguments) { return write_format_error(writer) }
@@ -109,7 +109,7 @@ let format_hex_argument(
 let format_general_float_argument(
   writer: *mut dyn Writer,
   index: usz,
-  arguments: []*dyn Any,
+  arguments: []any,
 ): Result(Unit, Error) {
   if index >= len(arguments) { return write_format_error(writer) }
   let value_f32, is_f32 = arguments[index].(f32)
@@ -123,7 +123,7 @@ let format_specified_argument(
   writer: *mut dyn Writer,
   index: usz,
   specifier: u8,
-  arguments: []*dyn Any,
+  arguments: []any,
 ): Result(Unit, Error) {
   if specifier == 'g' { return format_general_float_argument(writer, index, arguments) }
   if specifier == 'c' { return format_character_argument(writer, index, arguments) }
@@ -136,7 +136,7 @@ let format_specified_argument(
 let wprint_slice(
   writer: *mut dyn Writer,
   format: str,
-  arguments: []*dyn Any
+  arguments: []any
 ): Result(Unit, Error) {
   let mut format_index: usz = 0
   let mut argument_index: usz = 0
@@ -230,13 +230,13 @@ let wprint_slice(
 pub let wprint(
   writer: *mut dyn Writer,
   format: str,
-  arguments: ...*dyn Any
+  arguments: ...any
 ): Result(Unit, Error) = wprint_slice(writer, format, arguments)
 
 pub let wprintln(
   writer: *mut dyn Writer,
   format: str,
-  arguments: ...*dyn Any
+  arguments: ...any
 ): Result(Unit, Error) {
   let error = wprint(writer, format, arguments...)
   if error.is_err() { return error }
@@ -244,10 +244,10 @@ pub let wprintln(
 }
 
 $if core.build.has_libc {
-pub let print(format: str, arguments: ...*dyn Any): Result(Unit, Error) =
+pub let print(format: str, arguments: ...any): Result(Unit, Error) =
   wprint(stdout.&mut.(*mut dyn Writer), format, arguments...)
 
-pub let println(format: str, arguments: ...*dyn Any): Result(Unit, Error) =
+pub let println(format: str, arguments: ...any): Result(Unit, Error) =
   wprintln(stdout.&mut.(*mut dyn Writer), format, arguments...)
 
 }
@@ -256,20 +256,20 @@ $if core.build.has_filesystem {
   pub let fprint(
     file: *mut FileWriter,
     format: str,
-    arguments: ...*dyn Any
+    arguments: ...any
   ): Result(Unit, Error) = wprint(file.(*mut dyn Writer), format, arguments...)
 
   pub let fprintln(
     file: *mut FileWriter,
     format: str,
-    arguments: ...*dyn Any
+    arguments: ...any
   ): Result(Unit, Error) = wprintln(file.(*mut dyn Writer), format, arguments...)
 }
 
 $if core.build.has_libc {
-pub let eprint(format: str, arguments: ...*dyn Any): Result(Unit, Error) =
+pub let eprint(format: str, arguments: ...any): Result(Unit, Error) =
   wprint(stderr.&mut.(*mut dyn Writer), format, arguments...)
 
-pub let eprintln(format: str, arguments: ...*dyn Any): Result(Unit, Error) =
+pub let eprintln(format: str, arguments: ...any): Result(Unit, Error) =
   wprintln(stderr.&mut.(*mut dyn Writer), format, arguments...)
 }

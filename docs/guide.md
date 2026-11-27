@@ -1083,11 +1083,11 @@ let Eq = trait {
 
 Trait requirements may themselves have compile-time type parameters and may constrain them. Traits that use `Self` outside the receiver or declare parameterized methods can be used as static constraints and views, but not as dynamic trait objects.
 
-## `Any`
+## `any`
 
-`Any` is the built-in universal trait. A concrete pointer can be erased to `*dyn Any` or `*mut dyn Any` without defining methods, then checked-cast back to a concrete type or recast to another compatible dynamic trait.
+`any` is the core alias for `*dyn trait{}`. A concrete pointer can be erased to `any` without defining methods, then checked-cast back to a concrete type or recast to another compatible dynamic trait.
 
-The formatting library uses `*dyn Any` to accept heterogeneous arguments. Contextual immutable conversion lets ordinary values passed to those arguments be borrowed or materialised automatically.
+The formatting library uses `any` to accept heterogeneous arguments. Contextual immutable conversion lets ordinary values passed to those arguments be borrowed or materialised automatically.
 
 ## Static trait views
 

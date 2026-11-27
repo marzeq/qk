@@ -230,7 +230,7 @@ pub let Result($T: type, $E: type) = union(@auto) {
   }
 }
 
-pub let Any = trait {}
+pub let any = *dyn trait{}
 
 pub let Add = trait {
   let add(self, other: Self): Self

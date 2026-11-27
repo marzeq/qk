@@ -1558,6 +1558,16 @@ func (p *Parser) ParseDynType(begin shared.Location, mutable bool) (*DynTypeNode
 	if !p.Expect(tokeniser.TokenKeyword) {
 		return nil, shared.NewError(p.PrevLoc(), "expected 'dyn' to start dynamic trait type")
 	}
+	if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordTrait) {
+		trait, err := p.ParseTraitType()
+		if err != nil {
+			return nil, err
+		}
+		if len(trait.Methods) != 0 {
+			return nil, shared.NewError(trait.GetLoc(), "dynamic traits with methods require a named trait")
+		}
+		return &DynTypeNode{TraitType: trait, Mutable: mutable, Loc: p.SpanFrom(begin)}, nil
+	}
 	trait, err := p.ParseNamedType()
 	if err != nil {
 		return nil, err

@@ -17,7 +17,7 @@ func (a *Analyser) traitPointer(t types.Type) (types.TraitPointerType, bool) {
 }
 
 func (a *Analyser) completeTrait(trait types.TraitType) types.TraitType {
-	if trait.Any || len(trait.Methods) != 0 || trait.Name == "" {
+	if len(trait.Methods) != 0 || trait.Name == "" {
 		return completeDirectTraitReferences(trait)
 	}
 	if complete, ok := a.nominalTraits[trait.Module+":"+trait.Name]; ok {
@@ -59,9 +59,6 @@ func (a *Analyser) structuralConformance(from types.Type, target types.TraitPoin
 	pointer, ok := concretePointer(from)
 	if !ok || (!pointer.Mutable && target.Mutable) {
 		return nil, false
-	}
-	if target.Trait.Any {
-		return nil, true
 	}
 	module, owner, _, ok := methodOwnerIdentity(pointer.Base)
 	var methodSet map[string]*symbols.Symbol
@@ -191,7 +188,7 @@ func (a *Analyser) sortedConcreteTypes() []types.Type {
 }
 
 func traitImplementsTrait(source, target types.TraitType) bool {
-	if target.Any || len(target.Methods) == 0 {
+	if len(target.Methods) == 0 {
 		return true
 	}
 	for _, required := range target.Methods {

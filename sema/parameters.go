@@ -1004,35 +1004,24 @@ func inferParameterizedArguments(
 	patterns, actuals []types.Type,
 	typedVariadic, variadicExpansion bool,
 ) ([]types.Type, error) {
-	return inferParameterizedArgumentsForCall(parameters, patterns, actuals, nil, nil, typedVariadic, variadicExpansion, false)
-}
-
-func inferParameterizedArgumentsPartial(
-	parameters []types.TypeParameter,
-	patterns, actuals []types.Type,
-	typedVariadic, variadicExpansion bool,
-) ([]types.Type, error) {
-	return inferParameterizedArgumentsForCall(parameters, patterns, actuals, nil, nil, typedVariadic, variadicExpansion, true)
-}
-
-// preserveResolvedTypeArguments keeps explicit or argument-derived choices
-// fixed while inference fills parameter slots that are still symbolic.
-func preserveResolvedTypeArguments(parameters []types.TypeParameter, fixed, inferred []types.Type) []types.Type {
-	for i := range inferred {
-		if i < len(fixed) && i < len(parameters) && fixed[i] != nil && !fixed[i].Equals(parameters[i]) {
-			inferred[i] = fixed[i]
-		}
-	}
-	return inferred
+	return inferParameterizedArgumentsForCall(parameters, patterns, actuals, nil, nil, nil, typedVariadic, variadicExpansion, false, false)
 }
 
 func inferParameterizedArgumentsForCall(
 	parameters []types.TypeParameter,
 	patterns, actuals []types.Type,
+	fixedArguments []types.Type,
 	resultPattern, expectedResult types.Type,
-	typedVariadic, variadicExpansion, allowIncomplete bool,
+	typedVariadic, variadicExpansion, allowIncomplete, method bool,
 ) ([]types.Type, error) {
 	inferred := make(map[string]types.Type)
+	fixed := make(map[string]bool)
+	for i, parameter := range parameters {
+		if i < len(fixedArguments) && fixedArguments[i] != nil && !fixedArguments[i].Equals(parameter) {
+			inferred[parameter.Key()] = fixedArguments[i]
+			fixed[parameter.Key()] = true
+		}
+	}
 	for i, actual := range actuals {
 		if len(patterns) == 0 {
 			break
@@ -1050,8 +1039,15 @@ func inferParameterizedArgumentsForCall(
 				pattern = slice.Base
 			}
 		}
-		if err := inferParameterizedType(pattern, actual, inferred); err != nil {
+		if err := inferParameterizedType(pattern, actual, inferred, fixed); err != nil {
 			return nil, err
+		}
+		// The receiver fixes its type arguments before the remaining
+		// arguments are checked against the specialized signature.
+		if method && i == 0 {
+			for key := range inferred {
+				fixed[key] = true
+			}
 		}
 	}
 	if resultPattern != nil && expectedResult != nil {
@@ -1134,8 +1130,11 @@ func inferMissingParameterizedType(pattern, actual types.Type, inferred map[stri
 	}
 }
 
-func inferParameterizedType(pattern, actual types.Type, inferred map[string]types.Type) error {
+func inferParameterizedType(pattern, actual types.Type, inferred map[string]types.Type, fixed map[string]bool) error {
 	if parameter, ok := pattern.(types.TypeParameter); ok {
+		if fixed[parameter.Key()] {
+			return nil
+		}
 		if _, ambiguous := actual.(types.SequenceType); ambiguous {
 			return nil
 		}
@@ -1165,24 +1164,24 @@ func inferParameterizedType(pattern, actual types.Type, inferred map[string]type
 		if !ok {
 			return nil
 		}
-		return inferParameterizedType(pattern.Base, actual.Base, inferred)
+		return inferParameterizedType(pattern.Base, actual.Base, inferred, fixed)
 	case types.SliceType:
 		switch actual := actual.(type) {
 		case types.SliceType:
-			return inferParameterizedType(pattern.Base, actual.Base, inferred)
+			return inferParameterizedType(pattern.Base, actual.Base, inferred, fixed)
 		case types.SequenceType:
-			return inferParameterizedType(pattern.Base, actual.Base, inferred)
+			return inferParameterizedType(pattern.Base, actual.Base, inferred, fixed)
 		}
 		return nil
 	case types.ArrayType:
 		switch actual := actual.(type) {
 		case types.ArrayType:
 			if pattern.Length == actual.Length {
-				return inferParameterizedType(pattern.Base, actual.Base, inferred)
+				return inferParameterizedType(pattern.Base, actual.Base, inferred, fixed)
 			}
 		case types.SequenceType:
 			if pattern.Length == actual.Length {
-				return inferParameterizedType(pattern.Base, actual.Base, inferred)
+				return inferParameterizedType(pattern.Base, actual.Base, inferred, fixed)
 			}
 		}
 		return nil
@@ -1193,7 +1192,7 @@ func inferParameterizedType(pattern, actual types.Type, inferred map[string]type
 			return nil
 		}
 		for i := range pattern.TypeArguments {
-			if err := inferParameterizedType(pattern.TypeArguments[i], actual.TypeArguments[i], inferred); err != nil {
+			if err := inferParameterizedType(pattern.TypeArguments[i], actual.TypeArguments[i], inferred, fixed); err != nil {
 				return err
 			}
 		}
@@ -1203,11 +1202,11 @@ func inferParameterizedType(pattern, actual types.Type, inferred map[string]type
 			return nil
 		}
 		for i := range pattern.Parameters {
-			if err := inferParameterizedType(pattern.Parameters[i], actual.Parameters[i], inferred); err != nil {
+			if err := inferParameterizedType(pattern.Parameters[i], actual.Parameters[i], inferred, fixed); err != nil {
 				return err
 			}
 		}
-		return inferParameterizedType(pattern.ReturnType, actual.ReturnType, inferred)
+		return inferParameterizedType(pattern.ReturnType, actual.ReturnType, inferred, fixed)
 	}
 	return nil
 }

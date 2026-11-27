@@ -3109,8 +3109,8 @@ func (v *Validator) validateExprWithExpected(node parser.ExpressionNode, expecte
 	}
 	// A value that already has the requested dynamic-trait representation must
 	// not be treated as a concrete value and borrowed into a second trait
-	// object. In particular, Any structurally accepts every pointer, including
-	// a pointer to the storage of an existing *dyn Any value.
+	// object. In particular, the empty trait accepts every pointer, including
+	// a pointer to the storage of an existing any value.
 	if _, sourceIsTrait := v.analyser.traitPointer(got); sourceIsTrait {
 		if _, targetIsTrait := v.analyser.traitPointer(expected); targetIsTrait && got.CanCoerceTo(expected) {
 			if got.Equals(expected) {
@@ -3232,26 +3232,16 @@ func (v *Validator) completeParameterizedCall(call *parser.FunctionCallNode, exp
 		return true
 	}
 
-	var arguments []types.Type
-	var err error
-	if expected == nil {
-		arguments, err = inferParameterizedArgumentsForCall(
-			template.ParameterizedParameters, template.Signature.Parameters, expressionTypes(call.Args),
-			nil, nil, template.Signature.TypedVariadic, call.VariadicExpansion, true,
-		)
-	} else {
-		arguments, err = inferParameterizedArgumentsForCall(
-			template.ParameterizedParameters, template.Signature.Parameters, expressionTypes(call.Args),
-			template.Signature.ReturnType, expected,
-			template.Signature.TypedVariadic, call.VariadicExpansion, true,
-		)
-	}
+	arguments, err := inferParameterizedArgumentsForCall(
+		template.ParameterizedParameters, template.Signature.Parameters, expressionTypes(call.Args),
+		call.Symbol.TypeArguments, template.Signature.ReturnType, expected,
+		template.Signature.TypedVariadic, call.VariadicExpansion, true, call.Method,
+	)
 	if err != nil {
 		v.errorf(call, "%v", err)
 		call.SetType(types.ErrorType{})
 		return false
 	}
-	arguments = preserveResolvedTypeArguments(template.ParameterizedParameters, call.Symbol.TypeArguments, arguments)
 	beforeValueErrors := len(v.analyser.errors)
 	if !v.analyser.fillRetainedArguments(template, call.Args, arguments, call) {
 		v.errors = append(v.errors, v.analyser.errors[beforeValueErrors:]...)

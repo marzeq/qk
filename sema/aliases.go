@@ -50,7 +50,6 @@ func (a *Analyser) resolveAlias(info *aliasInfo, node parser.Node, indirect bool
 	if trait, ok := resolved.(types.TraitType); ok && !info.node.Transparent {
 		trait.Module = a.currentMod
 		trait.Name = info.node.Name
-		trait.Any = a.currentMod == "core" && info.node.Name == "Any"
 		resolved = trait
 		a.nominalTraits[trait.Module+":"+trait.Name] = trait
 		a.registerTraitDefaults(info.node, trait, a.currentState.root)
