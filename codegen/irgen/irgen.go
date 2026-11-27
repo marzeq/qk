@@ -3393,6 +3393,17 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode, sour
 		g.Emit(ir.Call{Name: "__qk_assert", Args: []ir.Operand{condition, expression, message, ir.BoolConstOperand(hasMessage)}, Signature: signature, SourceName: sourceName, SourceLoc: sourceCallLoc(node)})
 		return ir.NullConstOperand(types.PrimitiveVoid)
 	}
+	parameterizedSymbol := node.Symbol
+	if parameterizedSymbol == nil {
+		if member, ok := node.Callee.(*parser.FieldAccessNode); ok {
+			parameterizedSymbol = member.MethodSymbol
+		}
+	}
+	compilerImpl := ""
+	if parameterizedSymbol != nil && parameterizedSymbol.Attributes.Get(attributes.AttributeTypeCompilerImpl) != nil {
+		compilerImpl = parameterizedSymbol.DefinitionModule + "." + parameterizedSymbol.Name
+	}
+
 	runtimeBuiltin := node.Symbol != nil && node.Symbol.DefinitionModule == "" &&
 		node.Symbol.Name == "panic"
 	var callee *ir.Operand
@@ -3506,19 +3517,21 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode, sour
 				}
 			}
 			name = g.mangleFunctionName(callModule, node.Symbol.Name)
-			if callModule != g.ModuleName {
+			if compilerImpl == "" && callModule != g.ModuleName {
 				hidden := node.Symbol.Attributes.Get(attributes.AttributeTypeExport) == nil
 				g.addExternForCall(name, callSig, "", hidden)
 			}
 		}
 
+		declareWrapper := compilerImpl == "" &&
+			(node.Symbol.DefinitionModule != "" && node.Symbol.DefinitionModule != g.ModuleName ||
+				node.Name != nil && node.Name.Module != "")
 		if !node.Symbol.Signature.TypedVariadic && len(node.Args) < len(node.Symbol.Signature.Parameters) {
 			name = g.defaultWrapperName(name, len(node.Args))
 			callSig.ParamTypes = append([]types.Type(nil), node.Symbol.Signature.Parameters[:len(node.Args)]...)
 			callSig.Variadic = false
 			callSig.Attributes = nil
-			if node.Symbol.DefinitionModule != "" && node.Symbol.DefinitionModule != g.ModuleName ||
-				node.Name != nil && node.Name.Module != "" {
+			if declareWrapper {
 				hidden := node.Symbol.Attributes.Get(attributes.AttributeTypeExport) == nil
 				g.addExternForCall(name, callSig, "", hidden)
 			}
@@ -3538,8 +3551,7 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode, sour
 			name = g.specializedFunctionName(name, constants)
 			callSig.Variadic = false
 			callSig.Attributes = nil
-			if node.Symbol.DefinitionModule != "" && node.Symbol.DefinitionModule != g.ModuleName ||
-				node.Name != nil && node.Name.Module != "" {
+			if declareWrapper {
 				hidden := node.Symbol.Attributes.Get(attributes.AttributeTypeExport) == nil
 				g.addExternForCall(name, callSig, "", hidden)
 			}
@@ -3554,8 +3566,7 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode, sour
 			callSig.ParamTypes = paramTypes
 			callSig.Variadic = false
 			callSig.Attributes = nil
-			if node.Symbol.DefinitionModule != "" && node.Symbol.DefinitionModule != g.ModuleName ||
-				node.Name != nil && node.Name.Module != "" {
+			if declareWrapper {
 				hidden := node.Symbol.Attributes.Get(attributes.AttributeTypeExport) == nil
 				g.addExternForCall(name, callSig, "", hidden)
 			}
@@ -3566,12 +3577,6 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode, sour
 	}
 	var parameterizedReference *ir.ParameterizedReference
 	var requirementReference *ir.TraitRequirementReference
-	parameterizedSymbol := node.Symbol
-	if parameterizedSymbol == nil {
-		if member, ok := node.Callee.(*parser.FieldAccessNode); ok {
-			parameterizedSymbol = member.MethodSymbol
-		}
-	}
 	if parameterizedSymbol != nil && parameterizedSymbol.TemplateSymbol != nil {
 		template := parameterizedSymbol.TemplateSymbol
 		parameterizedReference = &ir.ParameterizedReference{
@@ -3588,10 +3593,6 @@ func (g *Generator) generateFunctionCallExpr(node *parser.FunctionCallNode, sour
 		requirementReference = &ir.TraitRequirementReference{
 			Name: parameterizedSymbol.Name, ReceiverType: parameterizedSymbol.Signature.Parameters[0],
 		}
-	}
-	compilerImpl := ""
-	if parameterizedSymbol != nil && parameterizedSymbol.Attributes.Get(attributes.AttributeTypeCompilerImpl) != nil {
-		compilerImpl = parameterizedSymbol.DefinitionModule + "." + parameterizedSymbol.Name
 	}
 
 	if node.GetType().Equals(types.PrimitiveVoid) {

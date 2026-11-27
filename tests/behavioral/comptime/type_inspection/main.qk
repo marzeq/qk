@@ -1,0 +1,16 @@
+module main
+
+import core.types
+import std.io
+
+let print_type(T: type, indent: usz = 0) {
+  let shape = core.types.inspect(T)
+  std.io.println("kind: {}", shape.kind)
+  for field in shape.fields {
+    print_type(field.field_type, indent + 2)
+  }
+}
+
+let main() {
+  $print_type(any)
+}
