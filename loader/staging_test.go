@@ -504,6 +504,25 @@ func TestCompileTimeBindingsAreVisibleAcrossModuleFiles(t *testing.T) {
 	}
 }
 
+func TestCompileTimeCallAcrossModuleFilesKeepsModuleFirst(t *testing.T) {
+	parse := func(path, source string) *parser.RootNode {
+		tokens, err := tokeniser.NewTokeniser(source, path).Tokenise()
+		if err != nil {
+			t.Fatal(err)
+		}
+		root, err := parser.NewParser(tokens).Parse()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return root
+	}
+	consumer := parse("main.qk", "module test\nlet main() { let value = $answer() }\n")
+	provider := parse("answer.qk", "module test\nlet answer(): i32 = 42\n")
+	if err := SelectCompileTimeRoots([]*parser.RootNode{consumer, provider}, "test", StageConfig{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestLocalCompileTimeCallDoesNotStageUnrelatedImportedRuntimeCode(t *testing.T) {
 	source := `
 module test

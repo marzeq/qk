@@ -1465,7 +1465,17 @@ func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 			stagedOwners[alias.Name] = true
 		}
 	}
-	hasModule := false
+	// A provisional module can contain the roots of several source files.
+	// Keep one module declaration at the front, even when later files have
+	// imports that precede their own declaration in the combined body.
+	for _, node := range root.Body {
+		if module, ok := node.(*parser.ModuleNode); ok {
+			copy := *module
+			copy.Attributes = nil
+			staged.Body = append(staged.Body, &copy)
+			break
+		}
+	}
 	for _, node := range root.Body {
 		switch node := node.(type) {
 		case *parser.WhenNode, *parser.CompilerDirectiveNode:
@@ -1475,13 +1485,7 @@ func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 				staged.Body = append(staged.Body, node)
 			}
 		case *parser.ModuleNode:
-			if hasModule {
-				continue
-			}
-			hasModule = true
-			copy := *node
-			copy.Attributes = nil
-			staged.Body = append(staged.Body, &copy)
+			continue
 		case *parser.FunctionDefNode:
 			if reachableFunctions[node] || node.MethodOwner != "" && stagedOwners[node.MethodOwner] && !node.DeferredStage {
 				staged.Body = append(staged.Body, node)
@@ -1724,11 +1728,38 @@ func (s *stageSelector) stageModules(staged, source *parser.RootNode) (map[strin
 		CompileTimeForeignLinks: make(map[string][]attributes.Link),
 		TrustedStandardLibrary:  trusted,
 	}
-	linkSource, err := CollectModuleInfo(source, trusted)
-	if err != nil {
+	// Selection combines a package's files, so each module declaration starts
+	// another file's link metadata and foreign declarations.
+	var fileRoot *parser.RootNode
+	collectFileLinks := func() error {
+		if fileRoot == nil {
+			return nil
+		}
+		linkSource, err := CollectModuleInfo(fileRoot, trusted)
+		if err != nil {
+			return err
+		}
+		collectCompileTimeForeignLinks(modules[s.module].CompileTimeForeignLinks, linkSource)
+		return nil
+	}
+	for _, node := range source.Body {
+		if _, isModule := node.(*parser.ModuleNode); isModule {
+			if err := collectFileLinks(); err != nil {
+				return nil, nil, err
+			}
+			fileRoot = &parser.RootNode{Loc: source.Loc}
+		}
+		if fileRoot == nil {
+			return nil, nil, fmt.Errorf("module declaration must be first statement")
+		}
+		fileRoot.Body = append(fileRoot.Body, node)
+	}
+	if fileRoot == nil {
+		return nil, nil, fmt.Errorf("module declaration is missing or empty")
+	}
+	if err := collectFileLinks(); err != nil {
 		return nil, nil, err
 	}
-	collectCompileTimeForeignLinks(modules[s.module].CompileTimeForeignLinks, linkSource)
 	order = append(order, s.module)
 	return modules, order, nil
 }
