@@ -638,6 +638,15 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 			n.SetType(types.ErrorType{})
 			break
 		}
+		if n.Symbol == nil {
+			calleeType := n.Callee.GetType()
+			// Shorthand variant constructors are resolved from the expected type.
+			if _, ok := functionPointerType(calleeType); !ok && !isUnresolvedEnum(calleeType) {
+				a.errorf(n, "expected a function pointer, got expression of type %s", calleeType)
+				n.SetType(types.ErrorType{})
+			}
+			break
+		}
 
 		if n.Symbol != nil && n.Symbol.Template {
 			template := n.Symbol
@@ -1259,8 +1268,8 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 	}
 }
 
-func expectedLambdaFunction(expected types.Type) (types.FunctionType, bool) {
-	pointer, ok := types.Underlying(expected).(types.PointerType)
+func functionPointerType(t types.Type) (types.FunctionType, bool) {
+	pointer, ok := types.Underlying(t).(types.PointerType)
 	if !ok {
 		return types.FunctionType{}, false
 	}
@@ -1273,7 +1282,7 @@ func (a *Attributor) attributeLambda(n *parser.LambdaNode, expected types.Type, 
 		return
 	}
 	signature := n.Function.Symbol.Signature
-	context, hasContext := expectedLambdaFunction(expected)
+	context, hasContext := functionPointerType(expected)
 	if !hasContext {
 		for _, parameter := range signature.Parameters {
 			if parameter == nil {

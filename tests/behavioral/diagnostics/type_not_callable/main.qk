@@ -1,0 +1,18 @@
+module main
+
+import std.io
+
+let Foo = distinct(i32) {
+  let print(self) {
+    std.io.println("Foo: {}", self.(i32))
+  }
+
+  let from_i32(value: i32): Foo {
+    return Foo(value.(Foo))
+  }
+}
+
+let main() {
+  let f = Foo.from_i32(42)
+  f.print()
+}

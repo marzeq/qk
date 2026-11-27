@@ -1497,14 +1497,9 @@ func (v *Validator) validateExpr(node parser.ExpressionNode) {
 				n.SetType(types.ErrorType{})
 				return
 			}
-			ptr, ok := types.Underlying(n.Callee.GetType()).(types.PointerType)
+			fn, ok := functionPointerType(n.Callee.GetType())
 			if !ok {
-				v.errorf(n, "expression of type %s is not callable", n.Callee.GetType())
-				return
-			}
-			fn, ok := types.Underlying(ptr.Base).(types.FunctionType)
-			if !ok {
-				v.errorf(n, "expression of type %s is not callable", n.Callee.GetType())
+				v.errorf(n, "expected a function pointer, got expression of type %s", n.Callee.GetType())
 				return
 			}
 			params = fn.Parameters
@@ -3193,7 +3188,7 @@ func (v *Validator) prepareLambda(n *parser.LambdaNode, expected types.Type) {
 		if types.HasError(n.GetType()) {
 			return
 		}
-		if context, ok := expectedLambdaFunction(expected); ok && n.Function != nil &&
+		if context, ok := functionPointerType(expected); ok && n.Function != nil &&
 			n.Function.Symbol != nil && len(context.Parameters) == len(n.Args) &&
 			context.TypedVariadic == n.Function.Symbol.Signature.TypedVariadic {
 			signature := n.Function.Symbol.Signature

@@ -124,42 +124,46 @@ func (a *Analyser) resolveFunctionCall(n *parser.FunctionCallNode) {
 		}
 		return
 	}
-	if n.Name != nil {
-		sym, ok := a.resolveIdentifier(n.Name)
-		if !ok {
+	name := n.Name
+	if name != nil {
+		if _, ok := a.resolveIdentifier(name); !ok {
 			return
 		}
-		if a.resolveCompileTimeApplication(n, sym, n.Name) {
+	} else {
+		a.visitExpression(n.Callee)
+		switch callee := n.Callee.(type) {
+		case *parser.IdentifierNode:
+			name = callee
+		case *parser.FieldAccessNode:
+			name = callee.ResolvedIdentifier
+		}
+	}
+	if name != nil && name.Symbol != nil {
+		sym := name.Symbol
+		if a.resolveCompileTimeApplication(n, sym, name) {
+			return
+		}
+		if sym.Kind != symbols.SymbolKindFunction && sym.Kind != symbols.SymbolKindVariable {
+			a.errorf(n, "cannot call %q: expected a function or function pointer", name.String())
 			return
 		}
 		if sym.Kind == symbols.SymbolKindFunction {
 			n.Symbol = sym
-			if sym.Template {
+			if n.Name != nil && sym.Template {
 				arguments, remaining, explicit, valid := a.explicitCallTypeArguments(sym.ParameterizedParameters, sym.Signature, n.Args, false, n)
 				if !valid {
 					return
 				}
 				if explicit {
 					n.Args = remaining
-					n.Name.ResolvedTypeArgs = arguments
+					name.ResolvedTypeArgs = arguments
 					n.Symbol = dependentParameterizedFunctionSymbol(sym, arguments)
-					n.Name.Symbol = n.Symbol
+					name.Symbol = n.Symbol
 				}
 			}
+			n.Name = name
 		} else {
 			n.Name = nil
-		}
-	} else {
-		a.visitExpression(n.Callee)
-		if field, ok := n.Callee.(*parser.FieldAccessNode); ok && field.ResolvedIdentifier != nil {
-			sym := field.ResolvedIdentifier.Symbol
-			if a.resolveCompileTimeApplication(n, sym, field.ResolvedIdentifier) {
-				return
-			}
-			if sym.Kind == symbols.SymbolKindFunction {
-				n.Symbol = sym
-				n.Name = field.ResolvedIdentifier
-			}
 		}
 	}
 

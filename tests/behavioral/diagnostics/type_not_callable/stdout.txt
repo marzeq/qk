@@ -1,0 +1,9 @@
+Error: <CASE>/main.qk:11:12
+   9 | 
+  10 |   let from_i32(value: i32): Foo {
+  11 |     return Foo(value.(Foo))
+     |            ^^^^^^^^^^^^^^^^
+  12 |   }
+  13 | }
+
+cannot call "Foo": expected a function or function pointer

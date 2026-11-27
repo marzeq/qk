@@ -22,7 +22,7 @@
     {
       "name": "functions",
       "positive": ["functions/calls"],
-      "negativeNotApplicable": true
+      "negative": ["diagnostics/type_not_callable", "diagnostics/non_function_pointer_call"]
     },
     {
       "name": "aggregate types",

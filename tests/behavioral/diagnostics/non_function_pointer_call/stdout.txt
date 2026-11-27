@@ -1,0 +1,9 @@
+Error: <CASE>/main.qk:6:3
+   4 |   let value: i32 = 42
+   5 |   let pointer = value.&
+   6 |   pointer()
+     |   ^^^^^^^^^
+   7 | }
+   8 | 
+
+expected a function pointer, got expression of type *i32
