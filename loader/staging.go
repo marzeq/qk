@@ -1458,13 +1458,13 @@ func (s *stageSelector) targetValue(name string) (stageValue, bool) {
 
 func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 	staged := &parser.RootNode{Loc: root.Loc}
-	reachableFunctions := s.reachableStageFunctions(root)
 	stagedOwners := make(map[string]bool)
 	for _, node := range root.Body {
 		if alias, ok := node.(*parser.TypeAliasNode); ok && alias.Name != s.stagingAliasName && !s.spreadAliases[alias.Name] {
 			stagedOwners[alias.Name] = true
 		}
 	}
+	reachableFunctions := s.reachableStageFunctions(root, stagedOwners)
 	// A provisional module can contain the roots of several source files.
 	// Keep one module declaration at the front, even when later files have
 	// imports that precede their own declaration in the combined body.
@@ -1764,7 +1764,7 @@ func (s *stageSelector) stageModules(staged, source *parser.RootNode) (map[strin
 	return modules, order, nil
 }
 
-func (s *stageSelector) reachableStageFunctions(root *parser.RootNode) map[*parser.FunctionDefNode]bool {
+func (s *stageSelector) reachableStageFunctions(root *parser.RootNode, stagedOwners map[string]bool) map[*parser.FunctionDefNode]bool {
 	definitions := make(map[string][]*parser.FunctionDefNode)
 	for _, node := range root.Body {
 		if function, ok := node.(*parser.FunctionDefNode); ok {
@@ -1774,6 +1774,15 @@ func (s *stageSelector) reachableStageFunctions(root *parser.RootNode) map[*pars
 	names := make(map[string]bool)
 	for expression := range s.unresolved {
 		collectStageCalls(expression, names)
+	}
+	// Provisional analysis includes methods of staged types. Their bodies can
+	// call package functions even when the original expression names only the
+	// method, as with Type.load() calling a local helper.
+	for _, node := range root.Body {
+		function, ok := node.(*parser.FunctionDefNode)
+		if ok && function.MethodOwner != "" && stagedOwners[function.MethodOwner] && !function.DeferredStage {
+			collectStageCalls(function.Body, names)
+		}
 	}
 	result := make(map[*parser.FunctionDefNode]bool)
 	for progress := true; progress; {

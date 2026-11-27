@@ -523,6 +523,27 @@ func TestCompileTimeCallAcrossModuleFilesKeepsModuleFirst(t *testing.T) {
 	}
 }
 
+func TestCompileTimeMethodCanCallPackageHelper(t *testing.T) {
+	source := `module test
+let Widget = struct {
+  let load(): i32 = helper()
+}
+let helper(): i32 = 42
+let main() { let value = $Widget.load() }
+`
+	tokens, err := tokeniser.NewTokeniser(source, "method_helper.qk").Tokenise()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := parser.NewParser(tokens).Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := SelectCompileTime(root, "test", StageConfig{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestLocalCompileTimeCallDoesNotStageUnrelatedImportedRuntimeCode(t *testing.T) {
 	source := `
 module test

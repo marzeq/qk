@@ -1071,6 +1071,13 @@ func (e *Evaluator) operand(operand Operand, frame *evalFrame) (EvalValue, error
 		return EvalFloat(value, operand.Type), nil
 	case OperandBoolConst:
 		return EvalBool(operand.BoolValue), nil
+	case OperandCStringConst:
+		bytes := append([]byte(operand.StringValue), 0)
+		storage := EvalValue{Type: types.ArrayType{Base: types.PrimitiveU8, Length: len(bytes)}, Aggregate: make([]EvalValue, len(bytes))}
+		for index, item := range bytes {
+			storage.Aggregate[index] = EvalInteger(big.NewInt(int64(item)), types.PrimitiveU8)
+		}
+		return EvalValue{Type: operand.Type, pointer: &evalPointer{root: &storage}}, nil
 	case OperandTypeConst:
 		return EvalValue{Type: types.MetaType{}, TypeValue: operand.SubjectType}, nil
 	case OperandFunctionConst:

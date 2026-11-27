@@ -70,6 +70,24 @@ func TestEvaluatorAddressesGlobalsAndCallsFunctionPointers(t *testing.T) {
 	}
 }
 
+func TestEvaluatorInitializesCStringGlobal(t *testing.T) {
+	value := CStringConstOperand("Hi")
+	evaluator := NewEvaluator(&Module{Globals: []Global{{Name: "title", Type: value.Type, Value: value}}})
+	global, ok := evaluator.Globals["title"]
+	if !ok || global.pointer == nil {
+		t.Fatalf("C string global was not initialized: %#v", global)
+	}
+	storage, err := global.pointer.load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index, want := range []int64{'H', 'i', 0} {
+		if got := storage.Aggregate[index].Integer.Int64(); got != want {
+			t.Fatalf("byte %d = %d, want %d", index, got, want)
+		}
+	}
+}
+
 func TestCompilerImplementationDispatchUsesDeclarationIdentity(t *testing.T) {
 	evaluator := NewEvaluator()
 	call := Call{
