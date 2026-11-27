@@ -285,6 +285,13 @@ func (p *Parser) ParseUnary() (ExpressionNode, error) {
 			p.Inc()
 			mutable = true
 		}
+		if p.Match(tokeniser.TokenKeyword) && p.Peek().Value == string(tokeniser.KeywordDyn) {
+			value, err := p.ParseDynType(beginLoc, mutable)
+			if err != nil {
+				return nil, err
+			}
+			return &TypeValueExprNode{Value: value, Loc: value.GetLoc()}, nil
+		}
 		base, err := p.ParseUnary()
 		if err != nil {
 			return nil, err
@@ -1197,6 +1204,7 @@ func (p *Parser) ParseInlineAsmExpression() (*InlineAsmNode, error) {
 
 func (p *Parser) ParseCall(callee ExpressionNode) (*FunctionCallNode, error) {
 	var args []ExpressionNode
+	var argumentTypes map[int]TypeNode
 	expanded := false
 
 	if !p.Expect(tokeniser.TokenOpenParen) {
@@ -1216,9 +1224,15 @@ func (p *Parser) ParseCall(callee ExpressionNode) (*FunctionCallNode, error) {
 				break
 			}
 
-			arg, err := p.ParseExpression()
+			arg, typeAlternative, err := p.parseCallArgument()
 			if err != nil {
 				return nil, err
+			}
+			if typeAlternative != nil {
+				if argumentTypes == nil {
+					argumentTypes = make(map[int]TypeNode)
+				}
+				argumentTypes[len(args)] = typeAlternative
 			}
 			args = append(args, arg)
 			if p.Match(tokeniser.Token3Dots) {
@@ -1255,9 +1269,35 @@ func (p *Parser) ParseCall(callee ExpressionNode) (*FunctionCallNode, error) {
 	return &FunctionCallNode{
 		Callee:            callee,
 		Args:              args,
+		ArgumentTypes:     argumentTypes,
 		VariadicExpansion: expanded,
 		Loc:               callee.GetLoc().WithEnd(p.PrevLoc()),
 	}, nil
+}
+
+func (p *Parser) parseCallArgument() (ExpressionNode, TypeNode, error) {
+	start := p.pos
+	tryAlternative := p.Match(tokeniser.TokenOpenSquare, tokeniser.TokenAsterisk) || p.matchIntrinsic("repr")
+	argument, err := p.ParseExpression()
+	complete := err == nil && p.Match(tokeniser.TokenComma, tokeniser.TokenCloseParen, tokeniser.TokenNewline, tokeniser.Token3Dots)
+	if complete && !tryAlternative {
+		return argument, nil, nil
+	}
+
+	// An array of pointers, such as [2]*T, can also parse as multiplication.
+	expressionEnd := p.pos
+	p.pos = start
+	value, typeErr := p.ParseType()
+	if typeErr == nil && p.Match(tokeniser.TokenComma, tokeniser.TokenCloseParen, tokeniser.TokenNewline) {
+		if !complete {
+			return &TypeValueExprNode{Value: value, Loc: value.GetLoc()}, nil, nil
+		}
+		if p.pos == expressionEnd {
+			return argument, value, nil
+		}
+	}
+	p.pos = expressionEnd
+	return argument, nil, err
 }
 
 func (p *Parser) ParseStructLiteral(name *IdentifierNode) (*StructLiteralNode, error) {

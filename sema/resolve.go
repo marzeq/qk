@@ -150,12 +150,13 @@ func (a *Analyser) resolveFunctionCall(n *parser.FunctionCallNode) {
 		if sym.Kind == symbols.SymbolKindFunction {
 			n.Symbol = sym
 			if n.Name != nil && sym.Template {
-				arguments, remaining, explicit, valid := a.explicitCallTypeArguments(sym.ParameterizedParameters, sym.Signature, n.Args, false, n)
+				arguments, remaining, explicit, valid := a.explicitCallTypeArguments(sym.ParameterizedParameters, sym.Signature, n, false)
 				if !valid {
 					return
 				}
 				if explicit {
 					n.Args = remaining
+					n.ArgumentTypes = nil
 					name.ResolvedTypeArgs = arguments
 					n.Symbol = dependentParameterizedFunctionSymbol(sym, arguments)
 					name.Symbol = n.Symbol
@@ -182,7 +183,7 @@ func (a *Analyser) resolveCompileTimeApplication(
 	}
 	typeArguments := make([]parser.TypeNode, len(call.Args))
 	for i, argument := range call.Args {
-		typeNode, valid := expressionAsTypeNode(argument)
+		typeNode, valid := callArgumentAsTypeNode(call, i)
 		if !valid {
 			a.errorf(argument, "compile-time binding %q requires type arguments", template.Name)
 			return true
@@ -205,16 +206,17 @@ func (a *Analyser) resolveCompileTimeApplication(
 		call.SetType(resolved.Type)
 	}
 	call.Args = nil
+	call.ArgumentTypes = nil
 	return true
 }
 
 func (a *Analyser) explicitCallTypeArguments(
 	parameters []types.TypeParameter,
 	signature *symbols.FunctionSignature,
-	arguments []parser.ExpressionNode,
+	call *parser.FunctionCallNode,
 	receiverOmitted bool,
-	use parser.Node,
 ) ([]types.Type, []parser.ExpressionNode, bool, bool) {
+	arguments := call.Args
 	if len(parameters) == 0 || signature == nil {
 		return nil, arguments, false, true
 	}
@@ -237,8 +239,8 @@ func (a *Analyser) explicitCallTypeArguments(
 			continue
 		}
 		allTypes := true
-		for _, argument := range arguments[:count] {
-			if _, ok := expressionAsTypeNode(argument); !ok {
+		for index := range count {
+			if _, ok := callArgumentAsTypeNode(call, index); !ok {
 				allTypes = false
 				break
 			}
@@ -256,11 +258,19 @@ func (a *Analyser) explicitCallTypeArguments(
 	for i, parameter := range parameters {
 		result[i] = parameter
 		if i < explicitCount {
-			node, _ := expressionAsTypeNode(arguments[i])
+			node, _ := callArgumentAsTypeNode(call, i)
 			result[i] = a.resolveTypeNode(node)
 		}
 	}
 	return result, arguments[explicitCount:], true, true
+}
+
+func callArgumentAsTypeNode(call *parser.FunctionCallNode, index int) (parser.TypeNode, bool) {
+	if node, ok := expressionAsTypeNode(call.Args[index]); ok {
+		return node, true
+	}
+	node := call.ArgumentTypes[index]
+	return node, node != nil
 }
 
 func expressionAsTypeNode(expression parser.ExpressionNode) (parser.TypeNode, bool) {
@@ -270,6 +280,12 @@ func expressionAsTypeNode(expression parser.ExpressionNode) (parser.TypeNode, bo
 			return &parser.ResolvedTypeNode{Value: n.ValueType, Loc: n.Loc}, true
 		}
 		return n.Value, n.Value != nil
+	case *parser.TypePointerExprNode:
+		base, ok := expressionAsTypeNode(n.Base)
+		if !ok {
+			return nil, false
+		}
+		return &parser.PointerTypeNode{BaseType: base, Mutable: n.Mutable, Loc: n.Loc}, true
 	case *parser.IdentifierNode:
 		return &parser.NamedTypeNode{ModName: n.Module, Name: n.Name, TypeArguments: n.TypeArguments, Loc: n.Loc}, true
 	case *parser.FieldAccessNode:
@@ -291,49 +307,43 @@ func expressionAsTypeNode(expression parser.ExpressionNode) (parser.TypeNode, bo
 			}
 		}
 	case *parser.FunctionCallNode:
-		name := n.Name
-		if name == nil {
+		var target *parser.NamedTypeNode
+		if n.Name != nil {
+			target = &parser.NamedTypeNode{ModName: n.Name.Module, Name: n.Name.Name}
+		} else {
 			var ok bool
-			name, ok = expressionAsDottedTypeName(n.Callee)
+			target, ok = typeApplicationName(n.Callee)
 			if !ok {
 				return nil, false
 			}
 		}
 		arguments := make([]parser.TypeNode, len(n.Args))
-		for i, argument := range n.Args {
-			converted, ok := expressionAsTypeNode(argument)
+		for i := range n.Args {
+			if constant := constantTypeArgument(n.Args[i]); constant != nil {
+				arguments[i] = constant
+				continue
+			}
+			converted, ok := callArgumentAsTypeNode(n, i)
 			if !ok {
 				return nil, false
 			}
 			arguments[i] = converted
 		}
-		return &parser.NamedTypeNode{ModName: name.Module, Name: name.Name, TypeArguments: arguments, Loc: n.Loc}, true
+		target.TypeArguments = arguments
+		target.Loc = n.Loc
+		return target, true
 	default:
 		return nil, false
 	}
 }
 
-func expressionAsDottedTypeName(expression parser.ExpressionNode) (*parser.IdentifierNode, bool) {
-	field, ok := expression.(*parser.FieldAccessNode)
-	if !ok {
-		return nil, false
-	}
-	parts := []string{field.Field.Name}
-	subject := field.Subject
-	for {
-		switch current := subject.(type) {
-		case *parser.IdentifierNode:
-			parts = append([]string{current.Name}, parts...)
-			if len(parts) < 2 {
-				return nil, false
-			}
-			return &parser.IdentifierNode{Name: parts[len(parts)-1], Module: strings.Join(parts[:len(parts)-1], "."), Loc: field.Loc}, true
-		case *parser.FieldAccessNode:
-			parts = append([]string{current.Field.Name}, parts...)
-			subject = current.Subject
-		default:
-			return nil, false
-		}
+func constantTypeArgument(expression parser.ExpressionNode) *parser.ConstantTypeNode {
+	switch expression.(type) {
+	case *parser.CompileTimeExpressionNode, *parser.IntegerLiteralNode, *parser.FloatLiteralNode,
+		*parser.StringLiteralNode, *parser.CStringLiteralNode, *parser.BoolLiteralNode:
+		return &parser.ConstantTypeNode{Value: expression, Loc: expression.GetLoc()}
+	default:
+		return nil
 	}
 }
 

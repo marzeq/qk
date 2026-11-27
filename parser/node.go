@@ -544,12 +544,14 @@ type FunctionCallNode struct {
 	Callee ExpressionNode
 	// Name and Symbol are populated for direct calls, preserving linkage and
 	// foreign-ABI information that is not part of a callable value's type.
-	Name   *IdentifierNode
-	Args   []ExpressionNode
-	Loc    shared.Location
-	Symbol *symbols.Symbol
-	Method bool
-	Type   types.Type
+	Name *IdentifierNode
+	Args []ExpressionNode
+	// ArgumentTypes holds alternate parses for arguments that also have a value expression.
+	ArgumentTypes map[int]TypeNode
+	Loc           shared.Location
+	Symbol        *symbols.Symbol
+	Method        bool
+	Type          types.Type
 	// CompileTimeApplication is populated when call syntax invokes a
 	// type-producing or compile-time value binding, such as DynamicArray(T).
 	CompileTimeApplication *IdentifierNode

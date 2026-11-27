@@ -602,13 +602,14 @@ func (a *Attributor) attributeExpr(node parser.ExpressionNode) {
 			}
 		}
 		if n.Symbol != nil && n.Symbol.Template {
-			arguments, remaining, explicit, valid := a.analyser.explicitCallTypeArguments(n.Symbol.ParameterizedParameters, n.Symbol.Signature, n.Args, false, n)
+			arguments, remaining, explicit, valid := a.analyser.explicitCallTypeArguments(n.Symbol.ParameterizedParameters, n.Symbol.Signature, n, false)
 			if !valid {
 				n.SetType(types.ErrorType{})
 				break
 			}
 			if explicit {
 				n.Args = remaining
+				n.ArgumentTypes = nil
 				n.Symbol = dependentParameterizedFunctionSymbol(n.Symbol, arguments)
 				if n.Name != nil {
 					n.Name.Symbol = n.Symbol
@@ -1665,13 +1666,14 @@ func (a *Attributor) attributeMethodCall(n *parser.FunctionCallNode) bool {
 		return true
 	}
 	if method.Template {
-		arguments, remaining, explicit, valid := a.analyser.explicitCallTypeArguments(method.ParameterizedParameters, method.Signature, n.Args, true, n)
+		arguments, remaining, explicit, valid := a.analyser.explicitCallTypeArguments(method.ParameterizedParameters, method.Signature, n, true)
 		if !valid {
 			n.SetType(types.ErrorType{})
 			return true
 		}
 		if explicit {
 			n.Args = remaining
+			n.ArgumentTypes = nil
 			method = dependentParameterizedFunctionSymbol(method, arguments)
 		}
 	}

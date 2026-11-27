@@ -5,6 +5,8 @@ import (
   std.collections
 )
 
+let DynAny = *mut dyn Any
+
 let main() {
   let mut arena = std.alloc.Arena.init()
   defer arena.deinit()
@@ -13,4 +15,12 @@ let main() {
   assert(values.append(1), "append failed")
   let first, present = values.first()
   assert(values.length() == 1 && present && first == 1, "wrong appended value")
+
+  let allocator = arena.as_allocator()
+  _ = std.collections.DynamicArray(*i32).init(allocator)
+  _ = std.collections.DynamicArray(*mut dyn Any).init(allocator)
+  _ = std.collections.DynamicArray(DynAny).init(allocator)
+  _ = std.collections.DynamicArray([]mut i32).init(allocator)
+  _ = std.collections.DynamicArray([2]*i32).init(allocator)
+  _ = std.collections.DynamicArray(*(i32): i32).init(allocator)
 }

@@ -23,7 +23,7 @@ func (a *Analyser) promoteTypeApplications(root *parser.RootNode) {
 		if !ok || !a.isTypeBinding(name) {
 			continue
 		}
-		typeNode, ok := typeNodeFromApplication(call)
+		typeNode, ok := expressionAsTypeNode(call)
 		if !ok {
 			continue
 		}
@@ -75,34 +75,6 @@ func typeApplicationName(expression parser.ExpressionNode) (*parser.NamedTypeNod
 			parts[left], parts[right] = parts[right], parts[left]
 		}
 		return &parser.NamedTypeNode{ModName: strings.Join(parts[:len(parts)-1], "."), Name: parts[len(parts)-1], Loc: node.Loc}, true
-	}
-	return nil, false
-}
-
-func typeNodeFromApplication(expression parser.ExpressionNode) (parser.TypeNode, bool) {
-	switch node := expression.(type) {
-	case *parser.TypeValueExprNode:
-		return node.Value, true
-	case *parser.IdentifierNode, *parser.FieldAccessNode:
-		return typeApplicationName(expression)
-	case *parser.FunctionCallNode:
-		name, ok := typeApplicationName(node.Callee)
-		if !ok {
-			return nil, false
-		}
-		for _, argument := range node.Args {
-			if prefixed, ok := argument.(*parser.CompileTimeExpressionNode); ok {
-				name.TypeArguments = append(name.TypeArguments, &parser.ConstantTypeNode{Value: prefixed, Loc: prefixed.Loc})
-				continue
-			}
-			typeArgument, ok := typeNodeFromApplication(argument)
-			if !ok {
-				return nil, false
-			}
-			name.TypeArguments = append(name.TypeArguments, typeArgument)
-		}
-		name.Loc = node.Loc
-		return name, true
 	}
 	return nil, false
 }
