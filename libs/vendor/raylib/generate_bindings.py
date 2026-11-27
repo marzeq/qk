@@ -205,16 +205,16 @@ def generate(api: dict) -> str:
         "",
         "import std.ctypes",
         "",
-        "pub let VaList = type alias *mut void",
+        "pub let VaList: type = *mut void",
         "",
-        "pub let rAudioBuffer = type opaque",
-        "pub let rAudioProcessor = type opaque",
+        "pub let rAudioBuffer = opaque",
+        "pub let rAudioProcessor = opaque",
         "",
     ]
 
     for struct in api["structs"]:
         name = struct["name"]
-        out.append(f"pub let {name} = type struct {{")
+        out.append(f"pub let {name} = struct {{")
         for item in struct["fields"]:
             out.append(f"  {identifier(item['name'])}: {qk_type(item['type'], field=True)},")
         out += ["}", ""]
@@ -228,7 +228,7 @@ def generate(api: dict) -> str:
             rendered_target = "*mut " + qk_type(target)
         else:
             rendered_target = qk_type(target)
-        out += [f"pub let {name} = type alias {rendered_target}", ""]
+        out += [f"pub let {name}: type = {rendered_target}", ""]
 
     for callback in api["callbacks"]:
         name = callback["name"]
@@ -236,14 +236,14 @@ def generate(api: dict) -> str:
             qk_type(param["type"]) for param in callback.get("params", [])
         )
         out += [
-            f"pub let {name} = type alias *({params}): {qk_type(callback['returnType'])}",
+            f"pub let {name}: type = *({params}): {qk_type(callback['returnType'])}",
             "",
         ]
 
     for enum in api["enums"]:
         name = enum["name"]
         kind = "flags(u32)" if name in {"ConfigFlags", "Gesture"} else "enum"
-        out.append(f"pub let {name} = type {kind} {{")
+        out.append(f"pub let {name} = {kind} {{")
         used = set()
         for value in enum["values"]:
             member = enum_member(name, value["name"])
@@ -256,13 +256,14 @@ def generate(api: dict) -> str:
             out.append(f"  {member} = {rendered_value},")
         out += ["}", ""]
 
-    out += ["pub let Key = type alias KeyboardKey", ""]
+    out += ["pub let Key: type = KeyboardKey", ""]
 
+    defines = {item["name"]: item["value"] for item in api["defines"]}
     constants = [
-        "pub let VersionMajor: i32 = 6",
-        "pub let VersionMinor: i32 = 0",
-        "pub let VersionPatch: i32 = 0",
-        'pub let Version = c"6.0"',
+        f"pub let VersionMajor: i32 = {defines['RAYLIB_VERSION_MAJOR']}",
+        f"pub let VersionMinor: i32 = {defines['RAYLIB_VERSION_MINOR']}",
+        f"pub let VersionPatch: i32 = {defines['RAYLIB_VERSION_PATCH']}",
+        f'pub let Version = c"{defines["RAYLIB_VERSION"]}"',
         "pub let Pi: f32 = 3.14159265358979323846",
         "pub let Deg2Rad: f32 = Pi / 180.0",
         "pub let Rad2Deg: f32 = 180.0 / Pi",
