@@ -544,6 +544,38 @@ let main() { let value = $Widget.load() }
 	}
 }
 
+func TestCompileTimeRepeatedStructArrayElementsAreIndependent(t *testing.T) {
+	source := `module test
+let Pipe = struct { x: f64 }
+let State = struct { pipes: [4]Pipe }
+let initialise(pipes: []mut Pipe) {
+  for let mut i: usz = 0; i < len(pipes); i += 1 {
+    pipes[i].x = i.(f64) * 0.5
+  }
+}
+let check(): bool {
+  let mut state = State.{ pipes = [.{ x = 0.0 }; 4] }
+  initialise(state.pipes)
+  return state.pipes[0].x == 0.0 &&
+    state.pipes[1].x == 0.5 &&
+    state.pipes[2].x == 1.0 &&
+    state.pipes[3].x == 1.5
+}
+$if !check() { compiler_error("repeated array elements share storage") }
+`
+	tokens, err := tokeniser.NewTokeniser(source, "repeated_struct_array.qk").Tokenise()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := parser.NewParser(tokens).Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := SelectCompileTime(root, "test", StageConfig{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestLocalCompileTimeCallDoesNotStageUnrelatedImportedRuntimeCode(t *testing.T) {
 	source := `
 module test

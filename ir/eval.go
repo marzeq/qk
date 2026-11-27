@@ -1920,7 +1920,7 @@ func (p *evalPointer) store(value EvalValue) error {
 
 func storeEvalPath(target *EvalValue, path []evalPath, value EvalValue) error {
 	if len(path) == 0 {
-		*target = value
+		*target = cloneEvalValue(value)
 		return nil
 	}
 	step := path[0]
@@ -1928,7 +1928,7 @@ func storeEvalPath(target *EvalValue, path []evalPath, value EvalValue) error {
 		if len(target.Aggregate) == 0 {
 			target.Aggregate = make([]EvalValue, 1)
 		}
-		target.Aggregate[0] = value
+		target.Aggregate[0] = cloneEvalValue(value)
 		return nil
 	}
 	if step.index < 0 || step.index >= len(target.Aggregate) {
