@@ -73,7 +73,9 @@ func (a *Analyser) InferFunctionContexts(roots ...*parser.RootNode) {
 				case *parser.TypePointerExprNode:
 					function.Symbol.CompileTimeOnly = true
 				case *parser.FunctionCallNode:
-					if node.Symbol != nil {
+					if resolvedTypeIdentifier(node) != nil {
+						function.Symbol.CompileTimeOnly = true
+					} else if node.Symbol != nil {
 						current.calls = append(current.calls, node.Symbol)
 					}
 				}
@@ -109,9 +111,9 @@ func walkRuntimeSyntax(node parser.Node, visit func(parser.Node)) {
 	case *parser.CompileTimeExpressionNode, *parser.CompilerDirectiveNode, *parser.FunctionDefNode:
 		return
 	case *parser.FieldAccessNode:
-		if node.MethodSymbol != nil && node.MethodSymbol.StaticMethod {
-			// The owner in Type.method is a name resolved during compilation,
-			// not a type value evaluated by the runtime function.
+		if (node.MethodSymbol != nil && node.MethodSymbol.StaticMethod) ||
+			resolvedTypeIdentifier(node.Subject) != nil {
+			// Static methods and variants resolve their type owner during compilation.
 			visit(node)
 			return
 		}

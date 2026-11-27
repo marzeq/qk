@@ -181,8 +181,23 @@ func (a *Analyser) resolveCompileTimeApplication(
 	if !template.Template || template.Kind != symbols.SymbolKindType && template.Kind != symbols.SymbolKindVariable {
 		return false
 	}
+	parameters := template.ParameterizedParameters
+	if len(call.Args) != len(parameters) {
+		a.errorf(call, "parameterized binding expects %d type arguments, got %d", len(parameters), len(call.Args))
+		return true
+	}
 	typeArguments := make([]parser.TypeNode, len(call.Args))
 	for i, argument := range call.Args {
+		if valueType := parameters[i].ValueType; valueType != nil {
+			a.visitExpression(argument)
+			value, valid := retainedArgumentValue(argument, valueType)
+			if !valid {
+				a.errorf(argument, "argument for $%s must be a compile-time value of type %v", parameters[i].Name, valueType)
+				return true
+			}
+			typeArguments[i] = &parser.ResolvedTypeNode{Value: value, Loc: argument.GetLoc()}
+			continue
+		}
 		typeNode, valid := callArgumentAsTypeNode(call, i)
 		if !valid {
 			a.errorf(argument, "compile-time binding %q requires type arguments", template.Name)
@@ -201,7 +216,7 @@ func (a *Analyser) resolveCompileTimeApplication(
 	call.CompileTimeApplication = application
 	call.Symbol = resolved
 	if resolved.Kind == symbols.SymbolKindType {
-		call.SetType(resolved.TypeInfo)
+		call.SetType(types.MetaType{})
 	} else {
 		call.SetType(resolved.Type)
 	}
@@ -269,8 +284,11 @@ func callArgumentAsTypeNode(call *parser.FunctionCallNode, index int) (parser.Ty
 	if node, ok := expressionAsTypeNode(call.Args[index]); ok {
 		return node, true
 	}
-	node := call.ArgumentTypes[index]
-	return node, node != nil
+	if index < len(call.ArgumentTypes) {
+		node := call.ArgumentTypes[index]
+		return node, node != nil
+	}
+	return nil, false
 }
 
 func expressionAsTypeNode(expression parser.ExpressionNode) (parser.TypeNode, bool) {
@@ -307,6 +325,9 @@ func expressionAsTypeNode(expression parser.ExpressionNode) (parser.TypeNode, bo
 			}
 		}
 	case *parser.FunctionCallNode:
+		if identifier := resolvedTypeIdentifier(n); identifier != nil {
+			return &parser.ResolvedTypeNode{Value: identifier.Symbol.TypeInfo, Loc: n.Loc}, true
+		}
 		var target *parser.NamedTypeNode
 		if n.Name != nil {
 			target = &parser.NamedTypeNode{ModName: n.Name.Module, Name: n.Name.Name}

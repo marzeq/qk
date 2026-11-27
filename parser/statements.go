@@ -481,7 +481,8 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 	}()
 	if p.lexicalMethod {
 		p.lexicalMethod = false
-	} else if isTypeResultNode(retType) && !((methodOwner != "") || methodOwnerType != nil) {
+	} else if methodOwner == "" && methodOwnerType == nil &&
+		(isTypeResultNode(retType) || retType == nil && p.hasDirectTypeBody()) {
 		p.lexicalOwner = name.Value
 		p.lexicalOwnerArgs = nil
 		for _, parameter := range parameterizedParameters {
@@ -528,6 +529,12 @@ func (p *Parser) ParseFunctionDefinition() (*FunctionDefNode, error) {
 			}
 		} else {
 			return nil, shared.NewError(p.PrevLoc(), "expected function body as either block or expression after '='")
+		}
+	}
+
+	if retType == nil && expressionBody {
+		if constructor, ok := body.(*TypeValueExprNode); ok {
+			retType = &NamedTypeNode{Name: "type", Loc: constructor.Loc}
 		}
 	}
 
@@ -1127,7 +1134,7 @@ func (p *Parser) ParseStatement() (Node, bool, error) {
 			switch {
 			case p.Match(tokeniser.TokenOpenParen):
 				p.PopPos()
-				if p.bindingParametersIntroduce("type") {
+				if p.isParameterizedTypeBinding() {
 					node, err := p.ParseTypeAlias()
 					return node, true, err
 				}
@@ -1291,7 +1298,7 @@ func isTypeResultNode(node TypeNode) bool {
 	return ok && named.Name == "type" && named.ModName == "" && len(named.TypeArguments) == 0
 }
 
-func (p *Parser) bindingParametersIntroduce(initializer string) bool {
+func (p *Parser) isParameterizedTypeBinding() bool {
 	p.PushPos()
 	defer p.PopPos()
 	if !p.Match(tokeniser.TokenKeyword) || p.Peek().Value != string(tokeniser.KeywordLet) {
@@ -1304,40 +1311,44 @@ func (p *Parser) bindingParametersIntroduce(initializer string) bool {
 	if !p.Expect(tokeniser.TokenIdentifier) || !p.Match(tokeniser.TokenOpenParen) {
 		return false
 	}
-	depth := 0
-	for !p.Match(tokeniser.TokenEof) {
-		switch p.Peek().Type {
-		case tokeniser.TokenOpenParen:
-			depth++
-		case tokeniser.TokenCloseParen:
-			depth--
-			if depth == 0 {
-				p.Inc()
-				for p.Match(tokeniser.TokenNewline) {
-					p.Inc()
-				}
-				if !p.Match(tokeniser.TokenEquals) {
-					return false
-				}
-				p.Inc()
-				for p.Match(tokeniser.TokenNewline) {
-					p.Inc()
-				}
-				if p.Peek().Value == initializer {
-					return true
-				}
-				if initializer == "type" {
-					switch p.Peek().Value {
-					case string(tokeniser.KeywordStruct), string(tokeniser.KeywordEnum), string(tokeniser.KeywordUnion), string(tokeniser.KeywordTrait), string(tokeniser.KeywordOpaque), "flags", "distinct":
-						return true
-					}
-				}
-				return false
-			}
+	p.Inc()
+	for {
+		_, matched, err := p.parseTypeParameter()
+		if !matched || err != nil {
+			return false
+		}
+		if !p.Match(tokeniser.TokenComma) {
+			break
 		}
 		p.Inc()
 	}
-	return false
+	if !p.Expect(tokeniser.TokenCloseParen) {
+		return false
+	}
+	return p.hasDirectTypeBody()
+}
+
+func (p *Parser) hasDirectTypeBody() bool {
+	p.PushPos()
+	defer p.PopPos()
+	for p.Match(tokeniser.TokenNewline) {
+		p.Inc()
+	}
+	if !p.Expect(tokeniser.TokenEquals) {
+		return false
+	}
+	for p.Match(tokeniser.TokenNewline) {
+		p.Inc()
+	}
+	switch p.Peek().Value {
+	case string(tokeniser.KeywordStruct), string(tokeniser.KeywordEnum), string(tokeniser.KeywordUnion),
+		string(tokeniser.KeywordTrait), string(tokeniser.KeywordOpaque), "type":
+		return true
+	case "flags", "distinct":
+		return p.Next().Type == tokeniser.TokenOpenParen
+	default:
+		return false
+	}
 }
 
 func (p *Parser) tokenContinuesExpression() bool {

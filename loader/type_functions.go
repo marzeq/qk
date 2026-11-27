@@ -41,6 +41,11 @@ func lowerTypeFunctionsInBody(body []parser.Node) ([]parser.Node, error) {
 			}
 			continue
 		}
+		for _, argument := range function.Args {
+			if argument.CompileTime && !supportedRetainedParameterType(argument.Type) {
+				return nil, shared.NewError(argument.Loc, "retained compile-time parameters currently require a scalar bool or integer type")
+			}
+		}
 		if function.HasMethodOwner() {
 			function.CompileTimeOnly = true
 			continue
@@ -110,10 +115,21 @@ func lowerTypeFunctionsInBody(body []parser.Node) ([]parser.Node, error) {
 			}
 			continue
 		}
-		body[index] = &parser.TypeAliasNode{
+		if hasIndependentTypeArguments(function, typeNode) {
+			function.CompileTimeOnly = true
+			continue
+		}
+		alias := &parser.TypeAliasNode{
 			Name: function.Name, ParameterizedParameters: parameters, Type: typeNode,
 			Transparent: transparent, Pub: function.Pub, Loc: function.Loc,
 		}
+		for _, parameter := range parameters {
+			if parameter.ValueType != nil {
+				alias.DeferredStage = true
+				break
+			}
+		}
+		body[index] = alias
 	}
 	for _, node := range body {
 		alias, ok := node.(*parser.TypeAliasNode)
@@ -144,6 +160,42 @@ func lowerTypeFunctionsInBody(body []parser.Node) ([]parser.Node, error) {
 		body = append(body, methodNodes(methods)...)
 	}
 	return body, nil
+}
+
+// Keep a constructor that can evaluate its result without specialization as
+// a function, so it can also be bound or passed as a function value.
+func hasIndependentTypeArguments(function *parser.FunctionDefNode, result parser.TypeNode) bool {
+	if len(function.Args) == 0 || len(function.ParameterizedParameters) != 0 {
+		return false
+	}
+	switch result := result.(type) {
+	case *parser.StructTypeNode:
+		if len(result.Methods) != 0 {
+			return false
+		}
+	case *parser.EnumTypeNode:
+		if len(result.Methods) != 0 {
+			return false
+		}
+	case *parser.FlagsTypeNode:
+		if len(result.Methods) != 0 {
+			return false
+		}
+	case *parser.UnionTypeNode:
+		if len(result.Methods) != 0 {
+			return false
+		}
+	case *parser.DistinctTypeNode:
+		if len(result.Methods) != 0 {
+			return false
+		}
+	}
+	for _, argument := range function.Args {
+		if !isTypeMarker(argument.Type) || typeNodeUsesName(reflect.ValueOf(result), argument.Name) {
+			return false
+		}
+	}
+	return true
 }
 
 func methodNodes(methods []*parser.FunctionDefNode) []parser.Node {

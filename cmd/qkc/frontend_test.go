@@ -348,6 +348,21 @@ let main() {
 	}
 }
 
+func TestUnusedTypeBindingRejectsUnsupportedValueParameter(t *testing.T) {
+	const path = "unused_type_binding.qk"
+	const source = `module main
+let Unused($T: type, $N: f64) = struct { value: T }
+let main() {}
+`
+	_, err := runFrontend(&Args{mainModule: ".", noStdlib: true}, loader.StageConfig{},
+		map[string]string{path: source}, map[string]string{path: "."},
+		map[string]bool{path: false}, map[string]map[string]string{".": {}})
+	if err == nil || !strings.Contains(err.Error(), "retained compile-time parameters currently require a scalar bool or integer type") ||
+		!strings.Contains(err.Error(), path+":2:") {
+		t.Fatalf("expected a declaration-site error for the unused type binding, got %v", err)
+	}
+}
+
 func TestStructFieldSpread(t *testing.T) {
 	const path = "field_spread.qk"
 	const source = `module main

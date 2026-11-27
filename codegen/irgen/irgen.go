@@ -1803,7 +1803,7 @@ func (g *Generator) GenerateExpr(expr parser.ExpressionNode) ir.Operand {
 	case *parser.SliceExprNode:
 		return g.generateSliceExpr(n)
 	case *parser.FunctionCallNode:
-		if n.CompileTimeApplication != nil && n.CompileTimeApplication.Symbol.Kind == symbols.SymbolKindVariable {
+		if n.CompileTimeApplication != nil {
 			return g.generateIdentifierExpr(n.CompileTimeApplication)
 		}
 		if n.TaggedUnionType != nil {

@@ -14,8 +14,8 @@ func ConfigureDeferredStage(analyser *sema.Analyser, config StageConfig, environ
 		selector := &stageSelector{
 			config: config, module: module, specializing: true,
 			bindings: make(map[string]stageValue), evaluated: make(map[parser.ExpressionNode]stageValue),
-			unresolved: make(map[parser.ExpressionNode]struct{}), typeBindings: bindings,
-			spreadAliases: make(map[string]bool), spreadExpressions: make(map[parser.ExpressionNode]struct{}),
+			unresolved: make(map[parser.ExpressionNode]int), typeBindings: bindings,
+			spreadAliases: make(map[string]bool), spreadExpressions: make(map[parser.ExpressionNode]int),
 		}
 		for name, bound := range bindings {
 			if constant, ok := bound.(types.ConstantType); ok {
@@ -53,7 +53,7 @@ func ConfigureDeferredStage(analyser *sema.Analyser, config StageConfig, environ
 			return err
 		}
 		selector.needsIR = false
-		selector.unresolved = make(map[parser.ExpressionNode]struct{})
+		selector.unresolved = make(map[parser.ExpressionNode]int)
 		if _, err := selector.selectNode(node); err != nil {
 			return err
 		}

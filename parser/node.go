@@ -627,7 +627,7 @@ func (n *FunctionCallNode) GetType() types.Type {
 	}
 	if n.CompileTimeApplication != nil && n.CompileTimeApplication.Symbol != nil {
 		if n.CompileTimeApplication.Symbol.Kind == symbols.SymbolKindType {
-			return n.CompileTimeApplication.Symbol.TypeInfo
+			return types.MetaType{}
 		}
 		return n.CompileTimeApplication.Symbol.Type
 	}

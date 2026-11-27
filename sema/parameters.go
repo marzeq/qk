@@ -292,6 +292,9 @@ func (a *Analyser) checkParameterizedArgumentsFrom(node parser.Node, parameters 
 				if !argument.ValueType.Equals(parameter.ValueType) {
 					a.errorf(node, "compile-time value for %s must have type %v", parameter.Name, parameter.ValueType)
 					valid = false
+				} else if types.IsInteger(parameter.ValueType) && !integerLiteralFits(argument.Value, parameter.ValueType) {
+					a.errorf(node, "compile-time value %s for %s is out of range for %v", argument.Value, parameter.Name, parameter.ValueType)
+					valid = false
 				}
 			case types.TypeParameter:
 				if argument.ValueType == nil || !argument.ValueType.Equals(parameter.ValueType) {

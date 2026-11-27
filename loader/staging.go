@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -83,7 +84,8 @@ type stageSelector struct {
 	bindings              map[string]stageValue
 	evaluated             map[parser.ExpressionNode]stageValue
 	statementExpressions  map[parser.ExpressionNode]bool
-	unresolved            map[parser.ExpressionNode]struct{}
+	unresolved            map[parser.ExpressionNode]int
+	nextExpressionOrder   int
 	needsIR               bool
 	syntheticID           int
 	environment           *StageEnvironment
@@ -98,9 +100,16 @@ type stageSelector struct {
 	typeFunctions         map[string]bool
 	typeCalls             map[*parser.NamedTypeNode]parser.ExpressionNode
 	spreadAliases         map[string]bool
-	spreadExpressions     map[parser.ExpressionNode]struct{}
-	deferredExpressions   map[parser.ExpressionNode]struct{}
+	spreadExpressions     map[parser.ExpressionNode]int
+	deferredExpressions   map[parser.ExpressionNode]int
 	currentAlias          string
+}
+
+func (s *stageSelector) deferExpression(expression parser.ExpressionNode) {
+	if _, exists := s.unresolved[expression]; !exists {
+		s.unresolved[expression] = s.nextExpressionOrder
+		s.nextExpressionOrder++
+	}
 }
 
 // SelectCompileTime lowers unresolved staged expressions through the ordinary
@@ -117,10 +126,10 @@ func selectCompileTime(root *parser.RootNode, module string, config StageConfig,
 		config: config, module: module,
 		bindings: make(map[string]stageValue), evaluated: make(map[parser.ExpressionNode]stageValue),
 		statementExpressions: make(map[parser.ExpressionNode]bool),
-		unresolved:           make(map[parser.ExpressionNode]struct{}), environment: environment,
+		unresolved:           make(map[parser.ExpressionNode]int), environment: environment,
 		typeFunctions: make(map[string]bool), typeCalls: make(map[*parser.NamedTypeNode]parser.ExpressionNode),
 		spreadAliases:     make(map[string]bool),
-		spreadExpressions: make(map[parser.ExpressionNode]struct{}),
+		spreadExpressions: make(map[parser.ExpressionNode]int),
 	}
 	for _, node := range root.Body {
 		if function, ok := node.(*parser.FunctionDefNode); ok && isTypeMarker(function.RetTypeNode) {
@@ -164,7 +173,7 @@ func selectCompileTime(root *parser.RootNode, module string, config StageConfig,
 		for expression := range selector.spreadExpressions {
 			delete(selector.unresolved, expression)
 		}
-		selector.spreadExpressions = make(map[parser.ExpressionNode]struct{})
+		selector.spreadExpressions = make(map[parser.ExpressionNode]int)
 		selector.spreadAliases = make(map[string]bool)
 		selector.needsIR = len(selector.unresolved) != 0
 		body, err = selector.selectBody(root.Body)
@@ -178,7 +187,7 @@ func selectCompileTime(root *parser.RootNode, module string, config StageConfig,
 			return err
 		}
 		selector.needsIR = false
-		selector.unresolved = make(map[parser.ExpressionNode]struct{})
+		selector.unresolved = make(map[parser.ExpressionNode]int)
 		body, err = selector.selectBody(root.Body)
 		if err != nil {
 			return err
@@ -351,7 +360,7 @@ func (s *stageSelector) selectNode(node parser.Node) ([]parser.Node, error) {
 				}
 			} else {
 				s.needsIR = true
-				s.unresolved[node.Value] = struct{}{}
+				s.deferExpression(node.Value)
 			}
 		}
 		var err error
@@ -618,7 +627,7 @@ func (s *stageSelector) selectExpression(expression parser.ExpressionNode) (pars
 				value, resolved = staged, true
 			} else {
 				s.needsIR = true
-				s.unresolved[node] = struct{}{}
+				s.deferExpression(node)
 			}
 		}
 		if resolved {
@@ -748,7 +757,7 @@ func (s *stageSelector) selectType(typeNode parser.TypeNode) (parser.TypeNode, e
 			s.parameterizedAlias.DeferredStage = true
 		} else {
 			s.needsIR = true
-			s.unresolved[node.Value] = struct{}{}
+			s.deferExpression(node.Value)
 		}
 	case *parser.NamedTypeNode:
 		functionName := node.Name
@@ -779,7 +788,7 @@ func (s *stageSelector) selectType(typeNode parser.TypeNode) (parser.TypeNode, e
 				return &parser.ResolvedTypeNode{Value: value.typeValue, Loc: node.Loc}, nil
 			}
 			s.needsIR = true
-			s.unresolved[call] = struct{}{}
+			s.deferExpression(call)
 			return node, nil
 		}
 		for index := range node.TypeArguments {
@@ -835,8 +844,8 @@ func (s *stageSelector) selectType(typeNode parser.TypeNode) (parser.TypeNode, e
 				}
 				if !resolved {
 					s.needsIR = true
-					s.unresolved[field.Spread] = struct{}{}
-					s.spreadExpressions[field.Spread] = struct{}{}
+					s.deferExpression(field.Spread)
+					s.spreadExpressions[field.Spread] = s.unresolved[field.Spread]
 					if s.currentAlias != "" {
 						s.spreadAliases[s.currentAlias] = true
 					}
@@ -956,7 +965,7 @@ func (s *stageSelector) selectWhen(node *parser.WhenNode) ([]parser.Node, bool, 
 				return nil, false, nil
 			}
 			s.needsIR = true
-			s.unresolved[branch.Condition] = struct{}{}
+			s.deferExpression(branch.Condition)
 			return nil, false, nil
 		}
 		if value.kind != stageBool {
@@ -984,7 +993,7 @@ func (s *stageSelector) selectWhenValue(node *parser.WhenNode) (parser.Node, boo
 					s.parameterizedAlias.DeferredStage = true
 				} else {
 					s.needsIR = true
-					s.unresolved[branch.Condition] = struct{}{}
+					s.deferExpression(branch.Condition)
 				}
 			}
 			return nil, resolved, err
@@ -1044,7 +1053,7 @@ func (s *stageSelector) selectLinkWhen(node *parser.LinkWhenNode) ([]attributes.
 		if err != nil || !resolved {
 			if err == nil {
 				s.needsIR = true
-				s.unresolved[branch.Condition] = struct{}{}
+				s.deferExpression(branch.Condition)
 			}
 			return nil, resolved, err
 		}
@@ -1072,7 +1081,7 @@ func (s *stageSelector) evaluateDirective(node *parser.CompilerDirectiveNode) er
 		} else {
 			s.needsIR = true
 		}
-		s.unresolved[node.Condition] = struct{}{}
+		s.deferExpression(node.Condition)
 		return nil
 	}
 	if condition.kind != stageBool || !condition.boolean {
@@ -1525,7 +1534,16 @@ func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 			existingValues[declaration.Value] = declaration.Name
 		}
 	}
+	// Initializers execute in declaration order. Preserve the order in which
+	// the staging traversal encountered these expressions.
+	expressions := make([]parser.ExpressionNode, 0, len(s.unresolved))
 	for expression := range s.unresolved {
+		expressions = append(expressions, expression)
+	}
+	sort.Slice(expressions, func(i, j int) bool {
+		return s.unresolved[expressions[i]] < s.unresolved[expressions[j]]
+	})
+	for _, expression := range expressions {
 		if name := existingValues[expression]; name != "" {
 			names[expression] = name
 			continue
@@ -1540,6 +1558,14 @@ func (s *stageSelector) evaluateUnresolved(root *parser.RootNode) error {
 		operand = s.inlineStageExpression(parser.CloneSyntax(operand).(parser.ExpressionNode))
 		var resultType parser.TypeNode
 		if s.statementExpressions[expression] {
+			if block, ok := operand.(*parser.BlockNode); ok {
+				// A block ending in a declaration or other statement has no result.
+				if len(block.Body) == 0 {
+					block.Expression = false
+				} else if _, hasResult := block.Body[len(block.Body)-1].(parser.ExpressionNode); !hasResult {
+					block.Expression = false
+				}
+			}
 			resultType = &parser.NamedTypeNode{Name: "i32", Loc: expression.GetLoc()}
 			operand = &parser.BlockNode{Body: []parser.Node{
 				operand,
@@ -1773,7 +1799,7 @@ func (s *stageSelector) reachableStageFunctions(root *parser.RootNode, stagedOwn
 	}
 	names := make(map[string]bool)
 	for expression := range s.unresolved {
-		collectStageCalls(expression, names)
+		collectStageFunctionReferences(expression, names)
 	}
 	// Provisional analysis includes methods of staged types. Their bodies can
 	// call package functions even when the original expression names only the
@@ -1781,7 +1807,7 @@ func (s *stageSelector) reachableStageFunctions(root *parser.RootNode, stagedOwn
 	for _, node := range root.Body {
 		function, ok := node.(*parser.FunctionDefNode)
 		if ok && function.MethodOwner != "" && stagedOwners[function.MethodOwner] && !function.DeferredStage {
-			collectStageCalls(function.Body, names)
+			collectStageFunctionReferences(function.Body, names)
 		}
 	}
 	result := make(map[*parser.FunctionDefNode]bool)
@@ -1793,7 +1819,7 @@ func (s *stageSelector) reachableStageFunctions(root *parser.RootNode, stagedOwn
 					continue
 				}
 				result[function] = true
-				collectStageCalls(function.Body, names)
+				collectStageFunctionReferences(function.Body, names)
 				progress = true
 			}
 		}
@@ -1801,104 +1827,105 @@ func (s *stageSelector) reachableStageFunctions(root *parser.RootNode, stagedOwn
 	return result
 }
 
-func collectStageCalls(node parser.Node, names map[string]bool) {
+func collectStageFunctionReferences(node parser.Node, names map[string]bool) {
 	if node == nil {
 		return
 	}
 	switch node := node.(type) {
 	case *parser.CompileTimeExpressionNode:
-		collectStageCalls(node.Operand, names)
-	case *parser.FunctionCallNode:
-		if identifier, ok := node.Callee.(*parser.IdentifierNode); ok {
-			names[identifier.Name] = true
+		collectStageFunctionReferences(node.Operand, names)
+	case *parser.IdentifierNode:
+		if node.Module == "" {
+			names[node.Name] = true
 		}
-		collectStageCalls(node.Callee, names)
+	case *parser.FunctionCallNode:
+		collectStageFunctionReferences(node.Callee, names)
 		for _, argument := range node.Args {
-			collectStageCalls(argument, names)
+			collectStageFunctionReferences(argument, names)
 		}
 	case *parser.BlockNode:
 		for _, child := range node.Body {
-			collectStageCalls(child, names)
+			collectStageFunctionReferences(child, names)
 		}
 	case *parser.DeclarationNode:
-		collectStageCalls(node.Value, names)
+		collectStageFunctionReferences(node.Value, names)
 	case *parser.MultiDeclarationNode:
-		collectStageCalls(node.Value, names)
+		collectStageFunctionReferences(node.Value, names)
 	case *parser.AssignmentNode:
-		collectStageCalls(node.Value, names)
+		collectStageFunctionReferences(node.Value, names)
 	case *parser.ControlKeywordNode:
-		collectStageCalls(node.ReturnValue, names)
+		collectStageFunctionReferences(node.ReturnValue, names)
 		for _, value := range node.ReturnValues {
-			collectStageCalls(value, names)
+			collectStageFunctionReferences(value, names)
 		}
 	case *parser.DeferNode:
-		collectStageCalls(node.Action, names)
+		collectStageFunctionReferences(node.Action, names)
 	case *parser.IfNode:
-		collectStageCalls(node.IfBranch.Condition, names)
-		collectStageCalls(node.IfBranch.Node, names)
+		collectStageFunctionReferences(node.IfBranch.Condition, names)
+		collectStageFunctionReferences(node.IfBranch.Node, names)
 		for _, branch := range node.ElseIfBranches {
-			collectStageCalls(branch.Condition, names)
-			collectStageCalls(branch.Node, names)
+			collectStageFunctionReferences(branch.Condition, names)
+			collectStageFunctionReferences(branch.Node, names)
 		}
 		if node.ElseBranch != nil {
-			collectStageCalls(node.ElseBranch, names)
+			collectStageFunctionReferences(node.ElseBranch, names)
 		}
 	case *parser.WhenNode:
 		for _, branch := range node.Branches {
-			collectStageCalls(branch.Condition, names)
-			collectStageCalls(branch.Value, names)
+			collectStageFunctionReferences(branch.Condition, names)
+			collectStageFunctionReferences(branch.Value, names)
 			for _, child := range branch.Body {
-				collectStageCalls(child, names)
+				collectStageFunctionReferences(child, names)
 			}
 		}
-		collectStageCalls(node.ElseValue, names)
+		collectStageFunctionReferences(node.ElseValue, names)
 		for _, child := range node.ElseBody {
-			collectStageCalls(child, names)
+			collectStageFunctionReferences(child, names)
 		}
 	case *parser.ForNode:
 		for _, child := range node.ExprsOrStmts {
-			collectStageCalls(child, names)
+			collectStageFunctionReferences(child, names)
 		}
-		collectStageCalls(node.Body, names)
+		collectStageFunctionReferences(node.Body, names)
 	case *parser.RangeForNode:
-		collectStageCalls(node.Start, names)
-		collectStageCalls(node.End, names)
-		collectStageCalls(node.Body, names)
+		collectStageFunctionReferences(node.Start, names)
+		collectStageFunctionReferences(node.End, names)
+		collectStageFunctionReferences(node.Body, names)
 	case *parser.ForEachNode:
-		collectStageCalls(node.Iterable, names)
-		collectStageCalls(node.Body, names)
+		collectStageFunctionReferences(node.Iterable, names)
+		collectStageFunctionReferences(node.Body, names)
 	case *parser.MatchNode:
 		for _, subject := range node.Subjects {
-			collectStageCalls(subject, names)
+			collectStageFunctionReferences(subject, names)
 		}
 		for _, arm := range node.Arms {
-			collectStageCalls(arm.Guard, names)
-			collectStageCalls(arm.Body, names)
+			collectStageFunctionReferences(arm.Guard, names)
+			collectStageFunctionReferences(arm.Body, names)
 		}
 	case *parser.UnaryOpNode:
-		collectStageCalls(node.Operand, names)
+		collectStageFunctionReferences(node.Operand, names)
 	case *parser.BinaryOpNode:
-		collectStageCalls(node.Operand1, names)
-		collectStageCalls(node.Operand2, names)
+		collectStageFunctionReferences(node.Operand1, names)
+		collectStageFunctionReferences(node.Operand2, names)
 	case *parser.IndexExprNode:
-		collectStageCalls(node.Subject, names)
-		collectStageCalls(node.Index, names)
+		collectStageFunctionReferences(node.Subject, names)
+		collectStageFunctionReferences(node.Index, names)
 	case *parser.SliceExprNode:
-		collectStageCalls(node.Subject, names)
-		collectStageCalls(node.Start, names)
-		collectStageCalls(node.End, names)
+		collectStageFunctionReferences(node.Subject, names)
+		collectStageFunctionReferences(node.Start, names)
+		collectStageFunctionReferences(node.End, names)
 	case *parser.CastNode:
-		collectStageCalls(node.Operand, names)
+		collectStageFunctionReferences(node.Operand, names)
 	case *parser.StructLiteralNode:
 		for _, field := range node.Fields {
-			collectStageCalls(field.R, names)
+			collectStageFunctionReferences(field.R, names)
 		}
 	case *parser.SliceLiteralNode:
 		for _, element := range node.Elements {
-			collectStageCalls(element, names)
+			collectStageFunctionReferences(element, names)
 		}
-		collectStageCalls(node.RepeatValue, names)
-		collectStageCalls(node.RepeatAmount, names)
+		collectStageFunctionReferences(node.RepeatValue, names)
+		collectStageFunctionReferences(node.RepeatAmount, names)
 	}
 }
 

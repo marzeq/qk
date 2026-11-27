@@ -1,6 +1,7 @@
 module main
 
 import core.types
+import std.collections
 import std.io
 
 let print_type(T: type, indent: usz = 0) {
@@ -11,6 +12,35 @@ let print_type(T: type, indent: usz = 0) {
   }
 }
 
+let Foo(T: type) = struct {
+  value: T,
+  let get(self): T = self.value
+}
+
+let Sized($T: type, $N: usz) = struct {
+  data: [N]T,
+}
+
+let FixedShape(_: type) = struct { value: i32 }
+
 let main() {
+  ${
+    let make_type = FixedShape
+    let _ = make_type(i32)
+  }
+  assert(${
+    let make_type = FixedShape
+    make_type(i32) == make_type(u8)
+  })
+  let sized: Sized(i32, 5) = .{ data=[7; 5] }
+  assert(sized.data[4] == 7)
+  assert(${
+    let shape = core.types.inspect(Sized(i32, 5))
+    core.types.inspect(shape.fields[0].field_type).length == 5
+  })
+  let foo: Foo(i32) = .{ value=7 }
+  assert(foo.get() == 7)
+  $print_type(Foo(i32))
   $print_type(any)
+  $print_type(std.collections.DynamicArray(i32))
 }

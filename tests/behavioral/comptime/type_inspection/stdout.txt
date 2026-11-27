@@ -1,1 +1,8 @@
+kind: struct
+kind: primitive
 kind: opaque
+kind: struct
+kind: opaque
+kind: pointer
+kind: primitive
+kind: primitive

@@ -44,6 +44,10 @@ func (a *Analyser) typeValueFromSyntax(expression parser.ExpressionNode) types.T
 			(expression.Symbol.Kind == symbols.SymbolKindType || expression.Symbol.Type != nil && expression.Symbol.Type.Equals(types.MetaType{})) {
 			return expression.Symbol.TypeInfo
 		}
+	case *parser.FunctionCallNode:
+		if identifier := resolvedTypeIdentifier(expression); identifier != nil {
+			return identifier.Symbol.TypeInfo
+		}
 	case *parser.FieldAccessNode:
 		if expression.ResolvedIdentifier != nil && expression.ResolvedIdentifier.Symbol != nil &&
 			expression.ResolvedIdentifier.Symbol.Kind == symbols.SymbolKindType {
