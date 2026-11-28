@@ -1300,6 +1300,48 @@ func (p *Parser) parseCallArgument() (ExpressionNode, TypeNode, error) {
 	return argument, nil, err
 }
 
+type entrySeparatorMode uint8
+
+const (
+	entrySeparatorUnset entrySeparatorMode = iota
+	entrySeparatorComma
+	entrySeparatorNewline
+)
+
+// consumeEntrySeparator accepts one style per aggregate, including a trailing comma.
+// It leaves the next entry (or closing delimiter) at the current position.
+func (p *Parser) consumeEntrySeparator(mode *entrySeparatorMode) error {
+	newlines := false
+	for p.Match(tokeniser.TokenNewline) {
+		newlines = true
+		p.Inc()
+	}
+	if p.Match(tokeniser.TokenComma) {
+		if *mode == entrySeparatorNewline {
+			return shared.NewError(p.CurrLoc(), "cannot mix commas and newline separators")
+		}
+		*mode = entrySeparatorComma
+		p.Inc()
+		for p.Match(tokeniser.TokenNewline) {
+			p.Inc()
+		}
+		return nil
+	}
+	if p.atLexicalMethod() {
+		return nil
+	}
+	if newlines && *mode == entrySeparatorComma && !p.Match(tokeniser.TokenCloseCurly) {
+		return shared.NewError(p.CurrLoc(), "expected ',' between entries")
+	}
+	if newlines && !p.Match(tokeniser.TokenCloseCurly) {
+		*mode = entrySeparatorNewline
+	}
+	if !newlines && !p.Match(tokeniser.TokenCloseCurly) && !p.atLexicalMethod() {
+		return shared.NewError(p.CurrLoc(), "expected ',' or newline between entries")
+	}
+	return nil
+}
+
 func (p *Parser) ParseStructLiteral(name *IdentifierNode) (*StructLiteralNode, error) {
 	beginLoc := p.CurrLoc()
 	if name != nil {
@@ -1318,6 +1360,7 @@ func (p *Parser) ParseStructLiteral(name *IdentifierNode) (*StructLiteralNode, e
 		Name: name,
 		Loc:  p.SpanFrom(beginLoc),
 	}
+	var separators entrySeparatorMode
 	if p.Match(tokeniser.TokenDot) {
 		for {
 			if !p.Expect(tokeniser.TokenDot) {
@@ -1331,9 +1374,8 @@ func (p *Parser) ParseStructLiteral(name *IdentifierNode) (*StructLiteralNode, e
 			if !p.Match(tokeniser.TokenComma, tokeniser.TokenNewline) {
 				break
 			}
-			p.Inc()
-			for p.Match(tokeniser.TokenNewline) {
-				p.Inc()
+			if err := p.consumeEntrySeparator(&separators); err != nil {
+				return nil, err
 			}
 			if p.Match(tokeniser.TokenCloseCurly) {
 				break
@@ -1390,10 +1432,8 @@ func (p *Parser) ParseStructLiteral(name *IdentifierNode) (*StructLiteralNode, e
 		if !p.Match(tokeniser.TokenComma, tokeniser.TokenNewline) {
 			break
 		}
-		p.Inc()
-
-		for p.Match(tokeniser.TokenNewline) {
-			p.Inc()
+		if err := p.consumeEntrySeparator(&separators); err != nil {
+			return nil, err
 		}
 	}
 
@@ -1793,6 +1833,7 @@ func (p *Parser) ParseUnionType() (*UnionTypeNode, error) {
 	fields := []StructField{}
 	variants := []TaggedUnionVariantNode{}
 	var methods []*FunctionDefNode
+	var separators entrySeparatorMode
 	seen := map[string]struct{}{}
 	for !p.Match(tokeniser.TokenCloseCurly) {
 		if p.atLexicalMethod() {
@@ -1854,20 +1895,14 @@ func (p *Parser) ParseUnionType() (*UnionTypeNode, error) {
 				variant.Loc = name.Loc.WithEnd(p.PrevLoc())
 			}
 			variants = append(variants, variant)
-			for p.Match(tokeniser.TokenNewline) {
-				p.Inc()
+			if err := p.consumeEntrySeparator(&separators); err != nil {
+				return nil, err
 			}
 			if p.atLexicalMethod() {
 				continue
 			}
 			if p.Match(tokeniser.TokenCloseCurly) {
 				break
-			}
-			if !p.Expect(tokeniser.TokenComma) {
-				return nil, shared.NewError(p.PrevLoc(), "expected ',' after tagged union variant")
-			}
-			for p.Match(tokeniser.TokenNewline) {
-				p.Inc()
 			}
 			continue
 		}
@@ -1879,20 +1914,14 @@ func (p *Parser) ParseUnionType() (*UnionTypeNode, error) {
 			return nil, err
 		}
 		fields = append(fields, StructField{Name: name.Name, Type: fieldType})
-		for p.Match(tokeniser.TokenNewline) {
-			p.Inc()
+		if err := p.consumeEntrySeparator(&separators); err != nil {
+			return nil, err
 		}
 		if p.atLexicalMethod() {
 			continue
 		}
 		if p.Match(tokeniser.TokenCloseCurly) {
 			break
-		}
-		if !p.Expect(tokeniser.TokenComma) {
-			return nil, shared.NewError(p.PrevLoc(), "expected ',' after union field")
-		}
-		for p.Match(tokeniser.TokenNewline) {
-			p.Inc()
 		}
 	}
 	if !p.Expect(tokeniser.TokenCloseCurly) {
@@ -2169,6 +2198,7 @@ func (p *Parser) ParseEnumType() (*EnumTypeNode, error) {
 	var methods []*FunctionDefNode
 	seen := map[string]struct{}{}
 	valueMode := -1 // 0 is implicit, 1 is explicit.
+	var separators entrySeparatorMode
 	for {
 		for p.Match(tokeniser.TokenNewline) {
 			p.Inc()
@@ -2219,18 +2249,11 @@ func (p *Parser) ParseEnumType() (*EnumTypeNode, error) {
 		} else {
 			values = append(values, strconv.Itoa(len(variants)-1))
 		}
-		for p.Match(tokeniser.TokenNewline) {
-			p.Inc()
+		if err := p.consumeEntrySeparator(&separators); err != nil {
+			return nil, err
 		}
 		if p.atLexicalMethod() {
 			continue
-		}
-		if p.Match(tokeniser.TokenComma) {
-			p.Inc()
-			continue
-		}
-		if !p.Match(tokeniser.TokenCloseCurly) {
-			return nil, shared.NewError(p.CurrLoc(), "expected ',' or '}' after enum variant")
 		}
 	}
 	if len(variants) == 0 {
@@ -2268,6 +2291,7 @@ func (p *Parser) ParseFlagsType() (*FlagsTypeNode, error) {
 	var variants, values []string
 	var methods []*FunctionDefNode
 	valueMode := -1 // 0 is implicit, 1 is explicit.
+	var separators entrySeparatorMode
 	for {
 		for p.Match(tokeniser.TokenNewline) {
 			p.Inc()
@@ -2316,18 +2340,11 @@ func (p *Parser) ParseFlagsType() (*FlagsTypeNode, error) {
 		}
 		known[name.Value] = value
 		variants, values = append(variants, name.Value), append(values, value.String())
-		for p.Match(tokeniser.TokenNewline) {
-			p.Inc()
+		if err := p.consumeEntrySeparator(&separators); err != nil {
+			return nil, err
 		}
 		if p.atLexicalMethod() {
 			continue
-		}
-		if p.Match(tokeniser.TokenComma) {
-			p.Inc()
-			continue
-		}
-		if !p.Match(tokeniser.TokenCloseCurly) {
-			return nil, shared.NewError(p.CurrLoc(), "expected ',' or '}' after flag")
 		}
 	}
 	if len(variants) == 0 {
@@ -2402,6 +2419,7 @@ func (p *Parser) ParseStructType() (*StructTypeNode, error) {
 
 	var fields []StructField
 	var methods []*FunctionDefNode
+	var separators entrySeparatorMode
 	for !p.Match(tokeniser.TokenCloseCurly) {
 		if p.atLexicalMethod() {
 			method, err := p.parseLexicalMethod()
@@ -2421,17 +2439,11 @@ func (p *Parser) ParseStructType() (*StructTypeNode, error) {
 				return nil, err
 			}
 			fields = append(fields, StructField{Spread: spread})
-			for p.Match(tokeniser.TokenNewline) {
-				p.Inc()
+			if err := p.consumeEntrySeparator(&separators); err != nil {
+				return nil, err
 			}
 			if p.Match(tokeniser.TokenCloseCurly) {
 				break
-			}
-			if !p.Expect(tokeniser.TokenComma) {
-				return nil, shared.NewError(p.PrevLoc(), "expected ',' after field spread")
-			}
-			for p.Match(tokeniser.TokenNewline) {
-				p.Inc()
 			}
 			continue
 		}
@@ -2441,20 +2453,14 @@ func (p *Parser) ParseStructType() (*StructTypeNode, error) {
 				return nil, err
 			}
 			fields = append(fields, StructField{Type: fieldType})
-			for p.Match(tokeniser.TokenNewline) {
-				p.Inc()
+			if err := p.consumeEntrySeparator(&separators); err != nil {
+				return nil, err
 			}
 			if p.Match(tokeniser.TokenKeyword) && (p.Peek().Value == string(tokeniser.KeywordLet) || p.Peek().Value == string(tokeniser.KeywordPub)) {
 				continue
 			}
 			if p.Match(tokeniser.TokenCloseCurly) {
 				break
-			}
-			if !p.Expect(tokeniser.TokenComma) {
-				return nil, shared.NewError(p.PrevLoc(), "expected ',' after struct field")
-			}
-			for p.Match(tokeniser.TokenNewline) {
-				p.Inc()
 			}
 			continue
 		}
@@ -2476,8 +2482,8 @@ func (p *Parser) ParseStructType() (*StructTypeNode, error) {
 			Name: fieldName.Name,
 			Type: fieldType,
 		})
-		for p.Match(tokeniser.TokenNewline) {
-			p.Inc()
+		if err := p.consumeEntrySeparator(&separators); err != nil {
+			return nil, err
 		}
 		if p.Match(tokeniser.TokenKeyword) && (p.Peek().Value == string(tokeniser.KeywordLet) || p.Peek().Value == string(tokeniser.KeywordPub)) {
 			continue
@@ -2485,13 +2491,6 @@ func (p *Parser) ParseStructType() (*StructTypeNode, error) {
 
 		if p.Match(tokeniser.TokenCloseCurly) {
 			break
-		}
-		if !p.Expect(tokeniser.TokenComma) {
-			return nil, shared.NewError(p.PrevLoc(), "expected ',' after struct field")
-		}
-
-		for p.Match(tokeniser.TokenNewline) {
-			p.Inc()
 		}
 	}
 
